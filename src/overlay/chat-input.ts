@@ -22,8 +22,8 @@ function getCurrentProvider(): any {
  * 生成随机等待时间（ms），范围由 state 配置（默认 2-4 秒）
  */
 function randomDelay(): number {
-  const min = typeof state.sendDelayMin === 'number' ? state.sendDelayMin : 2000;
-  const max = typeof state.sendDelayMax === 'number' ? state.sendDelayMax : 4000;
+  const min = typeof state.sendDelayMin === 'number' ? state.sendDelayMin : 500;
+  const max = typeof state.sendDelayMax === 'number' ? state.sendDelayMax : 1000;
   if (min >= max) return min;
   return Math.floor(Math.random() * (max - min)) + min;
 }
@@ -95,8 +95,12 @@ async function setInputContent(input: any, msg: string): Promise<boolean> {
  * @returns 是否成功
  */
 // 当前待发送的消息（可被 cancelPendingSend 取消）
-interface PendingSend { timer: any; input: any; cancelled: boolean; }
+interface PendingSend { timer: any; input: any; cancelled: boolean; resolve?: (v: boolean) => void; }
 let pendingSend: PendingSend | null = null;
+
+// 发送串行链：确保同一时刻只有一条消息处于"填充→等待→发送"流程，
+// 避免并发时后一条覆盖输入框、导致前一条内容丢失（实测 Bug：两条并发只发出后者）。
+let sendChain: Promise<any> = Promise.resolve();
 
 // 「用户消息已发出」回调（供 bridge 上报飞书等；overlay 不依赖上层，用回调注入）
 // 系统内部消息的 tag（不视为"用户消息"，不上报飞书）
@@ -134,7 +138,18 @@ function emitMessageDelivered(text: string, tag?: string): void {
   } catch (_) { /* ignore */ }
 }
 
-async function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterSent?: () => void): Promise<boolean> {
+/**
+ * 发送消息（对外入口）：挂到串行链上，前一条发送完成后才执行下一条。
+ * 避免并发覆盖输入框内容（实测 Bug：两条并发只发出后者，前者丢失）。
+ */
+function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterSent?: () => void): Promise<boolean> {
+  const run = sendChain.then(() => doSendToChat(msg, tag, fixedDelay, afterSent));
+  // 链上无论成败都继续，避免一次失败卡死后续发送
+  sendChain = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+async function doSendToChat(msg: string, tag?: string, fixedDelay?: number, afterSent?: () => void): Promise<boolean> {
   const input = findInputArea();
   if (!input) {
     console.log('[Cuckoo Code] 找不到输入框，无法发送消息');
@@ -152,22 +167,25 @@ async function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterS
   }
   const sendDelay = fixedDelay !== undefined ? fixedDelay : randomDelay();
   console.log('[Cuckoo Code] 消息已填入输入框，等待 ' + sendDelay + 'ms 后发送...');
-  const timer = setTimeout(function() {
-    if (pendingSend === token) pendingSend = null;
-    if (token.cancelled) return;
-    console.log('[Cuckoo Code] 等待结束，开始触发发送');
-    triggerSend(input);
-    console.log('[Cuckoo Code] 已触发发送, ' + (tag || '') + ', 长度=' + msg.length);
-    // 通知监听者（飞书同步等）；系统内部消息（工具结果/看门狗/重试等）不上报
-    try {
-      if (onUserMessageSentCb && !isSystemTag(tag)) onUserMessageSentCb(msg, tag);
-    } catch (_) {}
-    // 纯净模式：任何投递（含框架内部消息）都派发一次，用于显示"框架正在驱动"运行态
-    emitMessageDelivered(msg, tag);
-    if (typeof afterSent === 'function') afterSent();
-  }, sendDelay);
-  token.timer = timer;
-  return true;
+  return new Promise<boolean>((resolve) => {
+    token.resolve = resolve;
+    const timer = setTimeout(function() {
+      if (pendingSend === token) pendingSend = null;
+      if (token.cancelled) { resolve(false); return; }
+      console.log('[Cuckoo Code] 等待结束，开始触发发送');
+      triggerSend(input);
+      console.log('[Cuckoo Code] 已触发发送, ' + (tag || '') + ', 长度=' + msg.length);
+      // 通知监听者（飞书同步等）；系统内部消息（工具结果/看门狗/重试等）不上报
+      try {
+        if (onUserMessageSentCb && !isSystemTag(tag)) onUserMessageSentCb(msg, tag);
+      } catch (_) {}
+      // 纯净模式：任何投递（含框架内部消息）都派发一次，用于显示"框架正在驱动"运行态
+      emitMessageDelivered(msg, tag);
+      if (typeof afterSent === 'function') afterSent();
+      resolve(true);
+    }, sendDelay);
+    token.timer = timer;
+  });
 }
 
 /**
@@ -179,6 +197,8 @@ function cancelPendingSend(): boolean {
   const t = pendingSend;
   t.cancelled = true;
   if (t.timer) clearTimeout(t.timer);
+  // 释放串行链：取消后必须 resolve，否则 sendChain 永久挂起、后续消息全部卡死
+  if (t.resolve) { try { t.resolve(false); } catch (_) {} }
   pendingSend = null;
   // 不清空输入框：保留待发内容，用户可自行决定发送或删除
   console.log('[Cuckoo Code] 已取消待发送的消息（输入框内容保留）');
@@ -306,15 +326,12 @@ async function sendInitialPromptToInput(): Promise<boolean> {
     }
   } catch (_) { /* ignore */ }
 
-  const sendDelay = randomDelay();
-  console.log('[Cuckoo Code] 初始提示已填入，随机等待 ' + sendDelay + 'ms 后发送...');
-  setTimeout(function() {
-    console.log('[Cuckoo Code] 等待结束，开始发送初始提示');
-    triggerSend(input);
-    state.pendingInitialPrompt = false;
-    // 纯净模式：系统提示词投递也要有运行态反馈（内容不显示）
-    emitMessageDelivered(state.initialPromptContent || '', '系统提示词');
-  }, sendDelay);
+  // 初始提示：无延迟秒发（用户要求）
+  console.log('[Cuckoo Code] 初始提示已填入，立即发送...');
+  triggerSend(input);
+  state.pendingInitialPrompt = false;
+  // 纯净模式：系统提示词投递也要有运行态反馈（内容不显示）
+  emitMessageDelivered(state.initialPromptContent || '', '系统提示词');
 
   return true;
 }

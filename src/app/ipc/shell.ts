@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as windowState from '../window.js';
+import * as profileManager from '../profile.js';
 import { getProvider } from '../../providers/registry.js';
 import { setWindowCumulative, getTotal, cleanupSubagentKeys } from '../token-stats.js';
 import { resolveAsset, resolveSrc } from '../../infra/paths.js';
@@ -376,6 +377,18 @@ function registerShellIpc(): void {
     try { if (typeof win.__ckLayout === 'function') win.__ckLayout(); } catch (_) {}
     // 通知壳页面最终宽度（确保一致）
     try { if (!win.webContents.isDestroyed()) win.webContents.send('shell-sidebar-drag', win.__ckSidebarWidth); } catch (_) {}
+  });
+
+  // 取当前窗口名（底部状态栏显示）
+  ipcMain.handle('shell-get-window-name', async (event: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    if (!ctx) return { success: false };
+    try {
+      const profile = profileManager.getProfileById(ctx.profileId);
+      return { success: true, name: (profile && profile.name) || ctx.profileId || '' };
+    } catch (_) {
+      return { success: true, name: ctx.profileId || '' };
+    }
   });
 
   // 设置左侧 Cuckoo 侧边栏宽度（收起=46，展开=460）→ 重新布局 AI 页面

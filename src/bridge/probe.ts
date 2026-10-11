@@ -44,7 +44,7 @@ export function initProbeIfNeeded(): boolean {
 
   // 等输入框就绪后发测试消息
   setTimeout(() => {
-    try { sendToChat("你好", "探测", 300).catch(() => {}); } catch (_) { /* ignore */ }
+    try { sendToChat("你好", "探测", undefined).catch(() => {}); } catch (_) { /* ignore */ }
   }, 2500);
 
   return true;

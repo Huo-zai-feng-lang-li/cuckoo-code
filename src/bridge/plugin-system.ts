@@ -78,7 +78,7 @@ function currentSessionId(): string | null {
 /** 宿主能力实现 */
 function buildHost(): HostCapabilities {
   return {
-    sendToChat: (text: string) => sendToChat(text, 'plugin', 300),
+    sendToChat: (text: string) => sendToChat(text, 'plugin', undefined),
     getCurrentSessionId: () => currentSessionId(),
     getProjectDir: () => {
       try {

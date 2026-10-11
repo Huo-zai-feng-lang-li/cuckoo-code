@@ -213,6 +213,10 @@ function registerHarnessIpc(): void {
   ipcMain.handle('harness-event-report', (event: any, payload: any) => {
     const ctx = findContext(event.sender);
     if (!ctx) return { success: false };
+    // 记录窗口忙闲（供窗口组切换跳过忙碌窗口，避免掐断并行任务）
+    if (payload && payload.type === 'ai-state') {
+      try { windowState.setGenerating(ctx.profileId, !!payload.generating); } catch (_) { /* ignore */ }
+    }
     // C3：把 AI 事件广播给已加载的 DSH 插件（事件总线）
     try {
       import('../../plugins/cuckoo-plugins/event-bridge.js').then((m: any) => m.dispatchHarnessPayload(payload)).catch(() => {});

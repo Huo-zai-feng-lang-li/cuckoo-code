@@ -2038,6 +2038,10 @@
     <div class="statusbar">
       <div class="sb-recent" id="sb-recent"></div>
       <div class="sb-spacer"></div>
+      <div class="sb-item" id="sb-window-name" title="当前窗口">
+        <span class="sb-label">窗口:</span>
+        <span class="sb-value" id="sb-window-name-text">--</span>
+      </div>
       <div class="sb-item" title="对话上下文：本会话当前占用的 token 总量">
         <span class="sb-label">对话上下文:</span>
         <span class="sb-value" id="sb-context">0</span>
@@ -5910,6 +5914,25 @@
   try {
     renderRecent();
   } catch (_) {
+  }
+  function renderWindowName() {
+    const el = document.getElementById("sb-window-name-text");
+    const fn = api.getWindowName;
+    if (!el || typeof fn !== "function") return;
+    fn().then((r) => {
+      if (r && r.success) el.textContent = r.name || "--";
+    }).catch(() => {
+    });
+  }
+  try {
+    renderWindowName();
+  } catch (_) {
+  }
+  if (api.onWindowNameUpdated) {
+    api.onWindowNameUpdated((name) => {
+      const el = document.getElementById("sb-window-name-text");
+      if (el && name) el.textContent = name;
+    });
   }
   try {
     initPluginShell();

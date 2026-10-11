@@ -251,7 +251,7 @@ async function handleSendSkills() {
       return;
     }
     // 注意：sendToChat 是 async，必须 await，否则恒为真值、误报成功
-    const ok = await sendToChat(section, '技能与代理清单', 300);
+    const ok = await sendToChat(section, '技能与代理清单', undefined);
     if (!ok) {
       showToast('发送失败：未找到输入框', 3000);
       return;
@@ -266,7 +266,7 @@ async function handleSendSkills() {
  * 「卡住了?点我」按钮：向 AI 发一句继续，催促其接着之前的工作
  */
 async function handleManualParseDispatch() {
-  if (!(await sendToChat('刚才卡住了请继续 爱你哦', '继续', 300))) {
+  if (!(await sendToChat('刚才卡住了请继续 爱你哦', '继续', undefined))) {
     showToast('发送失败：未找到输入框', 3000);
     return;
   }
@@ -532,7 +532,7 @@ function bindEvents() {
   const immersiveBtn = document.getElementById('cuckoo-btn-immersive');
   immersiveBtn?.addEventListener('click', async () => {
     const message = '现在你的任何疑问,或没有疑问的选择都需要和我确认 , 确认的方式是 你问一个问题我回答一个问题,然后你再问下一个问题, 最好给我选项, 也要给我个其他的选项, 谢谢 爱你哦';
-    if (!(await sendToChat(message, '沉浸式交流', 300))) {
+    if (!(await sendToChat(message, '沉浸式交流', undefined))) {
       showToast('未找到输入框，请确保已打开聊天界面', 3000);
     } else {
       showToast('已发送沉浸式交流提示', 2200);

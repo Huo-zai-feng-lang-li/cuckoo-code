@@ -20,11 +20,30 @@ interface WindowContext {
 const windows = new Map<number, WindowContext>(); // windowId -> { win, profileId, providerId, sessionStore }
 let lastActiveWindowId: number | null = null;
 
+/**
+ * profileId → 是否正在生成（AI 页面忙闲）。
+ * 数据源：bridge 每 2 秒上报的 ai-state 事件。
+ * 用途：窗口组切换时跳过"正在跑任务"的窗口，避免把并行任务掐断。
+ */
+const generatingProfiles = new Set<string>();
+
+function setGenerating(profileId: any, generating: boolean): void {
+  if (!profileId) return;
+  const key = String(profileId);
+  if (generating) generatingProfiles.add(key);
+  else generatingProfiles.delete(key);
+}
+
+function isGenerating(profileId: any): boolean {
+  return !!profileId && generatingProfiles.has(String(profileId));
+}
+
 function addWindow(win: any, profileId: any, providerId: any, sessionStore: any, view: any, isSubagent?: boolean): void {
   windows.set(win.id, { win, view, profileId, providerId, sessionStore, isSubagent: !!isSubagent });
   lastActiveWindowId = win.id;
   win.on('closed', () => {
     windows.delete(win.id);
+    generatingProfiles.delete(String(profileId));
     if (lastActiveWindowId === win.id) {
       const remaining = Array.from(windows.keys());
       lastActiveWindowId = remaining.length > 0 ? remaining[remaining.length - 1] : null;
@@ -116,6 +135,8 @@ function getAllWindowsByProfileId(profileId: any): WindowContext[] {
 export {
   addWindow,
   removeWindow,
+  setGenerating,
+  isGenerating,
   getWindowContext,
   getContextByWebContents,
   getViewOf,

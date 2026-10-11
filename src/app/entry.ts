@@ -912,16 +912,26 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string): Promis
     if (probeOrder.length === 0) return { success: false, error: '组内没有其他窗口' };
 
     let nextProfileId: string | null = null;
+    let skippedBusy = 0;
     for (const pid of probeOrder) {
+      // 跳过正在跑任务的窗口（避免探测打断它的并行任务）
+      if (windowState.isGenerating(pid)) {
+        console.log('[窗口组] 跳过忙碌窗口 ' + pid + '（正在生成，不打断）');
+        skippedBusy++;
+        continue;
+      }
       console.log('[窗口组] 探测窗口 ' + pid + ' …');
       const pr = await probeWindow(pid);
       console.log('[窗口组] 探测结果 ' + pid + ' = ' + pr);
       if (pr === 'ok') { nextProfileId = pid; break; }
     }
     if (!nextProfileId) {
-      // 全被限/超时 → 恢复源窗口的重试（切换开始时被取消了）
+      // 恢复源窗口的重试（切换开始时被取消了）
       try { cur.view.webContents.send('harness-resume-retry'); } catch (_) { /* ignore */ }
-      return { success: false, error: '组内窗口均不可用（限流/超时），已退回重试', fallback: true };
+      const msg = skippedBusy > 0
+        ? '组内其他窗口均在忙（已跳过 ' + skippedBusy + ' 个），已退回重试'
+        : '组内窗口均不可用（限流/超时），已退回重试';
+      return { success: false, error: msg, fallback: true, skippedBusy };
     }
 
     // 7) 打开目标窗口（探测时已开/已建）
@@ -1200,6 +1210,8 @@ ipcMainForProfile.handle('update-window-name', async (event: any, { displayName 
   const updated = profileManager.updateProfileName(ctx.profileId, displayName);
   if (updated && ctx.win && !ctx.win.isDestroyed()) {
     ctx.win.setTitle('Cuckoo Code Pro - ' + updated.name);
+    // 同步推给壳页面状态栏（窗口名实时更新）
+    try { ctx.win.webContents.send('shell-window-name-updated', updated.name); } catch (_) {}
   }
   return { success: !!updated, name: updated ? updated.name : null };
 });

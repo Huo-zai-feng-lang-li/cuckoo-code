@@ -183,7 +183,7 @@ let handleError = function handleError(detail: any): void {
     if (pending && pending.countdownTimer) clearInterval(pending.countdownTimer);
     pending = null;
     try {
-      sendToChat(cfg.prompt, is429 ? '重试(操作频繁)' : '重试', 300);
+      sendToChat(cfg.prompt, is429 ? '重试(操作频繁)' : '重试', undefined);
     } catch (e: any) {
       console.error('[Cuckoo Code][重试] 发送提示词失败: ' + e.message);
     }

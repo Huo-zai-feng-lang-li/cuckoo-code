@@ -23,6 +23,18 @@ if (build.status !== 0) {
 }
 console.log('[start.js] 编译完成，启动 Electron...');
 
+// ========== 1.5 给 electron.exe 打 Cuckoo 图标（任务栏显示，幂等） ==========
+try {
+  const patch = spawnSync('node', ['scripts/patch-electron-icon.mjs'], {
+    stdio: 'inherit',
+    cwd: import.meta.dirname,
+    shell: true,
+  });
+  if (patch.status !== 0) console.warn('[start.js] 打图标脚本异常退出（忽略）');
+} catch (err) {
+  console.warn('[start.js] 打图标脚本执行失败（忽略）:', err.message);
+}
+
 // ========== 2. 日志目录 ==========
 const logDir = path.join(import.meta.dirname, 'wyp', 'log');
 fs.mkdirSync(logDir, { recursive: true });

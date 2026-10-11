@@ -31,6 +31,10 @@ const shellAPI = {
     ipcRenderer.on('shell-total-updated', (_e: any, data: any) => cb(data));
   },
   getSystemTotal: () => ipcRenderer.invoke('get-system-total'),
+  getWindowName: () => ipcRenderer.invoke('shell-get-window-name'),
+  onWindowNameUpdated: (cb: (name: string) => void) => {
+    ipcRenderer.on('shell-window-name-updated', (_e: any, name: any) => cb(name));
+  },
   getProjectDir: () => ipcRenderer.invoke('get-project-dir'),
   // 点击"项目目录" → 弹目录选择框 + 重新初始化（复用 init-project 通道）
   initProject: () => ipcRenderer.invoke('init-project', {}),

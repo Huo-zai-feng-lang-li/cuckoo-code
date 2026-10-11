@@ -130,7 +130,7 @@ export function initHarnessBridge(): void {
     const text = payload && payload.text;
     if (!text) return;
     clearAbort(); // 新消息：清除中止标志
-    sendToChat(text, 'harness', 300).catch(() => {});
+    sendToChat(text, 'harness', undefined).catch(() => {});
   });
 
   // 停止：取消延时发送 + 中止工具回传

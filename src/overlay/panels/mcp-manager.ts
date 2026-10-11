@@ -201,7 +201,7 @@ async function handleMcpSave(sendToChat: any) {
         msg += '可用的 MCP server：' + serverNames.join('、') + '。\n';
         msg += '需要时用 mcpListServers() 查看概览，或用 mcpGetTools(serverName) 查看具体工具。';
       }
-      sendToChat(msg, 'MCP信息', 300);
+      sendToChat(msg, 'MCP信息', undefined);
     } catch (err: any) {
       console.error('[Cuckoo Code] 发送 MCP 信息失败:', err);
     }
