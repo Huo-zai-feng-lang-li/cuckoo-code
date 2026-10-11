@@ -227,6 +227,12 @@ const shellAPI = {
     ipcRenderer.invoke('create-snapshot', { projectDir, name, description }),
   restoreSnapshot: (id: string) => ipcRenderer.invoke('restore-snapshot', { id }),
   deleteSnapshot: (id: string) => ipcRenderer.invoke('delete-snapshot', { id }),
+  // ========== 全局规则（用户级 ~/.cuckoo/rules/）==========
+  listRules: () => ipcRenderer.invoke('rules-list'),
+  createRule: (fileName: string, content: string) => ipcRenderer.invoke('rules-create', { fileName, content }),
+  saveRule: (fileName: string, content: string, expectedHash: string) => ipcRenderer.invoke('rules-save', { fileName, content, expectedHash }),
+  deleteRule: (fileName: string, expectedHash: string) => ipcRenderer.invoke('rules-delete', { fileName, expectedHash }),
+  openRulesDir: () => ipcRenderer.invoke('rules-open-dir'),
   // ========== 设置 ==========
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (data: any) => ipcRenderer.invoke('save-settings', { data }),

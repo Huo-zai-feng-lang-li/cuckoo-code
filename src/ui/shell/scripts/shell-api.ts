@@ -55,6 +55,12 @@ export interface ShellAPI {
   createSnapshot?: (projectDir: string, name: string, description?: string) => Promise<any>;
   restoreSnapshot?: (id: string) => Promise<any>;
   deleteSnapshot?: (id: string) => Promise<any>;
+  // 全局规则（用户级 ~/.cuckoo/rules/）
+  listRules?: () => Promise<any>;
+  createRule?: (fileName: string, content: string) => Promise<any>;
+  saveRule?: (fileName: string, content: string, expectedHash: string) => Promise<any>;
+  deleteRule?: (fileName: string, expectedHash: string) => Promise<any>;
+  openRulesDir?: () => Promise<any>;
   /** 切换纯净对话模式（Harness） */
   toggleHarness?: () => Promise<any>;
   /** 纯净模式状态变化（harness=true 表示已进入纯净模式） */

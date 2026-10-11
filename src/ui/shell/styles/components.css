@@ -84,6 +84,25 @@
   }
   .ck-list-item:hover { background: var(--ck-primary-soft); }
   .ck-list-empty { color: var(--ck-text-dim); font-size: 12px; text-align: center; padding: 16px 0; }
+  /* ===== 全局规则页 ===== */
+  .ck-rule-toolbar { margin-bottom: 10px; }
+  .ck-rule-toolbar .ck-btn { flex: 0 0 auto; padding: 7px 11px; border-radius: 8px; font-size: 11.5px; letter-spacing: 0; }
+  .ck-rule-editor-actions .ck-btn { flex: 0 0 auto; padding: 7px 11px; border-radius: 8px; font-size: 11.5px; letter-spacing: 0; }
+  .ck-rule-toolbar .ck-rule-icon-only,
+  .ck-rule-editor-actions .ck-rule-icon-only { width: 30px; padding: 7px 0; text-align: center; }
+  .ck-rule-icon-only svg { width: 15px; height: 15px; display: inline-block; vertical-align: middle; }
+  .ck-rule-toolbar .ck-rule-icon-only + .ck-icon-btn { margin-left: -4px; }
+  .ck-rule-compact span { font-size: 15px; line-height: 0; vertical-align: -1px; margin-right: 2px; }
+  .ck-rule-editor { padding: 4px 0 10px; }
+  .ck-rule-editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .ck-rule-editor-title { font-size: 15px; font-weight: 650; color: var(--ck-text); }
+  .ck-rule-editor-hint { margin-top: 4px; color: var(--ck-text-dim); font-size: 12px; line-height: 1.4; }
+  .ck-rule-field { display: block; color: var(--ck-text-dim); font-size: 12px; margin: 10px 0; }
+  .ck-rule-field .ck-input, .ck-rule-field .ck-textarea { display: block; width: 100%; margin-top: 6px; box-sizing: border-box; }
+  .ck-rule-editor-actions { margin-top: 12px; }
+  .ck-rule-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; }
+  .ck-rule-item-action { flex: none; color: var(--ck-primary); font-size: 12px; opacity: .75; }
+  .ck-rule-item:hover .ck-rule-item-action { opacity: 1; }
   /* 快速提示词/技�?MCP/窗口：详情默认隐藏，鼠标悬停才显示（逐渐变高动画�?*/
   .ck-snip-item .ck-snip-preview,
   .ck-skill-item .ck-skill-desc,

@@ -22,6 +22,7 @@ import { loadSettings } from './pages/settings.js';
 import { renderRecent } from './recent.js';
 import { loadConversations } from './pages/conversations.js';
 import { loadPlugins } from './pages/plugins.js';
+import { loadRules } from './pages/rules.js';
 import { initPluginShell } from './plugin-shell.js';
 import { initModalGuard } from './modal-guard.js';
 import { initThemePresenter } from './theme-presenter.js';
@@ -40,6 +41,7 @@ registerTab('windows', renderWindowList);
 registerTab('settings', loadSettings);
 registerTab('conversations', loadConversations);
 registerTab('plugins', loadPlugins);
+registerTab('rules', loadRules);
 
 // 预加载：工作区（默认页）+ 提示词 + 自动压缩配置
 try { loadWorkspaces(); } catch (_) { /* ignore */ }
