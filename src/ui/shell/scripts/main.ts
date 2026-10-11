@@ -23,6 +23,7 @@ import { renderRecent } from './recent.js';
 import { loadConversations } from './pages/conversations.js';
 import { loadPlugins } from './pages/plugins.js';
 import { initPluginShell } from './plugin-shell.js';
+import { initModalGuard } from './modal-guard.js';
 import { initThemePresenter } from './theme-presenter.js';
 
 // 注册 tab → 加载函数（sidebar 点击时调用）
@@ -50,6 +51,9 @@ try { renderRecent(); } catch (_) { /* ignore */ }
 
 // 插件界面挂载（接收主进程 shell-plugin-mount）
 try { initPluginShell(); } catch (_) { /* ignore */ }
+
+// 模态守护：全屏覆盖层可见时隐藏 AI 视图（WebContentsView 挡不住 CSS）
+try { initModalGuard(); } catch (_) { /* ignore */ }
 
 // 主题呈现层（消费主进程快照，写 --ck-* 变量）
 try { initThemePresenter(); } catch (_) { /* ignore */ }

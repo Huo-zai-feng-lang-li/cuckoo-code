@@ -38,6 +38,9 @@ const shellAPI = {
     ipcRenderer.on('shell-project-dir', (_e: any, dir: any) => cb(dir));
   },
   toggleSidebar: (width: number) => ipcRenderer.invoke('shell-toggle-sidebar', { width }),
+  // 临时隐藏 AI 视图（WebContentsView 是原生视图，CSS z-index 盖不住它）
+  // 用途：壳页面开全屏 Lightbox / 模态框时，避免被 AI 页面挡住
+  setWebViewVisible: (visible: boolean) => ipcRenderer.invoke('plugin-set-webview-visible', { visible }),
   // 侧边栏拖拽调宽（AI 视图会临时移出，鼠标事件全落在壳页面；主进程轮询算宽度后推回）
   startSidebarDrag: () => ipcRenderer.send('shell-sidebar-drag-start'),
   endSidebarDrag: () => ipcRenderer.send('shell-sidebar-drag-end'),

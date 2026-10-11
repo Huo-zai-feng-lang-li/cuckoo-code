@@ -62,6 +62,8 @@ export interface ShellAPI {
   reportShellSize?: (w: number, h: number) => void;
   initProject?: (dir?: string | null, isCompaction?: boolean, extraPrompt?: string, noDialog?: boolean) => Promise<any>;
   pluginMarketCurated?: (opts?: any) => Promise<any>;
+  /** 临时隐藏 AI 视图（WebContentsView 挡不住 CSS，全屏弹层需要它） */
+  setWebViewVisible?: (visible: boolean) => Promise<any>;
   pluginMarketCheckUpdates?: (opts?: any) => Promise<any>;
   pluginMarketAutoUpdate?: (opts?: any) => Promise<any>;
   pluginMarketConfigGet?: () => Promise<any>;

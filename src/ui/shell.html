@@ -4977,13 +4977,15 @@
     hint.textContent = "\u70B9\u51FB\u4EFB\u610F\u5904\u5173\u95ED";
     box.appendChild(im);
     box.appendChild(hint);
-    box.addEventListener("click", () => box.remove());
-    document.addEventListener("keydown", function esc(e) {
-      if (e.key === "Escape") {
-        box.remove();
-        document.removeEventListener("keydown", esc);
-      }
-    });
+    const close = () => {
+      box.remove();
+      document.removeEventListener("keydown", esc);
+    };
+    function esc(e) {
+      if (e.key === "Escape") close();
+    }
+    box.addEventListener("click", close);
+    document.addEventListener("keydown", esc);
     document.body.appendChild(box);
   }
   function closePluginDetail() {
@@ -5603,6 +5605,59 @@
     }
   }
 
+  // src/ui/shell/scripts/modal-guard.ts
+  init_shared();
+  var OVERLAY_SELECTORS = [
+    ".ck-modal-mask:not(.cuckoo-hidden)",
+    "#ck-lightbox"
+  ];
+  var lastVisible = true;
+  var pending = false;
+  function anyOverlayVisible() {
+    for (const sel of OVERLAY_SELECTORS) {
+      try {
+        if (document.querySelector(sel)) return true;
+      } catch (_) {
+      }
+    }
+    return false;
+  }
+  function sync() {
+    const shouldShowAi = !anyOverlayVisible();
+    if (shouldShowAi === lastVisible) return;
+    lastVisible = shouldShowAi;
+    try {
+      api.setWebViewVisible?.(shouldShowAi);
+    } catch (_) {
+    }
+  }
+  function schedule() {
+    if (pending) return;
+    pending = true;
+    try {
+      requestAnimationFrame(() => {
+        pending = false;
+        sync();
+      });
+    } catch (_) {
+      pending = false;
+      sync();
+    }
+  }
+  function initModalGuard() {
+    try {
+      const obs = new MutationObserver(schedule);
+      obs.observe(document.body, {
+        attributes: true,
+        attributeFilter: ["class"],
+        subtree: true,
+        childList: true
+      });
+      sync();
+    } catch (_) {
+    }
+  }
+
   // src/ui/shell/scripts/theme-presenter.ts
   init_shared();
   var DARK_ATTRIBUTE = "data-ck-dark";
@@ -5680,6 +5735,10 @@
   }
   try {
     initPluginShell();
+  } catch (_) {
+  }
+  try {
+    initModalGuard();
   } catch (_) {
   }
   try {

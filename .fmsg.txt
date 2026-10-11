@@ -1,0 +1,19 @@
+fix: 修三个真机 bug（插件冲突 / 图片被挡 / 市场不更新）
+
+1. 记忆/快照显示不出来 —— 文件名冲突
+   三个插件（cuckoo-memory / cuckoo-snapshot / mcp-tunnel）的 ui 文件都叫
+   panel.js，加载器按 ui:<文件名> 去重 → 互相覆盖。
+   重命名：memory.js / snapshot.js。
+
+2. 图片/弹窗被 AI 页面挡住 —— WebContentsView 是原生视图
+   CSS z-index 对 WebContentsView 无效（它永远压在 DOM 之上）。
+   - shell-preload 暴露 setWebViewVisible（主进程 IPC 早已存在）
+   - 新增 modal-guard.ts：MutationObserver 监听可见覆盖层
+     （.ck-modal-mask / #ck-lightbox），有则隐藏 AI 视图，无则恢复
+   - Lightbox / 详情弹窗 / 通用确认框 全部受益
+
+3. 市场没有新插件 —— CDN 缓存
+   jsdelivr 对 @main 有最长 7 天缓存 → 目录刚更新时拿到陈旧内容。
+   CURATED_URLS 改为 raw.githubusercontent 优先（缓存窗口约 5 分钟）。
+
+顺带：清理市场缓存文件。

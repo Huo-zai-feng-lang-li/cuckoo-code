@@ -351,7 +351,7 @@ function openPluginDetail(it: any): void {
   });
 }
 
-/** 全屏看图（点任意处关闭） */
+/** 全屏看图（点任意处关闭）。AI 视图的隐藏由 modal-guard 统一处理。 */
 function openLightbox(src: string): void {
   const old = document.getElementById('ck-lightbox');
   if (old) old.remove();
@@ -365,10 +365,13 @@ function openLightbox(src: string): void {
   hint.textContent = '点击任意处关闭';
   box.appendChild(im);
   box.appendChild(hint);
-  box.addEventListener('click', () => box.remove());
-  document.addEventListener('keydown', function esc(e) {
-    if (e.key === 'Escape') { box.remove(); document.removeEventListener('keydown', esc); }
-  });
+  const close = () => {
+    box.remove();
+    document.removeEventListener('keydown', esc);
+  };
+  function esc(e: any) { if (e.key === 'Escape') close(); }
+  box.addEventListener('click', close);
+  document.addEventListener('keydown', esc);
   document.body.appendChild(box);
 }
 

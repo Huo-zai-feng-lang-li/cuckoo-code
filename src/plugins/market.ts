@@ -514,10 +514,16 @@ async function fetchRemoteManifests(opts: {
 
 // ===== curated 目录（plugins.json）=====
 
-/** 目录源（优先级从高到低，逐个尝试） */
+/**
+ * 目录源（优先级从高到低，逐个尝试）。
+ *
+ * ⚠️ raw 放最前：jsdelivr 对 @main 有**最长 7 天**的 CDN 缓存，
+ * 目录刚更新时会拿到陈旧内容（实测：新插件上架后市场看不到）。
+ * raw.githubusercontent 的缓存窗口短得多（约 5 分钟）。
+ */
 const CURATED_URLS = [
-  'https://cdn.jsdelivr.net/gh/8555uuy/cuckoo-plugin-market@main/plugins.json',
   'https://raw.githubusercontent.com/8555uuy/cuckoo-plugin-market/main/plugins.json',
+  'https://cdn.jsdelivr.net/gh/8555uuy/cuckoo-plugin-market@main/plugins.json',
   'https://ghproxy.net/https://raw.githubusercontent.com/8555uuy/cuckoo-plugin-market/main/plugins.json',
 ];
 
