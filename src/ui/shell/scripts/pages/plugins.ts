@@ -25,6 +25,7 @@ const ICON_INSTALL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 const ICON_UPDATE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
 const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
 
+/** 插件页：浏览（市场）+ 管理（已安装/开关/卸载/自动更新）*/
 export async function loadPlugins(): Promise<void> {
   await loadInstalledPlugins();
   await loadPluginMarket(false);
