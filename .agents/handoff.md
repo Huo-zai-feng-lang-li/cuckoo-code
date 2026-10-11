@@ -1,84 +1,106 @@
-# 最新接续状态 (2026-10-12)
+# 最新接续状态 (2026-10-12 更新)
 
 > 面向下次会话的 AI，**开工前先读**。以本地源码为准。
-> 上一份 handoff 是 10-11 会话的内容（已归档在 backup/pre-ff 分支）。
+> 上一份 handoff（10-11 会话）归档在 backup/pre-ff 分支。
 
 ## 当前 git 状态
 
 | 项 | 值 |
 |---|---|
 | 分支 | master |
-| HEAD | `7ffb02d` |
+| HEAD | `26182c2`（本 AI 最后提交） |
+| 基座 | v0.8.11（合并自 8555uuy/personal/full，`862d144`） |
 | 工作区 | 干净 |
-| 领先 origin | 45 commits（**未 push**） |
-| 基座 | v0.8.11（合并自 8555uuy/personal/full，commit `862d144`） |
-| 备份分支 | `backup/pre-ff`（会话改动存档 `d0fe406`，99 文件） |
+| 领先 origin | 若干 commits（**未 push**） |
+| 备份分支 | `backup/pre-ff`（10-11 会话存档 `d0fe406`，99 文件） |
 
-### 本次会话两次提交
-- `e32d898` fix: 窗口组跳过忙碌窗口等会话修复（29 文件）
-- `7ffb02d` feat: 限流窗口自动关闭 + 自动创建 .agents/handoff.md + 项目规则（3 文件）
+### 本会话相关提交（部分由用户/其它会话提交）
+- `26182c2` 恢复主题/系统浏览器按钮 + 纯净模式最近回显 + 通知点击聚焦 ← **本 AI**
+- `6d7614f` 全局规则管理页 + 对话入口隐藏 + 最近叉号恢复
+- `c7a58dc` 停止按钮真杀子代理
+- `bb399d4` JsRunner 长任务判定增强 + 插件图标首字 + 提示词段卸载清理
+- `28d30d9` docs: handoff.md
+- `7ffb02d` 限流窗口自动关闭 + 自动创建 handoff + 项目规则 ← **本 AI**
+- `e32d898` 窗口组跳过忙碌 + 并发串行 + 延迟统一等 ← **本 AI**
 
 ## 重要事件：git 被外部改变
 
-reflog 显示会话中途**有人执行了合并**（非本 AI 操作，用户未确认是否其亲手）：
-```
-862d144 HEAD@{0}: merge 8555uuy/personal/full: Fast-forward
-181df32 HEAD@{1}: checkout: moving from backup/pre-ff to master
-d0fe406 HEAD@{2}: commit: backup: 会话改动存档
-```
-把 master 从 0.8.10 快进到 0.8.11。**收益**：0.8.11 内置了插件需要的全部后端 API
-（memories / snapshots / ipc / tools）——之前"插件缺后端"的问题从根解决。
+会话中途**有人执行了合并**（非本 AI 操作）：master 从 0.8.10 快进到 0.8.11（merge 8555uuy/personal/full）。
+**收益**：0.8.11 内置了插件需要的后端 API（memories/snapshots/ipc/tools）——"插件缺后端"问题从根解决。
 
-## 本次会话完成的改动
+## 本会话已完成的改动（要点）
 
-1. **发送延迟统一**：初始提示秒发；任务反馈 + 11 处系统消息走 0.5~1s 区间；默认值 2000/4000 → 500/1000
-2. **并发发送丢消息修复**：`chat-input.ts` sendToChat 改串行链（sendChain），cancelPendingSend 释放链
-3. **停止按钮恢复**：observer.ts 整个工具流程 showToolMask(停止回调)；panel.ts 恢复显示；overlay.css 改顶部非阻塞提示条
-4. **overlay 死代码清理**：events.ts 删死绑定、panel.ts 精简、executor.ts 精简、bridge/entry.ts 清理
-5. **构建健壮性**：copy-monaco 幂等化；tsconfig exclude src/ui/vendor
-6. **任务栏图标**：新增 scripts/patch-electron-icon.mjs，集成 start.js
-7. **插件侧栏入口修复**（与 0.8.11 重合）
-8. **窗口名显示**：statusbar 显示窗口名 + IPC + 渲染
-9. **窗口组跳过忙碌窗口**（entry.ts + window.ts setGenerating/isGenerating + harness.ts 记录 ai-state）
-10. **限流窗口自动关闭**：runSwitchForGroup 加 closeSource 参数，限流路径传 true（跳过确认框，延迟 1500ms）
-11. **自动创建 .agents/handoff.md**：project-context.ts 加 ensureAgentsHandoff
-12. **项目规则** `.cuckoo/rules/project.md`（无 paths，始终适用）
-13. **全局规则修正** `~/.cuckoo/rules/global-override.md`（不在 git）：删悬空引用 .agents/rules/README.md、加"handoff 不存在则创建"、Skills 名具体化。已备份 .bak
+1. **发送延迟统一**：初始提示秒发；任务反馈+11 处系统消息走 0.5~1s 区间；默认 2000/4000→500/1000
+2. **并发发送丢消息修复**：chat-input.ts sendToChat 改串行链 sendChain
+3. **停止按钮恢复**：observer.ts 全程 showToolMask(停止回调)；overlay.css 改顶部非阻塞提示条
+4. **构建健壮性**：copy-monaco 幂等化；tsconfig exclude src/ui/vendor
+5. **任务栏图标**：scripts/patch-electron-icon.mjs（rcedit 打 exe 图标），集成 start.js
+6. **窗口名显示**：statusbar + IPC + 渲染
+7. **窗口组跳过忙碌窗口**：window.ts setGenerating/isGenerating + harness.ts 记 ai-state + entry.ts 探测跳过
+8. **限流窗口自动关闭**：runSwitchForGroup 加 closeSource 参数（限流路径 true）
+9. **自动创建 .agents/handoff.md**：project-context.ts ensureAgentsHandoff
+10. **项目规则** `.cuckoo/rules/project.md`（无 paths，始终适用）
+11. **全局规则修正** `~/.cuckoo/rules/global-override.md`（不在 git，已备份 .bak）
+12. **恢复丢失的菜单/按钮**：全局规则管理页、对话 tab、主题按钮、系统浏览器按钮
+13. **纯净模式最近回显**：append/trigger 按 __ckHarnessVisible 路由到 harness 输入框
+14. **通知点击聚焦窗口**：renderer.ts notification.on('click')
+15. **插件图标**：无 icon 时用标题首字（不再统一小地球）
 
-## 未完成 / 待办
+## ⚠️ 待办（下次会话做）—— 4 项新任务 + 遗留
 
-### 1. 遗留 4 项（在 backup/pre-ff，master 没有）
-- **子进程树 taskkill**（tools/impl/bash.ts、pwsh.ts）
-- **IPC 协议白名单**（app/ipc/shell.ts）
-- **rules 管理功能**（src/rules/files.ts、src/app/ipc/rules.ts、rules 页面）
-- **删 fab.ts**（0.8.11 又带回）
-> 注意：**不能直接 git checkout backup/pre-ff -- 文件**（backup 是 0.8.10 基座，会丢 0.8.11 改动），要逐段挑。
+### 新任务 A：登录安全（"浏览器环境不安全"）
+- **现状**：反检测代码已写且已接入——user-agent.ts 的 buildChromeUserAgent（entry.ts:473）、
+  buildClientHintsHeaders（entry.ts:480）、buildUserAgentDataFix（bridge/entry.ts:44）。
+- **但站点仍提示不安全** → 需**真机抓证**确认漏点：
+  - Sec-CH-UA 头是否**真正发到请求**（可能只设了变量没挂 webRequest）
+  - 其它指纹：navigator.plugins / hardwareConcurrency / languages / WebGL / Canvas / chrome 对象
+  - Electron 特有暴露：window.process、--remote-debugging
+- **难度高**（深度逆向），需对着具体站点检测脚本逐项过。
 
-### 2. 重启验证（改的是主进程，需 npm start）
-- 限流关窗口、自动建 handoff、窗口组跳过忙碌、停止按钮、窗口名
+### 新任务 B：性能优化
+- **需求不明确**，需用户指明场景：启动慢 / 界面卡 / 长对话卡 / 内存高。
+- 已知：backlog 记过"长对话卡是 DeepSeek 自身 O(n²) 渲染，改不了"。
 
-### 3. 未决
-- 未 push（45 commits）
-- 限流窗口"关" vs "只停不关"——用户尚未最终决定
-- agent-mode 提示词段注册时机问题（未真机验证）
+### 新任务 C：工作区删除（只有归档没有删除）
+- **现状（已确认）**：shell-preload.ts **有** deleteSessionRecord / deleteProjectRecords（暴露了对应 IPC 名），
+  但 **主进程 session.ts 里没有这两个 handler**（11 个 handler 里无 delete-*）→ **需补主进程实现**。
+  shell-preload 里还引用了 navigateSession 对应的 handler 在（其它在）。
+- **UI**：workspaces.ts 只有归档/取消归档，**无删除按钮**。
+- **做法**：确认/补主进程 handler + 在归档项/项目上加「删除」（二次确认）。
+
+### 新任务 D：发布 Releases
+- **现状**：CI 已配好！`.github/workflows/release.yml`——打 tag（v*）→ 自动构建 Win+Mac → 创建 Release。
+- **做法**：先 push 代码 → `git tag v0.8.12` → `git push origin v0.8.12`（触发 CI）。
+- **前提**：fork 的 Actions 有权限。
+
+### 遗留 3 项（backup/pre-ff 有、master 没有）
+- 子进程树 taskkill（tools/impl/bash.ts、pwsh.ts）
+- IPC 协议白名单（app/ipc/shell.ts）
+- 删 fab.ts（0.8.11 又带回）
+> ⚠️ **不能 git checkout backup/pre-ff -- 文件**（backup 是 0.8.10 基座，会丢 0.8.11 改动），要逐段挑。
+
+### 重启验证（本会话改动多为主进程，需 npm start）
+- 限流关窗口、窗口组跳过忙碌、停止按钮、窗口名、主题/浏览器按钮、纯净模式回显、通知聚焦
 
 ## 关键背景
 
-- **overlay 是纯 UI**，不 import bridge/session/app
-- **bridge/session 不依赖 overlay/state**，数据经回调推送
-- **窗口结构**：地址栏在 win.webContents（壳页面），AI 页面在 ctx.view
-- **生成物禁手改**：*.generated.ts、src/tools/api.d.ts、src/ui/shell.html
-- 目录：D:\Desktop\Super-File\cuckoo-code
+- **依赖铁律**：overlay 不 import bridge/session/app；bridge/session 不依赖 overlay/state；tools 不依赖上层
+- **窗口结构**：地址栏在 win.webContents（壳页面），AI 页面在 ctx.view（WebContentsView）
+- **生成物禁手改**：*.generated.ts、src/tools/api.d.ts、src/ui/shell.html（改真源 + npm run compile）
+- **规则目录**：全局 `~/.cuckoo/rules/`；项目 `<项目>/.cuckoo/rules/`；scanner 只扫这两个（.agents/rules 不被识别）
+- 目录：D:DesktopSuper-Filecuckoo-code
 - 外网代理：http://127.0.0.1:51081
+- CDP 调试：Electron 开 --remote-debugging-port=9333
 
 ## 规则遵循自省（下次务必避免）
 
 1. **未挂载 Skills 套件**（~/.agents/skills/）—— 规则要求改代码前读 SKILL.md 并标记 [Auto-Skill]
 2. **未建需求档案 / 分支**
 3. **未创建 .agents/plan-*.md 计划文档**
-4. 本次曾误把临时文件 `_cm.txt` 提交，已用 git rm --cached + amend 修正（教训：提交前检查 git status）
+4. **未用子代理**（code-reviewer 等）
+5. 教训：`git add -A` 易误提交临时文件（本会话犯过两次）——提交前检查 git status
 
-## 验证状态
+## 验证状态（本会话最后）
 
-- typecheck ✅ / test 926 passed ✅ / lint 0 errors（warning 均为既有模板/测试/plugin-src）✅
-- 尚未真机 npm start 验证本轮运行时改动
+- typecheck ✅ / compile ✅ / 测试通过 ✅ / lint 0 errors ✅
+- 尚未真机 npm start 验证本会话运行时改动
