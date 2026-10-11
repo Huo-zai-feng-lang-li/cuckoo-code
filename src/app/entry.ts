@@ -874,7 +874,7 @@ async function probeWindow(profileId: string): Promise<string> {
 
 // ========== 窗口组切换编排 ==========
 /** 把 fromProfileId 窗口的当前对话分享给组内下一个窗口（返回 { success, ... }） */
-async function runSwitchForGroup(groupId: string, fromProfileId: string): Promise<any> {
+async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSource: boolean = false): Promise<any> {
     // 1) 找源窗口上下文
     const allCtx = windowState.getAllContexts().filter((c: any) => c.profileId === fromProfileId && !c.isSubagent);
     const cur: any = allCtx[0];
@@ -978,6 +978,22 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string): Promis
       }, 5000);
     } catch (_) { /* ignore */ }
 
+    // 11) 关闭限流的源窗口（避免窗口累积）。
+    //     仅在"限流自动切换"时关闭；手动转移对话保留源窗口。
+    if (closeSource) {
+      setTimeout(() => {
+        try {
+          if (cur && cur.win && !cur.win.isDestroyed()) {
+            (cur.win as any).__programmaticClose = true; // 程序主动关闭，跳过确认弹框
+            cur.win.close();
+            console.log('[窗口组] 已关闭限流的源窗口 ' + curProfileId);
+          }
+        } catch (err: any) {
+          console.warn('[窗口组] 关闭源窗口失败:', err.message);
+        }
+      }, 1500); // 等焦点切到新窗口后再关，避免闪烁
+    }
+
     return { success: true, toProfileId: nextProfileId };
 }
 
@@ -1004,7 +1020,7 @@ ipcMainForProfile.handle('rate-limit-hit', async (event: any) => {
   console.log('[窗口组] 限流触发自动切换，组=' + group.name);
   // 触发切换（复用 P2 的编排）
   try {
-    const res = await runSwitchForGroup(group.id, profileId);
+    const res = await runSwitchForGroup(group.id, profileId, true);
     return { success: true, switched: !!(res && res.success), result: res };
   } catch (err: any) {
     return { success: false, error: err.message };

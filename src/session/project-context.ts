@@ -47,6 +47,49 @@ function logWithFile(providerId: string, msg: string): void {
   } catch (_) {}
 }
 
+/** .agents/handoff.md 空模板（新项目自动创建） */
+const HANDOFF_TEMPLATE = [
+  '# 会话接续状态',
+  '',
+  '> 本文件由 Cuckoo Code 自动创建，用于跨会话记录工作状态。',
+  '> **会话启动时先读它**：了解上次进展、未完成事项，再继续干活。',
+  '> 重要进展后更新本文件（目标 / 已完成 / 未完成 / 关键文件 / 佐证）。',
+  '',
+  '## 目标',
+  '（待填写：当前在做的事）',
+  '',
+  '## 已完成',
+  '（待填写）',
+  '',
+  '## 未完成 / 下一步',
+  '（待填写）',
+  '',
+  '## 关键文件',
+  '（待填写：涉及的主要文件与作用）',
+  '',
+  '## 佐证',
+  '（待填写：验证结果、测试命令、证据）',
+  '',
+].join('\n');
+
+/**
+ * 确保项目根有 .agents/ 目录 + handoff.md（不存在则创建空模板）。
+ * 落地"每个项目都用 .agents/ 记录跨会话状态"的全局约定。
+ */
+function ensureAgentsHandoff(projectDir: string): void {
+  if (!projectDir) return;
+  try {
+    const agentsDir = path.join(projectDir, '.agents');
+    const handoffFile = path.join(agentsDir, 'handoff.md');
+    if (fs.existsSync(handoffFile)) return;
+    fs.mkdirSync(agentsDir, { recursive: true });
+    fs.writeFileSync(handoffFile, HANDOFF_TEMPLATE, 'utf-8');
+    console.log('[Cuckoo Code] 已创建 .agents/handoff.md（跨会话接续文档）');
+  } catch (err: any) {
+    console.warn('[Cuckoo Code] 创建 .agents/handoff.md 失败:', err.message);
+  }
+}
+
 /**
  * 初始化项目：选择目录并发送 systemPrompt
  * 供 IPC 调用（用户点击初始化按钮时触发）
@@ -115,6 +158,9 @@ async function initProject(skipPrompt: boolean = false, windowContext: any = nul
 
   // 记录"上次项目目录"（全局，供下次目录选择框默认定位）
   if (selectedDir) writeLastProjectDir(selectedDir);
+
+  // 每个项目的约定：确保 .agents/handoff.md 存在（不存在则建空模板）
+  ensureAgentsHandoff(selectedDir);
 
   // 保存选中的项目目录（若该窗口有独立的 sessionStore）
   if (sessionStore) {
