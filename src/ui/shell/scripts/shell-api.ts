@@ -141,6 +141,7 @@ export interface ShellAPI {
   checkUpdate?: () => Promise<any>;
   getAssetUrl?: (rel: string) => Promise<any>;
   openExternal?: (url: string) => Promise<any>;
+  openCurrentExternal?: () => Promise<any>;
   openFeishuSetup?: () => Promise<any>;
   // 飞书
   getFeishuConfig?: () => Promise<any>;

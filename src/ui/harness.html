@@ -2022,6 +2022,19 @@
     });
   }
 
+  /** 追加文本到输入框末尾（不发送）——供"最近"快捷项回显 */
+  function appendToInput(text) {
+    if (typeof text !== 'string' || !text) return;
+    var cur = input.value || '';
+    var next = cur ? (cur + '\n' + text) : text;
+    input.value = next;
+    try { input.focus(); } catch (e) { /* ignore */ }
+    try { input.setSelectionRange(next.length, next.length); } catch (e) { /* ignore */ }
+  }
+  if (api.onAppendInput) {
+    api.onAppendInput(function (text) { appendToInput(text); });
+  }
+
   function send() {
     var text = input.value.trim();
     var files = pendingFiles.slice();

@@ -35,6 +35,10 @@ const harnessAPI = {
   onEvent: (cb: (payload: any) => void) => {
     ipcRenderer.on('harness-event', (_e: any, payload: any) => cb(payload));
   },
+  /** 追加文本到输入框末尾（不发送）——供壳页面"最近"快捷项回显 */
+  onAppendInput: (cb: (text: string) => void) => {
+    ipcRenderer.on('harness-append-input', (_e: any, d: any) => cb((d && d.text) || ''));
+  },
   /** 忙状态通知（生成中= true，用于禁用侧栏对话切换） */
   setBusy: (busy: boolean) => ipcRenderer.send('harness-set-busy', { busy: !!busy }),
   /** 页面就绪通知（可选，用于同步初始状态） */

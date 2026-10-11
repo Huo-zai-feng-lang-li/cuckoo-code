@@ -30,6 +30,16 @@ function registerRendererIpc(): void {
           title: windowName + ' - AI任务已完成',
           body: 'AI 已完成回复',
         });
+        // 点击通知 → 聚焦到对应窗口（还原最小化 + 显示 + 聚焦）
+        notification.on('click', () => {
+          try {
+            if (!win || win.isDestroyed()) return;
+            if (win.isMinimized()) win.restore();
+            win.show();
+            win.focus();
+            win.flashFrame(false);
+          } catch (_) { /* ignore */ }
+        });
         notification.show();
 
         win.flashFrame(true);

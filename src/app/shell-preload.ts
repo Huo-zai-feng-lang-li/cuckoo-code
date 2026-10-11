@@ -200,6 +200,7 @@ const shellAPI = {
   checkUpdate: () => ipcRenderer.invoke('check-update'),
   getAssetUrl: (rel: string) => ipcRenderer.invoke('get-asset-url', { rel }),
   openExternal: (url: string) => ipcRenderer.invoke('open-external', { url }),
+  openCurrentExternal: () => ipcRenderer.invoke('open-current-external'),
   openFeishuSetup: () => ipcRenderer.invoke('open-feishu-setup'),
   // ========== 飞书同步 ==========
   getFeishuConfig: () => ipcRenderer.invoke('feishu-get-config'),

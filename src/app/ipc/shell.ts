@@ -265,6 +265,19 @@ function registerShellIpc(): void {
     }
   });
 
+  // 内嵌站点拒绝 OAuth 时，在系统浏览器中打开当前安全网页
+  ipcMain.handle('open-current-external', async (event: any) => {
+    try {
+      const view = viewOf(event);
+      const url = view && !view.webContents.isDestroyed() ? view.webContents.getURL() : '';
+      if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return { success: false, error: '当前页面不是网页地址' };
+      await shell.openExternal(url);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
   // 打开「飞书配置教程」应用内新窗口（自包含 HTML，离线可用）
   ipcMain.handle('open-feishu-setup', async () => {
     try {

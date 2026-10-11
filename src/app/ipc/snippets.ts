@@ -33,11 +33,23 @@ function registerSnippetsIpc(): void {
     return { success: ok, error: ok ? null : '保存失败' };
   });
 
-  // 追加文本到 AI 输入框末尾（不发送）：MCP 名等
+  // 追加文本到输入框末尾（不发送）：MCP 名等
   ipcMain.handle('append-to-input', async (event: any, { text }: any) => {
     if (typeof text !== 'string' || !text) return { success: false, error: '文本为空' };
     const ctx = windowState.getContextByWebContents(event.sender);
-    if (!ctx || !ctx.view || !ctx.view.webContents || ctx.view.webContents.isDestroyed()) {
+    if (!ctx) return { success: false, error: '未找到窗口' };
+    // 纯净模式可见 → 追加到 harness 输入框（否则会追加到被遮住的 AI 页面输入框）
+    const harnessVisible = !!(ctx.win && (ctx.win as any).__ckHarnessVisible);
+    const hv: any = (ctx as any).harnessView;
+    if (harnessVisible && hv && !hv.webContents.isDestroyed()) {
+      try {
+        hv.webContents.send('harness-append-input', { text });
+        return { success: true };
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
+    if (!ctx.view || !ctx.view.webContents || ctx.view.webContents.isDestroyed()) {
       return { success: false, error: '未找到 AI 页面' };
     }
     try {
@@ -55,7 +67,19 @@ function registerSnippetsIpc(): void {
     }
     // event.sender 是壳页面 → 反查所属窗口的 AI 页面 view
     const ctx = windowState.getContextByWebContents(event.sender);
-    if (!ctx || !ctx.view || !ctx.view.webContents || ctx.view.webContents.isDestroyed()) {
+    if (!ctx) return { success: false, error: '未找到窗口' };
+    // 纯净模式可见 → 填入 harness 输入框（不自动发送，让用户确认）
+    const harnessVisible = !!(ctx.win && (ctx.win as any).__ckHarnessVisible);
+    const hv: any = (ctx as any).harnessView;
+    if (harnessVisible && hv && !hv.webContents.isDestroyed()) {
+      try {
+        hv.webContents.send('harness-append-input', { text: content });
+        return { success: true };
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
+    if (!ctx.view || !ctx.view.webContents || ctx.view.webContents.isDestroyed()) {
       return { success: false, error: '未找到 AI 页面' };
     }
     try {

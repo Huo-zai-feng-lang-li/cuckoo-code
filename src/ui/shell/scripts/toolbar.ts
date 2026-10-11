@@ -80,6 +80,43 @@ if (api.onHarnessMode) {
   });
 }
 
+// 一键循环三态主题（跟随系统 → 浅色 → 深色）
+const btnTheme = document.getElementById('btn-theme-toggle');
+const THEME_CYCLE = ['system', 'light', 'dark'];
+const THEME_LABELS: Record<string, string> = { system: '跟随系统', light: '浅色', dark: '深色' };
+function updateThemeButton(preference: string): void {
+  if (!btnTheme) return;
+  const label = THEME_LABELS[preference] || preference;
+  btnTheme.title = '主题：' + label + '（点击切换）';
+  btnTheme.setAttribute('aria-label', '主题：' + label);
+  btnTheme.classList.toggle('active', preference !== 'system');
+}
+if (btnTheme) {
+  btnTheme.addEventListener('click', async () => {
+    const anyApi = api as any;
+    if (typeof anyApi.themeGet !== 'function' || typeof anyApi.themeSet !== 'function') return;
+    try {
+      const current = await anyApi.themeGet();
+      const preference = (current && current.snapshot && current.snapshot.preference) || 'system';
+      const next = THEME_CYCLE[(THEME_CYCLE.indexOf(preference) + 1) % THEME_CYCLE.length];
+      const result = await anyApi.themeSet(next);
+      if (result && result.success === false) updateThemeButton(preference);
+    } catch (_) { /* keep last state */ }
+  });
+}
+if ((api as any).onThemeChanged) {
+  (api as any).onThemeChanged((snap: any) => updateThemeButton((snap && snap.preference) || 'system'));
+}
+if ((api as any).themeGet) {
+  (api as any).themeGet().then((r: any) => updateThemeButton((r && r.snapshot && r.snapshot.preference) || 'system')).catch(() => {});
+}
+
+// 在系统浏览器打开当前页面（用于登录）
+document.getElementById('btn-open-external')?.addEventListener('click', async () => {
+  if (!(api as any).openCurrentExternal) return;
+  try { await (api as any).openCurrentExternal(); } catch (_) { /* ignore */ }
+});
+
 // 地址栏显隐切换（默认隐藏）
 const btnAddress = document.getElementById('btn-address');
 const urlWrap = document.querySelector('.url-wrap');
