@@ -344,6 +344,10 @@ function openPluginDetail(it: any): void {
     await installPluginFromMarket(it, state === 'update');
   };
   mask.classList.remove('cuckoo-hidden');
+  // 截图点击放大/还原
+  body.querySelectorAll('.ck-plugin-shots img').forEach((img: any) => {
+    img.addEventListener('click', () => img.classList.toggle('zoom'));
+  });
 }
 
 function closePluginDetail(): void {
@@ -503,6 +507,19 @@ document.getElementById('plugin-auto-update')?.addEventListener('change', async 
   if (typeof apiAny.pluginMarketConfigSet !== 'function') return;
   const r = await apiAny.pluginMarketConfigSet({ autoUpdate: !!e.target.checked });
   if (!r || !r.success) { await ckAlert((r && r.error) || '保存失败'); e.target.checked = !e.target.checked; }
+});
+
+// 上架说明：弹窗给出可复制的步骤
+document.getElementById('plugin-upload-guide')?.addEventListener('click', async () => {
+  const steps = [
+    '1. 仓库根目录放 plugin.json（必填 id / name / version）',
+    '2. 给仓库打上 topic：cuckoo-plugin',
+    '3.（可选）加 screenshots.json 策展截图',
+    '4. 次日自动出现在此市场（也可手动 PR 到目录仓库）',
+    '',
+    '目录仓库：https://github.com/8555uuy/cuckoo-plugin-market',
+  ].join('\n');
+  await ckAlert(steps, '如何上架插件');
 });
 
 document.getElementById('plugin-detail-close')?.addEventListener('click', closePluginDetail);

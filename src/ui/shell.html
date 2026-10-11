@@ -1047,6 +1047,14 @@
   .ck-mkt-auto { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ck-text-2); cursor: pointer; }
   .ck-mkt-auto input { cursor: pointer; }
   .ck-mkt-check { margin-left: auto; font-size: 12px; padding: 6px 14px; }
+  .ck-mkt-upload {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 14px; padding: 10px 12px;
+    border: 1px dashed var(--ck-border-strong); border-radius: 10px;
+    font-size: 12px; color: var(--ck-text-2);
+  }
+  .ck-mkt-upload-t { flex: 1; }
+  .ck-mkt-upload-btn { font-size: 12px; padding: 5px 12px; }
   .ck-mkt-fold { margin-top: 14px; border-top: 1px solid var(--ck-border); padding-top: 10px; }
   .ck-mkt-fold > summary {
     font-size: 12px; font-weight: 600; color: var(--ck-text-2); cursor: pointer;
@@ -1057,15 +1065,35 @@
   .ck-mkt-fold[open] > summary::before { content: '▾ '; }
   .ck-mkt-fold > summary:hover { color: var(--ck-text); }
   .ck-mkt-foldbar { display: flex; gap: 8px; margin: 8px 0; }
-  /* 详情弹窗 */
-  .ck-mkt-modal { max-width: 560px; width: 520px; }
-  .ck-plugin-detail-body { padding: 4px 0 10px; max-height: 52vh; overflow-y: auto; }
-  .ck-plugin-shots { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 12px; }
-  .ck-plugin-shots img { height: 150px; border-radius: 10px; border: 1px solid var(--ck-border); flex-shrink: 0; }
-  .ck-plugin-detail-row { display: flex; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--ck-border); font-size: 12.5px; }
+  /* 详情弹窗（改大：避免内容穿模/溢出） */
+  .ck-mkt-modal {
+    width: min(760px, 94vw) !important;
+    max-width: min(760px, 94vw) !important;
+    max-height: 86vh;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .ck-mkt-modal .ck-modal-title { flex-shrink: 0; }
+  .ck-mkt-modal .ck-modal-foot { flex-shrink: 0; }
+  .ck-plugin-detail-body {
+    padding: 6px 2px 12px; flex: 1; min-height: 0;
+    max-height: none; overflow-y: auto; overflow-x: hidden;
+  }
+  .ck-plugin-shots {
+    display: flex; gap: 12px; overflow-x: auto; padding-bottom: 14px;
+    scroll-snap-type: x proximity;
+  }
+  .ck-plugin-shots img {
+    height: 220px; border-radius: 12px; border: 1px solid var(--ck-border);
+    flex-shrink: 0; scroll-snap-align: start; cursor: zoom-in;
+    transition: border-color .15s, transform .15s;
+  }
+  .ck-plugin-shots img:hover { border-color: var(--ck-border-strong); transform: scale(1.01); }
+  .ck-plugin-shots img.zoom { height: auto; max-height: 60vh; cursor: zoom-out; }
+  .ck-plugin-detail-row { display: flex; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--ck-border); font-size: 13px; }
   .ck-plugin-detail-row:last-child { border-bottom: none; }
-  .ck-plugin-detail-k { color: var(--ck-text-dim); flex-shrink: 0; width: 48px; }
-  .ck-plugin-detail-v { color: var(--ck-text); word-break: break-word; flex: 1; line-height: 1.6; }
+  .ck-plugin-detail-k { color: var(--ck-text-dim); flex-shrink: 0; width: 52px; }
+  .ck-plugin-detail-v { color: var(--ck-text); word-break: break-word; flex: 1; line-height: 1.65; }
 
 /* ===== 目录 ===== */
   .ck-dir-path {
@@ -1522,6 +1550,11 @@
                   <input type="checkbox" id="plugin-auto-update"> 自动更新
                 </label>
                 <button class="ck-btn ck-btn-secondary ck-mkt-check" id="plugin-check-updates">检查更新</button>
+              </div>
+
+              <div class="ck-mkt-upload">
+                <span class="ck-mkt-upload-t">想上架你的插件？</span>
+                <button class="ck-btn ck-btn-secondary ck-mkt-upload-btn" id="plugin-upload-guide">查看上架说明</button>
               </div>
 
               <details class="ck-mkt-fold">
@@ -4948,6 +4981,9 @@
       await installPluginFromMarket(it, state === "update");
     };
     mask.classList.remove("cuckoo-hidden");
+    body.querySelectorAll(".ck-plugin-shots img").forEach((img) => {
+      img.addEventListener("click", () => img.classList.toggle("zoom"));
+    });
   }
   function closePluginDetail() {
     document.getElementById("plugin-detail-mask")?.classList.add("cuckoo-hidden");
@@ -5100,6 +5136,17 @@
       await ckAlert(r && r.error || "\u4FDD\u5B58\u5931\u8D25");
       e.target.checked = !e.target.checked;
     }
+  });
+  document.getElementById("plugin-upload-guide")?.addEventListener("click", async () => {
+    const steps = [
+      "1. \u4ED3\u5E93\u6839\u76EE\u5F55\u653E plugin.json\uFF08\u5FC5\u586B id / name / version\uFF09",
+      "2. \u7ED9\u4ED3\u5E93\u6253\u4E0A topic\uFF1Acuckoo-plugin",
+      "3.\uFF08\u53EF\u9009\uFF09\u52A0 screenshots.json \u7B56\u5C55\u622A\u56FE",
+      "4. \u6B21\u65E5\u81EA\u52A8\u51FA\u73B0\u5728\u6B64\u5E02\u573A\uFF08\u4E5F\u53EF\u624B\u52A8 PR \u5230\u76EE\u5F55\u4ED3\u5E93\uFF09",
+      "",
+      "\u76EE\u5F55\u4ED3\u5E93\uFF1Ahttps://github.com/8555uuy/cuckoo-plugin-market"
+    ].join("\n");
+    await ckAlert(steps, "\u5982\u4F55\u4E0A\u67B6\u63D2\u4EF6");
   });
   document.getElementById("plugin-detail-close")?.addEventListener("click", closePluginDetail);
   document.getElementById("plugin-detail-site")?.addEventListener("click", () => {
