@@ -147,8 +147,18 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
   if (jsBlocks.length > 0) {
     console.log('[Cuckoo Code][拦截] 检测到 JS 工具代码块（' + jsBlocks.length + ' 个），开始执行');
     formatHintCount = 0;
-    // 从检测到工具调用到结果发送完成，全程遮盖页面，禁止用户额外操作
-    showToolMask();
+    // 从检测到工具调用到结果发送完成，全程遮盖页面
+    // 执行阶段即显示「停止」：点击 = 放弃等待（沙箱工具已在跑无法中断，但不再回传结果）
+    let cancelled = false;
+    showToolMask(() => {
+      cancelled = true;
+      // 真杀：通知主进程取消正在跑的子代理（销毁隐藏窗口）
+      try {
+        const api = (window as any).electronAPI;
+        if (api && typeof api.cancelSubagents === 'function') api.cancelSubagents().catch(() => {});
+      } catch (_) { /* ignore */ }
+      hideToolMask();
+    });
     let results: any[] = [];
     try {
       results = await executeJsBlocksWithRetry(jsBlocks);
@@ -156,12 +166,15 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
       hideToolMask();
       throw err;
     }
+    if (cancelled) {
+      console.log('[Cuckoo Code][拦截] 用户已取消工具执行，丢弃结果，不回传');
+      return;
+    }
     if (results.length === 0) {
       hideToolMask();
       return;
     }
-    // 等待发送阶段：遮罩上显示「停止」按钮，点击可取消回传
-    let cancelled = false;
+    // 发送阶段：点击「停止」= 取消回传
     showToolMask(() => {
       cancelled = true;
       cancelPendingSend();

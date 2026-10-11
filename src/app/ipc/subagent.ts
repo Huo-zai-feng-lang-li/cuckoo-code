@@ -3,7 +3,7 @@
  */
 import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
-import { onSubagentResponse, listRunning, updateRunning, getGatewayStream } from '../subagent.js';
+import { onSubagentResponse, listRunning, updateRunning, getGatewayStream, cancelSubagentsByParent } from '../subagent.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -37,6 +37,14 @@ function registerSubagentIpc(): void {
   // 取运行中子代理列表（壳页面用；传 parentWindowId 只取该窗口下的）
   ipcMain.handle('subagent-list', async (_event: any, { parentWindowId }: any = {}) => {
     return { success: true, subagents: listRunning(parentWindowId) };
+  });
+
+  // 取消当前窗口下所有运行中的子代理（停止按钮 → 真杀隐藏窗口）
+  ipcMain.handle('subagent-cancel', async (event: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    if (!ctx || !ctx.win || ctx.win.isDestroyed()) return { success: false, cancelled: 0 };
+    const n = cancelSubagentsByParent(ctx.win.id);
+    return { success: true, cancelled: n };
   });
 }
 

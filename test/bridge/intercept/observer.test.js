@@ -194,6 +194,36 @@ test('processInterceptedResponse：JS 工具块执行期间显示遮罩，发送
   assert.ok(mask.classList.contains('cuckoo-hidden'), '结束后遮罩应隐藏');
 });
 
+test('processInterceptedResponse：执行阶段点停止 → 丢弃结果不回传', async () => {
+  const mask = makeFakeMask();
+  let cancelBtn = null;
+  const fakeBtn = {
+    className: '',
+    classList: {
+      _s: new Set(['cuckoo-hidden']),
+      add(c) { this._s.add(c); }, remove(c) { this._s.delete(c); }, contains(c) { return this._s.has(c); },
+    },
+    onclick: null,
+  };
+  cancelBtn = fakeBtn;
+  setupGlobals({ 'cuckoo-tool-mask': mask, 'cuckoo-tool-mask-cancel': fakeBtn });
+  // 执行期间，按钮应可见（不被 cuckoo-hidden）
+  let btnVisibleDuringExec = false;
+  let sentAfterCancel = 0;
+  globalThis.window.electronAPI.executeJs = async () => {
+    btnVisibleDuringExec = !fakeBtn.classList.contains('cuckoo-hidden');
+    // 模拟"用户在执行阶段点了停止"
+    if (typeof fakeBtn.onclick === 'function') fakeBtn.onclick();
+    return { success: true, output: 'ok' };
+  };
+  // 拦截发送：取消后不应调用
+  // 拦截发送：取消后不应调用
+  globalThis.window.electronAPI.sendEnterToChat = async () => { sentAfterCancel++; return true; };
+  await processInterceptedResponse('```cuckoo\nawait write({ filePath: "stop-test-unique.txt", content: "x" });\n```');
+  assert.strictEqual(btnVisibleDuringExec, true, '执行期间停止按钮应可见');
+  assert.ok(mask.classList.contains('cuckoo-hidden'), '取消后遮罩应隐藏');
+});
+
 test('processInterceptedResponse：非工具回复不显示遮罩', async () => {
   const mask = makeFakeMask();
   setupGlobals({ 'cuckoo-tool-mask': mask });

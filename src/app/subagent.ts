@@ -94,6 +94,29 @@ export function hasRunningSubagent(profileId: string): boolean {
 
 export { listRunning, updateRunning };
 
+/**
+ * 取消某父窗口下所有运行中的子代理（真杀：销毁隐藏窗口 + 唤醒等待）。
+ * 供停止按钮经 IPC 调用。返回取消的数量。
+ */
+export function cancelSubagentsByParent(parentWindowId: number): number {
+  let n = 0;
+  for (const [windowId, info] of Array.from(runningSubagents.entries())) {
+    if (info.parentWindowId !== parentWindowId) continue;
+    try {
+      const ctx = windowState.getWindowContext(windowId);
+      if (ctx && ctx.win && !ctx.win.isDestroyed()) {
+        try { ctx.win.destroy(); }
+        catch (e1) { try { ctx.win.close(); } catch (e2) { /* ignore */ } }
+      }
+    } catch (_) { /* ignore */ }
+    const resolve = pending.get(windowId);
+    if (resolve) { pending.delete(windowId); resolve('__SUBAGENT_CANCELLED__'); }
+    removeRunning(windowId);
+    n++;
+  }
+  return n;
+}
+
 function incRunning(profileId: string): void {
   if (!profileId) return;
   runningByProfile.set(profileId, (runningByProfile.get(profileId) || 0) + 1);
@@ -199,6 +222,7 @@ export async function runAgent(opts: {
   try {
     const text = await waitForDone(windowId, timeoutMs);
     if (text === '__SUBAGENT_TIMEOUT__') throw new Error('子代理执行超时');
+    if (text === '__SUBAGENT_CANCELLED__') throw new Error('子代理已被用户取消');
     updateRunning(windowId, { status: 'done', preview: (text || '').slice(0, 200) });
     return text;
   } catch (err: any) {

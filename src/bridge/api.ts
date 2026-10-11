@@ -32,6 +32,8 @@ let electronAPI: any = {
   executeTool: (toolName: any, params: any, callId: any) => {
     return ipcRenderer.invoke('execute-tool', { toolName, params, callId });
   },
+  /** 取消当前窗口下所有运行中的子代理（停止按钮 → 真杀隐藏窗口） */
+  cancelSubagents: () => ipcRenderer.invoke('subagent-cancel'),
   // 正文标记触发：AI 回复里的 [记忆]xxx / [快照]xxx
   createMemoryFromMarker: (text: any) => {
     return ipcRenderer.invoke('create-memory-marker', { text });
