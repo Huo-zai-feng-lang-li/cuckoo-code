@@ -108,6 +108,15 @@ export {
   clearPluginState,
 } from './state.js';
 
+export {
+  readAutoUpdateConfig,
+  writeAutoUpdateConfig,
+  findOutdated,
+  isNewer,
+  isCheckDue,
+} from './auto-update.js';
+export type { AutoUpdateConfig, UpdateInfo } from './auto-update.js';
+
 export { createElectronHttpGet } from './http.js';
 export type { HttpGet, HttpRequest, HttpResponse } from './http.js';
 

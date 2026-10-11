@@ -62,6 +62,10 @@ export interface ShellAPI {
   reportShellSize?: (w: number, h: number) => void;
   initProject?: (dir?: string | null, isCompaction?: boolean, extraPrompt?: string, noDialog?: boolean) => Promise<any>;
   pluginMarketCurated?: (opts?: any) => Promise<any>;
+  pluginMarketCheckUpdates?: (opts?: any) => Promise<any>;
+  pluginMarketAutoUpdate?: (opts?: any) => Promise<any>;
+  pluginMarketConfigGet?: () => Promise<any>;
+  pluginMarketConfigSet?: (config: any) => Promise<any>;
   updateProjectDir?: () => Promise<any>;
   onProjectDir?: (cb: (dir: string | null) => void) => void;
   getProjectDir?: () => Promise<any>;

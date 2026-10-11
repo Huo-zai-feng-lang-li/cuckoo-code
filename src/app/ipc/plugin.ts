@@ -178,6 +178,60 @@ function registerPluginIpc(): void {
     }
   });
 
+  // ===== 自动更新：检查 + 执行 + 配置 =====
+  ipcMain.handle('plugin-market-check-updates', async (_event: any, { force = false }: any = {}) => {
+    try {
+      const { fetchCurated } = await import('../../plugins/market.js');
+      const { findOutdated } = await import('../../plugins/auto-update.js');
+      const cat = await fetchCurated({ httpGet, force: !!force });
+      if (!cat.success) return { success: false, outdated: [], error: cat.error };
+      const outdated = findOutdated(cat.items, buildInstalledMap());
+      return { success: true, outdated, updatedAt: cat.updatedAt };
+    } catch (err: any) {
+      return { success: false, outdated: [], error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('plugin-market-auto-update', async (_event: any, { force = true }: any = {}) => {
+    try {
+      const { fetchCurated } = await import('../../plugins/market.js');
+      const { findOutdated, writeAutoUpdateConfig } = await import('../../plugins/auto-update.js');
+      const cat = await fetchCurated({ httpGet, force: !!force });
+      if (!cat.success) return { success: false, updated: [], error: cat.error };
+      const outdated = findOutdated(cat.items, buildInstalledMap());
+      const updated: any[] = [];
+      const failed: any[] = [];
+      for (const u of outdated) {
+        const r = await installPlugin({ httpGet, repo: u.repo, branch: u.branch, upgrade: true });
+        if (r && r.success) updated.push({ id: u.id, name: u.name, version: u.newVersion });
+        else failed.push({ id: u.id, error: (r && r.error) || '未知错误' });
+      }
+      writeAutoUpdateConfig({ lastCheckAt: new Date().toISOString() });
+      return { success: true, updated, failed, checked: outdated.length };
+    } catch (err: any) {
+      return { success: false, updated: [], failed: [], error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('plugin-market-config-get', async () => {
+    try {
+      const { readAutoUpdateConfig } = await import('../../plugins/auto-update.js');
+      return { success: true, config: readAutoUpdateConfig() };
+    } catch (err: any) {
+      return { success: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('plugin-market-config-set', async (_event: any, { config }: any = {}) => {
+    try {
+      const { writeAutoUpdateConfig } = await import('../../plugins/auto-update.js');
+      const ok = writeAutoUpdateConfig(config || {});
+      return { success: ok, error: ok ? undefined : '写入失败' };
+    } catch (err: any) {
+      return { success: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
   // ===== 远端 plugin.json：拿插件版本与最低应用版本 =====
   // 搜索接口不返回这些，必须单独拉（raw.githubusercontent，不消耗 API 配额）。
   // 逐条降级：单条失败只影响该条，市场列表本身照常显示。
@@ -419,6 +473,37 @@ function registerPluginIpc(): void {
     const { resolvePendingToolCall } = require('../plugin-tools.js');
     resolvePendingToolCall(callId, result);
   });
+
+  // ===== 启动后台自动更新（延迟 30s，避免和启动争资源）=====
+  setTimeout(() => {
+    (async () => {
+      try {
+        const { readAutoUpdateConfig, isCheckDue } = await import('../../plugins/auto-update.js');
+        const cfg = readAutoUpdateConfig();
+        if (!cfg.autoUpdate) return;
+        if (!isCheckDue(cfg)) return;
+        console.log('[Plugin] 后台检查插件更新…');
+        const { fetchCurated } = await import('../../plugins/market.js');
+        const { findOutdated, writeAutoUpdateConfig } = await import('../../plugins/auto-update.js');
+        const cat = await fetchCurated({ httpGet, force: true });
+        if (!cat.success) { console.log('[Plugin] 目录不可达，跳过自动更新'); return; }
+        const outdated = findOutdated(cat.items, buildInstalledMap());
+        if (!outdated.length) {
+          writeAutoUpdateConfig({ lastCheckAt: new Date().toISOString() });
+          console.log('[Plugin] 已是最新');
+          return;
+        }
+        console.log('[Plugin] 发现 ' + outdated.length + ' 个可更新插件，开始自动更新');
+        for (const u of outdated) {
+          const r = await installPlugin({ httpGet, repo: u.repo, branch: u.branch, upgrade: true });
+          console.log('[Plugin] ' + (r && r.success ? '已更新 ' : '更新失败 ') + u.id + (r && !r.success ? ' (' + r.error + ')' : ''));
+        }
+        writeAutoUpdateConfig({ lastCheckAt: new Date().toISOString() });
+      } catch (err: any) {
+        console.log('[Plugin] 自动更新出错: ' + (err && err.message ? err.message : err));
+      }
+    })();
+  }, 30000);
 
   // ===== 插件调试日志（渲染进程 → 写文件，便于排查）=====
   ipcMain.on('plugin-debug-log', (_event: any, { msg }: any = {}) => {

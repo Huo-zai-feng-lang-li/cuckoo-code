@@ -29,6 +29,7 @@ export async function loadPlugins(): Promise<void> {
   await loadInstalledPlugins();
   await loadPluginMarket(false);
   await loadCuckooPlugins();
+  loadAutoUpdateConfig();
 }
 
 function pluginContribSummary(c: any): string {
@@ -449,6 +450,56 @@ const pms = document.getElementById('plugin-market-search') as any;
 if (pms) {
   pms.addEventListener('input', () => { pluginMarketQuery = pms.value || ''; renderPluginMarket(); });
 }
+
+// ===== 自动更新 =====
+async function loadAutoUpdateConfig(): Promise<void> {
+  const apiAny: any = api as any;
+  const cb = document.getElementById('plugin-auto-update') as any;
+  if (!cb || typeof apiAny.pluginMarketConfigGet !== 'function') return;
+  try {
+    const r = await apiAny.pluginMarketConfigGet();
+    if (r && r.success && r.config) cb.checked = !!r.config.autoUpdate;
+  } catch (_) { /* ignore */ }
+}
+
+async function checkUpdates(manual: boolean): Promise<void> {
+  const apiAny: any = api as any;
+  if (typeof apiAny.pluginMarketCheckUpdates !== 'function') return;
+  try {
+    const r = await apiAny.pluginMarketCheckUpdates({ force: true });
+    if (!r || !r.success) { if (manual) await ckAlert((r && r.error) || '检查失败'); return; }
+    const list = r.outdated || [];
+    if (!list.length) { if (manual) await ckAlert('全部已是最新'); return; }
+    const lines = list.map((u: any) => '· ' + u.name + '  ' + u.currentVersion + ' → ' + u.newVersion);
+    const ok = await ckConfirm('发现 ' + list.length + ' 个可更新插件：\n\n' + lines.join('\n') + '\n\n现在更新？', '插件更新');
+    if (!ok) return;
+    const btn = document.getElementById('plugin-check-updates') as any;
+    if (btn) btn.disabled = true;
+    try {
+      const ar = await apiAny.pluginMarketAutoUpdate({ force: false });
+      if (ar && ar.success) {
+        await ckAlert('已更新 ' + (ar.updated || []).length + ' 个插件' +
+          ((ar.failed && ar.failed.length) ? '\n失败 ' + ar.failed.length + ' 个：' + ar.failed.map((f: any) => f.id).join(', ') : '') +
+          '\n\n部分插件需重启后生效。', '更新完成');
+        await loadPlugins();
+      } else {
+        await ckAlert((ar && ar.error) || '更新失败');
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  } catch (e: any) {
+    if (manual) await ckAlert('检查失败: ' + (e && e.message ? e.message : e));
+  }
+}
+
+document.getElementById('plugin-check-updates')?.addEventListener('click', () => checkUpdates(true));
+document.getElementById('plugin-auto-update')?.addEventListener('change', async (e: any) => {
+  const apiAny: any = api as any;
+  if (typeof apiAny.pluginMarketConfigSet !== 'function') return;
+  const r = await apiAny.pluginMarketConfigSet({ autoUpdate: !!e.target.checked });
+  if (!r || !r.success) { await ckAlert((r && r.error) || '保存失败'); e.target.checked = !e.target.checked; }
+});
 
 document.getElementById('plugin-detail-close')?.addEventListener('click', closePluginDetail);
 document.getElementById('plugin-detail-site')?.addEventListener('click', () => {
