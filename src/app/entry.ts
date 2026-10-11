@@ -303,7 +303,7 @@ function createWindow(profile: any) {
   // 侧边栏可收起（收起时 x=0，AI 页面铺满）。
   const TOOLBAR_HEIGHT = 46; // 地址栏 46（与 shell.css .toolbar height 保持一致）
   const STATUS_HEIGHT = 28;  // 底部状态条（当前上下文 token，与 shell.css .statusbar 一致）
-  const SIDEBAR_WIDTH = 320;      // 左侧 Cuckoo 侧边栏展开宽度
+  const SIDEBAR_WIDTH = 460;      // 左侧 Cuckoo 侧边栏展开宽度
   const SIDEBAR_COLLAPSED = 46;   // 收起时仅保留图标栏
   // 平台未选择时：整个侧边栏隐藏 + 地址栏也隐藏（AI 页面从顶部铺满）
   (mainWindow as any).__ckSidebarWidth = providerChosen ? SIDEBAR_COLLAPSED : 0;

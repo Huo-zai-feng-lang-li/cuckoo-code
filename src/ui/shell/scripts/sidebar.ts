@@ -6,11 +6,15 @@ import { api } from './shared.js';
 import { hidePreview, restorePreview } from './preview.js';
 
 const sidebar = document.getElementById('ck-sidebar') as any;
-const SIDEBAR_EXPANDED = 320;
+// 默认展开宽度：460px（插件市场/详情要放得下卡片网格）
+const SIDEBAR_EXPANDED = 460;
 const SIDEBAR_COLLAPSED = 46;
-const MIN_WIDTH = 320;   // 最小 = 当前默认宽度（不能再变窄）
+const MIN_WIDTH = 360;   // 最小宽度：保证内容区不至于挤成一条
 const MAX_WIDTH = 4000;  // 实际上不限（避免极端值）
 const WIDTH_KEY = 'cuckoo-sidebar-width';
+// 旧默认宽度（320）。用户没手动拖过的话，localStorage 里会存着它——
+// 那种情况直接当成"未设置"，用新默认，否则用户永远停在窄版。
+const LEGACY_DEFAULT = 320;
 
 /** tab 名 → 切换时调用的加载函数（各页面注册） */
 const tabLoaders: Record<string, () => void> = {};
@@ -24,6 +28,8 @@ let expandedWidth = (() => {
   try {
     const v = Number(localStorage.getItem(WIDTH_KEY));
     if (Number.isFinite(v) && v >= MIN_WIDTH && v <= MAX_WIDTH) return Math.round(v);
+    // 旧默认 320：不是用户主动选的，直接升到新默认
+    if (Number.isFinite(v) && v === LEGACY_DEFAULT) return SIDEBAR_EXPANDED;
   } catch (_) { /* ignore */ }
   return SIDEBAR_EXPANDED;
 })();
@@ -85,6 +91,12 @@ if (abContainer) {
     activateTab(item, tab);
     run();
   });
+}
+
+// ===== 初始宽度应用（开机就用持久化的宽度，而不是等用户拖）=====
+if (sidebar && !sidebar.classList.contains('ck-collapsed')) {
+  sidebar.style.width = expandedWidth + 'px';
+  if (api.toggleSidebar) { try { api.toggleSidebar(expandedWidth); } catch (_) { /* ignore */ } }
 }
 
 // ===== 拖拽调宽 =====

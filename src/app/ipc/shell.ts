@@ -350,7 +350,7 @@ function registerShellIpc(): void {
     } catch (_) {}
     const { screen } = require('electron');
     const base = ctx.win.getContentBounds(); // 窗口内容区（屏幕坐标）
-    const minW = 320;
+    const minW = 360;
     win.__ckSidebarDragTimer = setInterval(() => {
       try {
         if (!win || win.isDestroyed()) return;
@@ -378,12 +378,12 @@ function registerShellIpc(): void {
     try { if (!win.webContents.isDestroyed()) win.webContents.send('shell-sidebar-drag', win.__ckSidebarWidth); } catch (_) {}
   });
 
-  // 设置左侧 Cuckoo 侧边栏宽度（收起=46，展开=320）→ 重新布局 AI 页面
+  // 设置左侧 Cuckoo 侧边栏宽度（收起=46，展开=460）→ 重新布局 AI 页面
   ipcMain.handle('shell-toggle-sidebar', async (event: any, { width }: any) => {
     const ctx = windowState.getContextByWebContents(event.sender);
     if (!ctx || !ctx.win || ctx.win.isDestroyed()) return { success: false };
     const win = ctx.win;
-    win.__ckSidebarWidth = typeof width === 'number' ? width : 320;
+    win.__ckSidebarWidth = typeof width === 'number' ? width : 460;
     try { if (typeof win.__ckLayout === 'function') win.__ckLayout(); } catch (_) {}
     return { success: true };
   });

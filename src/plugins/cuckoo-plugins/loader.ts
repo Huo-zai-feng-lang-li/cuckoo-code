@@ -213,8 +213,33 @@ function createCollectorCtx(pluginName: string, host?: CuckooHost, runtime?: any
     serial: (event: string, ...args: any[]) => bus.serial(event, ...args),
     bail: (event: string, ...args: any[]) => bus.bail(event, ...args),
     waterfall: (event: string, value: any, ...args: any[]) => bus.waterfall(event, value, ...args),
-    effect(fn: any) { try { const c = fn(); return typeof c === 'function' ? c : () => {}; } catch (_) { return () => {}; } },
-    scope() { return { effect: () => () => {}, on: () => () => {}, dispose() {}, disposed: false }; },
+    effect(fn: any) {
+      try {
+        const c = fn();
+        const cleanup = typeof c === 'function' ? c : () => {};
+        // 记进清理表，卸载时统一跑
+        try { if (Array.isArray((base as any).__ckCleanups)) (base as any).__ckCleanups.push(cleanup); } catch (_) {}
+        return cleanup;
+      } catch (_) { return () => {}; }
+    },
+    scope() {
+      const cleanups: Array<() => void> = [];
+      const sc: any = {
+        effect: (fn: any) => {
+          try {
+            const c = fn();
+            const cleanup = typeof c === 'function' ? c : () => {};
+            cleanups.push(cleanup);
+            try { if (Array.isArray((base as any).__ckCleanups)) (base as any).__ckCleanups.push(cleanup); } catch (_) {}
+            return cleanup;
+          } catch (_) { return () => {}; }
+        },
+        on: () => () => {},
+        dispose() { for (const c of cleanups) { try { c(); } catch (_) { /* ignore */ } } cleanups.length = 0; },
+        disposed: false,
+      };
+      return sc;
+    },
     provide() { return () => {}; },
     get() { return undefined; },
     // inject 回调传 ctx 自身（带 stub 兜底），插件拿到 projectionCtx.sessionProjections 等不报错
@@ -231,8 +256,18 @@ function createCollectorCtx(pluginName: string, host?: CuckooHost, runtime?: any
   return { ctx, tools, bus };
 }
 
-/** 从插件目录加载，返回 { pluginName, tools, runtime, bus } */
-async function loadCuckooPlugin(pluginDir: string, host?: CuckooHost): Promise<{ pluginName: string; tools: any[]; runtime: any; bus: any }> {
+/** 已加载插件的可卸载句柄 */
+export interface LoadedPlugin {
+  pluginName: string;
+  tools: any[];
+  runtime: any;
+  bus: any;
+  /** 反注册：清事件总线 + 调插件的 dispose（若有） */
+  dispose(): void;
+}
+
+/** 从插件目录加载，返回可卸载句柄 */
+async function loadCuckooPlugin(pluginDir: string, host?: CuckooHost): Promise<LoadedPlugin> {
   const entry = resolveEntry(pluginDir);
   if (!entry) throw new Error('未找到插件入口（package.json main / index.js）');
   // 创建"最小 DSH 运行时"（内存会话 + 投影注册表），注入给插件（C2）
@@ -247,10 +282,25 @@ async function loadCuckooPlugin(pluginDir: string, host?: CuckooHost): Promise<{
   const plugin = (mod && mod.default && typeof mod.default === 'object') ? mod.default : mod;
   const pluginName = (plugin && typeof plugin.name === 'string' && plugin.name) ? plugin.name : path.basename(pluginDir);
   const { ctx, tools, bus } = createCollectorCtx(pluginName, host, runtime);
+  // effect / scope 收集的清理函数（插件 ctx.effect 返回值）
+  const cleanups: Array<() => void> = [];
+  (ctx as any).__ckCleanups = cleanups;
+
   if (plugin && typeof plugin.apply === 'function') {
     await plugin.apply(ctx, {});
   }
-  return { pluginName, tools, runtime, bus };
+
+  const dispose = () => {
+    // 1) 跑插件自己注册的清理
+    for (const c of cleanups) { try { c(); } catch (_) { /* ignore */ } }
+    cleanups.length = 0;
+    // 2) 摘掉事件总线（否则事件仍会广播给已卸载插件）
+    try { unregisterBus(bus); } catch (_) { /* ignore */ }
+    // 3) 插件若有 dispose/dispose 钩子，调一下
+    try { if (plugin && typeof plugin.dispose === 'function') plugin.dispose(); } catch (_) { /* ignore */ }
+  };
+
+  return { pluginName, tools, runtime, bus, dispose };
 }
 
 export { loadCuckooPlugin, resolveEntry, bundlePlugin };

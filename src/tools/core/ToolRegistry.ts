@@ -27,6 +27,21 @@ class ToolRegistry {
     return this.tools.get(name);
   }
 
+  /** 反注册（插件卸载/热重载用）。返回是否真的删掉了。 */
+  unregister(name: string): boolean {
+    if (!name) return false;
+    return this.tools.delete(name);
+  }
+
+  /** 批量反注册（返回删掉的名字） */
+  unregisterMany(names: string[]): string[] {
+    const removed: string[] = [];
+    for (const n of names || []) {
+      if (n && this.tools.delete(n)) removed.push(n);
+    }
+    return removed;
+  }
+
   async execute(name: string, params: any): Promise<ToolResult> {
     const tool = this.tools.get(name);
     if (!tool) {

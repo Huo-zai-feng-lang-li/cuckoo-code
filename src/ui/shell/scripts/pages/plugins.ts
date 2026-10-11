@@ -666,15 +666,31 @@ document.getElementById('ckp-install-btn')?.addEventListener('click', async () =
   const pkgName = await ckPrompt({ title: '安装 DSH 插件', placeholder: 'npm 包名，如 @scope/dsh-plugin-xxx', value: '' });
   if (!pkgName) return;
   const btn = document.getElementById('ckp-install-btn') as any;
-  if (btn) btn.disabled = true;
+  if (btn) { btn.disabled = true; btn.textContent = '安装中…'; }
   try {
     const r = await apiAny.cuckooPluginInstall(pkgName);
     if (!r || !r.success) { await ckAlert((r && r.error) || '安装失败', '安装失败'); return; }
     const tools = (r.tools || []).join(', ');
-    await ckAlert('已安装：' + (r.pluginName || r.id) + '\n工具：' + (tools || '(无)') + '\n\n重启应用后工具生效。', '安装完成');
+    const src = r.npmSource === 'bundled' ? '自带运行时' : '系统 npm';
+    // 四态展示（对齐 dsh-market）
+    const stateMap: Record<string, string> = {
+      live: '已生效',
+      restart: '已安装，重启后生效',
+      inert: '已安装（未声明 dsh，可能不生效）',
+      broken: '安装或加载有问题',
+    };
+    const st = stateMap[r.state] || '';
+    await ckAlert(
+      '已安装：' + (r.pluginName || r.id) + '\n' +
+      (tools ? '工具：' + tools + '\n' : '') +
+      (st ? '状态：' + st + '\n' : '') +
+      (r.note ? '\n' + r.note + '\n' : '') +
+      '\n（npm 来源：' + src + '）',
+      '安装完成'
+    );
     await loadCuckooPlugins();
   } finally {
-    if (btn) btn.disabled = false;
+    if (btn) { btn.disabled = false; btn.textContent = '安装 npm 包'; }
   }
 });
 

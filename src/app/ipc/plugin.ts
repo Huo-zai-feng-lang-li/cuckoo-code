@@ -31,6 +31,7 @@ import {
   installAndLoad,
   loadEnabledPlugins,
   loadPluginFromDir,
+  unloadPluginFromDir,
   uninstallCuckooPlugin,
 } from '../../plugins/cuckoo-plugins/index.js';
 import {
@@ -600,30 +601,32 @@ function registerPluginIpc(): void {
     try {
       if (!pkgName || typeof pkgName !== 'string') return { success: false, error: '缺少包名' };
       const r = await installAndLoad(pkgName, toolRegistry);
-      return { success: true, id: r.id, pluginName: r.pluginName, tools: r.tools };
+      return { success: true, id: r.id, pluginName: r.pluginName, tools: r.tools, state: r.state, note: r.note, npmSource: r.npmSource };
     } catch (err: any) {
       return { success: false, error: err && err.message ? err.message : String(err) };
     }
   });
 
-  // 卸载（清状态；重启生效）
+  // 卸载（真卸载：反注册工具 + 摘事件总线 + 清状态 + 删目录）
   ipcMain.handle('cuckoo-plugin-uninstall', async (_event: any, { id }: any = {}) => {
     try {
-      uninstallCuckooPlugin(id);
+      await uninstallCuckooPlugin(id, toolRegistry);
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err && err.message ? err.message : String(err) };
     }
   });
 
-  // 启用/禁用（重启生效；启用时若工具未注册则立即注册）
+  // 启用/禁用（热加载/热卸载，无需重启）
   ipcMain.handle('cuckoo-plugin-toggle', async (_event: any, { id, enabled }: any = {}) => {
     try {
       const ok = setCuckooPluginEnabled(id, !!enabled);
       if (!ok) return { success: false, error: '插件 id 非法' };
+      const dir = getCuckooPluginsDir() + '/' + id;
       if (enabled) {
-        // 尝试立即加载（工具已注册会覆盖告警，无碍）
-        try { await loadPluginFromDir(getCuckooPluginsDir() + '/' + id, toolRegistry); } catch (_) { /* 已加载或失败，重启兜底 */ }
+        try { await loadPluginFromDir(dir, toolRegistry); } catch (_) { /* 失败，重启兜底 */ }
+      } else {
+        try { await unloadPluginFromDir(dir, toolRegistry); } catch (_) { /* ignore */ }
       }
       return { success: true };
     } catch (err: any) {

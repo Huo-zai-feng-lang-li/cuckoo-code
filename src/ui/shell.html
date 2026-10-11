@@ -2324,16 +2324,17 @@
   function baseSidebarWidth() {
     try {
       const v = Number(localStorage.getItem("cuckoo-sidebar-width"));
-      if (Number.isFinite(v) && v >= 320) return Math.round(v);
+      if (Number.isFinite(v) && v >= 360) return Math.round(v);
+      if (Number.isFinite(v) && v === 320) return 460;
     } catch (_) {
     }
-    return 320;
+    return 460;
   }
   function setSidebarWidth(total) {
     let ww = Math.round(total);
     const max = Math.round(window.innerWidth * 0.75);
     if (ww > max) ww = max;
-    if (ww < 320) ww = 320;
+    if (ww < 360) ww = 360;
     const sb = sidebarEl();
     if (sb && !sb.classList.contains("ck-collapsed")) sb.style.width = ww + "px";
     if (api.toggleSidebar) api.toggleSidebar(ww);
@@ -2481,11 +2482,12 @@
   init_shared();
   init_preview();
   var sidebar = document.getElementById("ck-sidebar");
-  var SIDEBAR_EXPANDED = 320;
+  var SIDEBAR_EXPANDED = 460;
   var SIDEBAR_COLLAPSED = 46;
-  var MIN_WIDTH = 320;
+  var MIN_WIDTH = 360;
   var MAX_WIDTH = 4e3;
   var WIDTH_KEY = "cuckoo-sidebar-width";
+  var LEGACY_DEFAULT = 320;
   var tabLoaders = {};
   function registerTab(tab, loader) {
     tabLoaders[tab] = loader;
@@ -2494,6 +2496,7 @@
     try {
       const v = Number(localStorage.getItem(WIDTH_KEY));
       if (Number.isFinite(v) && v >= MIN_WIDTH && v <= MAX_WIDTH) return Math.round(v);
+      if (Number.isFinite(v) && v === LEGACY_DEFAULT) return SIDEBAR_EXPANDED;
     } catch (_) {
     }
     return SIDEBAR_EXPANDED;
@@ -2570,6 +2573,15 @@
       activateTab(item, tab);
       run();
     });
+  }
+  if (sidebar && !sidebar.classList.contains("ck-collapsed")) {
+    sidebar.style.width = expandedWidth + "px";
+    if (api.toggleSidebar) {
+      try {
+        api.toggleSidebar(expandedWidth);
+      } catch (_) {
+      }
+    }
   }
   if (sidebar) {
     const resizer = document.createElement("div");
@@ -5250,7 +5262,10 @@
     const pkgName = await ckPrompt({ title: "\u5B89\u88C5 DSH \u63D2\u4EF6", placeholder: "npm \u5305\u540D\uFF0C\u5982 @scope/dsh-plugin-xxx", value: "" });
     if (!pkgName) return;
     const btn = document.getElementById("ckp-install-btn");
-    if (btn) btn.disabled = true;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "\u5B89\u88C5\u4E2D\u2026";
+    }
     try {
       const r = await apiAny.cuckooPluginInstall(pkgName);
       if (!r || !r.success) {
@@ -5258,10 +5273,24 @@
         return;
       }
       const tools = (r.tools || []).join(", ");
-      await ckAlert("\u5DF2\u5B89\u88C5\uFF1A" + (r.pluginName || r.id) + "\n\u5DE5\u5177\uFF1A" + (tools || "(\u65E0)") + "\n\n\u91CD\u542F\u5E94\u7528\u540E\u5DE5\u5177\u751F\u6548\u3002", "\u5B89\u88C5\u5B8C\u6210");
+      const src = r.npmSource === "bundled" ? "\u81EA\u5E26\u8FD0\u884C\u65F6" : "\u7CFB\u7EDF npm";
+      const stateMap = {
+        live: "\u5DF2\u751F\u6548",
+        restart: "\u5DF2\u5B89\u88C5\uFF0C\u91CD\u542F\u540E\u751F\u6548",
+        inert: "\u5DF2\u5B89\u88C5\uFF08\u672A\u58F0\u660E dsh\uFF0C\u53EF\u80FD\u4E0D\u751F\u6548\uFF09",
+        broken: "\u5B89\u88C5\u6216\u52A0\u8F7D\u6709\u95EE\u9898"
+      };
+      const st = stateMap[r.state] || "";
+      await ckAlert(
+        "\u5DF2\u5B89\u88C5\uFF1A" + (r.pluginName || r.id) + "\n" + (tools ? "\u5DE5\u5177\uFF1A" + tools + "\n" : "") + (st ? "\u72B6\u6001\uFF1A" + st + "\n" : "") + (r.note ? "\n" + r.note + "\n" : "") + "\n\uFF08npm \u6765\u6E90\uFF1A" + src + "\uFF09",
+        "\u5B89\u88C5\u5B8C\u6210"
+      );
       await loadCuckooPlugins();
     } finally {
-      if (btn) btn.disabled = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "\u5B89\u88C5 npm \u5305";
+      }
     }
   });
   document.getElementById("ckp-open-dir")?.addEventListener("click", async () => {

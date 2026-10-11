@@ -5,6 +5,7 @@
  *
  * 依赖方向：本模块在 plugins 层（纯 node + esbuild + 工具注册表）。
  */
+import fs from 'node:fs';
 import { Tool } from '../../tools/core/Tool.js';
 import { installCuckooPlugin } from './installer.js';
 import { loadCuckooPlugin } from './loader.js';
@@ -70,25 +71,67 @@ class DshPluginTool extends Tool {
 /** 已加载的插件工具名（供沙箱注入用） */
 const loadedPluginTools = new Set<string>();
 
+/** 已加载插件的句柄表：插件目录 → 句柄（卸载/热重载用） */
+const loadedHandles = new Map<string, { handle: any; toolNames: string[] }>();
+
 /** 从插件目录加载并注册工具到 registry */
 async function loadPluginFromDir(dir: string, registry: any, host?: CuckooHost): Promise<{ pluginName: string; tools: string[] }> {
-  const { pluginName, tools } = await loadCuckooPlugin(dir, host);
+  // 幂等：同目录重复加载 → 先卸旧的，避免工具/事件重复
+  if (loadedHandles.has(dir)) await unloadPluginFromDir(dir, registry);
+
+  const loaded = await loadCuckooPlugin(dir, host);
   const names: string[] = [];
-  for (const def of tools) {
+  for (const def of loaded.tools) {
     if (!def || typeof def.name !== 'string') continue;
     registry.register(new DshPluginTool(def));
     loadedPluginTools.add(def.name);
     names.push(def.name);
   }
-  return { pluginName, tools: names };
+  loadedHandles.set(dir, { handle: loaded, toolNames: names });
+  return { pluginName: loaded.pluginName, tools: names };
+}
+
+/** 卸载：反注册工具 + 摘事件总线 + 跑插件清理 */
+async function unloadPluginFromDir(dir: string, registry: any): Promise<{ removedTools: string[] }> {
+  const rec = loadedHandles.get(dir);
+  if (!rec) return { removedTools: [] };
+  loadedHandles.delete(dir);
+  // 1) 反注册工具
+  let removed: string[] = [];
+  if (registry && typeof registry.unregisterMany === 'function') {
+    removed = registry.unregisterMany(rec.toolNames);
+  } else if (registry && typeof registry.unregister === 'function') {
+    for (const n of rec.toolNames) { if (registry.unregister(n)) removed.push(n); }
+  }
+  for (const n of removed) loadedPluginTools.delete(n);
+  // 2) 句柄清理（事件总线 + 插件 dispose）
+  try { rec.handle.dispose(); } catch (_) { /* ignore */ }
+  return { removedTools: removed };
+}
+
+/** 某目录是否已加载 */
+function isPluginLoaded(dir: string): boolean {
+  return loadedHandles.has(dir);
 }
 
 /** 安装（npm 下载）+ 加载 + 注册 */
-async function installAndLoad(pkgName: string, registry: any, host?: CuckooHost): Promise<{ id: string; pluginName: string; tools: string[] }> {
-  const { id, dir } = await installCuckooPlugin(pkgName);
-  const r = await loadPluginFromDir(dir, registry, host);
-  setCuckooPluginEnabled(id, true);
-  return { id, pluginName: r.pluginName, tools: r.tools };
+async function installAndLoad(pkgName: string, registry: any, host?: CuckooHost): Promise<{ id: string; pluginName: string; tools: string[]; state: string; note: string; npmSource: string }> {
+  const inst = await installCuckooPlugin(pkgName);
+  let pluginName = inst.id;
+  let tools: string[] = [];
+  let loadErr = '';
+  try {
+    const r = await loadPluginFromDir(inst.dir, registry, host);
+    pluginName = r.pluginName;
+    tools = r.tools;
+  } catch (err: any) {
+    loadErr = (err && err.message) ? err.message : String(err);
+  }
+  setCuckooPluginEnabled(inst.id, true);
+  // 加载失败 → 覆盖状态判定为 broken，把原因带回 UI
+  const state = loadErr ? 'broken' : inst.state;
+  const note = loadErr ? ('已下载但加载失败: ' + loadErr) : inst.note;
+  return { id: inst.id, pluginName, tools, state, note, npmSource: inst.npmSource };
 }
 
 /** 启动时加载所有"已启用"的插件 */
@@ -108,10 +151,29 @@ async function loadEnabledPlugins(registry: any, host?: CuckooHost): Promise<{ l
   return { loaded, failed };
 }
 
-/** 卸载插件（清状态；工具暂不动态移除，重启生效） */
-function uninstallCuckooPlugin(id: string): boolean {
+/**
+ * 卸载插件（真卸载：反注册工具 + 摘事件总线 + 清状态 + 删目录）
+ * @param id 插件 id
+ * @param registry 工具注册表
+ * @param opts.deleteFiles 是否删除插件目录（默认 true）
+ */
+async function uninstallCuckooPlugin(id: string, registry?: any, opts?: { deleteFiles?: boolean }): Promise<boolean> {
+  const dir = getCuckooPluginDir(id);
+  try { await unloadPluginFromDir(dir, registry); } catch (_) { /* ignore */ }
   clearCuckooPluginState(id);
+  if (!opts || opts.deleteFiles !== false) {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* ignore */ }
+  }
   return true;
 }
 
-export { installAndLoad, loadEnabledPlugins, loadPluginFromDir, uninstallCuckooPlugin, loadedPluginTools, DshPluginTool };
+export {
+  installAndLoad,
+  loadEnabledPlugins,
+  loadPluginFromDir,
+  unloadPluginFromDir,
+  isPluginLoaded,
+  uninstallCuckooPlugin,
+  loadedPluginTools,
+  DshPluginTool,
+};
