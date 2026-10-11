@@ -344,10 +344,31 @@ function openPluginDetail(it: any): void {
     await installPluginFromMarket(it, state === 'update');
   };
   mask.classList.remove('cuckoo-hidden');
-  // 截图点击放大/还原
+  // 截图点击 → 全屏查看（Lightbox）。就地放大在横向 flex 里必然被压扁，看不全。
   body.querySelectorAll('.ck-plugin-shots img').forEach((img: any) => {
-    img.addEventListener('click', () => img.classList.toggle('zoom'));
+    img.addEventListener('click', () => openLightbox(img.src));
   });
+}
+
+/** 全屏看图（点任意处关闭） */
+function openLightbox(src: string): void {
+  const old = document.getElementById('ck-lightbox');
+  if (old) old.remove();
+  const box = document.createElement('div');
+  box.id = 'ck-lightbox';
+  box.className = 'ck-lightbox';
+  const im = document.createElement('img');
+  im.src = src;
+  const hint = document.createElement('div');
+  hint.className = 'ck-lightbox-hint';
+  hint.textContent = '点击任意处关闭';
+  box.appendChild(im);
+  box.appendChild(hint);
+  box.addEventListener('click', () => box.remove());
+  document.addEventListener('keydown', function esc(e) {
+    if (e.key === 'Escape') { box.remove(); document.removeEventListener('keydown', esc); }
+  });
+  document.body.appendChild(box);
 }
 
 function closePluginDetail(): void {

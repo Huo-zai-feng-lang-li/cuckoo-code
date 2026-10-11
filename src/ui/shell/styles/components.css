@@ -812,10 +812,28 @@
   .ck-plugin-shots img {
     height: 220px; border-radius: 12px; border: 1px solid var(--ck-border);
     flex-shrink: 0; scroll-snap-align: start; cursor: zoom-in;
-    transition: border-color .15s, transform .15s;
+    transition: border-color .15s, opacity .15s;
+    object-fit: cover;
   }
-  .ck-plugin-shots img:hover { border-color: var(--ck-border-strong); transform: scale(1.01); }
-  .ck-plugin-shots img.zoom { height: auto; max-height: 60vh; cursor: zoom-out; }
+  .ck-plugin-shots img:hover { border-color: var(--ck-border-strong); opacity: .9; }
+  /* 图片全屏查看（Lightbox）——真正"看全" */
+  .ck-lightbox {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0, 0, 0, .82);
+    display: flex; align-items: center; justify-content: center;
+    padding: 40px; cursor: zoom-out;
+    animation: ck-lb-in .15s ease;
+  }
+  @keyframes ck-lb-in { from { opacity: 0 } to { opacity: 1 } }
+  .ck-lightbox img {
+    max-width: 100%; max-height: 100%;
+    object-fit: contain; border-radius: 8px;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, .5);
+  }
+  .ck-lightbox-hint {
+    position: absolute; bottom: 18px; left: 0; right: 0; text-align: center;
+    font-size: 12px; color: rgba(255, 255, 255, .6);
+  }
   .ck-plugin-detail-row { display: flex; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--ck-border); font-size: 13px; }
   .ck-plugin-detail-row:last-child { border-bottom: none; }
   .ck-plugin-detail-k { color: var(--ck-text-dim); flex-shrink: 0; width: 52px; }
