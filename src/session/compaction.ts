@@ -253,7 +253,7 @@ async function runCompaction(projectDir?: string): Promise<void> {
 
     logStep('summary', '发送摘要指令');
     const waitReply = waitForResponse(120000);
-    sendToChat(SUMMARY_INSTRUCTION, '压缩-摘要', 300);
+    sendToChat(SUMMARY_INSTRUCTION, '压缩-摘要', undefined);
     const { text: summaryText } = await waitReply;
     logStep('summary', '收到摘要回复，长度=' + (summaryText || '').length);
 

@@ -34,7 +34,7 @@ const { webFrame, ipcRenderer } = require('electron');
 const currentProvider = getProviderByUrl(window.location.href);
 const useIntercept = !!(currentProvider && currentProvider.useIntercept);
 console.log('[Cuckoo Code] 平台=' + (currentProvider ? currentProvider.id : 'unknown') +
-  ', 模式=' + (useIntercept ? '网络拦截' : 'DOM 抓取'));
+  ', 模式=' + (useIntercept ? '网络拦截' : (currentProvider ? '未启用拦截' : '未适配')));
 
 // ========== 主世界注入（拦截模式）==========
 // 必须在页面脚本执行前把 hook 注入到主世界，才能覆盖到 window.fetch / XHR。
@@ -233,11 +233,8 @@ function init(): void {
     // 首次延迟执行，确保 overlay 已注入
     setTimeout(ui.updateHomeMode, 500);
 
-    // 默认显示覆盖层 - 兜底强制显示
-    ui.forceShowOverlay();
-
-    // 拦截模式：监听主世界注入器派发的 'cuckoo-ai-response' 事件
-    startInterceptObserver();
+    // 仅已安装网络 hook 的 Provider 接收回复事件；普通网页不得伪造事件触发本地工具。
+    if (useIntercept) startInterceptObserver();
 
     // 启动自动重试引擎（订阅失败事件）
     startRetryEngine();
@@ -266,12 +263,7 @@ function init(): void {
     injectPluginWebScripts();
   } catch (err) {
     console.error('[Cuckoo Code] init() 出错:', err);
-    // 兜底：即使出错也强制显示面板
-    ui.forceShowOverlay();
   }
-
-  // 定期巡检：防止面板被意外隐藏
-  ui.startOverlayWatcher();
 
   // 15 秒低频兜底：主进程 URL 事件若漏发（罕见路由方式），这里补一次
   setInterval(() => {

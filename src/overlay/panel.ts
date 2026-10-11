@@ -1,6 +1,9 @@
 /**
- * 覆盖层 UI 基础能力：注入、提示、历史记录、徽章、面板显隐与巡检
- * 由原 preload.js 拆分而来，逻辑保持不变。
+ * 覆盖层 UI 基础能力：注入、提示、工具提示条、首次引导框
+ * 由原 preload.js 拆分而来。
+ *
+ * 注：原注入式面板 / 悬浮球 / 命令历史 / 状态徽章等 UI 已随迁移到壳页面而废弃
+ * （见 commit 92c5abc），本文件只保留仍在用的能力。
  */
 import { OVERLAY_HTML, OVERLAY_CSS } from './template.generated.js';
 import { getProviderByUrl } from '../providers/registry.js';
@@ -24,35 +27,12 @@ function injectCSS(): void {
 function injectOverlay(): void {
   const container = document.createElement('div');
   container.id = 'cuckoo-root';
-  container.innerHTML = OVERLAY_HTML;
+  // ChatGPT/Google 页面启用 Trusted Types，应用内置模板需要先转成 TrustedHTML。
+  setTrustedHtml(container, OVERLAY_HTML);
   document.body.appendChild(container);
 }
 
 // ========== 覆盖层逻辑 ==========
-
-let currentCommand: any = null;
-let isExecuting = false;
-let commandIdCounter = 0;
-const commandHistory: any[] = [];
-
-/**
- * 生成唯一命令 ID
- * @returns 格式为 cmd_时间戳_序号 的唯一标识
- */
-function generateId(): string {
-  return `cmd_${Date.now()}_${++commandIdCounter}`;
-}
-
-/**
- * 格式化时间戳为 HH:mm:ss 格式
- * @param ts - 时间戳（毫秒）
- * @returns 格式化后的时间字符串
- */
-function formatTime(ts: number): string {
-  const d = new Date(ts);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
 
 /**
  * 截断文本到指定长度，超出部分以 ... 结尾
@@ -74,6 +54,32 @@ function escapeHtml(text: any): string {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+let trustedHtmlPolicy: any = null;
+
+/**
+ * 将应用自有模板交给 Trusted Types；普通网页没有该 API 时保持原有行为。
+ * 模板不包含网页输入，动态文本在进入模板前仍由 escapeHtml 转义。
+ */
+function toTrustedHtml(value: string): any {
+  const trustedTypes = (window as any).trustedTypes;
+  if (!trustedTypes || typeof trustedTypes.createPolicy !== 'function') return value;
+  try {
+    if (!trustedHtmlPolicy) {
+      trustedHtmlPolicy = trustedTypes.createPolicy('cuckoo-overlay', {
+        createHTML: (input: string) => input,
+      });
+    }
+    return trustedHtmlPolicy.createHTML(value);
+  } catch (_) {
+    // CSP 可能禁止创建自定义策略；保留字符串让非强制 Trusted Types 页面继续工作。
+    return value;
+  }
+}
+
+function setTrustedHtml(element: HTMLElement, value: string): void {
+  (element as any).innerHTML = toTrustedHtml(value);
 }
 
 /**
@@ -138,19 +144,19 @@ function showConfirmDialog(text: string, options?: { okText?: string; showCancel
           background: transparent; color: #aab0ff;
           font-size: 13px; font-weight: 600; cursor: pointer;
           margin-right: 10px; transition: all 0.2s;
-        ">${cancelText}</button>`
+        ">${escapeHtml(cancelText)}</button>`
       : '';
-    dialog.innerHTML = `
-      <div style="margin-bottom:16px;white-space:pre-wrap;word-break:break-word;">${text}</div>
+    setTrustedHtml(dialog, `
+      <div style="margin-bottom:16px;white-space:pre-wrap;word-break:break-word;">${escapeHtml(text)}</div>
       <div>${cancelBtnHtml}
         <button id="cuckoo-confirm-ok" style="
           padding: 9px 28px; border: none; border-radius: 10px;
           background: linear-gradient(135deg, #8b93ff, #6d76ff); color: #fff;
           font-size: 13px; font-weight: 600; cursor: pointer;
           transition: all 0.2s;
-        ">${okText}</button>
+        ">${escapeHtml(okText)}</button>
       </div>
-    `;
+    `);
     document.body.appendChild(dialog);
 
     const cleanup = () => dialog.remove();
@@ -167,57 +173,20 @@ function showConfirmDialog(text: string, options?: { okText?: string; showCancel
   });
 }
 
-/**
- * 设置任务状态（检测到任务：后面的执行中提示）
- * @param running - 是否执行中
- */
-function setTaskStatus(running: boolean): void {
-  const status = document.getElementById('cuckoo-task-status');
-  if (status) {
-    status.classList.toggle('cuckoo-hidden', !running);
-  }
-}
+// ========== 工具调用提示条（非阻塞）==========
 
 /**
- * 显示工具调用遮罩（执行工具期间阻止用户操作）
- * @param onCancel 传入时显示「停止」按钮（等待发送阶段用），点击触发该回调
+ * 显示工具调用提示条
+ * @param onCancel 传入时显示「停止」按钮，点击触发该回调
  */
-// 遮罩期间：捕获阶段拦截"指向页面（非遮罩盒子）"的指针事件
-let maskBlockHandler: any = null;
-function enableMaskBlock(): void {
-  if (maskBlockHandler) return;
-  if (typeof document.addEventListener !== 'function') return; // 测试环境无此方法
-  const box = document.querySelector('#cuckoo-tool-mask .cuckoo-tool-mask-box');
-  maskBlockHandler = (e: any) => {
-    // 遮罩盒子内部（如"停止"按钮）允许交互
-    if (box && box.contains(e.target)) return;
-    e.stopPropagation();
-    e.preventDefault();
-  };
-  ['mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu', 'pointerdown', 'pointerup'].forEach((t) =>
-    document.addEventListener(t, maskBlockHandler, true)
-  );
-}
-function disableMaskBlock(): void {
-  if (!maskBlockHandler) return;
-  if (typeof document.removeEventListener !== 'function') return;
-  ['mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu', 'pointerdown', 'pointerup'].forEach((t) =>
-    document.removeEventListener(t, maskBlockHandler, true)
-  );
-  maskBlockHandler = null;
-}
-
 function showToolMask(onCancel?: () => void): void {
   const el = document.getElementById('cuckoo-tool-mask');
   if (el) el.classList.remove('cuckoo-hidden');
-  enableMaskBlock();
   const btn = document.getElementById('cuckoo-tool-mask-cancel') as any;
   if (btn) {
     if (onCancel) {
       btn.classList.remove('cuckoo-hidden');
-      btn.onclick = () => {
-        try { onCancel(); } catch (_) { /* ignore */ }
-      };
+      btn.onclick = () => { try { onCancel(); } catch (_) { /* ignore */ } };
     } else {
       btn.classList.add('cuckoo-hidden');
       btn.onclick = null;
@@ -226,146 +195,17 @@ function showToolMask(onCancel?: () => void): void {
 }
 
 /**
- * 隐藏工具调用遮罩
+ * 隐藏工具调用提示条
  */
 function hideToolMask(): void {
   const el = document.getElementById('cuckoo-tool-mask');
   if (el) el.classList.add('cuckoo-hidden');
-  disableMaskBlock();
   const btn = document.getElementById('cuckoo-tool-mask-cancel') as any;
   if (btn) { btn.classList.add('cuckoo-hidden'); btn.onclick = null; }
 }
 
-/**
- * 显示覆盖层（移除 hidden 类）
- */
-function showOverlay(): void {
-  const el = document.getElementById('cuckoo-overlay');
-  if (el) el.classList.remove('cuckoo-hidden');
-}
+// ========== 首页模式 / 首次引导框 ==========
 
-/**
- * 隐藏覆盖层（添加 hidden 类）
- */
-function hideOverlay(): void {
-  const el = document.getElementById('cuckoo-overlay');
-  if (el) el.classList.add('cuckoo-hidden');
-}
-
-/**
- * 显示命令预览并展开覆盖层
- * @param cmdData - 命令数据对象，包含 command、timestamp、id 等字段
- */
-function displayCommand(cmdData: any): void {
-  currentCommand = cmdData;
-  const preview = document.getElementById('cuckoo-cmd-preview');
-  const resultSection = document.getElementById('cuckoo-result-section');
-  if (preview) preview.textContent = cmdData.command;
-  if (resultSection) resultSection.classList.add('cuckoo-hidden');
-}
-
-/**
- * 确认执行当前显示的命令
- * 已移除：确认执行按钮及相关交互。保留空函数以防其他引用。
- */
-async function handleExecute(): Promise<void> {
-}
-
-/**
- * 忽略当前命令
- * 已移除：忽略按钮及相关交互。保留空函数以防其他引用。
- */
-function handleIgnore(): void {
-}
-
-/**
- * 添加一条历史记录
- * @param entry - 历史记录对象，包含 id、command、success、canceled、output、timestamp 等字段
- */
-function addHistory(entry: any): void {
-  commandHistory.unshift(entry);
-  if (commandHistory.length > 50) commandHistory.pop();
-  renderHistory();
-}
-
-/**
- * 渲染历史记录列表
- * 将 commandHistory 中的记录渲染到界面，并为每条记录绑定点击事件以查看详情
- */
-function renderHistory(): void {
-  const list = document.getElementById('cuckoo-history-list');
-  if (!list) return;
-
-  if (commandHistory.length === 0) {
-    list.innerHTML = '<div style="color:#666;font-size:12px;font-style:italic;padding:8px 0;">暂无记录</div>';
-    return;
-  }
-
-  const items = commandHistory.slice(0, 20);
-  list.innerHTML = items.map((item) => `
-    <div class="cuckoo-history-item" data-id="${escapeHtml(item.id)}">
-      <span class="cuckoo-cmd-text">${escapeHtml(truncate(item.command, 60))}</span>
-      <span class="cuckoo-cmd-status ${item.canceled ? '' : item.success ? 'success' : 'error'}">
-        ${item.canceled ? '⏹ 已忽略' : item.success ? '✅ 成功' : '❌ 失败'}
-      </span>
-      <span class="cuckoo-cmd-time">${formatTime(item.timestamp)}</span>
-    </div>
-  `).join('');
-
-  list.querySelectorAll('.cuckoo-history-item').forEach((el) => {
-    el.addEventListener('click', () => {
-      const id = (el as any).dataset.id;
-      const entry = commandHistory.find((h) => h.id === id);
-      if (entry) {
-        const preview = document.getElementById('cuckoo-cmd-preview');
-        const resultSection = document.getElementById('cuckoo-result-section');
-        const resultStatus = document.getElementById('cuckoo-result-status');
-        const resultOutput = document.getElementById('cuckoo-result-output');
-        if (preview) preview.textContent = entry.command;
-        if (entry.output && resultSection) {
-          resultSection.classList.remove('cuckoo-hidden');
-          if (resultStatus) {
-            resultStatus.textContent = entry.canceled ? '⏹ 已忽略' : entry.success ? '✅ 执行成功' : '❌ 执行失败';
-            resultStatus.className = `cuckoo-result-status ${entry.success ? 'success' : 'error'}`;
-          }
-          if (resultOutput) resultOutput.textContent = entry.output || '(无输出)';
-        }
-        showOverlay();
-      }
-    });
-  });
-}
-
-/**
- * 闪烁状态徽章提示
- * @param _title 可选标题（当前实现忽略此参数，仅为兼容调用方传参）
- */
-function flashBadge(_title?: string): void {
-  const badge = document.getElementById('cuckoo-status-badge');
-  const dot = document.getElementById('cuckoo-status-dot');
-  if (badge) {
-    badge.style.background = 'rgba(124,255,178,0.25)';
-    badge.style.borderColor = 'rgba(124,255,178,0.6)';
-    setTimeout(() => {
-      badge.style.background = 'rgba(139, 147, 255, 0.22)';
-      badge.style.borderColor = 'rgba(139, 147, 255, 0.4)';
-    }, 3000);
-  }
-  if (dot) {
-    dot.style.background = '#ffc107';
-    dot.style.animation = 'none';
-    setTimeout(() => {
-      dot.style.background = '#7cffb2';
-      dot.style.animation = 'cuckoo-pulse 2s infinite';
-    }, 3000);
-  }
-}
-
-/**
- * 根据当前 URL 切换覆盖层首页模式
- * 首页 https://chat.deepseek.com/ 时，只保留「初始化项目」按钮，隐藏其他内容
- * 同时展示首次使用提示浮窗（居中）
- */
 // 抑制首页模式（子代理窗口用：它在"新对话"页，但需要显示完整面板）
 let suppressHomeMode = false;
 
@@ -374,12 +214,14 @@ function setSuppressHomeMode(v: boolean): void {
   suppressHomeMode = !!v;
 }
 
+/**
+ * 根据当前 URL 切换首次引导框显隐
+ * 首页（未初始化/新对话）→ 显示；其他 → 隐藏
+ */
 function updateHomeMode(): void {
   const url = window.location.href;
   const provider = getProviderByUrl(url);
   const isHome = !suppressHomeMode && provider && provider.homeUrlPattern ? provider.homeUrlPattern.test(url) : false;
-  // 首页（未初始化/新对话）→ 显示"初始化项目"提示框；其他 → 隐藏
-  // 注：旧的 cuckoo-overlay 面板已移除，这里直接操作提示框（曾因依赖该元素而整块跳过，导致提示不显示）
   if (isHome) {
     showFirstTimeDialog();
   } else {
@@ -407,53 +249,17 @@ function hideFirstTimeDialog(): void {
   if (dialog) dialog.classList.add('cuckoo-hidden');
 }
 
-/**
- * 强制显示覆盖层（移除所有隐藏状态）
- * 用于兜底恢复因异常被隐藏的面板
- */
-function forceShowOverlay(): void {
-  const overlay = document.getElementById('cuckoo-overlay');
-  if (overlay) {
-    overlay.classList.remove('cuckoo-hidden');
-    overlay.style.transform = 'translateX(0)';
-    overlay.style.opacity = '1';
-    overlay.style.pointerEvents = 'auto';
-  }
-}
-
-/**
- * 启动定期巡检，防止面板被意外隐藏（最小化、ESC、脚本错误等）
- * 每 5 秒检查一次，如果被隐藏则自动恢复
- */
-function startOverlayWatcher(): void {
-  // 方向 C：不再定期强制弹出面板，避免遮挡主界面。
-}
-
 export {
   injectCSS,
   injectOverlay,
-  generateId,
-  formatTime,
   truncate,
   escapeHtml,
   showToast,
   showConfirmDialog,
-  setTaskStatus,
   showToolMask,
   hideToolMask,
-  showOverlay,
-  hideOverlay,
-  displayCommand,
-  handleExecute,
-  handleIgnore,
-  addHistory,
-  renderHistory,
-  commandHistory,
-  flashBadge,
   updateHomeMode,
   setSuppressHomeMode,
   showFirstTimeDialog,
   hideFirstTimeDialog,
-  forceShowOverlay,
-  startOverlayWatcher,
 };

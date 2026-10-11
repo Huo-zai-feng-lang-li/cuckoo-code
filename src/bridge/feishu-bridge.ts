@@ -80,6 +80,6 @@ export function initFeishuBridge(): void {
   ipcRenderer.on('feishu-user-message', (_e: any, payload: any) => {
     const text = payload && payload.text;
     if (!text) return;
-    sendToChat(text, '飞书', 300).catch(() => {});
+    sendToChat(text, '飞书', undefined).catch(() => {});
   });
 }

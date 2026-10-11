@@ -78,7 +78,7 @@ function currentSessionId(): string | null {
 /** 宿主能力实现 */
 function buildHost(): HostCapabilities {
   return {
-    sendToChat: (text: string) => sendToChat(text, 'plugin', 300),
+    sendToChat: (text: string) => sendToChat(text, 'plugin', undefined),
     getCurrentSessionId: () => currentSessionId(),
     getProjectDir: () => {
       try {
@@ -105,6 +105,17 @@ function buildHost(): HostCapabilities {
       return registerPluginCommand(pluginName, cmd);
     },
     getTokenStats: () => readTokenStats(),
+    // 系统提示词段：转发到主进程（跨进程——UI 插件在渲染进程，prompt-builder 在主进程）
+    registerPromptSection: (sec: any) => {
+      const api = (window as any).electronAPI;
+      if (!api || typeof api.pluginPromptSectionRegister !== 'function') return () => {};
+      // 用插件无关的固定 key 注册（name 由插件自定）；注销时通知主进程
+      const id = 'ps:' + (sec && sec.name) + ':' + Math.random().toString(36).slice(2, 8);
+      api.pluginPromptSectionRegister({ id, name: sec && sec.name, order: sec && sec.order, text: sec && sec.text }).catch(() => {});
+      return () => {
+        try { api.pluginPromptSectionUnregister && api.pluginPromptSectionUnregister(id).catch(() => {}); } catch (_) {}
+      };
+    },
     getSetting: (key: string) => {
       try { const v = localStorage.getItem(key); return v === null ? undefined : v; } catch (_) { return undefined; }
     },

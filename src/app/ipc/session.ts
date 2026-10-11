@@ -170,6 +170,23 @@ function registerSessionIpc(): void {
     return { success: true };
   });
 
+  // 删除会话记录（只删 profile 元数据，不删项目文件）
+  ipcMain.handle('delete-session-record', async (event: any, { sessionId }: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const store = ctx ? ctx.sessionStore : null;
+    if (!store || !sessionId) return { success: false, error: 'no-store-or-id' };
+    store.deleteSession(sessionId);
+    return { success: true };
+  });
+
+  // 删除项目下全部会话记录（不删除磁盘项目目录）
+  ipcMain.handle('delete-project-records', async (event: any, { dir }: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const store = ctx ? ctx.sessionStore : null;
+    if (!store || !dir) return { success: false, error: 'no-store-or-dir' };
+    return { success: true, count: store.deleteProjectRecords(String(dir)) };
+  });
+
   // 取项目目录信息（全路径 + 创建时间），供侧边栏悬停卡片
   ipcMain.handle('get-dir-info', async (_event: any, { dir }: any) => {
     if (!dir) return { success: false, error: 'no-dir' };

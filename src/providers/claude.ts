@@ -13,9 +13,12 @@ const claude = {
   homeUrl: 'https://claude.ai/new',
   sessionUrlBase: 'https://claude.ai/chat/',
 
-  // 判断元素是否可见（offsetWidth/offsetHeight > 0）
+  // 判断元素是否可见（优先 checkVisibility，避免强制布局排版）
   isElementVisible(el: any) {
     if (!el) return false;
+    if (typeof el.checkVisibility === 'function') {
+      try { return el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }); } catch (_) {}
+    }
     return el.offsetWidth > 0 && el.offsetHeight > 0;
   },
 

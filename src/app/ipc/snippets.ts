@@ -37,15 +37,37 @@ function registerSnippetsIpc(): void {
   ipcMain.handle('append-to-input', async (event: any, { text }: any) => {
     if (typeof text !== 'string' || !text) return { success: false, error: '文本为空' };
     const ctx = windowState.getContextByWebContents(event.sender);
-    if (!ctx || !ctx.view || !ctx.view.webContents || ctx.view.webContents.isDestroyed()) {
-      return { success: false, error: '未找到 AI 页面' };
+    if (!ctx) return { success: false, error: '未找到窗口上下文' };
+
+    const win = ctx.win;
+    const isHarness = !!(win && (win as any).__ckHarnessVisible);
+    const hv = (ctx as any).harnessView || (win as any)?.__ckHarnessView;
+    let dispatched = false;
+
+    // 纯净模式下通知 harness 视图
+    if (isHarness && hv && !hv.webContents.isDestroyed()) {
+      try {
+        hv.webContents.send('harness-event', { type: 'append-input', text });
+        dispatched = true;
+      } catch (_) {}
     }
-    try {
-      ctx.view.webContents.send('cuckoo-append-input', { text });
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+
+    // 网页模式或双向同步
+    if (ctx.view && !ctx.view.webContents.isDestroyed()) {
+      try {
+        ctx.view.webContents.send('cuckoo-append-input', { text });
+        dispatched = true;
+      } catch (_) {}
     }
+
+    // 非纯净模式下如果 harness 视图也存在，同步更新输入备用
+    if (!isHarness && hv && !hv.webContents.isDestroyed()) {
+      try {
+        hv.webContents.send('harness-event', { type: 'append-input', text });
+      } catch (_) {}
+    }
+
+    return dispatched ? { success: true } : { success: false, error: '未找到就绪的输入视图' };
   });
 
   // 触发某条提示词：通知对应窗口的 AI 页面填入输入框（+ 可选发送）
@@ -53,17 +75,29 @@ function registerSnippetsIpc(): void {
     if (typeof content !== 'string' || !content) {
       return { success: false, error: '内容为空' };
     }
-    // event.sender 是壳页面 → 反查所属窗口的 AI 页面 view
     const ctx = windowState.getContextByWebContents(event.sender);
-    if (!ctx || !ctx.view || !ctx.view.webContents || ctx.view.webContents.isDestroyed()) {
-      return { success: false, error: '未找到 AI 页面' };
+    if (!ctx) return { success: false, error: '未找到窗口上下文' };
+
+    const win = ctx.win;
+    const isHarness = !!(win && (win as any).__ckHarnessVisible);
+    const hv = (ctx as any).harnessView || (win as any)?.__ckHarnessView;
+    let dispatched = false;
+
+    // 纯净模式：触发 harness 视图
+    if (isHarness && hv && !hv.webContents.isDestroyed()) {
+      try {
+        hv.webContents.send('harness-event', { type: 'trigger-snippet', content, autoSend: autoSend !== false });
+        dispatched = true;
+      } catch (_) {}
+    } else if (ctx.view && !ctx.view.webContents.isDestroyed()) {
+      // 网页模式：触发网页 view
+      try {
+        ctx.view.webContents.send('cuckoo-trigger-snippet', { content, autoSend: autoSend !== false });
+        dispatched = true;
+      } catch (_) {}
     }
-    try {
-      ctx.view.webContents.send('cuckoo-trigger-snippet', { content, autoSend: autoSend !== false });
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err.message };
-    }
+
+    return dispatched ? { success: true } : { success: false, error: '未找到就绪的输入视图' };
   });
 }
 

@@ -4,27 +4,10 @@ import assert from 'node:assert';
 
 let executor;
 
-function makeEl(id) {
-  return {
-    id,
-    textContent: '',
-    className: '',
-    classList: {
-      _s: new Set(),
-      add(c) { this._s.add(c); },
-      remove(c) { this._s.delete(c); },
-      toggle(c, f) { if (f) this._s.add(c); else this._s.delete(c); },
-      contains(c) { return this._s.has(c); },
-    },
-  };
-}
-
-let els;
 function setupGlobals() {
-  els = {};
   globalThis.document = {
-    getElementById: (id) => els[id] || null,
-    createElement: (t) => makeEl(t),
+    getElementById: () => null,
+    createElement: () => ({ style: {} }),
     querySelector: () => null,
     querySelectorAll: () => [],
     body: { appendChild() {} },
@@ -49,17 +32,6 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-test('notifyJsScriptDetected 更新预览', () => {
-  els['cuckoo-cmd-preview'] = makeEl('cuckoo-cmd-preview');
-  executor.notifyJsScriptDetected('await bash("x")');
-  assert.ok(els['cuckoo-cmd-preview'].textContent.includes('await bash("x")'));
-  assert.ok(els['cuckoo-cmd-preview'].textContent.includes('[JS 工具脚本]'));
-});
-
-test('notifyJsScriptDetected 无预览元素不报错', () => {
-  executor.notifyJsScriptDetected('code');
-});
-
 test('handleJsToolScript 成功返回结果', async () => {
   window.electronAPI.executeJs = vi.fn(async () => ({ success: true, output: '输出内容' }));
   const r = await executor.handleJsToolScript('const x = 1;');
@@ -68,31 +40,11 @@ test('handleJsToolScript 成功返回结果', async () => {
   assert.strictEqual(r.result.output, '输出内容');
 });
 
-test('handleJsToolScript 成功更新 UI', async () => {
-  els['cuckoo-result-section'] = makeEl('cuckoo-result-section');
-  els['cuckoo-result-status'] = makeEl('cuckoo-result-status');
-  els['cuckoo-result-output'] = makeEl('cuckoo-result-output');
-  window.electronAPI.executeJs = vi.fn(async () => ({ success: true, output: 'ok' }));
-  await executor.handleJsToolScript('code');
-  assert.ok(els['cuckoo-result-status'].textContent.includes('成功'));
-  assert.strictEqual(els['cuckoo-result-output'].textContent, 'ok');
-  assert.strictEqual(els['cuckoo-result-section'].classList.contains('cuckoo-hidden'), false);
-});
-
 test('handleJsToolScript 失败返回 error', async () => {
   window.electronAPI.executeJs = vi.fn(async () => ({ success: false, error: '执行出错' }));
   const r = await executor.handleJsToolScript('bad code');
   assert.strictEqual(r.result.success, false);
   assert.strictEqual(r.result.error, '执行出错');
-});
-
-test('handleJsToolScript 失败更新 UI', async () => {
-  els['cuckoo-result-status'] = makeEl('cuckoo-result-status');
-  els['cuckoo-result-output'] = makeEl('cuckoo-result-output');
-  window.electronAPI.executeJs = vi.fn(async () => ({ success: false, error: '出错' }));
-  await executor.handleJsToolScript('bad');
-  assert.ok(els['cuckoo-result-status'].textContent.includes('失败'));
-  assert.strictEqual(els['cuckoo-result-output'].textContent, '出错');
 });
 
 test('handleJsToolScript executeJs 抛异常被捕获', async () => {
@@ -108,11 +60,4 @@ test('handleJsToolScript 成功但无 output', async () => {
   const r = await executor.handleJsToolScript('code');
   assert.strictEqual(r.result.success, true);
   assert.strictEqual(r.result.output, undefined);
-});
-
-test('handleJsToolScript 成功无 output 时 UI 显示占位', async () => {
-  els['cuckoo-result-output'] = makeEl('cuckoo-result-output');
-  window.electronAPI.executeJs = vi.fn(async () => ({ success: true }));
-  await executor.handleJsToolScript('code');
-  assert.ok(els['cuckoo-result-output'].textContent.includes('无输出'));
 });

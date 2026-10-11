@@ -68,7 +68,7 @@ function onStreamIdle(detail: any): void {
   idleCount++;
   showToast('等待 AI 回复超时，发送「' + cfg.prompt + '」催继续（第 ' + idleCount + ' 次）', 3000);
   try {
-    sendToChat(cfg.prompt, '看门狗', 300);
+    sendToChat(cfg.prompt, '看门狗', undefined);
   } catch (e: any) {
     console.error('[Cuckoo Code][看门狗] 发送提示词失败: ' + e.message);
   }

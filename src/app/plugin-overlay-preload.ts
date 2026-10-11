@@ -9,6 +9,11 @@ const require = createRequire(import.meta.url);
 const { contextBridge, ipcRenderer } = require('electron');
 
 const cuckooOverlay = {
+  themeGet: () => ipcRenderer.invoke('theme-get'),
+  themeSubscribe: () => ipcRenderer.invoke('theme-subscribe'),
+  onThemeChanged: (cb: (snapshot: any) => void) => {
+    ipcRenderer.on('theme-changed', (_e: any, snapshot: any) => cb(snapshot));
+  },
   /** 读插件资源（base64），宿主主进程读文件，不经过任何页面网络 */
   readAsset: (pluginId: string, relPath: string) => ipcRenderer.invoke('plugin-read-asset', { pluginId, relPath }),
   /** 覆盖层就绪上报 */

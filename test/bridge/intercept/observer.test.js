@@ -181,7 +181,7 @@ test('processInterceptedResponse：XML 格式工具调用发提示', async () =>
   await processInterceptedResponse('<invoke name="bash"></invoke>');
 });
 
-test('processInterceptedResponse：JS 工具块执行期间显示遮罩，发送结束后隐藏', async () => {
+test('processInterceptedResponse：JS 工具块执行期间显示提示，结束后隐藏', async () => {
   const mask = makeFakeMask();
   setupGlobals({ 'cuckoo-tool-mask': mask });
   let visibleDuringExec = false;
@@ -189,9 +189,9 @@ test('processInterceptedResponse：JS 工具块执行期间显示遮罩，发送
     visibleDuringExec = !mask.classList.contains('cuckoo-hidden');
     return { success: true, output: 'ok' };
   };
-  await processInterceptedResponse('\`\`\`cuckoo\nawait read({ filePath: "a.txt" });\n\`\`\`');
-  assert.strictEqual(visibleDuringExec, true, '执行期间遮罩应可见');
-  assert.ok(mask.classList.contains('cuckoo-hidden'), '结束后遮罩应隐藏');
+  await processInterceptedResponse('```cuckoo\nawait read({ filePath: "a.txt" });\n```');
+  assert.strictEqual(visibleDuringExec, true, '工具执行期间应显示"工具调用执行中"提示');
+  assert.ok(mask.classList.contains('cuckoo-hidden'), '结束后提示应隐藏');
 });
 
 test('processInterceptedResponse：非工具回复不显示遮罩', async () => {

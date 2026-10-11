@@ -138,10 +138,15 @@ class BashTool extends Tool {
       console.log('[BashTool] 执行命令: ' + trimmed + ', cwd=' + workDir);
 
       return await new Promise<ToolResult>((resolve) => {
-        exec(
+        const child = exec(
           trimmed,
           { cwd: workDir, timeout, maxBuffer: 1024 * 1024, windowsHide: true, encoding: 'buffer' },
           (error, stdout, stderr) => {
+            if (error && (error as any).killed && process.platform === 'win32' && child.pid) {
+              try {
+                exec(`taskkill /pid ${child.pid} /T /F`, { windowsHide: true }, () => {});
+              } catch (_) {}
+            }
             const out = decodeOutput(stdout);
             const err = decodeOutput(stderr);
 

@@ -1,0 +1,24 @@
+            <div class="ck-tab" data-panel="rules">
+              <div class="ck-actions ck-rule-toolbar">
+                <button class="ck-btn ck-btn-primary ck-rule-compact" id="rule-new"><span aria-hidden="true">＋</span>新建</button>
+                <button class="ck-btn ck-btn-secondary ck-rule-compact ck-rule-icon-only" id="rule-open-dir" title="打开规则目录" aria-label="打开规则目录" aria-hidden="false">↗</button>
+                <button class="ck-icon-btn" id="rule-refresh" title="刷新规则列表" aria-label="刷新规则列表">↻</button>
+              </div>
+              <div class="ck-list" id="rule-list"><div class="ck-list-empty">加载中…</div></div>
+              <div id="rule-editor" class="ck-rule-editor cuckoo-hidden">
+                <div class="ck-rule-editor-head">
+                  <div>
+                    <div class="ck-rule-editor-title" id="rule-editor-title">编辑规则</div>
+                    <div class="ck-rule-editor-hint">规则保存为 Markdown 文件，保存后立即生效。</div>
+                  </div>
+                  <button class="ck-btn ck-btn-secondary ck-rule-compact ck-rule-icon-only" id="rule-cancel" title="取消编辑" aria-label="取消编辑"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+                </div>
+                <label class="ck-rule-field">文件名<input class="ck-input" id="rule-file-name" placeholder="例如 api.md" /></label>
+                <label class="ck-rule-field">规则内容<textarea class="ck-textarea" id="rule-content" rows="14" placeholder="输入规则 Markdown 内容"></textarea></label>
+                <div class="ck-actions ck-rule-editor-actions">
+                  <button class="ck-btn ck-btn-primary ck-rule-compact ck-rule-icon-only" id="rule-save" title="保存" aria-label="保存"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg></button>
+                  <button class="ck-btn ck-btn-danger ck-rule-compact ck-rule-icon-only cuckoo-hidden" id="rule-delete" title="删除" aria-label="删除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/></svg></button>
+                </div>
+                <div class="ck-list-empty" id="rule-error"></div>
+              </div>
+            </div>

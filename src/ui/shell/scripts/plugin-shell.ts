@@ -62,17 +62,35 @@ function mountToolbar(m: MountSpec): void {
 }
 
 function mountSidebar(m: MountSpec): void {
-  // 侧边栏页（最小可用：往侧边栏尾部加一个面板）
+  // 侧边栏页：接入活动栏图标 + 内容面板（走 sidebar.ts 的切换体系）
   const key = m.pluginId + ':' + m.id;
-  const bar = document.getElementById('ck-sidebar');
-  if (!bar) return;
-  if (bar.querySelector('[data-plugin-panel="' + key + '"]')) return;
+  const tabId = 'plugin:' + key;
+  const bar = document.querySelector('.ck-activitybar');
+  const body = document.querySelector('.ck-panel-body');
+  if (!bar || !body) return;
+
+  // 1) 活动栏图标（用 title 首字兜底；无则用 id）
+  if (!bar.querySelector('[data-tab="' + tabId + '"]')) {
+    const title = (m.spec && m.spec.title) || m.id;
+    const icon = document.createElement('button');
+    icon.className = 'ck-ab-item';
+    icon.setAttribute('data-tab', tabId);
+    icon.setAttribute('data-plugin', m.pluginId);
+    icon.title = String(title);
+    icon.innerHTML = '<span class="ck-ab-text">' + escapeHtml(String(title).charAt(0) || 'P') + '</span>';
+    const spacer = bar.querySelector('.ck-ab-spacer');
+    if (spacer && spacer.parentNode === bar) bar.insertBefore(icon, spacer);
+    else bar.appendChild(icon);
+  }
+
+  // 2) 内容面板（ck-tab 才被切换体系识别）
+  if (body.querySelector('[data-panel="' + tabId + '"]')) return;
   const panel = document.createElement('div');
-  panel.className = 'ck-panel';
+  panel.className = 'ck-tab';
+  panel.setAttribute('data-panel', tabId);
   panel.setAttribute('data-plugin-panel', key);
-  panel.style.display = 'none';
   panel.innerHTML = (m.spec && m.spec.html) || '<div style="padding:12px;color:var(--ck-text-dim);font-size:12px">' + escapeHtml((m.spec && m.spec.title) || m.id) + '</div>';
-  bar.appendChild(panel);
+  body.appendChild(panel);
 }
 
 /** 通用槽位渲染（对标 DSH slots）：按 slot 找容器，按 order 排序插入 */

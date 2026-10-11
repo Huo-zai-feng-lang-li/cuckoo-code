@@ -43,6 +43,7 @@ import {
 } from '../../plugins/cuckoo-plugins/state.js';
 import { registry as toolRegistry } from '../../tools/index.js';
 import * as windowState from '../window.js';
+import { registerPromptSection } from '../../plugins/dsh-compat/prompt-sections.js';
 import * as mcpClient from '../../mcp/client.js';
 
 const require = createRequire(import.meta.url);
@@ -842,6 +843,28 @@ function registerPluginIpc(): void {
     } catch (err: any) {
       return { success: false, error: err && err.message ? err.message : String(err) };
     }
+  });
+
+  // ===== 插件系统提示词段（跨进程转发：UI 插件在渲染进程注册 → 主进程 prompt-builder 读取）=====
+  const pluginPromptSections = new Map<string, () => void>();
+  ipcMain.handle('plugin-prompt-section-register', async (_event: any, info: any = {}) => {
+    try {
+      const { id, name, order, text } = info;
+      if (!id || !name) return { success: false, error: '缺少 id/name' };
+      // 同 id 重复注册：先注销旧的
+      const old = pluginPromptSections.get(id);
+      if (old) { try { old(); } catch (_) {} }
+      const off = registerPromptSection({ name, order: typeof order === 'number' ? order : 100, text: text || '' }, 'plugin:' + id);
+      pluginPromptSections.set(id, off);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+  ipcMain.handle('plugin-prompt-section-unregister', async (_event: any, { id }: any = {}) => {
+    const off = pluginPromptSections.get(id);
+    if (off) { try { off(); } catch (_) {} pluginPromptSections.delete(id); }
+    return { success: true };
   });
 }
 

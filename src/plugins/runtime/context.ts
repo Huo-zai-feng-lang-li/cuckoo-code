@@ -39,6 +39,8 @@ export interface HostCapabilities {
   /** 读 localStorage 配置 */
   getSetting(key: string): any;
   setSetting(key: string, value: any): void;
+  /** 注册系统提示词段（转发到主进程，供 prompt-builder 读取）；返回注销函数 */
+  registerPromptSection?(sec: { name: string; order: number; text: string }): () => void;
   /** 日志前缀 */
   logPrefix?: string;
 }
@@ -132,6 +134,33 @@ function createContext(name: string, host: HostCapabilities, registry?: ServiceR
     set: (key: string, value: any) => host.setSetting(key, value),
   };
 
+  // ===== 系统提示词段（跨进程：转发到主进程）=====
+  const registeredSections = new Map<string, { name: string; order: number; text: string }>();
+  const systemPrompt = {
+    section(sec: { name: string; order?: number; text: string }): () => void {
+      if (!sec || typeof sec.name !== 'string' || !sec.name) {
+        throw new Error('systemPrompt.section: name 必须是字符串');
+      }
+      const entry = {
+        name: sec.name,
+        order: typeof sec.order === 'number' ? sec.order : 100,
+        text: typeof sec.text === 'string' ? sec.text : '',
+      };
+      registeredSections.set(entry.name, entry);
+      let off = () => {};
+      if (host.registerPromptSection) {
+        try { off = host.registerPromptSection(entry) || (() => {}); } catch (_) { /* ignore */ }
+      }
+      const d = () => {
+        registeredSections.delete(entry.name);
+        try { off(); } catch (_) { /* ignore */ }
+      };
+      disposers.push(d);
+      return d;
+    },
+    sections() { return Array.from(registeredSections.values()); },
+  };
+
   const ctx: PluginContext = {
     name,
     log: (...args: any[]) => console.log('[' + (host.logPrefix || 'plugin') + ':' + name + ']', ...args),
@@ -141,6 +170,7 @@ function createContext(name: string, host: HostCapabilities, registry?: ServiceR
     command,
     sessions,
     settings,
+    systemPrompt,
 
     // 本地 HTTP 服务（静态资源）
     webServer: {

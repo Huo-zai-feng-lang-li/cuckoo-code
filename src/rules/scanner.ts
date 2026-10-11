@@ -21,7 +21,37 @@ function getUserRulesDir(): string {
   return path.join(base, 'rules');
 }
 
+type ScanCacheEntry = { signature: string; result: RuleMeta[] };
+const scanCache = new Map<string, ScanCacheEntry>();
+
+/** 只用目录/文件元数据判断规则目录是否变化，避免每次提示词构建重复读全文。 */
+function directorySignature(rulesDir: string): string | null {
+  let entries: fs.Dirent[];
+  let dirStat: fs.Stats;
+  try {
+    entries = fs.readdirSync(rulesDir, { withFileTypes: true });
+    dirStat = fs.statSync(rulesDir);
+  } catch {
+    return null;
+  }
+  const files: string[] = [];
+  for (const ent of entries) {
+    if (!ent.isFile() || !ent.name.toLowerCase().endsWith('.md')) continue;
+    try {
+      const stat = fs.statSync(path.join(rulesDir, ent.name));
+      files.push(ent.name + ':' + stat.size + ':' + stat.mtimeMs + ':' + stat.ctimeMs);
+    } catch { /* 文件在扫描期间消失，按未命中处理 */ }
+  }
+  files.sort();
+  return dirStat.mtimeMs + ':' + dirStat.ctimeMs + '|' + files.join('|');
+}
+
 function scanDir(rulesDir: string, source: RuleSource): RuleMeta[] {
+  const signature = directorySignature(rulesDir);
+  if (signature === null) return [];
+  const cacheKey = source + '\0' + rulesDir;
+  const cached = scanCache.get(cacheKey);
+  if (cached && cached.signature === signature) return cached.result;
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(rulesDir, { withFileTypes: true });
@@ -43,6 +73,7 @@ function scanDir(rulesDir: string, source: RuleSource): RuleMeta[] {
     if (!finalName.trim() || !body.trim()) continue; // 无名或无正文，跳过
     result.push({ name: finalName, paths, rulePath, body: body.trim(), source });
   }
+  scanCache.set(cacheKey, { signature, result });
   return result;
 }
 

@@ -118,6 +118,11 @@ export class ThemeRuntime {
     return this.snapshot;
   }
 
+  /** Re-resolve the active theme after the system color scheme changes. */
+  refresh(): void {
+    if (this.preference === 'system') this.publish();
+  }
+
   /** 列出已注册主题 */
   list(): readonly ThemeDefinition[] {
     return this.snapshot.themes;

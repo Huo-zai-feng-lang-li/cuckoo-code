@@ -60,6 +60,7 @@ export function loadMonaco(): Promise<any> {
 
 /** 当前深浅色主题名 */
 function themeName(): string {
+  if (document.body && document.body.hasAttribute("data-ck-dark")) return "vs-dark";
   return (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "vs-dark" : "vs";
 }
 
@@ -97,3 +98,4 @@ export function syncMonacoTheme(): void {
 if (window.matchMedia) {
   try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", syncMonacoTheme); } catch (_) { /* ignore */ }
 }
+window.addEventListener("cuckoo-theme-changed", syncMonacoTheme);

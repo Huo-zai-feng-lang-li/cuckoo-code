@@ -134,6 +134,40 @@ function createSessionStore(profileId: string, storeDir: string, windowState: an
     writeSessionStore(store);
   }
 
+  /** 删除会话记录；只修改元数据，不触碰项目目录或网页会话数据。 */
+  function deleteSession(sessionId: string): void {
+    if (!sessionId) return;
+    const store = readSessionStore();
+    if (!Object.prototype.hasOwnProperty.call(store, sessionId)) return;
+    delete store[sessionId];
+    if (state.currentSessionId === sessionId) state.currentSessionId = null;
+    writeSessionStore(store);
+  }
+
+  /** 删除项目下全部会话元数据，并清除项目归档标记。 */
+  function deleteProjectRecords(dir: string): number {
+    if (!dir) return 0;
+    const store = readSessionStore();
+    let count = 0;
+    for (const id of Object.keys(store)) {
+      if (id === PROJECT_ARCHIVES_KEY) continue;
+      const raw = store[id];
+      const projectDir = typeof raw === 'string' ? raw : raw && raw.projectDir;
+      if (projectDir === dir) {
+        delete store[id];
+        count++;
+      }
+    }
+    const archived = Array.isArray(store[PROJECT_ARCHIVES_KEY]) ? store[PROJECT_ARCHIVES_KEY] : [];
+    store[PROJECT_ARCHIVES_KEY] = archived.filter((item: any) => item !== dir);
+    if (state.selectedProjectDir === dir) state.selectedProjectDir = null;
+    if (state.currentSessionId && !Object.prototype.hasOwnProperty.call(store, state.currentSessionId)) {
+      state.currentSessionId = null;
+    }
+    writeSessionStore(store);
+    return count;
+  }
+
   /** 更新会话标题（AI 命名对话 / 网页标题抓取）。条目不存在时新建。 */
   function updateSessionTitle(sessionId: string, title: string): void {
     if (!sessionId || !title) return;
@@ -331,6 +365,8 @@ function createSessionStore(profileId: string, storeDir: string, windowState: an
     setSessionLineage,
     supersedeSession,
     setSessionArchived,
+    deleteSession,
+    deleteProjectRecords,
     getArchivedProjects,
     setProjectArchived,
     extractSessionIdFromUrl,

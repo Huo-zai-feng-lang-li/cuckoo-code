@@ -46,6 +46,7 @@ export function applyTheme(snapshot: ThemeSnapshot): void {
     body.style.setProperty(name, value);
     appliedTokens.push(name);
   }
+  window.dispatchEvent(new CustomEvent('cuckoo-theme-changed', { detail: snapshot }));
 }
 
 /** 撤掉本 presenter 写的所有东西 */

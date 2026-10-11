@@ -1,17 +1,14 @@
 /**
  * 覆盖层按钮事件绑定（编排层）
- * P4.5 拆分：窗口面板 → panels/window-manager、MCP 面板 → panels/mcp-manager、
- * 设置弹窗 → panels/settings、悬浮球拖动 → fab.js。
+ *
+ * 注：原 overlay 的整套注入式面板/悬浮球已迁移到壳页面（见 commit 92c5abc），
+ * overlay 现仅保留工具提示条 + 首次引导框。此文件只保留仍有效的绑定
+ * （首次引导框、发送延迟配置恢复、token/TPS 统计、压缩触发等）。
  */
 import { state } from './state.js';
-import { hideOverlay, showOverlay, renderHistory, commandHistory, showToast, hideFirstTimeDialog } from './panel.js';
-import { handleInitProject, renderSessions } from './session-list.js';
-import { sendToChat } from './chat-input.js';
+import { showToast, hideFirstTimeDialog } from './panel.js';
+import { handleInitProject } from './session-list.js';
 import { runCompaction, checkPendingCompact, checkPendingInit } from '../session/compaction.js';
-import { renderWindowList, openWindowManager, closeWindowManager, handleGenerateDoc } from './panels/window-manager.js';
-import { loadMcpConfigToJson, renderMcpList, openMcpManager, closeMcpManager, handleMcpSave } from './panels/mcp-manager.js';
-import { openSettings, closeSettings, resetSettings, saveSettings } from './panels/settings.js';
-import { makeFabDraggable } from './fab.js';
 import { getProviderByUrl } from '../providers/registry.js';
 import { createTpsMeter, formatTps } from './tps.js';
 
@@ -27,15 +24,21 @@ let serverTokenUsage: any = null;
 // ========== 输出速度（TPS）估算 ==========
 // 服务端不给单轮输出 token，只能用流式正文长度估算（见 tps.ts）
 const tpsMeter = createTpsMeter();
-// 避免高频 IPC：同一展示值不重复推送
+// 避免高频 IPC：同一展示值不重复推送，并增加 150ms 节流窗口
 let lastPushedTps = '';
+let lastPushedTpsAt = 0;
+const TPS_PUSH_INTERVAL_MS = 150;
 
 /**
  * 把当前 TPS 推送给壳页面状态栏。
- * 生成中实时更新；**生成结束后保留本轮最终速度**（不清零），
+ * 生成中实时更新（150ms 节流）；**生成结束后保留本轮最终速度**（不清零），
  * 直到下一轮生成开始才被新值覆盖。无任何数据时推空串（壳页面显示 "--"）。
+ * @param force 为 true 时无视节流立即推送（例如完成帧）
  */
-function pushTps(): void {
+function pushTps(force: boolean = false): void {
+  const now = Date.now();
+  if (!force && now - lastPushedTpsAt < TPS_PUSH_INTERVAL_MS) return;
+  lastPushedTpsAt = now;
   const text = tpsMeter.value > 0 ? formatTps(tpsMeter.value) : '';
   if (text === lastPushedTps) return;
   lastPushedTps = text;
@@ -231,49 +234,6 @@ function wireEvents(h: typeof hooks): void {
 let eventsBound = false;
 
 /**
- * 「刷新技能与代理」按钮：让主进程重新扫描技能 + 代理目录，把最新清单发给 AI
- */
-async function handleSendSkills() {
-  const api = (window as any).electronAPI;
-  if (!api || !api.refreshSkills) {
-    showToast('接口不可用', 3000);
-    return;
-  }
-  try {
-    const result = await api.refreshSkills();
-    if (!result || !result.success) {
-      showToast('获取清单失败: ' + ((result && result.error) || '未知错误'), 3000);
-      return;
-    }
-    const section = result.section || '';
-    if (!section.trim()) {
-      showToast('没有找到任何技能或代理', 3000);
-      return;
-    }
-    // 注意：sendToChat 是 async，必须 await，否则恒为真值、误报成功
-    const ok = await sendToChat(section, '技能与代理清单', 300);
-    if (!ok) {
-      showToast('发送失败：未找到输入框', 3000);
-      return;
-    }
-    showToast('已发送（技能 ' + (result.skillCount || 0) + ' 个 / 代理 ' + (result.agentCount || 0) + ' 个）', 2500);
-  } catch (e: any) {
-    showToast('发送失败: ' + e.message, 3000);
-  }
-}
-
-/**
- * 「卡住了?点我」按钮：向 AI 发一句继续，催促其接着之前的工作
- */
-async function handleManualParseDispatch() {
-  if (!(await sendToChat('刚才卡住了请继续 爱你哦', '继续', 300))) {
-    showToast('发送失败：未找到输入框', 3000);
-    return;
-  }
-  showToast('已发送：继续', 2500);
-}
-
-/**
  * 格式化 token 数：过万显示为「xxx万」，否则原样显示
  */
 function formatTokenCount(n: number): string {
@@ -405,7 +365,7 @@ function startTokenCounter() {
       // DeepSeek 提供 accumulatedTokens（权威）；其余平台为 null，回退估算
       const acc = ev && typeof ev.accumulatedTokens === 'number' ? ev.accumulatedTokens : null;
       tpsMeter.update(text, finished, acc);
-      pushTps();
+      pushTps(finished);
     } catch (_) { /* ignore */ }
   });
 }
@@ -419,167 +379,23 @@ function bindEvents() {
   if (eventsBound) return;
   eventsBound = true;
 
-  // ===== 左侧活动栏：标签页切换 =====
-  const abItems = document.querySelectorAll('.cuckoo-ab-item');
-  const tabPanels = document.querySelectorAll('.cuckoo-tab-panel');
-  abItems.forEach((item) => {
-    item.addEventListener('click', () => {
-      const tab = (item as any).dataset.tab;
-      if (!tab) return;
-      // 切活动栏高亮
-      abItems.forEach((i) => i.classList.remove('cuckoo-ab-active'));
-      item.classList.add('cuckoo-ab-active');
-      // 切内容面板
-      tabPanels.forEach((p) => {
-        if ((p as any).dataset.panel === tab) p.classList.add('cuckoo-tab-active');
-        else p.classList.remove('cuckoo-tab-active');
-      });
-      // 切到"会话"时自动刷新列表
-      if (tab === 'sessions') {
-        try { renderSessions(); } catch (_) {}
-      }
-    });
-  });
-
-  // 从 localStorage 恢复延迟配置
+  // 从 localStorage 恢复发送延迟配置
   try {
     const savedMin = localStorage.getItem('cuckoo-send-delay-min');
     const savedMax = localStorage.getItem('cuckoo-send-delay-max');
     // 注意：不能用 "parseInt() || 默认值"——0 是有效值，会被 || 误判为假值丢弃
     if (savedMin !== null) { const v = parseInt(savedMin, 10); if (Number.isFinite(v) && v >= 0) state.sendDelayMin = v; }
     if (savedMax !== null) { const v = parseInt(savedMax, 10); if (Number.isFinite(v) && v >= 0) state.sendDelayMax = v; }
-    // 同步到输入框
-    const minInput = document.getElementById('cuckoo-delay-min');
-    const maxInput = document.getElementById('cuckoo-delay-max');
-    if (minInput) (minInput as any).value = state.sendDelayMin;
-    if (maxInput) (maxInput as any).value = state.sendDelayMax;
   } catch (e) {}
 
-  const minimizeBtn = document.getElementById('cuckoo-btn-minimize');
-  const initBtn = document.getElementById('cuckoo-btn-init');
-  const clearBtn = document.getElementById('cuckoo-btn-clear');
-
-  minimizeBtn?.addEventListener('click', hideOverlay);
-  initBtn?.addEventListener('click', handleInitProject);
-
-  // 压缩上下文按钮
-  const compactBtn = document.getElementById('cuckoo-btn-compact');
-  compactBtn?.addEventListener('click', () => runCompaction(state.currentProjectDir || undefined));
-
-  // 首次使用提示浮窗：初始化按钮（与右侧初始化项目逻辑一致）
+  // 首次使用提示浮窗：初始化 + 关闭
   const firstInitBtn = document.getElementById('cuckoo-btn-first-init');
   firstInitBtn?.addEventListener('click', handleInitProject);
-
-  // 首次使用提示浮窗：关闭按钮
   const firstCloseBtn = document.getElementById('cuckoo-btn-first-close');
   firstCloseBtn?.addEventListener('click', hideFirstTimeDialog);
-  clearBtn?.addEventListener('click', () => {
-    commandHistory.length = 0;
-    renderHistory();
-  });
 
-  // 手动解析按钮
-  const manualParseBtn = document.getElementById('cuckoo-btn-manual-parse');
-  manualParseBtn?.addEventListener('click', handleManualParseDispatch);
-
-  // 窗口管理按钮：打开浮动管理面板
-  const windowManagerBtn = document.getElementById('cuckoo-btn-window-manager');
-  windowManagerBtn?.addEventListener('click', () => {
-    openWindowManager();
-  });
-
-  // MCP 按钮：打开 MCP 管理面板
-  const mcpBtn = document.getElementById('cuckoo-btn-mcp');
-  mcpBtn?.addEventListener('click', openMcpManager);
-
-  // MCP 面板：关闭
-  const mcpCloseBtn = document.getElementById('cuckoo-mcp-close');
-  mcpCloseBtn?.addEventListener('click', closeMcpManager);
-
-  // MCP 面板：刷新
-  const mcpRefreshBtn = document.getElementById('cuckoo-mcp-refresh');
-  mcpRefreshBtn?.addEventListener('click', renderMcpList);
-
-  // MCP 面板：保存配置
-  const mcpSaveBtn = document.getElementById('cuckoo-mcp-save');
-  mcpSaveBtn?.addEventListener('click', () => handleMcpSave(sendToChat));
-
-  // 浮动面板：新建窗口（不指定平台，让窗口显示平台选择页）
-  const wmNewWindowBtn = document.getElementById('cuckoo-wm-new-window');
-  wmNewWindowBtn?.addEventListener('click', async () => {
-    try {
-      await (window as any).electronAPI.createProfileWindow();
-      showToast('已打开平台选择', 2200);
-      await renderWindowList();
-    } catch (err: any) {
-      showToast('创建新窗口失败: ' + (err.message || err), 3000);
-    }
-  });
-
-  // 浮动面板：关闭
-  const wmCloseBtn = document.getElementById('cuckoo-wm-close');
-  wmCloseBtn?.addEventListener('click', closeWindowManager);
-
-  // 浮动面板：刷新列表
-  const wmRefreshBtn = document.getElementById('cuckoo-wm-refresh');
-  wmRefreshBtn?.addEventListener('click', renderWindowList);
-
-  // 生成项目说明文档按钮
-  const genDocBtn = document.getElementById('cuckoo-btn-gen-doc');
-  genDocBtn?.addEventListener('click', () => handleGenerateDoc(sendToChat));
-
-  // 沉浸式交流按钮
-  const immersiveBtn = document.getElementById('cuckoo-btn-immersive');
-  immersiveBtn?.addEventListener('click', async () => {
-    const message = '现在你的任何疑问,或没有疑问的选择都需要和我确认 , 确认的方式是 你问一个问题我回答一个问题,然后你再问下一个问题, 最好给我选项, 也要给我个其他的选项, 谢谢 爱你哦';
-    if (!(await sendToChat(message, '沉浸式交流', 300))) {
-      showToast('未找到输入框，请确保已打开聊天界面', 3000);
-    } else {
-      showToast('已发送沉浸式交流提示', 2200);
-    }
-  });
-
-  // 刷新会话列表按钮
-  const refreshSessionsBtn = document.getElementById('cuckoo-btn-refresh-sessions');
-  refreshSessionsBtn?.addEventListener('click', renderSessions);
-
-  // 设置弹窗：打开
-  const settingsBtn = document.getElementById('cuckoo-btn-settings');
-  settingsBtn?.addEventListener('click', openSettings);
-
-  // 设置弹窗：关闭
-  const settingsCloseBtn = document.getElementById('cuckoo-settings-close');
-  settingsCloseBtn?.addEventListener('click', closeSettings);
-
-  // 设置弹窗：保存
-  const settingsSaveBtn = document.getElementById('cuckoo-settings-save');
-  settingsSaveBtn?.addEventListener('click', saveSettings);
-
-  // 设置弹窗：恢复默认
-  const settingsResetBtn = document.getElementById('cuckoo-settings-reset');
-  settingsResetBtn?.addEventListener('click', resetSettings);
-
-  // 设置弹窗：发送技能清单
-  const skillsSendBtn = document.getElementById('cuckoo-skills-send');
-  skillsSendBtn?.addEventListener('click', handleSendSkills);
-
-  // 悬浮球：可拖动 + 点击切换面板显隐
-  const statusBadge = document.getElementById('cuckoo-status-badge');
-  if (statusBadge) makeFabDraggable(statusBadge);
-  statusBadge?.addEventListener('click', () => {
-    const overlay = document.getElementById('cuckoo-overlay');
-    if (!overlay) return;
-    if (overlay.classList.contains('cuckoo-hidden')) {
-      showOverlay();
-    } else {
-      hideOverlay();
-    }
-  });
-
-  // 自动压缩：加载配置 + 绑定保存按钮
+  // 自动压缩：加载配置
   loadAutoCompactConfig();
-  const autoSaveBtn = document.getElementById('cuckoo-auto-compact-save');
-  autoSaveBtn?.addEventListener('click', saveAutoCompactConfig);
 
   // 启动输入框 token 估算 + 自动压缩检查
   startTokenCounter();
@@ -589,26 +405,9 @@ function bindEvents() {
     if (!handled) checkPendingInit();
   });
 
-  // 键盘快捷键
+  // 键盘快捷键：Esc 关闭首次引导框
   document.addEventListener('keydown', (e) => {
-    // Ctrl+Shift+C 切换覆盖层显示
-    if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
-      e.preventDefault();
-      const overlay = document.getElementById('cuckoo-overlay');
-      if (overlay) {
-        if (overlay.classList.contains('cuckoo-hidden')) {
-          showOverlay();
-        } else {
-          hideOverlay();
-        }
-      }
-    }
-    // Esc 隐藏覆盖层和窗口管理面板
     if (e.key === 'Escape') {
-      hideOverlay();
-      closeWindowManager();
-      closeMcpManager();
-      closeSettings();
       hideFirstTimeDialog();
     }
   });

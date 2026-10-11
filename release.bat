@@ -50,7 +50,7 @@ if errorlevel 1 (
 
 echo.
 echo ==== 3/5 推送代码到 GitHub ====
-git push github master
+git push origin master
 if errorlevel 1 (
   echo 推送失败！请检查网络或代理设置。
   pause
@@ -60,7 +60,7 @@ if errorlevel 1 (
 echo.
 echo ==== 4/5 创建并推送 tag v%NEW_VER% ====
 git tag v%NEW_VER%
-git push github v%NEW_VER%
+git push origin v%NEW_VER%
 if errorlevel 1 (
   echo tag 推送失败！
   pause
@@ -71,7 +71,7 @@ echo.
 echo ==== 5/5 完成！ ====
 echo GitHub Actions 已开始构建，稍后自动发布 Release。
 echo.
-echo 查看进度: https://github.com/wangyongpeng90/cuckoo-code/actions
-echo 下载页面: https://github.com/wangyongpeng90/cuckoo-code/releases
+echo 查看进度: https://github.com/Huo-zai-feng-lang-li/cuckoo-code/actions
+echo 下载页面: https://github.com/Huo-zai-feng-lang-li/cuckoo-code/releases
 echo.
 pause

@@ -2,7 +2,7 @@
  * 工作区（会话）页：按项目目录分组，列出会话，点击导航。
  * 数据：listAllSessions() → [{ sessionId, projectDir, title, createdAt, updatedAt }]
  */
-import { api, escapeHtml, escapeAttr, ckPrompt } from '../shared.js';
+import { api, escapeHtml, escapeAttr, ckPrompt, ckConfirm } from '../shared.js';
 
 /** 项目目录 → 显示名（取最后一段） */
 function baseName(dir: string): string {
@@ -85,12 +85,18 @@ function renderItem(s: any, currentSessionId: string | null, archived: boolean =
   const act = archived
     ? '<span class="ck-ws-act" data-act="unarchive" title="取消归档">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M12 10v6"/><path d="M9 13l3-3 3 3"/></svg>' +
+      '</span>' +
+      '<span class="ck-ws-act" data-act="delete" title="删除记录">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/></svg>' +
       '</span>'
     : (sub
         // 子节点：无"归档"按钮（避免把子代理/旧版归档），改为"切到该会话"提示
         ? ''
         : '<span class="ck-ws-act" data-act="archive" title="归档">' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>' +
+          '</span>' +
+          '<span class="ck-ws-act" data-act="delete" title="删除记录">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/></svg>' +
           '</span>');
   const open = hasChildren && expandedNodes.has(s.sessionId);
   const caret = hasChildren
@@ -210,6 +216,10 @@ function bindWorkspaceEvents(listEl: HTMLElement): void {
         if (!api.setProjectArchived) return;
         try { await api.setProjectArchived(dir, false); } catch (_) { /* ignore */ }
         loadWorkspaces();
+      } else if (act === 'delete' && api.deleteProjectRecords) {
+        if (!await ckConfirm('仅删除该项目的工作区记录，不会删除磁盘文件。继续吗？', '删除工作区记录')) return;
+        try { await api.deleteProjectRecords(dir); } catch (_) { /* ignore */ }
+        loadWorkspaces();
       }
     });
   });
@@ -265,6 +275,15 @@ function bindWorkspaceEvents(listEl: HTMLElement): void {
         const id = el.dataset.sessionId;
         if (!id || !api.setSessionArchived) return;
         try { await api.setSessionArchived(id, false); } catch (_) { /* ignore */ }
+        loadWorkspaces();
+        return;
+      }
+      if (e.target.closest('[data-act="delete"]')) {
+        e.stopPropagation();
+        const id = el.dataset.sessionId;
+        if (!id || !api.deleteSessionRecord) return;
+        if (!await ckConfirm('仅删除这条工作区记录，不会删除项目文件。继续吗？', '删除会话记录')) return;
+        try { await api.deleteSessionRecord(id); } catch (_) { /* ignore */ }
         loadWorkspaces();
         return;
       }
@@ -353,7 +372,7 @@ export async function loadWorkspaces(): Promise<void> {
       const isOpen = (dir === currentDir) || expandedDirs.has(dir);
       const isArchOpen = archivedOpen.has(dir);
       return '<div class="ck-ws-group' + (isOpen ? ' open' : '') + '" data-dir="' + escapeAttr(dir) + '">' +
-        '<div class="ck-ws-group-title" title="' + escapeAttr(dir) + '">' +
+        '<div class="ck-ws-group-title">' +
           '<svg class="ck-ws-caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>' +
           '<svg class="ck-ws-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>' +
           '<span class="ck-ws-gname">' + escapeHtml(baseName(dir)) + '</span>' +
@@ -368,6 +387,9 @@ export async function loadWorkspaces(): Promise<void> {
               : '<span class="ck-ws-gact" data-gact="archive" title="归档项目">' +
                   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>' +
                 '</span>') +
+            '<span class="ck-ws-gact" data-gact="delete" title="删除工作区记录">' +
+              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/></svg>' +
+            '</span>' +
           '</span>' +
         '</div>' +
         '<div class="ck-ws-items">' +

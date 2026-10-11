@@ -56,8 +56,8 @@ function resetSettings() {
   try {
     for (const k of KEYS) localStorage.removeItem(k);
   } catch (_) {}
-  state.sendDelayMin = 2000;
-  state.sendDelayMax = 4000;
+  state.sendDelayMin = 500;
+  state.sendDelayMax = 1000;
   showToast('已恢复默认设置', 2500);
   openSettings(); // 重新加载默认值到输入框
 }
@@ -170,8 +170,8 @@ function getSettingsData(): SettingsData {
     xhrIdleTimeout: sec(lsGet('cuckoo-xhr-idle-timeout'), 300),
     watchdogPrompt: lsGet('cuckoo-watchdog-prompt') || '请继续',
     watchdogCount: int(lsGet('cuckoo-watchdog-count'), 3),
-    sendDelayMin: sec(lsGet('cuckoo-send-delay-min'), 2),
-    sendDelayMax: sec(lsGet('cuckoo-send-delay-max'), 4),
+    sendDelayMin: sec(lsGet('cuckoo-send-delay-min'), 0.5),
+    sendDelayMax: sec(lsGet('cuckoo-send-delay-max'), 1),
     attachDelayMin: sec(lsGet('cuckoo-attach-delay-min'), 0.5),
     attachDelayMax: sec(lsGet('cuckoo-attach-delay-max'), 1),
     goalMaxIterations: int(lsGet('cuckoo-goal-max-iterations'), 50),
@@ -257,8 +257,8 @@ function resetSettingsData(): SettingsData {
     'cuckoo-goal-max-iterations', 'cuckoo-ssrf-guard',
   ];
   try { for (const k of KEYS) localStorage.removeItem(k); } catch (_) {}
-  state.sendDelayMin = 2000;
-  state.sendDelayMax = 4000;
+  state.sendDelayMin = 500;
+  state.sendDelayMax = 1000;
   return getSettingsData();
 }
 

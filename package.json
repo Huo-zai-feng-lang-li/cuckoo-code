@@ -44,12 +44,12 @@
   "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wangyongpeng90/cuckoo-code.git"
+    "url": "git+https://github.com/Huo-zai-feng-lang-li/cuckoo-code.git"
   },
   "bugs": {
-    "url": "https://github.com/wangyongpeng90/cuckoo-code/issues"
+    "url": "https://github.com/Huo-zai-feng-lang-li/cuckoo-code/issues"
   },
-  "homepage": "https://github.com/wangyongpeng90/cuckoo-code#readme",
+  "homepage": "https://github.com/Huo-zai-feng-lang-li/cuckoo-code#readme",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.13.6",
@@ -77,7 +77,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "wangyongpeng90",
+        "owner": "Huo-zai-feng-lang-li",
         "repo": "cuckoo-code"
       }
     ],
@@ -85,7 +85,7 @@
       "output": "dist"
     },
     "win": {
-      "icon": "build/icon.png",
+      "icon": "build/icon.ico",
       "target": [
         "nsis"
       ],

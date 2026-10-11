@@ -66,6 +66,8 @@ export interface ShellAPI {
   listAllSessions?: () => Promise<any>;
   navigateSession?: (sessionId: string) => Promise<any>;
   setSessionArchived?: (sessionId: string, archived: boolean) => Promise<any>;
+  deleteSessionRecord?: (sessionId: string) => Promise<any>;
+  deleteProjectRecords?: (dir: string) => Promise<any>;
   getDirInfo?: (dir: string) => Promise<{ success: boolean; dir?: string; createdAt?: string | null; error?: string }>;
   listProjectTree?: () => Promise<{ success: boolean; root?: string; tree?: any[]; truncated?: boolean; error?: string }>;
   readProjectFile?: (relPath: string) => Promise<any>;
@@ -87,6 +89,11 @@ export interface ShellAPI {
   openAgentFile?: (agentPath: string) => Promise<any>;
   renameAgent?: (agentPath: string, newName: string) => Promise<any>;
   deleteAgentFile?: (agentPath: string) => Promise<any>;
+  listRules?: () => Promise<any>;
+  createRule?: (fileName: string, content: string) => Promise<any>;
+  saveRule?: (fileName: string, content: string, expectedHash: string) => Promise<any>;
+  deleteRule?: (fileName: string, expectedHash: string) => Promise<any>;
+  openRulesDir?: () => Promise<any>;
   // MCP
   listMcpServers?: () => Promise<any>;
   enableMcpServer?: (name: string) => Promise<any>;
@@ -110,6 +117,7 @@ export interface ShellAPI {
   checkUpdate?: () => Promise<any>;
   getAssetUrl?: (rel: string) => Promise<any>;
   openExternal?: (url: string) => Promise<any>;
+  openCurrentExternal?: () => Promise<any>;
   openFeishuSetup?: () => Promise<any>;
   // 飞书
   getFeishuConfig?: () => Promise<any>;

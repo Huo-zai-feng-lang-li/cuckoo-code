@@ -6,6 +6,7 @@ interface WindowContext {
   win: any;
   /** AI 网页所在的 WebContentsView（壳窗口的 win.webContents 是地址栏壳页面） */
   view: any;
+  harnessView?: any;
   profileId: any;
   providerId: any;
   sessionStore: any;
@@ -19,6 +20,7 @@ interface WindowContext {
 
 const windows = new Map<number, WindowContext>(); // windowId -> { win, profileId, providerId, sessionStore }
 let lastActiveWindowId: number | null = null;
+let profileWindowCreator: ((profileId: any) => any) | null = null;
 
 function addWindow(win: any, profileId: any, providerId: any, sessionStore: any, view: any, isSubagent?: boolean): void {
   windows.set(win.id, { win, view, profileId, providerId, sessionStore, isSubagent: !!isSubagent });
@@ -84,6 +86,41 @@ function setMainWindow(win: any): void {
   }
 }
 
+/** 注入按 profile 恢复窗口的入口，避免窗口状态模块依赖 entry.ts。 */
+function setProfileWindowCreator(creator: ((profileId: any) => any) | null): void {
+  profileWindowCreator = creator;
+}
+
+/** 恢复并聚焦窗口；窗口无效时静默返回 false。 */
+function focusWindow(win: any): boolean {
+  try {
+    if (!win || win.isDestroyed()) return false;
+    if (typeof win.isMinimized === 'function' && win.isMinimized()) win.restore();
+    if (typeof win.show === 'function') win.show();
+    if (typeof win.focus === 'function') win.focus();
+    if (typeof win.flashFrame === 'function') win.flashFrame(false);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/** 按 profile 恢复主窗口并聚焦，找不到 profile 或创建失败时安全退出。 */
+function focusWindowByProfileId(profileId: any): boolean {
+  if (!profileId) return false;
+  let ctx = getWindowByProfileId(profileId);
+  if (ctx && (!ctx.win || ctx.win.isDestroyed())) ctx = null;
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) {
+    if (!profileWindowCreator) return false;
+    try { profileWindowCreator(profileId); } catch (_) { return false; }
+    ctx = getAllContexts().find((candidate) => {
+      if (candidate.profileId !== profileId || candidate.isSubagent) return false;
+      try { return !!candidate.win && !candidate.win.isDestroyed(); } catch (_) { return false; }
+    }) || null;
+  }
+  return focusWindow(ctx ? ctx.win : null);
+}
+
 function getAllWindows(): any[] {
   return Array.from(windows.values()).map(ctx => ctx.win);
 }
@@ -123,6 +160,9 @@ export {
   getMainWindow,
   getMainContext,
   setMainWindow,
+  setProfileWindowCreator,
+  focusWindow,
+  focusWindowByProfileId,
   getAllWindows,
   getAllContexts,
   getWindowByProfileId,

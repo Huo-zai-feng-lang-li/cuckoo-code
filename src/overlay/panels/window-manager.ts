@@ -122,7 +122,7 @@ function closeWindowManager() {
 /** 生成项目说明文档按钮点击处理 */
 async function handleGenerateDoc(sendToChat: any) {
   const message = '根据当前项目生成一个类似 claude.md 的项目说明文件，并将文件放到当前项目 .cuckoo/CUCKOO.md';
-  if (!(await sendToChat(message, '生成文档', 300))) {
+  if (!(await sendToChat(message, '生成文档', undefined))) {
     showToast('未找到输入框，请确保已打开聊天界面', 3000);
   }
 }

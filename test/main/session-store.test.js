@@ -88,6 +88,28 @@ test('不同 profile 的存储文件互相隔离', () => {
   assert.strictEqual(s2.getProjectDirBySessionId('sess-1'), 'C:/proj2');
 });
 
+test('删除会话记录只移除元数据', () => {
+  const store = makeStore();
+  store.saveSessionDirMapping('sess-1', 'C:/proj');
+  store.saveSessionDirMapping('sess-2', 'C:/proj');
+  store.state.currentSessionId = 'sess-1';
+  store.deleteSession('sess-1');
+  assert.strictEqual(store.getProjectDirBySessionId('sess-1'), null);
+  assert.strictEqual(store.getProjectDirBySessionId('sess-2'), 'C:/proj');
+  assert.strictEqual(store.state.currentSessionId, null);
+});
+
+test('删除项目记录不删除项目路径本身', () => {
+  const store = makeStore();
+  store.saveSessionDirMapping('sess-1', 'C:/proj');
+  store.saveSessionDirMapping('sess-2', 'C:/other');
+  store.setProjectArchived('C:/proj', true);
+  assert.strictEqual(store.deleteProjectRecords('C:/proj'), 1);
+  assert.strictEqual(store.getProjectDirBySessionId('sess-1'), null);
+  assert.strictEqual(store.getProjectDirBySessionId('sess-2'), 'C:/other');
+  assert.deepStrictEqual(store.getArchivedProjects(), []);
+});
+
 test('handleUrlChange 非会话清空状态', () => {
   const sent = [];
   const fakeView = { webContents: { isDestroyed: () => false, send: (ch, data) => sent.push([ch, data]) } };

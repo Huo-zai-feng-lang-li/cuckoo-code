@@ -148,6 +148,16 @@ export interface PluginContext {
   /** 声明依赖某服务：就绪时回调，返回 disposer */
   inject(names: string[], callback: () => void): () => void;
 
+  /**
+   * 系统提示词段注册（对齐 DSH ctx.systemPrompt.section）。
+   * 插件可注册一段文本，合并进 AI 的系统提示词（新会话生效）。
+   */
+  systemPrompt?: {
+    /** 注册/覆盖一个提示词段；返回注销函数 */
+    section(sec: { name: string; order?: number; text: string }): () => void;
+    /** 取已注册段（只读） */
+    sections(): Array<{ name: string; order: number; text: string }>;
+  };
   /** UI 能力（仅 UI 插件有）：挂载 DOM、注入样式/脚本 */
   ui?: {
     mount(el: any): void;

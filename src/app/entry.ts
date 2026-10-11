@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Cuckoo Code 主进程入口（多窗口多 profile 版）
  * 由项目根目录 main.js 薄壳加载。
  */
@@ -12,10 +12,17 @@ import { getProvider } from '../providers/registry.js';
 import * as updater from '../updater/index.js';
 import * as mcpConfig from '../mcp/config.js';
 import * as mcpClient from '../mcp/client.js';
-import { resolveAsset, resolveSrc } from '../infra/paths.js';
+import { resolveAsset, resolveSrc, resolveAppIconPath } from '../infra/paths.js';
 
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, nativeTheme, ipcMain: ipcMainForProfile } = require('electron');
+const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, nativeTheme, session, nativeImage, ipcMain: ipcMainForProfile } = require('electron');
+
+// Windows 任务栏应用分组与图标关联（必须在 app 启动顶层设置，保证任务栏图标与 exe 一致）
+if (process.platform === 'win32') {
+  try {
+    app.setAppUserModelId('com.cuckoo.cuckoo-code');
+  } catch (_) {}
+}
 
 // ========== 关闭确认 ==========
 /** 已确认关闭的窗口 id（确认后再次触发 close 时直接放行，避免重复弹框） */
@@ -105,6 +112,14 @@ function clampBounds(b: any) {
 function createWindow(profile: any) {
   const profileData = profile || profileManager.getDefaultProfile();
   const provider = getProvider(profileData.providerId) || null;
+  // profile 的所有 WebContents 共用同一持久化 session；在创建页面前统一 UA/语言，
+  // 避免 OAuth 页面收到 Electron UA 或壳/弹窗信号不一致。
+  try {
+    const profileSession = session.fromPartition(profileData.partition);
+    profileSession.setUserAgent(buildChromeUserAgent(), 'en-US,en');
+  } catch (err: any) {
+    console.warn('[Cuckoo Code] 设置 profile session UA 失败:', err.message);
+  }
   const storeDir = app.getPath('userData');
   const sessionStore = createSessionStore(profileData.id, storeDir, windowState);
   const hasExplicitProfile = !!profile;
@@ -134,7 +149,7 @@ function createWindow(profile: any) {
     minWidth: 480,
     minHeight: 240,
     ...(defaultBounds.x !== undefined ? { x: defaultBounds.x + cascadeOffset, y: (defaultBounds.y || 0) + cascadeOffset } : {}),
-    icon: resolveAsset('assets/icon.png'),
+    icon: resolveAppIconPath(),
     title: 'Cuckoo Code Pro - ' + (provider ? provider.name : '未选择平台') + ' - ' + profileData.name,
     webPreferences: {
       // 壳页面 preload（只负责地址栏导航，与 AI 页面 preload 分离）
@@ -146,6 +161,13 @@ function createWindow(profile: any) {
       additionalArguments: ['--cuckoo-user-data=' + app.getPath('userData'), '--cuckoo-platform=' + process.platform],
     },
   });
+
+  if (process.platform === 'win32') {
+    try {
+      const appIcon = resolveAppIconPath();
+      if (appIcon) mainWindow.setIcon(appIcon);
+    } catch (_) {}
+  }
 
   // 无边框窗口：最大化时按当前显示器工作区设置 bounds，避免盖住任务栏（Windows 已知问题）
   try {
@@ -179,6 +201,44 @@ function createWindow(profile: any) {
     },
   });
   mainWindow.contentView.addChildView(view);
+
+  // OAuth/登录页通常通过 window.open() 创建授权弹窗。默认的 Electron
+  // 子窗口不会自动继承应用的 profile 配置，导致 cookie/session 与主页面
+  // 分裂；同时不应把 Cuckoo bridge preload 注入第三方授权页。
+  view.webContents.setWindowOpenHandler(({ url }: any) => {
+    const popupUrl = String(url || '');
+    // 部分 OAuth SDK 先打开 about:blank，再由 opener 写入授权地址。
+    if (popupUrl !== 'about:blank' && !/^https?:\/\//i.test(popupUrl)) return { action: 'deny' };
+    return {
+      action: 'allow',
+      overrideBrowserWindowOptions: {
+        width: 980,
+        height: 760,
+        icon: resolveAppIconPath(),
+        autoHideMenuBar: true,
+        webPreferences: {
+          partition: profileData.partition,
+          contextIsolation: true,
+          nodeIntegration: false,
+          nodeIntegrationInWorker: false,
+          sandbox: true,
+          webviewTag: false,
+        },
+      },
+    };
+  });
+  view.webContents.on('did-create-window', (child: any) => {
+    try {
+      if (process.platform === 'win32') {
+        const ico = resolveAppIconPath();
+        if (ico && typeof child.setIcon === 'function') child.setIcon(ico);
+      }
+      child.webContents.setUserAgent(buildChromeUserAgent());
+      child.webContents.session.setUserAgent(buildChromeUserAgent(), 'en-US,en');
+    } catch (err: any) {
+      console.warn('[Cuckoo Code] OAuth 弹窗设置失败:', err.message);
+    }
+  });
 
   // ========== 插件覆盖层窗口（透明、置顶、鼠标穿透） ==========
   // 用独立 BrowserWindow（而非 WebContentsView）——因为只有 BrowserWindow 支持
@@ -740,6 +800,10 @@ function setupAppMenu() {
 
 // ========== 子代理依赖注入 ==========
 injectSubagentDeps({ createWindow, profileManager });
+windowState.setProfileWindowCreator((profileId: string) => {
+  const profile = profileManager.getProfileById(profileId);
+  return profile ? createWindow(profile) : null;
+});
 // 给 runAgent 工具注入执行器（tools 层不依赖 app）
 injectAgentRunner(async ({ agent, task, currentWindowId }: any) => {
   const ctx = windowState.getWindowContext(currentWindowId);
@@ -1141,6 +1205,8 @@ ipcMainForProfile.handle('update-window-name', async (event: any, { displayName 
   const updated = profileManager.updateProfileName(ctx.profileId, displayName);
   if (updated && ctx.win && !ctx.win.isDestroyed()) {
     ctx.win.setTitle('Cuckoo Code Pro - ' + updated.name);
+    // 同步推给壳页面状态栏（窗口名实时更新）
+    try { ctx.win.webContents.send('shell-window-name-updated', updated.name); } catch (_) {}
   }
   return { success: !!updated, name: updated ? updated.name : null };
 });

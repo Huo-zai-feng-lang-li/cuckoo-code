@@ -62,6 +62,9 @@ let electronAPI: any = {
   getUiPluginSources: () => {
     return ipcRenderer.invoke('plugin-ui-sources');
   },
+  /** 插件系统提示词段：注册到主进程（跨进程） */
+  pluginPromptSectionRegister: (info: any) => ipcRenderer.invoke('plugin-prompt-section-register', info || {}),
+  pluginPromptSectionUnregister: (id: string) => ipcRenderer.invoke('plugin-prompt-section-unregister', { id }),
   // ========== 插件注入壳页面 CSS（对标 DSH styles.insert）==========
   shellStyleAdd: (pluginId: string, css: string) => ipcRenderer.invoke('plugin-shell-style-add', { pluginId, css }),
   shellStyleRemove: (pluginId: string) => ipcRenderer.invoke('plugin-shell-style-remove', { pluginId }),

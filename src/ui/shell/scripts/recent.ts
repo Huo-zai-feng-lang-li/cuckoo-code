@@ -65,6 +65,14 @@ export function addRecent(type: RecentType, name: string, extra?: { payload?: st
   renderRecent();
 }
 
+/** 从最近列表中移除某项 */
+export function removeRecent(type: RecentType, name: string): void {
+  if (!name) return;
+  const list = loadRecent().filter((x) => !(x.type === type && x.name === name));
+  saveRecent(list);
+  renderRecent();
+}
+
 /** 渲染底部状态栏的最近使用条 */
 export function renderRecent(): void {
   const box = document.getElementById('sb-recent');
@@ -76,14 +84,38 @@ export function renderRecent(): void {
   }
   box.innerHTML = '<span class="sb-recent-label">最近</span>' + list.map((it) => {
     const cls = 'sb-chip sb-chip-' + it.type;
-    const tip = typeLabel(it.type) + '：' + it.name + '（点击追加到输入框）';
+    const tip = typeLabel(it.type) + '：' + it.name + '（点击追加到输入框，点击 × 删除）';
     return '<span class="' + cls + '" data-type="' + it.type + '" data-name="' + escapeHtml(it.name) + '" title="' + escapeHtml(tip) + '">' +
-      escapeHtml(it.name) + '</span>';
+      '<span class="sb-chip-name">' + escapeHtml(it.name) + '</span>' +
+      '<button class="sb-chip-del" type="button" title="删除快捷方式" aria-label="删除">×</button>' +
+      '</span>';
   }).join('');
+
   box.querySelectorAll('.sb-chip').forEach((el: any) => {
-    el.addEventListener('click', async () => {
-      const type = el.dataset.type as RecentType;
-      const name = el.dataset.name;
+    const type = el.dataset.type as RecentType;
+    const name = el.dataset.name as string;
+
+    // 点击删除按钮删除
+    const delBtn = el.querySelector('.sb-chip-del');
+    if (delBtn) {
+      delBtn.addEventListener('click', (e: MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        removeRecent(type, name);
+      });
+    }
+
+    // 右键直接删除
+    el.addEventListener('contextmenu', (e: MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      removeRecent(type, name);
+    });
+
+    el.addEventListener('click', async (e: MouseEvent) => {
+      // 若点击的是删除按钮，不触发追加
+      if ((e.target as HTMLElement)?.closest('.sb-chip-del')) return;
+
       // 注意：点击底部快捷按钮【只执行动作】，不重新排序（排序只在侧边栏点击卡片时发生）
       if (type === 'snippet') {
         // 快捷提示词：触发（和点卡片一样）

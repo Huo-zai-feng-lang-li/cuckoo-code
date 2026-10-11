@@ -20,6 +20,19 @@ import { getPromptSections as getDshPromptSections } from '../plugins/dsh-compat
 // 提示词模板目录（D20：锚定应用根，与 dist 结构解耦）
 const PROMPT_DIR = resolveSrc('prompt');
 
+type TextCacheEntry = { mtimeMs: number; size: number; content: string };
+const textCache = new Map<string, TextCacheEntry>();
+
+/** 静态提示词文件按文件签名缓存，外部编辑后自动失效。 */
+function readCachedText(filePath: string): string {
+  const stat = fs.statSync(filePath);
+  const cached = textCache.get(filePath);
+  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.content;
+  const content = fs.readFileSync(filePath, 'utf-8');
+  textCache.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, content });
+  return content;
+}
+
 /**
  * 读取平台提示词模板。
  * 优先级：1) provider.getPromptTemplate()  2) src/prompt/{id}.md  3) src/prompt/default.md
@@ -49,7 +62,7 @@ function loadTemplate(providerId: string): { content: string; path: string; erro
 
   if (!templateContent && templatePath) {
     try {
-      templateContent = fs.readFileSync(templatePath, 'utf-8');
+      templateContent = readCachedText(templatePath);
     } catch (err: any) {
       return { content: '', path: templatePath, error: '读取提示词模板失败: ' + err.message };
     }
@@ -58,7 +71,7 @@ function loadTemplate(providerId: string): { content: string; path: string; erro
   if (!templateContent) {
     templatePath = path.join(PROMPT_DIR, 'default.md');
     try {
-      templateContent = fs.readFileSync(templatePath, 'utf-8');
+      templateContent = readCachedText(templatePath);
       console.warn('[Cuckoo Code] 未找到平台模板，使用默认模板:', templatePath);
     } catch (err: any) {
       return { content: '', path: templatePath, error: '读取默认提示词模板失败: ' + err.message };
@@ -126,7 +139,7 @@ function readProjectIntro(selectedDir: string): string {
   const cuckooMdPath = candidates.find((p) => fs.existsSync(p));
   if (!cuckooMdPath) return '';
   try {
-    const content = fs.readFileSync(cuckooMdPath, 'utf-8');
+    const content = readCachedText(cuckooMdPath);
     console.log('[Cuckoo Code] 已读取 CUCKOO.md 内容:', cuckooMdPath);
     return content;
   } catch (err: any) {
@@ -150,7 +163,7 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
   // 工具 API 类型定义（从 d.ts 文件读取，避免与模板重复维护）
   let toolApiTypes = '';
   try {
-    toolApiTypes = fs.readFileSync(resolveToolSpec(), 'utf-8');
+    toolApiTypes = readCachedText(resolveToolSpec());
   } catch (err) { /* 找不到时保持空串 */ }
   if (!toolApiTypes) {
     console.error('[Cuckoo Code] 读取 cuckoo-tools.d.ts 失败:', resolveToolSpec());

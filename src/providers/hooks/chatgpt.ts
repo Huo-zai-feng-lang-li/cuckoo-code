@@ -2,9 +2,8 @@
  * ChatGPT 网络拦截器（注入 AI 网页主世界执行）
  *
  * 构建期经 esbuild 打包为自包含 IIFE（见 scripts/build-hooks.mjs）。
- * 共享 SSE 帧解码见 ./shared/sse.js；本平台需处理 [DONE] 与 patch 操作，故 parseBlock 本地定义。
+ * ChatGPT 登录态接口使用 SSE，匿名接口使用 NDJSON；两种格式都在这里解码。
  */
-import { createFrameDecoder, extractData } from './shared/sse.js';
 
 function install(): void {
   var MARKER = '__cuckooChatgptHookInstalled__';
@@ -18,7 +17,8 @@ function install(): void {
       var u = new URL(url, document.baseURI);
       var host = u.hostname;
       if (host.indexOf('chatgpt.com') === -1 && host.indexOf('chat.openai.com') === -1) return false;
-      return /\/backend-api\/(?:f\/)?conversation\/?$/.test(u.pathname);
+      return /\/backend-api\/(?:f\/)?conversation\/?$/.test(u.pathname) ||
+        /\/unauth-mweb\/conversation\/updates\/?$/.test(u.pathname);
     } catch (e) {
       return false;
     }
@@ -52,12 +52,58 @@ function install(): void {
     } catch (e) { /* ignore */ }
   }
 
-  // 返回 { data: string|null, done: boolean }
-  function parseBlock(block) {
-    var data = extractData(block);
-    if (data == null) return { data: null, done: false };
-    if (data === '[DONE]') return { data: null, done: true };
-    return { data: data, done: false };
+  // 同时解码登录态 SSE 与匿名态 NDJSON，输出 { parsed, done } 事件。
+  function createResponseDecoder() {
+    var buffer = '';
+    var sseData = [];
+
+    function flushSse(events) {
+      if (sseData.length === 0) return;
+      var data = sseData.join('\n');
+      sseData = [];
+      if (data === '[DONE]') {
+        events.push({ parsed: null, done: true });
+        return;
+      }
+      try { events.push({ parsed: JSON.parse(data), done: false }); } catch (e) { /* ignore */ }
+    }
+
+    function consumeLine(line, events) {
+      var value = line.replace(/\r$/, '');
+      var trimmed = value.trim();
+      if (!trimmed) {
+        flushSse(events);
+        return;
+      }
+      if (trimmed.indexOf('data:') === 0) {
+        sseData.push(trimmed.slice(5).trim());
+        return;
+      }
+      flushSse(events);
+      try { events.push({ parsed: JSON.parse(trimmed), done: false }); } catch (e) { /* ignore */ }
+    }
+
+    return {
+      push: function (text) {
+        buffer += text || '';
+        var events = [];
+        var index;
+        while ((index = buffer.indexOf('\n')) >= 0) {
+          consumeLine(buffer.slice(0, index), events);
+          buffer = buffer.slice(index + 1);
+        }
+        return events;
+      },
+      finish: function () {
+        var events = [];
+        if (buffer) {
+          consumeLine(buffer, events);
+          buffer = '';
+        }
+        flushSse(events);
+        return events;
+      }
+    };
   }
 
   // ---------- 回复文本提取 ----------
@@ -78,6 +124,20 @@ function install(): void {
 
     function applyOp(node) {
       if (!node || typeof node !== 'object') return;
+
+      // 匿名接口的正文事件直接携带 markdown，replace 后 append 增量。
+      if (node.type === 'content') {
+        if (typeof node.markdown === 'string') {
+          if (node.mode === 'append') text += node.markdown;
+          else text = node.markdown;
+        }
+        if (node.status === 'complete') finished = true;
+        return;
+      }
+      if (node.type === 'end') {
+        finished = true;
+        return;
+      }
 
       // 1) 批量操作：o='patch' / 'BATCH'，v 为操作数组
       if (Array.isArray(node.v) && (node.o === 'patch' || node.o === 'BATCH')) {
@@ -130,22 +190,19 @@ function install(): void {
     if (!body) return;
     var reader = body.getReader();
     var decoder = new TextDecoder();
-    var frameDecoder = createFrameDecoder();
+    var responseDecoder = createResponseDecoder();
     var extractor = createExtractor();
     var dispatched = false;
 
-    function flushFrame(frame) {
-      var r = parseBlock(frame);
-      if (r.done) { extractor.markDone(); return; }
-      if (r.data == null) return;
-      var parsed;
-      try { parsed = JSON.parse(r.data); } catch (e) { return; }
-      extractor.consume(parsed);
+    function consumeEvents(events) {
+      for (var i = 0; i < events.length; i++) {
+        if (events[i].done) extractor.markDone();
+        else if (events[i].parsed) extractor.consume(events[i].parsed);
+      }
     }
 
     function feed(chunk) {
-      var frames = frameDecoder.push(chunk);
-      for (var i = 0; i < frames.length; i++) flushFrame(frames[i]);
+      consumeEvents(responseDecoder.push(chunk));
       dispatchStream(extractor.text, extractor.finished);
       if (extractor.finished && !dispatched) {
         dispatched = true;
@@ -158,8 +215,7 @@ function install(): void {
         if (r.done) {
           var tail = decoder.decode();
           if (tail) feed(tail);
-          var rest = frameDecoder.finish();
-          for (var i = 0; i < rest.length; i++) flushFrame(rest[i]);
+          consumeEvents(responseDecoder.finish());
           if (!dispatched) { dispatched = true; dispatch(extractor.text, true); }
           return;
         }
@@ -209,17 +265,15 @@ function install(): void {
 
   function observeXhr(xhr) {
     var lastLen = 0;
-    var frameDecoder = createFrameDecoder();
+    var responseDecoder = createResponseDecoder();
     var extractor = createExtractor();
     var dispatched = false;
 
-    function flushFrame(frame) {
-      var r = parseBlock(frame);
-      if (r.done) { extractor.markDone(); return; }
-      if (r.data == null) return;
-      var parsed;
-      try { parsed = JSON.parse(r.data); } catch (e) { return; }
-      extractor.consume(parsed);
+    function consumeEvents(events) {
+      for (var i = 0; i < events.length; i++) {
+        if (events[i].done) extractor.markDone();
+        else if (events[i].parsed) extractor.consume(events[i].parsed);
+      }
     }
 
     function consumeChunk() {
@@ -228,8 +282,7 @@ function install(): void {
       if (typeof raw !== 'string' || raw.length <= lastLen) return;
       var chunk = raw.slice(lastLen);
       lastLen = raw.length;
-      var frames = frameDecoder.push(chunk);
-      for (var i = 0; i < frames.length; i++) flushFrame(frames[i]);
+      consumeEvents(responseDecoder.push(chunk));
       dispatchStream(extractor.text, extractor.finished);
       if (extractor.finished && !dispatched) {
         dispatched = true;
@@ -240,8 +293,7 @@ function install(): void {
     xhr.addEventListener('readystatechange', function () {
       if (xhr.readyState === 3 || xhr.readyState === 4) consumeChunk();
       if (xhr.readyState === 4 && !dispatched) {
-        var rest = frameDecoder.finish();
-        for (var i = 0; i < rest.length; i++) flushFrame(rest[i]);
+        consumeEvents(responseDecoder.finish());
         dispatched = true;
         dispatch(extractor.text, true);
       }

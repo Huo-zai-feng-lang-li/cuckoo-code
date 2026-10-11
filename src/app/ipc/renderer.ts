@@ -7,6 +7,7 @@ import * as profileManager from '../profile.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain, Notification } = require('electron');
+const activeNotifications = new Set<any>();
 
 function registerRendererIpc(): void {
   // AI 回复完成时：窗口已聚焦则不打扰；否则弹通知并让任务栏/Dock 闪烁
@@ -30,6 +31,20 @@ function registerRendererIpc(): void {
           title: windowName + ' - AI任务已完成',
           body: 'AI 已完成回复',
         });
+        // 保留来源窗口/profile，通知点击后可在多窗口环境中精确恢复。
+        activeNotifications.add(notification);
+        if (typeof notification.on === 'function') {
+          notification.on('click', () => {
+            try {
+              if (!windowState.focusWindow(win)) {
+                windowState.focusWindowByProfileId(ctx && ctx.profileId);
+              }
+            } finally {
+              activeNotifications.delete(notification);
+            }
+          });
+          notification.on('close', () => activeNotifications.delete(notification));
+        }
         notification.show();
 
         win.flashFrame(true);

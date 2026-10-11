@@ -12,9 +12,12 @@ const chatgpt = {
   homeUrl: 'https://chatgpt.com/',
   sessionUrlBase: 'https://chatgpt.com/c/',
 
-  // 判断元素是否可见（offsetWidth/offsetHeight > 0）
+  // 判断元素是否可见（优先 checkVisibility，避免强制布局排版）
   isElementVisible(el: any) {
     if (!el) return false;
+    if (typeof el.checkVisibility === 'function') {
+      try { return el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }); } catch (_) {}
+    }
     return el.offsetWidth > 0 && el.offsetHeight > 0;
   },
 
@@ -40,6 +43,7 @@ const chatgpt = {
   findSendButton() {
     const selectors = [
       'button[data-testid="send-button"]',
+      'button[aria-label="Send message"]',
       'button[aria-label="发送提示词"]',
       'button[aria-label*="发送"]',
       'button[aria-label*="Send"]',

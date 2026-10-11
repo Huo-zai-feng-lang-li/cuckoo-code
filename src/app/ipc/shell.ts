@@ -6,9 +6,10 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as windowState from '../window.js';
+import * as profileManager from '../profile.js';
 import { getProvider } from '../../providers/registry.js';
 import { setWindowCumulative, getTotal, cleanupSubagentKeys } from '../token-stats.js';
-import { resolveAsset, resolveSrc } from '../../infra/paths.js';
+import { resolveAsset, resolveSrc, resolveAppIconPath } from '../../infra/paths.js';
 import * as updater from '../../updater/index.js';
 // 新对话要让 harness 视图一起重置 —— 两个入口共用同一段逻辑，避免行为分叉
 import { prepareNewConversation } from './harness.js';
@@ -176,8 +177,10 @@ function registerShellIpc(): void {
   ipcMain.handle('web-navigate-session', async (event: any, { url }: any) => {
     const ctx = windowState.getContextByWebContents(event.sender);
     const view = ctx ? ctx.view : null;
-    if (!view || !url) return { success: false };
-    try { await view.webContents.loadURL(url); return { success: true }; }
+    if (!view || typeof url !== 'string') return { success: false };
+    const trimmed = url.trim();
+    if (!/^https?:\/\//i.test(trimmed)) return { success: false, error: '仅支持 http/https 协议地址' };
+    try { await view.webContents.loadURL(trimmed); return { success: true }; }
     catch (err: any) { return { success: false, error: err.message }; }
   });
   // 新对话：导航到平台首页（开新会话）
@@ -200,9 +203,13 @@ function registerShellIpc(): void {
 
   ipcMain.handle('shell-navigate', async (event: any, { url }: any) => {
     const view = viewOf(event);
-    if (!view || !url) return { success: false };
+    if (!view || typeof url !== 'string') return { success: false };
+    const trimmed = url.trim();
+    if (!/^https?:\/\//i.test(trimmed) && trimmed !== 'about:blank') {
+      return { success: false, error: '仅支持 http/https 协议地址' };
+    }
     try {
-      await view.webContents.loadURL(url);
+      await view.webContents.loadURL(trimmed);
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };
@@ -264,18 +271,36 @@ function registerShellIpc(): void {
     }
   });
 
+  // 内嵌站点拒绝 OAuth 时，在系统浏览器中打开当前安全网页。
+  ipcMain.handle('open-current-external', async (event: any) => {
+    try {
+      const view = viewOf(event);
+      const url = view && !view.webContents.isDestroyed() ? view.webContents.getURL() : '';
+      if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return { success: false, error: '当前页面不是网页地址' };
+      await shell.openExternal(url);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
   // 打开「飞书配置教程」应用内新窗口（自包含 HTML，离线可用）
   ipcMain.handle('open-feishu-setup', async () => {
     try {
       const htmlPath = resolveSrc('ui/feishu-setup.html');
+      const iconPath = resolveAppIconPath();
       const win = new BrowserWindow({
         width: 900,
         height: 820,
         title: '飞书同步配置教程',
+        icon: iconPath,
         backgroundColor: '#16181d',
         autoHideMenuBar: true,
         webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
       });
+      if (process.platform === 'win32' && iconPath) {
+        try { win.setIcon(iconPath); } catch (_) {}
+      }
       win.loadFile(htmlPath);
       return { success: true };
     } catch (err: any) {
@@ -376,6 +401,18 @@ function registerShellIpc(): void {
     try { if (typeof win.__ckLayout === 'function') win.__ckLayout(); } catch (_) {}
     // 通知壳页面最终宽度（确保一致）
     try { if (!win.webContents.isDestroyed()) win.webContents.send('shell-sidebar-drag', win.__ckSidebarWidth); } catch (_) {}
+  });
+
+  // 取当前窗口名（底部状态栏显示）
+  ipcMain.handle('shell-get-window-name', async (event: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    if (!ctx) return { success: false };
+    try {
+      const profile = profileManager.getProfileById(ctx.profileId);
+      return { success: true, name: (profile && profile.name) || ctx.profileId || '' };
+    } catch (_) {
+      return { success: true, name: ctx.profileId || '' };
+    }
   });
 
   // 设置左侧 Cuckoo 侧边栏宽度（收起=46，展开=320）→ 重新布局 AI 页面

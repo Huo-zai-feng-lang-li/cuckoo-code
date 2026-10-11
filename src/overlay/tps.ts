@@ -17,11 +17,58 @@
 /** 估算一段文本的 token 数（近似；仅在无服务端 token 时回退使用） */
 export function estimateTokens(text: string): number {
   if (!text) return 0;
-  const cjk = (text.match(/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]/g) || []).length;
-  const emoji = (text.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu) || []).length;
-  const digits = (text.match(/\d/g) || []).length;
-  const spaces = (text.match(/\s/g) || []).length;
-  const rest = Math.max(0, text.length - cjk - emoji - digits - spaces);
+  let cjk = 0;
+  let emoji = 0;
+  let digits = 0;
+  let spaces = 0;
+  let surrogateSkips = 0;
+  const len = text.length;
+
+  for (let i = 0; i < len; i++) {
+    const code = text.charCodeAt(i);
+    // 空白字符: <= 32 (包括空格、换行、制表符等)
+    if (code <= 32) {
+      spaces++;
+      continue;
+    }
+    // 数字 0-9: 0x30 - 0x39
+    if (code >= 0x30 && code <= 0x39) {
+      digits++;
+      continue;
+    }
+    // CJK 常见文字与标点范围
+    if (
+      (code >= 0x4e00 && code <= 0x9fff) ||
+      (code >= 0x3400 && code <= 0x4dbf) ||
+      (code >= 0x3040 && code <= 0x30ff) ||
+      (code >= 0xac00 && code <= 0xd7af) ||
+      (code >= 0xf900 && code <= 0xfaff)
+    ) {
+      cjk++;
+      continue;
+    }
+    // 杂项符号 (0x2600 - 0x27BF)
+    if (code >= 0x2600 && code <= 0x27bf) {
+      emoji++;
+      continue;
+    }
+    // UTF-16 代理对 Emoji (0x1F300 - 0x1FAFF)
+    if (code >= 0xd800 && code <= 0xdbff && i + 1 < len) {
+      const low = text.charCodeAt(i + 1);
+      if (low >= 0xdc00 && low <= 0xdfff) {
+        const codePoint = ((code - 0xd800) * 0x400) + (low - 0xdc00) + 0x10000;
+        if (codePoint >= 0x1f300 && codePoint <= 0x1faff) {
+          emoji++;
+          i++;
+          surrogateSkips++;
+          continue;
+        }
+      }
+    }
+  }
+
+  const effectiveLen = len - surrogateSkips;
+  const rest = Math.max(0, effectiveLen - cjk - emoji - digits - spaces);
   return Math.round(cjk * 0.7 + emoji * 2.5 + digits * 0.35 + spaces * 0.25 + rest * 0.28);
 }
 

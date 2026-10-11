@@ -31,6 +31,10 @@ const shellAPI = {
     ipcRenderer.on('shell-total-updated', (_e: any, data: any) => cb(data));
   },
   getSystemTotal: () => ipcRenderer.invoke('get-system-total'),
+  getWindowName: () => ipcRenderer.invoke('shell-get-window-name'),
+  onWindowNameUpdated: (cb: (name: string) => void) => {
+    ipcRenderer.on('shell-window-name-updated', (_e: any, name: any) => cb(name));
+  },
   getProjectDir: () => ipcRenderer.invoke('get-project-dir'),
   // 点击"项目目录" → 弹目录选择框 + 重新初始化（复用 init-project 通道）
   initProject: () => ipcRenderer.invoke('init-project', {}),
@@ -105,6 +109,8 @@ const shellAPI = {
   listAllSessions: () => ipcRenderer.invoke('list-all-sessions'),
   navigateSession: (sessionId: string) => ipcRenderer.invoke('navigate-session', { sessionId }),
   setSessionArchived: (sessionId: string, archived: boolean) => ipcRenderer.invoke('set-session-archived', { sessionId, archived }),
+  deleteSessionRecord: (sessionId: string) => ipcRenderer.invoke('delete-session-record', { sessionId }),
+  deleteProjectRecords: (dir: string) => ipcRenderer.invoke('delete-project-records', { dir }),
   getDirInfo: (dir: string) => ipcRenderer.invoke('get-dir-info', { dir }),
   // 项目文件树（只读浏览）
   listProjectTree: () => ipcRenderer.invoke('list-project-tree'),
@@ -147,6 +153,11 @@ const shellAPI = {
   openAgentFile: (agentPath: string) => ipcRenderer.invoke('open-agent-file', { agentPath }),
   renameAgent: (agentPath: string, newName: string) => ipcRenderer.invoke('rename-agent', { agentPath, newName }),
   deleteAgentFile: (agentPath: string) => ipcRenderer.invoke('delete-agent-file', { agentPath }),
+  listRules: () => ipcRenderer.invoke('rules-list'),
+  createRule: (fileName: string, content: string) => ipcRenderer.invoke('rules-create', { fileName, content }),
+  saveRule: (fileName: string, content: string, expectedHash: string) => ipcRenderer.invoke('rules-save', { fileName, content, expectedHash }),
+  deleteRule: (fileName: string, expectedHash: string) => ipcRenderer.invoke('rules-delete', { fileName, expectedHash }),
+  openRulesDir: () => ipcRenderer.invoke('rules-open-dir'),
   // ========== MCP ==========
   listMcpServers: () => ipcRenderer.invoke('list-mcp-servers', {}),
   enableMcpServer: (name: string) => ipcRenderer.invoke('enable-mcp-server', { name }),
@@ -178,6 +189,7 @@ const shellAPI = {
   checkUpdate: () => ipcRenderer.invoke('check-update'),
   getAssetUrl: (rel: string) => ipcRenderer.invoke('get-asset-url', { rel }),
   openExternal: (url: string) => ipcRenderer.invoke('open-external', { url }),
+  openCurrentExternal: () => ipcRenderer.invoke('open-current-external'),
   openFeishuSetup: () => ipcRenderer.invoke('open-feishu-setup'),
   // ========== 飞书同步 ==========
   getFeishuConfig: () => ipcRenderer.invoke('feishu-get-config'),

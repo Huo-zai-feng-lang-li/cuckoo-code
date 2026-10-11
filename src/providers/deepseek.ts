@@ -15,8 +15,19 @@ const deepseek = {
   homeUrl: 'https://chat.deepseek.com/',
   sessionUrlBase: 'https://chat.deepseek.com/a/chat/s/',
 
-  // 查找可见的聊天输入框
+  // 查找可见的聊天输入框（严格排除搜索框）
   findInput() {
+    const isSearchElement = (el: any) => {
+      if (!el) return false;
+      try {
+        const ph = String((typeof el.getAttribute === 'function' ? el.getAttribute('placeholder') : el.placeholder) || '').toLowerCase();
+        const aria = String((typeof el.getAttribute === 'function' ? el.getAttribute('aria-label') : el.ariaLabel) || '').toLowerCase();
+        if (ph.includes('搜索') || ph.includes('search') || aria.includes('搜索') || aria.includes('search')) return true;
+        if (typeof el.closest === 'function' && el.closest('[role="dialog"], .modal, [class*="modal"], [class*="search"]')) return true;
+      } catch (_) {}
+      return false;
+    };
+
     const selectors = [
       'textarea[placeholder*="message"]',
       'textarea[placeholder*="Message"]',
@@ -36,38 +47,130 @@ const deepseek = {
     ];
     for (const sel of selectors) {
       try {
-        const el = document.querySelector(sel);
-        if (this.isElementVisible(el)) return el;
+        const els = document.querySelectorAll(sel);
+        for (let i = 0; i < els.length; i++) {
+          const el = els[i];
+          if (this.isElementVisible(el) && !isSearchElement(el)) return el;
+        }
       } catch (_) {}
     }
     return null;
   },
 
-  // 查找可见且未禁用的发送按钮
-  findSendButton() {
-    const selectors = [
-      'button[type="submit"]',
-      'button[aria-label*="send"]',
-      'button[aria-label*="发送"]',
-      'button[title*="send"]',
-      'button[title*="发送"]',
-      'button[data-action="send"]',
-      'button[data-type="send"]',
-      '.send-btn',
-      '.submit-btn',
-      'button svg[data-icon="send"]',
-      '[data-testid="send"]',
-      '[data-testid="send-button"]',
-      'button:has(svg[data-icon="arrow"])',
-      'button:has(> svg)',
-      'button:has(svg[data-icon="send"])',
+  // 查找可见且未禁用的发送按钮（严格限制在输入框容器内或显式发送标记，严禁误选侧边栏/搜索/导航）
+  findSendButton(knownInput?: any) {
+    const isSafeButton = (el: any) => {
+      if (!el || !this.isElementVisible(el)) return false;
+      if (el.disabled || el.getAttribute?.('aria-disabled') === 'true') return false;
+
+      // 绝对不能是文件上传 input 或内部包含文件上传 input 的元素（严防唤起系统文件管理器）
+      if (el.tagName === 'INPUT' && (el.type || '').toLowerCase() === 'file') return false;
+      if (typeof el.querySelector === 'function' && el.querySelector('input[type="file"]')) {
+        return false;
+      }
+
+      // 绝对不能位于侧边栏、顶部导航、模态弹窗或搜索框内
+      if (typeof el.closest === 'function') {
+        if (el.closest('aside, nav, [class*="sidebar"], [class*="side-bar"], [class*="nav"], header, [role="dialog"], .modal, [class*="modal"], [class*="search"]')) {
+          return false;
+        }
+      }
+
+      // 绝对不能包含侧边栏、折叠、菜单、搜索、新建对话、以及上传附件等功能属性
+      const aria = String((typeof el.getAttribute === 'function' ? el.getAttribute('aria-label') : el.ariaLabel) || '').toLowerCase();
+      const title = String((typeof el.getAttribute === 'function' ? el.getAttribute('title') : el.title) || '').toLowerCase();
+      const className = String(el.className || '').toLowerCase();
+      const testId = String((typeof el.getAttribute === 'function' ? el.getAttribute('data-testid') : '') || '').toLowerCase();
+      const text = String(el.innerText || el.textContent || '').trim().toLowerCase();
+
+      const forbiddenWords = [
+        '搜索', 'search', '侧边栏', 'sidebar', 'menu', '菜单', 'collapse', 'expand',
+        '折叠', '展开', '关闭', 'close', '新对话', '新建对话', 'new chat',
+        '深度思考', '联网搜索', 'think', 'history', '历史',
+        '上传', '附件', '文件', 'upload', 'attach', 'file', 'image', '图片', '语音', 'audio', 'mic', '录音', 'paperclip', 'clip'
+      ];
+      if (forbiddenWords.some(w => aria.includes(w) || title.includes(w) || className.includes(w) || testId.includes(w) || text.includes(w))) {
+        return false;
+      }
+
+      // 检查内部 svg 是否有附件/上传相关属性
+      if (typeof el.querySelector === 'function') {
+        const svg = el.querySelector('svg');
+        if (svg) {
+          const svgAria = String(svg.getAttribute?.('aria-label') || '').toLowerCase();
+          const svgClass = String(svg.getAttribute?.('class') || '').toLowerCase();
+          if (forbiddenWords.some(w => svgAria.includes(w) || svgClass.includes(w))) {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    };
+
+    // 优先复用调用方已获取的 input 实例，避免每次重试循环均全量扫描 15 个输入框选择器
+    const input = knownInput || this.findInput();
+
+    // 策略 1 (最高优先级)：从输入框向上查找输入区容器，并在输入区容器内部寻找发送按钮
+    if (input) {
+      let cur = input.parentElement;
+      for (let depth = 0; depth < 5 && cur && (typeof document === 'undefined' || !document.body || cur !== document.body); depth++) {
+        // 先找带显式发送标识的元素
+        const explicitSelectors = [
+          'button[aria-label*="发送"]',
+          'button[aria-label*="send" i]',
+          'div[role="button"][aria-label*="发送"]',
+          'div[role="button"][aria-label*="send" i]',
+          '[data-testid*="send" i]',
+          'button[type="submit"]',
+          '.send-btn',
+          '.submit-btn',
+          '[class*="sendBtn"]',
+          '[class*="send-btn"]',
+          '[class*="sendButton"]',
+        ];
+        for (const sel of explicitSelectors) {
+          const btn = cur.querySelector(sel);
+          if (isSafeButton(btn)) return btn;
+        }
+
+        // 如果没有显式发送文字，从输入框容器内寻找具有发送/提交意图的可点击按钮
+        // 注意：严格排除任何可能打开文件管理器或与上传关联的按钮，并从后向前查找（发送按钮通常位于右侧末端）
+        const candidates = Array.from(cur.querySelectorAll('button, div[role="button"]'));
+        for (let i = candidates.length - 1; i >= 0; i--) {
+          const el = candidates[i] as any;
+          if (el === input) continue;
+          if (!isSafeButton(el)) continue;
+          if (el.querySelector && el.querySelector('svg')) {
+            return el;
+          }
+        }
+        cur = cur.parentElement;
+      }
+    }
+
+    // 策略 2 (兜底)：全局仅通过绝对精确的选择器查找，绝不使用通配符（严禁 button:has(svg) 等全局通配）
+    const strictGlobalSelectors = [
+      'button[aria-label="发送"]',
+      'button[aria-label="Send"]',
+      'button[aria-label="Send message"]',
+      'button[aria-label*="发送消息"]',
+      'div[role="button"][aria-label="发送"]',
+      'div[role="button"][aria-label="Send"]',
+      'button[data-testid="send-button"]',
+      'button[data-testid="send"]',
+      '[data-testid="chat-input-send"]',
     ];
-    for (const sel of selectors) {
+    for (const sel of strictGlobalSelectors) {
       try {
-        const btn = document.querySelector(sel) as any;
-        if (this.isElementVisible(btn) && !btn.disabled) return btn;
+        const els = document.querySelectorAll(sel);
+        for (let i = 0; i < els.length; i++) {
+          const el = els[i];
+          if (isSafeButton(el)) return el;
+        }
       } catch (_) {}
     }
+
     return null;
   },
 
@@ -94,9 +197,14 @@ const deepseek = {
     return url.includes('chat.deepseek.com');
   },
 
-  // 判断元素是否可见（offsetWidth/offsetHeight > 0）
+  // 判断元素是否可见（优先使用原生 checkVisibility 避免强制触发 Layout）
   isElementVisible(el: any) {
     if (!el) return false;
+    if (typeof el.checkVisibility === 'function') {
+      try {
+        return el.checkVisibility({ checkOpacity: true });
+      } catch (_) {}
+    }
     return el.offsetWidth > 0 && el.offsetHeight > 0;
   },
 

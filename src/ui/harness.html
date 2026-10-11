@@ -2018,6 +2018,46 @@
         // 会命中 onSessionChanged 首行的 `sid === currentSessionId` 早退，什么都清不掉。
         case 'reset': resetConversation(); break;
         case 'status': setStatus(payload.text, payload.busy ? 'busy' : 'ready'); break;
+        // 快捷方式/提示词回显到输入框
+        case 'append-input': {
+          var appText = (payload && payload.text) || '';
+          if (appText && input) {
+            var cur = input.value || '';
+            if (!cur) {
+              input.value = appText;
+            } else if (/\s$/.test(cur)) {
+              input.value = cur + appText;
+            } else {
+              input.value = cur + ' ' + appText;
+            }
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.focus();
+            input.style.height = 'auto';
+            input.style.height = Math.min(input.scrollHeight, 260) + 'px';
+          }
+          break;
+        }
+        case 'trigger-snippet': {
+          var snipContent = (payload && payload.content) || '';
+          if (snipContent && input) {
+            var cur = input.value || '';
+            if (!cur) {
+              input.value = snipContent;
+            } else if (/\s$/.test(cur)) {
+              input.value = cur + snipContent;
+            } else {
+              input.value = cur + ' ' + snipContent;
+            }
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.focus();
+            input.style.height = 'auto';
+            input.style.height = Math.min(input.scrollHeight, 260) + 'px';
+            if (payload.autoSend) {
+              setTimeout(function () { send(); }, 60);
+            }
+          }
+          break;
+        }
       }
     });
   }

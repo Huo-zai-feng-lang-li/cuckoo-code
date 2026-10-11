@@ -119,6 +119,7 @@
   .nav-btn:active { background: var(--ck-surface); }
   .nav-btn.disabled { opacity: .3; cursor: default; pointer-events: none; }
   .nav-btn svg { width: 16px; height: 16px; }
+  .theme-toggle.active, .nav-btn.active { color: var(--ck-primary); background: var(--ck-primary-soft); }
   .url-wrap {
     flex: 1; display: flex; align-items: center;
     height: 32px; padding: 0 12px; margin: 0 8px;
@@ -166,14 +167,34 @@
   .sb-recent { display: flex; align-items: center; gap: 6px; overflow: hidden; min-width: 0; }
   .sb-recent-label { font-size: 10.5px; color: var(--ck-text-dim); flex-shrink: 0; }
   .sb-chip {
-    font-size: 10.5px; padding: 1px 8px; border-radius: 999px;
+    font-size: 10.5px; padding: 1px 4px 1px 8px; border-radius: 999px;
     cursor: pointer; white-space: nowrap; flex-shrink: 0;
-    max-width: 140px; overflow: hidden; text-overflow: ellipsis;
+    max-width: 160px;
     transition: filter .15s, transform .1s;
     border: 1px solid transparent;
+    display: inline-flex; align-items: center; gap: 4px;
+    user-select: none;
   }
   .sb-chip:hover { filter: brightness(1.15); }
-  .sb-chip:active { transform: scale(.96); }
+  .sb-chip:active { transform: scale(.97); }
+  .sb-chip-name {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px;
+  }
+  .sb-chip-del {
+    border: none; background: transparent; padding: 0;
+    width: 13px; height: 13px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: inherit; opacity: .55; cursor: pointer;
+    font-size: 11px; line-height: 1; flex-shrink: 0;
+    transition: opacity .15s, background .15s, transform .1s;
+  }
+  .sb-chip-del:hover {
+    opacity: 1; background: rgba(255, 255, 255, 0.22);
+    transform: scale(1.1);
+  }
+  .sb-chip-del:active {
+    transform: scale(.9);
+  }
   .sb-chip-skill { color: var(--ck-primary); background: var(--ck-primary-soft); border-color: color-mix(in srgb, var(--ck-primary) 30%, transparent); }
   .sb-chip-mcp { color: var(--ck-green); background: color-mix(in srgb, var(--ck-green) 14%, transparent); border-color: color-mix(in srgb, var(--ck-green) 34%, transparent); }
   .sb-chip-agent { color: #d97757; background: color-mix(in srgb, #d97757 14%, transparent); border-color: color-mix(in srgb, #d97757 34%, transparent); }
@@ -195,12 +216,12 @@
     width: 36px; height: 36px; border: none; border-radius: 8px;
     background: transparent; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
-    position: relative; transition: background .15s;
+    position: relative; transition: background .28s ease;
   }
   .ck-ab-item:hover { background: var(--ck-surface-hover); }
   .ck-ab-item:active { transform: scale(0.92); }
-  .ck-ab-icon { width: 18px; height: 18px; opacity: .45; transition: opacity .15s, color .15s; color: var(--ck-text); }
-  .ck-ab-text { font-size: 15px; font-weight: 700; line-height: 1; opacity: .45; transition: opacity .15s, color .15s; color: var(--ck-text); }
+  .ck-ab-icon { width: 18px; height: 18px; opacity: .45; transition: opacity .28s ease, color .28s ease; color: var(--ck-text); }
+  .ck-ab-text { font-size: 15px; font-weight: 700; line-height: 1; opacity: .45; transition: opacity .28s ease, color .28s ease; color: var(--ck-text); }
   .ck-ab-item:hover .ck-ab-icon, .ck-ab-item:hover .ck-ab-text { opacity: .8; }
   .ck-ab-item.ck-ab-active { background: var(--ck-primary-soft); }
   .ck-ab-item.ck-ab-active .ck-ab-icon, .ck-ab-item.ck-ab-active .ck-ab-text { opacity: 1; color: var(--ck-primary); }

@@ -84,8 +84,13 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
   if (jsBlocks.length > 0) {
     console.log('[Cuckoo Code][拦截] 检测到 JS 工具代码块（' + jsBlocks.length + ' 个），开始执行');
     formatHintCount = 0;
-    // 从检测到工具调用到结果发送完成，全程遮盖页面，禁止用户额外操作
-    showToolMask();
+    // 显示"工具调用执行中"提示条 + 「停止」按钮（非阻塞，不拦截用户操作）。
+    // 停止语义：执行中 → 标记中止（执行完不回传）；等待发送 → 取消本次回传。
+    showToolMask(() => {
+      requestAbort();
+      cancelPendingSend();
+      hideToolMask();
+    });
     let results: any[] = [];
     try {
       results = await executeJsBlocksWithRetry(jsBlocks);
@@ -97,17 +102,14 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
       hideToolMask();
       return;
     }
-    // 等待发送阶段：遮罩上显示「停止」按钮，点击可取消回传
-    let cancelled = false;
-    showToolMask(() => {
-      cancelled = true;
-      cancelPendingSend();
+    if (abortRequested) {
+      abortRequested = false;
       hideToolMask();
-    });
-    if (abortRequested) { abortRequested = false; hideToolMask(); console.log('[Cuckoo Code][拦截] 已请求中止，不回传工具结果'); return; }
-    // afterSent 在"结果已发出"时触发隐藏；发送失败（找不到输入框等）则立即隐藏兜底
-    const sent = await sendCombinedJsResultsToChat(results, hideToolMask);
-    if (cancelled) return; // 用户已取消，不再处理
+      console.log('[Cuckoo Code][拦截] 已请求中止，不回传工具结果');
+      return;
+    }
+    // 结果发送：提示条保持显示，按钮仍可用于取消
+    const sent = await sendCombinedJsResultsToChat(results, () => hideToolMask());
     if (!sent) hideToolMask();
     return;
   }

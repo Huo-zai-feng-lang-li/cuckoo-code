@@ -127,11 +127,16 @@ class PwshTool extends Tool {
       console.log('[PwshTool] 执行命令: ' + trimmed + ', cwd=' + workDir);
 
       return await new Promise<ToolResult>((resolve) => {
-        execFile(
+        const child = execFile(
           'powershell',
           ['-NoProfile', '-Command', trimmed],
           { cwd: workDir, timeout, maxBuffer: 1024 * 1024, windowsHide: true, encoding: 'buffer' },
           (error, stdout, stderr) => {
+            if (error && (error as any).killed && process.platform === 'win32' && child.pid) {
+              try {
+                execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }, () => {});
+              } catch (_) {}
+            }
             const out = decodeOutput(stdout);
             const err = decodeOutput(stderr);
 

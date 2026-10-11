@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import { buildChromeUserAgent } from '../../infra/user-agent.js';
+import { resolveAppIconPath } from '../../infra/paths.js';
 const require = createRequire(import.meta.url);
 const { BrowserWindow } = require('electron');
 
@@ -31,11 +32,16 @@ class BrowserWindowManager {
       } while (this.windows.has(id));
     }
 
+    const iconPath = resolveAppIconPath();
     const win = new BrowserWindow({
       width: options.width || 1200,
       height: options.height || 800,
+      icon: iconPath,
       ...options
     });
+    if (process.platform === 'win32' && iconPath) {
+      try { win.setIcon(iconPath); } catch (_) {}
+    }
 
     // 设置与主窗口一致的普通 Chrome UA（动态取真实内核版本），避免暴露 Electron 标识
     win.webContents.setUserAgent(buildChromeUserAgent());

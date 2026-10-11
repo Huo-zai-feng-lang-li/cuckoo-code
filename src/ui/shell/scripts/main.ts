@@ -13,6 +13,7 @@ import { loadFiles } from './pages/files.js';
 import { loadSnippets } from './pages/snippets.js';
 import { loadSkills } from './pages/skills.js';
 import { loadAgents } from './pages/agents.js';
+import { loadRules } from './pages/rules.js';
 import { loadMcpServers } from './pages/mcp.js';
 import { loadAutoCompact } from './pages/token.js';
 import { loadAbout } from './pages/about.js';
@@ -31,6 +32,7 @@ registerTab('files', loadFiles);
 registerTab('snippets', loadSnippets);
 registerTab('skills', loadSkills);
 registerTab('agents', loadAgents);
+registerTab('rules', loadRules);
 registerTab('mcp', loadMcpServers);
 registerTab('token', loadAutoCompact);
 registerTab('about', loadAbout);
@@ -47,6 +49,22 @@ try { loadAutoCompact(); } catch (_) { /* ignore */ }
 
 // 渲染底部状态栏「最近使用」
 try { renderRecent(); } catch (_) { /* ignore */ }
+
+// 渲染底部状态栏「当前窗口名」
+function renderWindowName(): void {
+  const el = document.getElementById('sb-window-name-text');
+  const fn = (api as any).getWindowName;
+  if (!el || typeof fn !== 'function') return;
+  fn().then((r: any) => { if (r && r.success) el.textContent = r.name || '--'; }).catch(() => {});
+}
+try { renderWindowName(); } catch (_) { /* ignore */ }
+// 主进程推送窗口名变化（用户信息提取后）→ 实时更新
+if ((api as any).onWindowNameUpdated) {
+  (api as any).onWindowNameUpdated((name: string) => {
+    const el = document.getElementById('sb-window-name-text');
+    if (el && name) el.textContent = name;
+  });
+}
 
 // 插件界面挂载（接收主进程 shell-plugin-mount）
 try { initPluginShell(); } catch (_) { /* ignore */ }

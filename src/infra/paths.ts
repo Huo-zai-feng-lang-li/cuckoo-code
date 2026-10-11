@@ -17,12 +17,32 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { app } = require('electron');
 
-/** 应用根目录：开发=项目根，打包=asar 根 */
-export const APP_ROOT: string = app.getAppPath();
+/** 应用根目录：开发=项目根，打包=asar 根（纯 Node/测试环境回退为 process.cwd()） */
+export const APP_ROOT: string = (app && typeof app.getAppPath === 'function')
+  ? app.getAppPath()
+  : process.cwd();
 
 /** 解析项目根资源（如 assets/icon.png） */
 export function resolveAsset(rel: string): string {
   return path.join(APP_ROOT, rel);
+}
+
+/**
+ * 解析应用窗口与任务栏图标路径。
+ * Windows 平台优先使用多分辨率 .ico 文件以获得最佳渲染保真度；
+ * 其他平台使用高清晰度 .png 图标。
+ */
+export function resolveAppIconPath(): string {
+  const isWin = process.platform === 'win32';
+  if (isWin) {
+    const ico = resolveAsset('assets/icon.ico');
+    if (fs.existsSync(ico)) return ico;
+    const buildIco = resolveAsset('build/icon.ico');
+    if (fs.existsSync(buildIco)) return buildIco;
+  }
+  const png = resolveAsset('assets/icon.png');
+  if (fs.existsSync(png)) return png;
+  return resolveAsset('build/icon.png');
 }
 
 /** 解析 src/ 下的非 TS 资源（如 prompt/*.md、ui/*.html） */

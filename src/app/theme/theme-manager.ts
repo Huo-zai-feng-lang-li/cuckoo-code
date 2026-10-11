@@ -74,7 +74,7 @@ function getTheme(): ThemeRuntime {
     const nt = require('electron').nativeTheme;
     if (nt && typeof nt.on === 'function') {
       nt.on('updated', () => {
-        try { if (runtime && runtime.getTheme().preference === 'system') (runtime as any).publish(); } catch (_) {}
+        try { runtime?.refresh(); } catch (_) {}
       });
     }
   } catch (_) { /* ignore */ }
@@ -83,6 +83,7 @@ function getTheme(): ThemeRuntime {
   if (saved) {
     try { runtime.setTheme(saved); } catch { /* 未注册的旧主题，忽略 */ }
   }
+  syncNativeTheme(runtime.getTheme());
   return runtime;
 }
 
@@ -121,6 +122,8 @@ function broadcastSnapshot(snap: ThemeSnapshot): void {
     for (const ctx of windowState.getAllContexts()) {
       try { ctx.win && ctx.win.webContents && ctx.win.webContents.send('theme-changed', snap); } catch (_) {}
       try { ctx.view && ctx.view.webContents && ctx.view.webContents.send('theme-changed', snap); } catch (_) {}
+      try { (ctx as any).harnessView && (ctx as any).harnessView.webContents && (ctx as any).harnessView.webContents.send('theme-changed', snap); } catch (_) {}
+      try { (ctx as any).overlayView && (ctx as any).overlayView.webContents && (ctx as any).overlayView.webContents.send('theme-changed', snap); } catch (_) {}
     }
   } catch (_) { /* ignore */ }
 }

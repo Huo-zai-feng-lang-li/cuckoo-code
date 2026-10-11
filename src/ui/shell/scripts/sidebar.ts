@@ -1,12 +1,13 @@
 /**
  * 侧边栏：标签切换 + 收起/展开 + 拖拽调宽。
  * 用注册表解耦（各页面自己注册 tab 名 → 加载函数）。
+ *
+ * 图标点击用**事件委托**（绑定在 .ck-activitybar 上），
+ * 这样插件运行时动态挂载的图标也能响应。
  */
 import { api } from './shared.js';
 import { hidePreview, restorePreview } from './preview.js';
 
-const abItems = document.querySelectorAll('.ck-ab-item');
-const tabs = document.querySelectorAll('.ck-tab');
 const sidebar = document.getElementById('ck-sidebar') as any;
 const SIDEBAR_EXPANDED = 320;
 const SIDEBAR_COLLAPSED = 46;
@@ -59,10 +60,11 @@ export function setCollapsed(collapsed: boolean): void {
   }
 }
 
+/** 激活某标签：实时查询（含插件动态挂载的图标/面板） */
 function activateTab(item: any, tab: string): void {
-  abItems.forEach((i: any) => i.classList.remove('ck-ab-active'));
+  document.querySelectorAll('.ck-ab-item').forEach((i: any) => i.classList.remove('ck-ab-active'));
   item.classList.add('ck-ab-active');
-  tabs.forEach((p: any) => {
+  document.querySelectorAll('.ck-tab').forEach((p: any) => {
     if (p.dataset.panel === tab) p.classList.add('ck-tab-active');
     else p.classList.remove('ck-tab-active');
   });
@@ -71,9 +73,14 @@ function activateTab(item: any, tab: string): void {
   else hidePreview();
 }
 
-abItems.forEach((item: any) => {
-  item.addEventListener('click', () => {
+// 事件委托：动态挂载的图标（插件侧栏）也能响应点击
+const activitybar = document.querySelector('.ck-activitybar');
+if (activitybar) {
+  activitybar.addEventListener('click', (e: any) => {
+    const item = e.target && e.target.closest ? e.target.closest('.ck-ab-item') : null;
+    if (!item || !activitybar.contains(item)) return;
     const tab = item.dataset.tab;
+    if (!tab) return;
     const isCollapsed = sidebar && sidebar.classList.contains('ck-collapsed');
     const isActive = item.classList.contains('ck-ab-active');
     const run = () => { const f = tabLoaders[tab]; if (f) { try { f(); } catch (_) { /* ignore */ } } };
@@ -90,7 +97,7 @@ abItems.forEach((item: any) => {
     activateTab(item, tab);
     run();
   });
-});
+}
 
 // ===== 拖拽调宽 =====
 if (sidebar) {

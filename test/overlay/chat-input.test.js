@@ -88,14 +88,48 @@ test('isInputVisible null 返回 false', () => {
   assert.strictEqual(chat.isInputVisible(null), false);
 });
 
+test('isInputVisible 当 isConnected 为 false 时直接返回 false', () => {
+  const el = { isConnected: false, __style: { display: 'block', visibility: 'visible', opacity: '1' } };
+  assert.strictEqual(chat.isInputVisible(el), false);
+});
+
+test('isInputVisible 优先支持原生 checkVisibility', () => {
+  let checked = false;
+  const el = {
+    isConnected: true,
+    checkVisibility: () => {
+      checked = true;
+      return true;
+    },
+  };
+  assert.strictEqual(chat.isInputVisible(el), true);
+  assert.strictEqual(checked, true);
+});
+
 test('findInputArea 找不到任何输入框返回 null', () => {
+  chat.clearInputAreaCache();
   assert.strictEqual(chat.findInputArea(), null);
 });
 
-test('findInputArea 兜底返回第一个可见 textarea', () => {
-  const ta = { __style: { display: 'block', visibility: 'visible', opacity: '1' } };
-  document.querySelectorAll = () => [ta];
+test('findInputArea 兜底返回第一个可见 textarea 并命中缓存', () => {
+  chat.clearInputAreaCache();
+  const ta = { isConnected: true, __style: { display: 'block', visibility: 'visible', opacity: '1' } };
+  let scanCount = 0;
+  document.querySelectorAll = () => {
+    scanCount++;
+    return [ta];
+  };
+  // 首次查询：扫描 DOM
   assert.strictEqual(chat.findInputArea(), ta);
+  assert.strictEqual(scanCount, 1);
+  // 二次查询：命中缓存，不再触发 querySelectorAll
+  assert.strictEqual(chat.findInputArea(), ta);
+  assert.strictEqual(scanCount, 1, '命中缓存时不应重复查询 DOM');
+
+  // 清除缓存后再次查询：重新扫描 DOM
+  chat.clearInputAreaCache();
+  assert.strictEqual(chat.findInputArea(), ta);
+  assert.strictEqual(scanCount, 2);
 });
 
 
@@ -121,4 +155,48 @@ test('applyResultTransform: 返回空串时保持原文（失败路径）', () =
   assert.strictEqual(chat.applyResultTransform('原文', { transformToolResult: () => '' }), '原文');
   assert.strictEqual(chat.applyResultTransform('原文', { transformToolResult: () => null }), '原文');
   assert.strictEqual(chat.applyResultTransform('原文', { transformToolResult: () => 123 }), '原文');
+});
+
+// ===== isSafeSendButton（防止误点上传附件打开文件管理器）=====
+
+test('isSafeSendButton: 拒绝 null / undefined', () => {
+  assert.strictEqual(chat.isSafeSendButton(null, {}), false);
+  assert.strictEqual(chat.isSafeSendButton(undefined, {}), false);
+});
+
+test('isSafeSendButton: 拒绝 input[type=file]', () => {
+  const fileInput = { tagName: 'INPUT', type: 'file' };
+  assert.strictEqual(chat.isSafeSendButton(fileInput, {}), false);
+});
+
+test('isSafeSendButton: 拒绝内部包含 input[type=file] 的上传按钮', () => {
+  const uploadBtn = {
+    tagName: 'BUTTON',
+    querySelector: (sel) => (sel === 'input[type="file"]' ? { tagName: 'INPUT' } : null),
+  };
+  assert.strictEqual(chat.isSafeSendButton(uploadBtn, {}), false);
+});
+
+test('isSafeSendButton: 拒绝 aria-label 或 title 包含上传附件词汇的按钮', () => {
+  const btn1 = {
+    getAttribute: (attr) => (attr === 'aria-label' ? '上传附件' : null),
+  };
+  const btn2 = {
+    getAttribute: (attr) => (attr === 'title' ? 'Upload file' : null),
+  };
+  const btn3 = {
+    getAttribute: (attr) => (attr === 'aria-label' ? '添加图片' : null),
+  };
+  assert.strictEqual(chat.isSafeSendButton(btn1, {}), false);
+  assert.strictEqual(chat.isSafeSendButton(btn2, {}), false);
+  assert.strictEqual(chat.isSafeSendButton(btn3, {}), false);
+});
+
+test('isSafeSendButton: 允许合法的发送按钮', () => {
+  const sendBtn = {
+    tagName: 'BUTTON',
+    getAttribute: (attr) => (attr === 'aria-label' ? '发送消息' : null),
+    querySelector: () => null,
+  };
+  assert.strictEqual(chat.isSafeSendButton(sendBtn, {}), true);
 });

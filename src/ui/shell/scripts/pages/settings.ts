@@ -105,11 +105,15 @@ function fillThemeOptions(registered: any[]): void {
   const opts: [string, string][] = THEME_BUILTINS.slice();
   for (const t of (registered || [])) {
     // 内置 light/dark 已在上面，跳过
-    if (t && t.id && t.id !== 'light' && t.id !== 'dark') opts.push([t.id, t.id]);
+    if (t && typeof t.id === 'string' && t.id && t.id !== 'light' && t.id !== 'dark') opts.push([t.id, t.id]);
   }
   const cur = themeSelect.value;
-  themeSelect.innerHTML = opts.map(([v, label]) =>
-    '<option value="' + v + '">' + label + '</option>').join('');
+  themeSelect.replaceChildren(...opts.map(([value, label]) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    return option;
+  }));
   if (cur) themeSelect.value = cur;
 }
 function renderThemeSelect(): void {
@@ -133,7 +137,10 @@ if (themeSelect) {
   themeSelect.addEventListener('change', () => {
     const anyApi = api as any;
     if (typeof anyApi.themeSet === 'function') {
-      anyApi.themeSet(themeSelect.value).catch(() => {});
+      const requested = themeSelect.value;
+      anyApi.themeSet(requested).then((r: any) => {
+        if (r && r.success === false) themeSelect.value = r.snapshot?.preference || 'system';
+      }).catch(() => { themeSelect.value = 'system'; });
     }
   });
   renderThemeSelect();
