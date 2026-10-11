@@ -986,33 +986,86 @@
   .ck-agent-detail-v { color: var(--ck-text); word-break: break-word; flex: 1; }
   .ck-agent-detail-path { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: #7dd3fc; word-break: break-all; }
   .ck-agent-detail-actions { margin-top: 12px; }
-  /* ===== 插件市场卡片 ===== */
-  .ck-market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-  .ck-market-card {
-    border: 1px solid var(--ck-border); border-radius: 10px; overflow: hidden;
-    background: var(--ck-surface); cursor: pointer;
-    transition: border-color .15s, transform .15s;
+  /* ===== 插件市场（宽敞版）===== */
+  .ck-mkt-hero { padding: 2px 0 12px; }
+  .ck-mkt-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
+  .ck-mkt-title { font-size: 17px; font-weight: 700; letter-spacing: -.02em; color: var(--ck-text); line-height: 1.2; }
+  .ck-mkt-sub { font-size: 11.5px; color: var(--ck-text-dim); margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .ck-mkt-headbtns { display: flex; gap: 2px; margin-left: auto; }
+  .ck-mkt-search { width: 100%; font-size: 13px; margin-bottom: 10px; }
+  .ck-mkt-cats { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ck-mkt-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px; padding: 2px 0 8px;
+  }
+  .ck-mkt-card {
+    border: 1px solid var(--ck-border); border-radius: 12px; overflow: hidden;
+    background: var(--ck-bg); cursor: pointer;
+    transition: border-color .15s, box-shadow .15s, transform .15s;
     display: flex; flex-direction: column;
   }
-  .ck-market-card:hover { border-color: var(--ck-accent, #4c8dff); transform: translateY(-1px); }
-  .ck-market-cover { width: 100%; height: 90px; object-fit: cover; display: block; background: var(--ck-surface-hover); }
-  .ck-market-body { padding: 9px 10px 10px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
-  .ck-market-top { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-  .ck-market-name { font-size: 12.5px; font-weight: 600; color: var(--ck-text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ck-market-cat { font-size: 10px; padding: 1px 6px; border-radius: 20px; background: rgba(76,141,255,.14); color: #7dd3fc; flex-shrink: 0; }
-  .ck-market-desc {
-    font-size: 11.5px; color: var(--ck-text-dim); line-height: 1.5;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  .ck-mkt-card:hover { border-color: var(--ck-border-strong); box-shadow: var(--ck-shadow); transform: translateY(-1px); }
+  .ck-mkt-cover {
+    width: 100%; height: 132px; object-fit: cover; display: block;
+    background: var(--ck-surface); border-bottom: 1px solid var(--ck-border);
   }
-  .ck-market-meta { font-size: 10.5px; color: var(--ck-text-dim); font-variant-numeric: tabular-nums; margin-top: auto; }
-  /* 插件详情弹窗 */
-  .ck-plugin-detail-body { padding: 4px 0 10px; max-height: 50vh; overflow-y: auto; }
-  .ck-plugin-shots { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; }
-  .ck-plugin-shots img { height: 120px; border-radius: 8px; border: 1px solid var(--ck-border); flex-shrink: 0; }
-  .ck-plugin-detail-row { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--ck-border); font-size: 12px; }
+  .ck-mkt-cover-ph {
+    width: 100%; height: 132px; display: flex; align-items: center; justify-content: center;
+    background: var(--ck-surface); border-bottom: 1px solid var(--ck-border);
+    font-size: 26px; font-weight: 700; color: var(--ck-text-dim); letter-spacing: -.03em;
+    text-transform: uppercase; opacity: .5;
+  }
+  .ck-mkt-body { padding: 12px 13px 13px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .ck-mkt-top { display: flex; align-items: center; gap: 6px; }
+  .ck-mkt-name {
+    font-size: 14px; font-weight: 650; letter-spacing: -.01em; color: var(--ck-text);
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ck-mkt-cat {
+    font-size: 10.5px; padding: 2px 8px; border-radius: 20px; flex-shrink: 0;
+    background: var(--ck-primary-soft); color: var(--ck-primary);
+  }
+  .ck-mkt-desc {
+    font-size: 12.5px; color: var(--ck-text-2); line-height: 1.55;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .ck-mkt-meta {
+    font-size: 11px; color: var(--ck-text-dim); font-variant-numeric: tabular-nums;
+    margin-top: auto; padding-top: 4px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .ck-mkt-badge {
+    font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 6px; flex-shrink: 0;
+  }
+  .ck-mkt-badge.on { background: rgba(48,164,108,.14); color: var(--ck-green); }
+  .ck-mkt-badge.update { background: var(--ck-primary-soft); color: var(--ck-primary); }
+  .ck-mkt-badge.archived { background: var(--ck-surface-hover); color: var(--ck-text-dim); }
+  .ck-mkt-foot {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--ck-border);
+  }
+  .ck-mkt-auto { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ck-text-2); cursor: pointer; }
+  .ck-mkt-auto input { cursor: pointer; }
+  .ck-mkt-check { margin-left: auto; font-size: 12px; padding: 6px 14px; }
+  .ck-mkt-fold { margin-top: 14px; border-top: 1px solid var(--ck-border); padding-top: 10px; }
+  .ck-mkt-fold > summary {
+    font-size: 12px; font-weight: 600; color: var(--ck-text-2); cursor: pointer;
+    list-style: none; padding: 2px 0; user-select: none;
+  }
+  .ck-mkt-fold > summary::-webkit-details-marker { display: none; }
+  .ck-mkt-fold > summary::before { content: '▸ '; font-size: 10px; color: var(--ck-text-dim); }
+  .ck-mkt-fold[open] > summary::before { content: '▾ '; }
+  .ck-mkt-fold > summary:hover { color: var(--ck-text); }
+  .ck-mkt-foldbar { display: flex; gap: 8px; margin: 8px 0; }
+  /* 详情弹窗 */
+  .ck-mkt-modal { max-width: 560px; width: 520px; }
+  .ck-plugin-detail-body { padding: 4px 0 10px; max-height: 52vh; overflow-y: auto; }
+  .ck-plugin-shots { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 12px; }
+  .ck-plugin-shots img { height: 150px; border-radius: 10px; border: 1px solid var(--ck-border); flex-shrink: 0; }
+  .ck-plugin-detail-row { display: flex; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--ck-border); font-size: 12.5px; }
   .ck-plugin-detail-row:last-child { border-bottom: none; }
-  .ck-plugin-detail-k { color: var(--ck-text-dim); flex-shrink: 0; width: 44px; }
-  .ck-plugin-detail-v { color: var(--ck-text); word-break: break-word; flex: 1; }
+  .ck-plugin-detail-k { color: var(--ck-text-dim); flex-shrink: 0; width: 48px; }
+  .ck-plugin-detail-v { color: var(--ck-text); word-break: break-word; flex: 1; line-height: 1.6; }
 
 /* ===== 目录 ===== */
   .ck-dir-path {
@@ -1439,24 +1492,62 @@
               </div>
             </div>
 
-            <!-- ===== 插件 ===== -->
+            <!-- ===== 插件市场 ===== -->
             <div class="ck-tab" data-panel="plugins">
-              <div class="ck-actions">
-                <span class="ck-set-group-title" style="flex:1;">已安装插件</span>
-                <button class="ck-icon-btn" id="plugin-open-dir" title="打开插件目录">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                </button>
-                <button class="ck-icon-btn" id="plugin-refresh" title="刷新（重新搜索市场）">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-                </button>
+              <div class="ck-mkt-hero">
+                <div class="ck-mkt-head">
+                  <div>
+                    <div class="ck-mkt-title">插件市场</div>
+                    <div class="ck-mkt-sub" id="plugin-market-updated">加载中…</div>
+                  </div>
+                  <div class="ck-mkt-headbtns">
+                    <button class="ck-icon-btn" id="plugin-market-refresh" title="刷新目录">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                    </button>
+                    <button class="ck-icon-btn" id="plugin-open-dir" title="打开插件目录">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <input class="ck-input ck-mkt-search" id="plugin-market-search" placeholder="搜索插件名 / 简介 / 作者…" />
+                <div class="ck-mkt-cats" id="plugin-market-cats"></div>
               </div>
-              <div class="ck-list" id="plugin-installed-list">
+
+              <div class="ck-mkt-grid" id="plugin-market-list">
                 <div class="ck-list-empty">加载中…</div>
               </div>
+
+              <div class="ck-mkt-foot">
+                <label class="ck-mkt-auto" title="开启后每天自动检查并更新已装插件">
+                  <input type="checkbox" id="plugin-auto-update"> 自动更新
+                </label>
+                <button class="ck-btn ck-btn-secondary ck-mkt-check" id="plugin-check-updates">检查更新</button>
+              </div>
+
+              <details class="ck-mkt-fold">
+                <summary>本地插件（手工安装）</summary>
+                <div class="ck-list" id="plugin-installed-list">
+                  <div class="ck-list-empty">加载中…</div>
+                </div>
+              </details>
+
+              <details class="ck-mkt-fold">
+                <summary>DSH 插件（npm）</summary>
+                <div class="ck-mkt-foldbar">
+                  <button class="ck-btn ck-btn-secondary" id="ckp-install-btn">安装 npm 包</button>
+                  <button class="ck-btn ck-btn-secondary" id="ckp-open-dir">打开目录</button>
+                </div>
+                <div class="ck-list" id="ckp-list">
+                  <div class="ck-list-empty">加载中…</div>
+                </div>
+              </details>
+
               <!-- 插件详情弹窗 -->
               <div class="ck-modal-mask cuckoo-hidden" id="plugin-detail-mask">
-                <div class="ck-modal" style="max-width:520px;width:480px">
-                  <span class="ck-modal-title" id="plugin-detail-title">插件详情</span>
+                <div class="ck-modal ck-mkt-modal">
+                  <div class="ck-mkt-modal-head">
+                    <span class="ck-modal-title" id="plugin-detail-title">插件详情</span>
+                  </div>
                   <div class="ck-plugin-detail-body" id="plugin-detail-body"></div>
                   <div class="ck-modal-foot">
                     <button class="ck-btn ck-btn-secondary" id="plugin-detail-site">打开仓库</button>
@@ -1464,39 +1555,6 @@
                     <button class="ck-btn ck-btn-primary" id="plugin-detail-action">安装</button>
                   </div>
                 </div>
-              </div>
-              <div class="ck-actions">
-                <span class="ck-set-group-title" style="flex:1;">插件市场</span>
-                <label class="ck-gw-toggle" title="开启后每天自动检查并更新已装插件" style="margin:0 6px 0 0;font-size:11.5px">
-                  <input type="checkbox" id="plugin-auto-update"> 自动更新
-                </label>
-                <button class="ck-icon-btn" id="plugin-check-updates" title="立即检查更新">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-                </button>
-                <span class="ck-snip-badge" id="plugin-market-updated" title="目录更新时间"></span>
-                <button class="ck-icon-btn" id="plugin-market-refresh" title="刷新目录">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-                </button>
-              </div>
-              <div class="ck-field ck-agent-search">
-                <input class="ck-input" id="plugin-market-search" placeholder="搜索插件名 / 简介 / 作者…" />
-              </div>
-              <div class="ck-agent-filter" id="plugin-market-cats"></div>
-              <div class="ck-market-grid" id="plugin-market-list">
-                <div class="ck-list-empty">加载中…</div>
-              </div>
-              <!-- ===== DSH 兼容插件（npm 安装）===== -->
-              <div class="ck-actions">
-                <span class="ck-set-group-title" style="flex:1;">DSH 插件（npm）</span>
-                <button class="ck-icon-btn" id="ckp-open-dir" title="打开插件目录">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                </button>
-                <button class="ck-icon-btn" id="ckp-install-btn" title="安装 DSH 插件（输入 npm 包名）">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                </button>
-              </div>
-              <div class="ck-list" id="ckp-list">
-                <div class="ck-list-empty">加载中…</div>
               </div>
             </div>
 
@@ -4814,8 +4872,8 @@
     if (!listEl2) return;
     const upd = document.getElementById("plugin-market-updated");
     if (upd) {
-      upd.textContent = pluginMarketSource === "curated" ? pluginMarketUpdated ? "\u76EE\u5F55 " + pluginMarketUpdated : "\u76EE\u5F55" : "topic \u641C\u7D22";
-      upd.title = pluginMarketSource === "curated" ? "\u6765\u81EA curated \u76EE\u5F55\uFF08\u542B\u56FE\uFF09" : "\u6765\u81EA GitHub topic \u641C\u7D22";
+      const n = pluginMarketItems.length;
+      upd.textContent = (pluginMarketSource === "curated" ? "\u76EE\u5F55 \xB7 " : "\u641C\u7D22 \xB7 ") + (pluginMarketUpdated ? pluginMarketUpdated + " \xB7 " : "") + n + " \u4E2A\u63D2\u4EF6";
     }
     const notice = pluginMarketNotice ? '<div class="ck-list-empty">' + escapeHtml(pluginMarketNotice) + "</div>" : "";
     const items = filteredMarket();
@@ -4824,7 +4882,7 @@
       return;
     }
     listEl2.innerHTML = notice + items.map(marketCardHtml).join("");
-    listEl2.querySelectorAll(".ck-market-card").forEach((card) => {
+    listEl2.querySelectorAll(".ck-mkt-card").forEach((card) => {
       card.addEventListener("click", () => {
         const id = card.dataset.id;
         const it = pluginMarketItems.filter((x) => x.id === id)[0];
@@ -4835,16 +4893,22 @@
   function marketCardHtml(it) {
     const state = pluginUpdateState(it);
     let badges = "";
-    if (it.archived) badges += '<span class="ck-plugin-badge archived">\u5DF2\u5F52\u6863</span>';
-    if (state === "installed") badges += '<span class="ck-plugin-badge on">\u5DF2\u5B89\u88C5</span>';
-    if (state === "update") badges += '<span class="ck-plugin-badge update">\u53EF\u66F4\u65B0</span>';
-    const cover = it.cover ? '<img class="ck-market-cover" src="' + escapeAttr(it.cover) + `" alt="" loading="lazy" onerror="this.style.display='none'">` : "";
-    const cat = it.category ? '<span class="ck-market-cat">' + escapeHtml(catLabel(it.category)) + "</span>" : "";
+    if (it.archived) badges += '<span class="ck-mkt-badge archived">\u5DF2\u5F52\u6863</span>';
+    if (state === "installed") badges += '<span class="ck-mkt-badge on">\u5DF2\u5B89\u88C5</span>';
+    if (state === "update") badges += '<span class="ck-mkt-badge update">\u53EF\u66F4\u65B0</span>';
+    let cover;
+    if (it.cover) {
+      cover = '<img class="ck-mkt-cover" src="' + escapeAttr(it.cover) + `" alt="" loading="lazy" onerror="this.style.display='none'">`;
+    } else {
+      const ch = String(it.name || it.id || "?").charAt(0);
+      cover = '<div class="ck-mkt-cover-ph">' + escapeHtml(ch) + "</div>";
+    }
+    const cat = it.category ? '<span class="ck-mkt-cat">' + escapeHtml(catLabel(it.category)) + "</span>" : "";
     const meta = [];
-    if (it.version) meta.push("v" + escapeHtml(it.version));
+    if (it.version) meta.push("v" + it.version);
     if (it.stars) meta.push("\u2605 " + it.stars);
-    if (it.language) meta.push(escapeHtml(it.language));
-    return '<div class="ck-market-card" data-id="' + escapeAttr(it.id) + '">' + cover + '<div class="ck-market-body"><div class="ck-market-top"><span class="ck-market-name">' + escapeHtml(it.name || it.id) + "</span>" + badges + cat + '</div><div class="ck-market-desc">' + escapeHtml(it.description || "\uFF08\u65E0\u7B80\u4ECB\uFF09") + '</div><div class="ck-market-meta">' + meta.map(escapeHtml).join(" \xB7 ") + "</div></div></div>";
+    if (it.language) meta.push(it.language);
+    return '<div class="ck-mkt-card" data-id="' + escapeAttr(it.id) + '">' + cover + '<div class="ck-mkt-body"><div class="ck-mkt-top"><span class="ck-mkt-name">' + escapeHtml(it.name || it.id) + "</span>" + cat + '</div><div class="ck-mkt-desc">' + escapeHtml(it.description || "\uFF08\u65E0\u7B80\u4ECB\uFF09") + '</div><div class="ck-mkt-meta">' + meta.map(escapeHtml).join(" \xB7 ") + " " + badges + "</div></div></div>";
   }
   function openPluginDetail(it) {
     pluginDetailItem = it;

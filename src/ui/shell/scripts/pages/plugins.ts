@@ -244,10 +244,10 @@ function renderPluginMarket(): void {
   if (!listEl) return;
   const upd = document.getElementById('plugin-market-updated');
   if (upd) {
-    upd.textContent = pluginMarketSource === 'curated'
-      ? (pluginMarketUpdated ? '目录 ' + pluginMarketUpdated : '目录')
-      : 'topic 搜索';
-    upd.title = pluginMarketSource === 'curated' ? '来自 curated 目录（含图）' : '来自 GitHub topic 搜索';
+    const n = pluginMarketItems.length;
+    upd.textContent = (pluginMarketSource === 'curated' ? '目录 · ' : '搜索 · ')
+      + (pluginMarketUpdated ? pluginMarketUpdated + ' · ' : '')
+      + n + ' 个插件';
   }
   const notice = pluginMarketNotice
     ? '<div class="ck-list-empty">' + escapeHtml(pluginMarketNotice) + '</div>'
@@ -260,7 +260,7 @@ function renderPluginMarket(): void {
     return;
   }
   listEl.innerHTML = notice + items.map(marketCardHtml).join('');
-  listEl.querySelectorAll('.ck-market-card').forEach((card: any) => {
+  listEl.querySelectorAll('.ck-mkt-card').forEach((card: any) => {
     card.addEventListener('click', () => {
       const id = card.dataset.id;
       const it = pluginMarketItems.filter((x) => x.id === id)[0];
@@ -274,32 +274,36 @@ function marketCardHtml(it: any): string {
   const state = pluginUpdateState(it);
 
   let badges = '';
-  if (it.archived) badges += '<span class="ck-plugin-badge archived">已归档</span>';
-  if (state === 'installed') badges += '<span class="ck-plugin-badge on">已安装</span>';
-  if (state === 'update') badges += '<span class="ck-plugin-badge update">可更新</span>';
+  if (it.archived) badges += '<span class="ck-mkt-badge archived">已归档</span>';
+  if (state === 'installed') badges += '<span class="ck-mkt-badge on">已安装</span>';
+  if (state === 'update') badges += '<span class="ck-mkt-badge update">可更新</span>';
 
-  const cover = it.cover
-    ? '<img class="ck-market-cover" src="' + escapeAttr(it.cover) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
-    : '';
+  let cover;
+  if (it.cover) {
+    cover = '<img class="ck-mkt-cover" src="' + escapeAttr(it.cover) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">';
+  } else {
+    const ch = String(it.name || it.id || '?').charAt(0);
+    cover = '<div class="ck-mkt-cover-ph">' + escapeHtml(ch) + '</div>';
+  }
 
   const cat = it.category
-    ? '<span class="ck-market-cat">' + escapeHtml(catLabel(it.category)) + '</span>'
+    ? '<span class="ck-mkt-cat">' + escapeHtml(catLabel(it.category)) + '</span>'
     : '';
 
   const meta: string[] = [];
-  if (it.version) meta.push('v' + escapeHtml(it.version));
+  if (it.version) meta.push('v' + it.version);
   if (it.stars) meta.push('★ ' + it.stars);
-  if (it.language) meta.push(escapeHtml(it.language));
+  if (it.language) meta.push(it.language);
 
-  return '<div class="ck-market-card" data-id="' + escapeAttr(it.id) + '">' +
+  return '<div class="ck-mkt-card" data-id="' + escapeAttr(it.id) + '">' +
     cover +
-    '<div class="ck-market-body">' +
-      '<div class="ck-market-top">' +
-        '<span class="ck-market-name">' + escapeHtml(it.name || it.id) + '</span>' +
-        badges + cat +
+    '<div class="ck-mkt-body">' +
+      '<div class="ck-mkt-top">' +
+        '<span class="ck-mkt-name">' + escapeHtml(it.name || it.id) + '</span>' +
+        cat +
       '</div>' +
-      '<div class="ck-market-desc">' + escapeHtml(it.description || '（无简介）') + '</div>' +
-      '<div class="ck-market-meta">' + meta.map(escapeHtml).join(' · ') + '</div>' +
+      '<div class="ck-mkt-desc">' + escapeHtml(it.description || '（无简介）') + '</div>' +
+      '<div class="ck-mkt-meta">' + meta.map(escapeHtml).join(' · ') + ' ' + badges + '</div>' +
     '</div>' +
   '</div>';
 }

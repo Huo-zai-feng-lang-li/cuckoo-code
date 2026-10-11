@@ -1,21 +1,59 @@
-            <!-- ===== 插件 ===== -->
+            <!-- ===== 插件市场 ===== -->
             <div class="ck-tab" data-panel="plugins">
-              <div class="ck-actions">
-                <span class="ck-set-group-title" style="flex:1;">已安装插件</span>
-                <button class="ck-icon-btn" id="plugin-open-dir" title="打开插件目录">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                </button>
-                <button class="ck-icon-btn" id="plugin-refresh" title="刷新（重新搜索市场）">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-                </button>
+              <div class="ck-mkt-hero">
+                <div class="ck-mkt-head">
+                  <div>
+                    <div class="ck-mkt-title">插件市场</div>
+                    <div class="ck-mkt-sub" id="plugin-market-updated">加载中…</div>
+                  </div>
+                  <div class="ck-mkt-headbtns">
+                    <button class="ck-icon-btn" id="plugin-market-refresh" title="刷新目录">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                    </button>
+                    <button class="ck-icon-btn" id="plugin-open-dir" title="打开插件目录">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <input class="ck-input ck-mkt-search" id="plugin-market-search" placeholder="搜索插件名 / 简介 / 作者…" />
+                <div class="ck-mkt-cats" id="plugin-market-cats"></div>
               </div>
-              <div class="ck-list" id="plugin-installed-list">
+
+              <div class="ck-mkt-grid" id="plugin-market-list">
                 <div class="ck-list-empty">加载中…</div>
               </div>
+
+              <div class="ck-mkt-foot">
+                <label class="ck-mkt-auto" title="开启后每天自动检查并更新已装插件">
+                  <input type="checkbox" id="plugin-auto-update"> 自动更新
+                </label>
+                <button class="ck-btn ck-btn-secondary ck-mkt-check" id="plugin-check-updates">检查更新</button>
+              </div>
+
+              <details class="ck-mkt-fold">
+                <summary>本地插件（手工安装）</summary>
+                <div class="ck-list" id="plugin-installed-list">
+                  <div class="ck-list-empty">加载中…</div>
+                </div>
+              </details>
+
+              <details class="ck-mkt-fold">
+                <summary>DSH 插件（npm）</summary>
+                <div class="ck-mkt-foldbar">
+                  <button class="ck-btn ck-btn-secondary" id="ckp-install-btn">安装 npm 包</button>
+                  <button class="ck-btn ck-btn-secondary" id="ckp-open-dir">打开目录</button>
+                </div>
+                <div class="ck-list" id="ckp-list">
+                  <div class="ck-list-empty">加载中…</div>
+                </div>
+              </details>
+
               <!-- 插件详情弹窗 -->
               <div class="ck-modal-mask cuckoo-hidden" id="plugin-detail-mask">
-                <div class="ck-modal" style="max-width:520px;width:480px">
-                  <span class="ck-modal-title" id="plugin-detail-title">插件详情</span>
+                <div class="ck-modal ck-mkt-modal">
+                  <div class="ck-mkt-modal-head">
+                    <span class="ck-modal-title" id="plugin-detail-title">插件详情</span>
+                  </div>
                   <div class="ck-plugin-detail-body" id="plugin-detail-body"></div>
                   <div class="ck-modal-foot">
                     <button class="ck-btn ck-btn-secondary" id="plugin-detail-site">打开仓库</button>
@@ -23,38 +61,5 @@
                     <button class="ck-btn ck-btn-primary" id="plugin-detail-action">安装</button>
                   </div>
                 </div>
-              </div>
-              <div class="ck-actions">
-                <span class="ck-set-group-title" style="flex:1;">插件市场</span>
-                <label class="ck-gw-toggle" title="开启后每天自动检查并更新已装插件" style="margin:0 6px 0 0;font-size:11.5px">
-                  <input type="checkbox" id="plugin-auto-update"> 自动更新
-                </label>
-                <button class="ck-icon-btn" id="plugin-check-updates" title="立即检查更新">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-                </button>
-                <span class="ck-snip-badge" id="plugin-market-updated" title="目录更新时间"></span>
-                <button class="ck-icon-btn" id="plugin-market-refresh" title="刷新目录">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-                </button>
-              </div>
-              <div class="ck-field ck-agent-search">
-                <input class="ck-input" id="plugin-market-search" placeholder="搜索插件名 / 简介 / 作者…" />
-              </div>
-              <div class="ck-agent-filter" id="plugin-market-cats"></div>
-              <div class="ck-market-grid" id="plugin-market-list">
-                <div class="ck-list-empty">加载中…</div>
-              </div>
-              <!-- ===== DSH 兼容插件（npm 安装）===== -->
-              <div class="ck-actions">
-                <span class="ck-set-group-title" style="flex:1;">DSH 插件（npm）</span>
-                <button class="ck-icon-btn" id="ckp-open-dir" title="打开插件目录">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                </button>
-                <button class="ck-icon-btn" id="ckp-install-btn" title="安装 DSH 插件（输入 npm 包名）">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                </button>
-              </div>
-              <div class="ck-list" id="ckp-list">
-                <div class="ck-list-empty">加载中…</div>
               </div>
             </div>
