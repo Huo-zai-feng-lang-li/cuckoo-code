@@ -1,0 +1,8 @@
+{
+  "id": "cuckoo-memory",
+  "name": "记忆",
+  "version": "1.0.0",
+  "description": "长期记忆管理界面：列表、新建、编辑、删除。数据与 remember 工具共享。",
+  "author": "8555uuy",
+  "minAppVersion": "0.8.8"
+}

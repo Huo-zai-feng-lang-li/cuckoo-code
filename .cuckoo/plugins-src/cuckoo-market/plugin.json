@@ -1,8 +1,0 @@
-{
-  "id": "cuckoo-market",
-  "name": "插件市场",
-  "version": "1.0.0",
-  "description": "Cuckoo 插件市场（独立插件版）：浏览、搜索、安装社区插件。",
-  "author": "8555uuy",
-  "minAppVersion": "0.8.10"
-}
