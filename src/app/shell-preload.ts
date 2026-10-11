@@ -168,6 +168,8 @@ const shellAPI = {
   // 返回 { items, installed }，installed 为 repo → 已安装摘要（用于隐藏安装按钮 / 显示更新）
   pluginMarketList: (opts?: any) => ipcRenderer.invoke('plugin-market-list', opts || {}),
   pluginMarketCurated: (opts?: any) => ipcRenderer.invoke('plugin-market-curated', opts || {}),
+  pluginMarketStateGet: () => ipcRenderer.invoke('plugin-market-state-get'),
+  pluginMarketStateSet: (payload: any) => ipcRenderer.invoke('plugin-market-state-set', payload || {}),
   pluginMarketCheckUpdates: (opts?: any) => ipcRenderer.invoke('plugin-market-check-updates', opts || {}),
   pluginMarketAutoUpdate: (opts?: any) => ipcRenderer.invoke('plugin-market-auto-update', opts || {}),
   pluginMarketConfigGet: () => ipcRenderer.invoke('plugin-market-config-get'),

@@ -760,6 +760,25 @@
     margin-top: auto; padding-top: 4px;
     display: flex; align-items: center; gap: 6px;
   }
+  .ck-mkt-star {
+    width: 24px; height: 24px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border: 0; border-radius: 6px; background: transparent;
+    color: var(--ck-text-dim); cursor: pointer;
+    transition: color .15s, background .15s;
+  }
+  .ck-mkt-star:hover { background: var(--ck-surface-hover); color: #fbbf24; }
+  .ck-mkt-star.on { color: #fbbf24; }
+  .ck-mkt-star svg { width: 14px; height: 14px; }
+  .ck-mkt-note { color: var(--ck-primary); font-style: normal; }
+  .ck-plugin-note-input {
+    flex: 1; min-height: 44px; resize: vertical;
+    font-family: inherit; font-size: 12.5px; line-height: 1.55;
+    padding: 6px 9px; border-radius: 7px;
+    border: 1px solid var(--ck-border-strong); background: var(--ck-surface);
+    color: var(--ck-text);
+  }
+  .ck-plugin-note-input:focus { outline: none; border-color: var(--ck-primary); }
   .ck-mkt-badge {
     font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 6px; flex-shrink: 0;
   }

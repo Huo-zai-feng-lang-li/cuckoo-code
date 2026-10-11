@@ -233,6 +233,32 @@ function registerPluginIpc(): void {
     }
   });
 
+  // ===== 市场本地状态（收藏 / 备注 / 分组）=====
+  ipcMain.handle('plugin-market-state-get', async () => {
+    try {
+      const { readMarketState } = await import('../../plugins/market-state.js');
+      return { success: true, state: readMarketState() };
+    } catch (err: any) {
+      return { success: false, state: { favorites: [], notes: {}, groups: {} }, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('plugin-market-state-set', async (_event: any, { action, id, value }: any = {}) => {
+    try {
+      const m = await import('../../plugins/market-state.js');
+      let ok = false;
+      if (action === 'favorite') ok = m.toggleFavorite(id) !== undefined;
+      else if (action === 'note') ok = m.setNote(id, value);
+      else if (action === 'group') ok = m.setGroup(id, value);
+      else if (action === 'favorites') ok = m.writeMarketState({ favorites: value });
+      else if (action === 'groups') ok = m.writeMarketState({ groups: value });
+      else return { success: false, error: '未知 action: ' + action };
+      return { success: ok, state: m.readMarketState() };
+    } catch (err: any) {
+      return { success: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
   // ===== 远端 plugin.json：拿插件版本与最低应用版本 =====
   // 搜索接口不返回这些，必须单独拉（raw.githubusercontent，不消耗 API 配额）。
   // 逐条降级：单条失败只影响该条，市场列表本身照常显示。

@@ -64,6 +64,8 @@ export interface ShellAPI {
   pluginMarketCurated?: (opts?: any) => Promise<any>;
   /** 临时隐藏 AI 视图（WebContentsView 挡不住 CSS，全屏弹层需要它） */
   setWebViewVisible?: (visible: boolean) => Promise<any>;
+  pluginMarketStateGet?: () => Promise<any>;
+  pluginMarketStateSet?: (payload: any) => Promise<any>;
   pluginMarketCheckUpdates?: (opts?: any) => Promise<any>;
   pluginMarketAutoUpdate?: (opts?: any) => Promise<any>;
   pluginMarketConfigGet?: () => Promise<any>;

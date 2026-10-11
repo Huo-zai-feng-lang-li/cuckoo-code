@@ -1034,6 +1034,25 @@
     margin-top: auto; padding-top: 4px;
     display: flex; align-items: center; gap: 6px;
   }
+  .ck-mkt-star {
+    width: 24px; height: 24px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border: 0; border-radius: 6px; background: transparent;
+    color: var(--ck-text-dim); cursor: pointer;
+    transition: color .15s, background .15s;
+  }
+  .ck-mkt-star:hover { background: var(--ck-surface-hover); color: #fbbf24; }
+  .ck-mkt-star.on { color: #fbbf24; }
+  .ck-mkt-star svg { width: 14px; height: 14px; }
+  .ck-mkt-note { color: var(--ck-primary); font-style: normal; }
+  .ck-plugin-note-input {
+    flex: 1; min-height: 44px; resize: vertical;
+    font-family: inherit; font-size: 12.5px; line-height: 1.55;
+    padding: 6px 9px; border-radius: 7px;
+    border: 1px solid var(--ck-border-strong); background: var(--ck-surface);
+    color: var(--ck-text);
+  }
+  .ck-plugin-note-input:focus { outline: none; border-color: var(--ck-primary); }
   .ck-mkt-badge {
     font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 6px; flex-shrink: 0;
   }
@@ -1596,6 +1615,7 @@
                   </div>
                   <div class="ck-plugin-detail-body" id="plugin-detail-body"></div>
                   <div class="ck-modal-foot">
+                    <button class="ck-btn ck-btn-secondary" id="plugin-detail-fav">☆ 收藏</button>
                     <button class="ck-btn ck-btn-secondary" id="plugin-detail-site">打开仓库</button>
                     <button class="ck-btn ck-btn-secondary" id="plugin-detail-close">关闭</button>
                     <button class="ck-btn ck-btn-primary" id="plugin-detail-action">安装</button>
@@ -4725,12 +4745,29 @@
   var pluginMarketCat = "all";
   var pluginDetailItem = null;
   var pluginMarketSource = "topic";
+  var pluginFavorites = [];
+  var pluginNotes = {};
+  var pluginGroups = {};
   var ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
   async function loadPlugins() {
+    await loadMarketState();
     await loadInstalledPlugins();
     await loadPluginMarket(false);
     await loadCuckooPlugins();
     loadAutoUpdateConfig();
+  }
+  async function loadMarketState() {
+    const apiAny = api;
+    if (typeof apiAny.pluginMarketStateGet !== "function") return;
+    try {
+      const r = await apiAny.pluginMarketStateGet();
+      if (r && r.success && r.state) {
+        pluginFavorites = r.state.favorites || [];
+        pluginNotes = r.state.notes || {};
+        pluginGroups = r.state.groups || {};
+      }
+    } catch (_) {
+    }
   }
   function pluginContribSummary(c) {
     if (!c) return "";
@@ -4864,9 +4901,14 @@
   function filteredMarket() {
     const kw = pluginMarketQuery.trim().toLowerCase();
     return pluginMarketItems.filter((it) => {
-      if (pluginMarketCat !== "all" && (it.category || "other") !== pluginMarketCat) return false;
+      if (pluginMarketCat === "fav") {
+        if (!pluginFavorites.includes(it.id)) return false;
+      } else if (pluginMarketCat !== "all" && (it.category || "other") !== pluginMarketCat) {
+        return false;
+      }
       if (!kw) return true;
-      return (String(it.name || "") + " " + String(it.description || "") + " " + String(it.id || "")).toLowerCase().includes(kw);
+      const hay = String(it.name || "") + " " + String(it.description || "") + " " + String(it.id || "") + " " + String(pluginNotes[it.id] || "");
+      return hay.toLowerCase().includes(kw);
     });
   }
   function renderMarketCats() {
@@ -4879,6 +4921,9 @@
     }
     const ids = Object.keys(pluginMarketCategories).filter((id) => counts[id]);
     let html = '<button class="ck-chip' + (pluginMarketCat === "all" ? " ck-chip-active" : "") + '" data-cat="all">\u5168\u90E8 ' + pluginMarketItems.length + "</button>";
+    if (pluginFavorites.length) {
+      html += '<button class="ck-chip' + (pluginMarketCat === "fav" ? " ck-chip-active" : "") + '" data-cat="fav">\u2605 \u6536\u85CF ' + pluginFavorites.length + "</button>";
+    }
     for (const id of ids) {
       html += '<button class="ck-chip' + (pluginMarketCat === id ? " ck-chip-active" : "") + '" data-cat="' + escapeAttr(id) + '">' + escapeHtml(catLabel(id)) + " " + counts[id] + "</button>";
     }
@@ -4907,10 +4952,25 @@
     }
     listEl2.innerHTML = notice + items.map(marketCardHtml).join("");
     listEl2.querySelectorAll(".ck-mkt-card").forEach((card) => {
-      card.addEventListener("click", () => {
+      card.addEventListener("click", (e) => {
+        if (e.target.closest && e.target.closest("[data-fav]")) return;
         const id = card.dataset.id;
         const it = pluginMarketItems.filter((x) => x.id === id)[0];
         if (it) openPluginDetail(it);
+      });
+    });
+    listEl2.querySelectorAll("[data-fav]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.fav;
+        const apiAny = api;
+        if (typeof apiAny.pluginMarketStateSet !== "function") return;
+        const r = await apiAny.pluginMarketStateSet({ action: "favorite", id });
+        if (r && r.success && r.state) {
+          pluginFavorites = r.state.favorites || [];
+          renderMarketCats();
+          renderPluginMarket();
+        }
       });
     });
   }
@@ -4932,7 +4992,11 @@
     if (it.version) meta.push("v" + it.version);
     if (it.stars) meta.push("\u2605 " + it.stars);
     if (it.language) meta.push(it.language);
-    return '<div class="ck-mkt-card" data-id="' + escapeAttr(it.id) + '">' + cover + '<div class="ck-mkt-body"><div class="ck-mkt-top"><span class="ck-mkt-name">' + escapeHtml(it.name || it.id) + "</span>" + cat + '</div><div class="ck-mkt-desc">' + escapeHtml(it.description || "\uFF08\u65E0\u7B80\u4ECB\uFF09") + '</div><div class="ck-mkt-meta">' + meta.map(escapeHtml).join(" \xB7 ") + " " + badges + "</div></div></div>";
+    const fav = pluginFavorites.includes(it.id);
+    const star = '<button class="ck-mkt-star' + (fav ? " on" : "") + '" data-fav="' + escapeAttr(it.id) + '" title="' + (fav ? "\u53D6\u6D88\u6536\u85CF" : "\u6536\u85CF") + '"><svg viewBox="0 0 24 24" fill="' + (fav ? "currentColor" : "none") + '" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg></button>';
+    const note = pluginNotes[it.id];
+    const desc = note ? "\u{1F4DD} " + note : it.description || "\uFF08\u65E0\u7B80\u4ECB\uFF09";
+    return '<div class="ck-mkt-card" data-id="' + escapeAttr(it.id) + '">' + cover + '<div class="ck-mkt-body"><div class="ck-mkt-top"><span class="ck-mkt-name">' + escapeHtml(it.name || it.id) + "</span>" + cat + star + '</div><div class="ck-mkt-desc' + (note ? " ck-mkt-note" : "") + '">' + escapeHtml(desc) + '</div><div class="ck-mkt-meta">' + meta.map(escapeHtml).join(" \xB7 ") + " " + badges + "</div></div></div>";
   }
   function openPluginDetail(it) {
     pluginDetailItem = it;
@@ -4950,7 +5014,41 @@
     if (it.category) meta.push(catLabel(it.category));
     if (it.stars) meta.push("\u2605 " + it.stars);
     if (it.license) meta.push(it.license);
-    body.innerHTML = shotsHtml + '<div class="ck-plugin-detail-row"><span class="ck-plugin-detail-k">\u4ED3\u5E93</span><span class="ck-plugin-detail-v">' + escapeHtml(it.id) + "</span></div>" + (meta.length ? '<div class="ck-plugin-detail-row"><span class="ck-plugin-detail-k">\u4FE1\u606F</span><span class="ck-plugin-detail-v">' + escapeHtml(meta.join(" \xB7 ")) + "</span></div>" : "") + '<div class="ck-plugin-detail-row"><span class="ck-plugin-detail-k">\u7B80\u4ECB</span><span class="ck-plugin-detail-v">' + escapeHtml(it.description || "\uFF08\u65E0\u7B80\u4ECB\uFF09") + "</span></div>";
+    const fav = pluginFavorites.includes(it.id);
+    const note = pluginNotes[it.id] || "";
+    body.innerHTML = shotsHtml + '<div class="ck-plugin-detail-row"><span class="ck-plugin-detail-k">\u4ED3\u5E93</span><span class="ck-plugin-detail-v">' + escapeHtml(it.id) + "</span></div>" + (meta.length ? '<div class="ck-plugin-detail-row"><span class="ck-plugin-detail-k">\u4FE1\u606F</span><span class="ck-plugin-detail-v">' + escapeHtml(meta.join(" \xB7 ")) + "</span></div>" : "") + '<div class="ck-plugin-detail-row"><span class="ck-plugin-detail-k">\u7B80\u4ECB</span><span class="ck-plugin-detail-v">' + escapeHtml(it.description || "\uFF08\u65E0\u7B80\u4ECB\uFF09") + '</span></div><div class="ck-plugin-detail-row ck-plugin-note-row"><span class="ck-plugin-detail-k">\u5907\u6CE8</span><div class="ck-plugin-detail-v" style="display:flex;gap:6px;align-items:flex-start"><textarea class="ck-plugin-note-input" id="plugin-note-input" placeholder="\u5199\u7ED9\u81EA\u5DF1\u7684\u4E00\u884C\u8BF4\u660E\uFF08\u672C\u5730\u4FDD\u5B58\uFF09" maxlength="500">' + escapeHtml(note) + '</textarea><button class="ck-btn ck-btn-secondary" id="plugin-note-save" style="flex-shrink:0">\u4FDD\u5B58</button></div></div>';
+    const favBtn = document.getElementById("plugin-detail-fav");
+    if (favBtn) {
+      favBtn.textContent = fav ? "\u2605 \u5DF2\u6536\u85CF" : "\u2606 \u6536\u85CF";
+      favBtn.onclick = async () => {
+        const apiAny = api;
+        if (typeof apiAny.pluginMarketStateSet !== "function") return;
+        const r = await apiAny.pluginMarketStateSet({ action: "favorite", id: it.id });
+        if (r && r.success && r.state) {
+          pluginFavorites = r.state.favorites || [];
+          renderMarketCats();
+          renderPluginMarket();
+          openPluginDetail(it);
+        }
+      };
+    }
+    const noteBtn = document.getElementById("plugin-note-save");
+    const noteInput = document.getElementById("plugin-note-input");
+    if (noteBtn && noteInput) {
+      noteBtn.onclick = async () => {
+        const apiAny = api;
+        if (typeof apiAny.pluginMarketStateSet !== "function") return;
+        const r = await apiAny.pluginMarketStateSet({ action: "note", id: it.id, value: noteInput.value || "" });
+        if (r && r.success && r.state) {
+          pluginNotes = r.state.notes || {};
+          noteBtn.textContent = "\u5DF2\u4FDD\u5B58";
+          setTimeout(() => {
+            noteBtn.textContent = "\u4FDD\u5B58";
+          }, 1200);
+          renderPluginMarket();
+        }
+      };
+    }
     const state = pluginUpdateState(it);
     act.textContent = state === "installed" ? "\u5DF2\u5B89\u88C5" : state === "update" ? "\u66F4\u65B0" : "\u5B89\u88C5";
     act.disabled = state === "installed";

@@ -117,6 +117,15 @@ export {
 } from './auto-update.js';
 export type { AutoUpdateConfig, UpdateInfo } from './auto-update.js';
 
+export {
+  readMarketState,
+  writeMarketState,
+  toggleFavorite,
+  setNote,
+  setGroup,
+} from './market-state.js';
+export type { MarketState } from './market-state.js';
+
 export { createElectronHttpGet } from './http.js';
 export type { HttpGet, HttpRequest, HttpResponse } from './http.js';
 

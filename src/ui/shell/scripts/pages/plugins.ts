@@ -20,6 +20,10 @@ let pluginMarketQuery = '';
 let pluginMarketCat = 'all';
 let pluginDetailItem: any = null;
 let pluginMarketSource: 'curated' | 'topic' = 'topic';
+// ===== 本地状态（收藏 / 备注 / 分组）=====
+let pluginFavorites: string[] = [];
+let pluginNotes: Record<string, string> = {};
+let pluginGroups: Record<string, string[]> = {};
 
 const ICON_INSTALL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>';
 const ICON_UPDATE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
@@ -27,10 +31,25 @@ const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 
 /** 插件页：浏览（市场）+ 管理（已安装/开关/卸载/自动更新）*/
 export async function loadPlugins(): Promise<void> {
+  await loadMarketState();
   await loadInstalledPlugins();
   await loadPluginMarket(false);
   await loadCuckooPlugins();
   loadAutoUpdateConfig();
+}
+
+/** 读本地状态（收藏 / 备注 / 分组） */
+async function loadMarketState(): Promise<void> {
+  const apiAny: any = api as any;
+  if (typeof apiAny.pluginMarketStateGet !== 'function') return;
+  try {
+    const r = await apiAny.pluginMarketStateGet();
+    if (r && r.success && r.state) {
+      pluginFavorites = r.state.favorites || [];
+      pluginNotes = r.state.notes || {};
+      pluginGroups = r.state.groups || {};
+    }
+  } catch (_) { /* ignore */ }
 }
 
 function pluginContribSummary(c: any): string {
@@ -204,14 +223,18 @@ function catLabel(id: string): string {
   return id;
 }
 
-/** 按搜索词 + 分类过滤 */
+/** 按搜索词 + 分类过滤（cat = 'all' | 分类 id | 'fav'） */
 function filteredMarket(): any[] {
   const kw = pluginMarketQuery.trim().toLowerCase();
   return pluginMarketItems.filter((it: any) => {
-    if (pluginMarketCat !== 'all' && (it.category || 'other') !== pluginMarketCat) return false;
+    if (pluginMarketCat === 'fav') {
+      if (!pluginFavorites.includes(it.id)) return false;
+    } else if (pluginMarketCat !== 'all' && (it.category || 'other') !== pluginMarketCat) {
+      return false;
+    }
     if (!kw) return true;
-    return (String(it.name || '') + ' ' + String(it.description || '') + ' ' + String(it.id || ''))
-      .toLowerCase().includes(kw);
+    const hay = String(it.name || '') + ' ' + String(it.description || '') + ' ' + String(it.id || '') + ' ' + String(pluginNotes[it.id] || '');
+    return hay.toLowerCase().includes(kw);
   });
 }
 
@@ -226,6 +249,9 @@ function renderMarketCats(): void {
   }
   const ids = Object.keys(pluginMarketCategories).filter((id) => counts[id]);
   let html = '<button class="ck-chip' + (pluginMarketCat === 'all' ? ' ck-chip-active' : '') + '" data-cat="all">全部 ' + pluginMarketItems.length + '</button>';
+  if (pluginFavorites.length) {
+    html += '<button class="ck-chip' + (pluginMarketCat === 'fav' ? ' ck-chip-active' : '') + '" data-cat="fav">★ 收藏 ' + pluginFavorites.length + '</button>';
+  }
   for (const id of ids) {
     html += '<button class="ck-chip' + (pluginMarketCat === id ? ' ck-chip-active' : '') + '" data-cat="' + escapeAttr(id) + '">' + escapeHtml(catLabel(id)) + ' ' + counts[id] + '</button>';
   }
@@ -262,10 +288,22 @@ function renderPluginMarket(): void {
   }
   listEl.innerHTML = notice + items.map(marketCardHtml).join('');
   listEl.querySelectorAll('.ck-mkt-card').forEach((card: any) => {
-    card.addEventListener('click', () => {
+    card.addEventListener('click', (e: any) => {
+      // 星标点自己处理，不打开详情
+      if (e.target.closest && e.target.closest('[data-fav]')) return;
       const id = card.dataset.id;
       const it = pluginMarketItems.filter((x) => x.id === id)[0];
       if (it) openPluginDetail(it);
+    });
+  });
+  listEl.querySelectorAll('[data-fav]').forEach((btn: any) => {
+    btn.addEventListener('click', async (e: any) => {
+      e.stopPropagation();
+      const id = btn.dataset.fav;
+      const apiAny: any = api as any;
+      if (typeof apiAny.pluginMarketStateSet !== 'function') return;
+      const r = await apiAny.pluginMarketStateSet({ action: 'favorite', id });
+      if (r && r.success && r.state) { pluginFavorites = r.state.favorites || []; renderMarketCats(); renderPluginMarket(); }
     });
   });
 }
@@ -296,14 +334,22 @@ function marketCardHtml(it: any): string {
   if (it.stars) meta.push('★ ' + it.stars);
   if (it.language) meta.push(it.language);
 
+  const fav = pluginFavorites.includes(it.id);
+  const star = '<button class="ck-mkt-star' + (fav ? ' on' : '') + '" data-fav="' + escapeAttr(it.id) + '" title="' + (fav ? '取消收藏' : '收藏') + '">' +
+    '<svg viewBox="0 0 24 24" fill="' + (fav ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg>' +
+  '</button>';
+  // 自己的备注优先于作者简介
+  const note = pluginNotes[it.id];
+  const desc = note ? ('📝 ' + note) : (it.description || '（无简介）');
+
   return '<div class="ck-mkt-card" data-id="' + escapeAttr(it.id) + '">' +
     cover +
     '<div class="ck-mkt-body">' +
       '<div class="ck-mkt-top">' +
         '<span class="ck-mkt-name">' + escapeHtml(it.name || it.id) + '</span>' +
-        cat +
+        cat + star +
       '</div>' +
-      '<div class="ck-mkt-desc">' + escapeHtml(it.description || '（无简介）') + '</div>' +
+      '<div class="ck-mkt-desc' + (note ? ' ck-mkt-note' : '') + '">' + escapeHtml(desc) + '</div>' +
       '<div class="ck-mkt-meta">' + meta.map(escapeHtml).join(' · ') + ' ' + badges + '</div>' +
     '</div>' +
   '</div>';
@@ -331,10 +377,43 @@ function openPluginDetail(it: any): void {
   if (it.stars) meta.push('★ ' + it.stars);
   if (it.license) meta.push(it.license);
 
+  const fav = pluginFavorites.includes(it.id);
+  const note = pluginNotes[it.id] || '';
   body.innerHTML = shotsHtml +
     '<div class="ck-plugin-detail-row"><span class="ck-plugin-detail-k">仓库</span><span class="ck-plugin-detail-v">' + escapeHtml(it.id) + '</span></div>' +
     (meta.length ? '<div class="ck-plugin-detail-row"><span class="ck-plugin-detail-k">信息</span><span class="ck-plugin-detail-v">' + escapeHtml(meta.join(' · ')) + '</span></div>' : '') +
-    '<div class="ck-plugin-detail-row"><span class="ck-plugin-detail-k">简介</span><span class="ck-plugin-detail-v">' + escapeHtml(it.description || '（无简介）') + '</span></div>';
+    '<div class="ck-plugin-detail-row"><span class="ck-plugin-detail-k">简介</span><span class="ck-plugin-detail-v">' + escapeHtml(it.description || '（无简介）') + '</span></div>' +
+    // 我的备注（本地，作者看不到）
+    '<div class="ck-plugin-detail-row ck-plugin-note-row"><span class="ck-plugin-detail-k">备注</span>' +
+      '<div class="ck-plugin-detail-v" style="display:flex;gap:6px;align-items:flex-start">' +
+        '<textarea class="ck-plugin-note-input" id="plugin-note-input" placeholder="写给自己的一行说明（本地保存）" maxlength="500">' + escapeHtml(note) + '</textarea>' +
+        '<button class="ck-btn ck-btn-secondary" id="plugin-note-save" style="flex-shrink:0">保存</button>' +
+      '</div>' +
+    '</div>';
+
+  // 收藏切换
+  const favBtn = document.getElementById('plugin-detail-fav') as any;
+  if (favBtn) {
+    favBtn.textContent = fav ? '★ 已收藏' : '☆ 收藏';
+    favBtn.onclick = async () => {
+      const apiAny: any = api as any;
+      if (typeof apiAny.pluginMarketStateSet !== 'function') return;
+      const r = await apiAny.pluginMarketStateSet({ action: 'favorite', id: it.id });
+      if (r && r.success && r.state) { pluginFavorites = r.state.favorites || []; renderMarketCats(); renderPluginMarket(); openPluginDetail(it); }
+    };
+  }
+
+  // 保存备注
+  const noteBtn = document.getElementById('plugin-note-save') as any;
+  const noteInput = document.getElementById('plugin-note-input') as any;
+  if (noteBtn && noteInput) {
+    noteBtn.onclick = async () => {
+      const apiAny: any = api as any;
+      if (typeof apiAny.pluginMarketStateSet !== 'function') return;
+      const r = await apiAny.pluginMarketStateSet({ action: 'note', id: it.id, value: noteInput.value || '' });
+      if (r && r.success && r.state) { pluginNotes = r.state.notes || {}; noteBtn.textContent = '已保存'; setTimeout(() => { noteBtn.textContent = '保存'; }, 1200); renderPluginMarket(); }
+    };
+  }
 
   const state = pluginUpdateState(it);
   act.textContent = state === 'installed' ? '已安装' : (state === 'update' ? '更新' : '安装');
