@@ -61,19 +61,79 @@ function mountToolbar(m: MountSpec): void {
   bar.appendChild(btn);
 }
 
+/** 在壳页面上下文执行插件脚本（new Function，拿到 window.shellAPI 等全局） */
+function runPanelScript(pluginId: string, id: string, script: string): void {
+  try {
+    // eslint-disable-next-line no-new-func
+    const fn = new Function('window', 'document', 'shellAPI', String(script));
+    fn(window, document, (window as any).shellAPI);
+    console.log('[plugin-shell] 面板脚本已执行 ' + pluginId + ':' + id);
+  } catch (err: any) {
+    console.error('[plugin-shell] 面板脚本执行失败 ' + pluginId + ':' + id + ' — ' + (err && err.message ? err.message : err));
+  }
+}
+
+/**
+ * 合并模式：把插件面板作为「子标签」塞进市场面板（#ck-mkt-tabs / #ck-mkt-subpanels）。
+ * 用于「活动栏只留一个插件市场图标，所有插件面板融合进去」。
+ * @returns 成功合并返回 true；容器不存在返回 false（调用方回退到独立图标）
+ */
+function mountSidebarMerge(m: MountSpec, key: string, title: string): boolean {
+  const tabsBar = document.getElementById('ck-mkt-tabs');
+  const panelsHost = document.getElementById('ck-mkt-subpanels');
+  if (!tabsBar || !panelsHost) return false;
+
+  const subKey = 'p:' + key;
+  const exist = panelsHost.querySelector('[data-subpanel="' + subKey + '"]') as any;
+  if (exist) {
+    if (m.spec && m.spec.html) exist.innerHTML = m.spec.html;
+    if (m.spec && m.spec.script) runPanelScript(m.pluginId, m.id, m.spec.script);
+    return true;
+  }
+
+  // 子标签按钮
+  const tab = document.createElement('button');
+  tab.className = 'ck-mkt-subtab';
+  tab.setAttribute('data-subtab', subKey);
+  tab.textContent = title;
+  tabsBar.appendChild(tab);
+
+  // 子面板
+  const panel = document.createElement('div');
+  panel.className = 'ck-mkt-subpanel';
+  panel.setAttribute('data-subpanel', subKey);
+  panel.innerHTML = (m.spec && m.spec.html) || '<div style="padding:12px;color:var(--ck-text-dim);font-size:12px">' + escapeHtml(String(title)) + '</div>';
+  panelsHost.appendChild(panel);
+
+  if (m.spec && m.spec.script) runPanelScript(m.pluginId, m.id, m.spec.script);
+  console.log('[plugin-shell] 已合并插件面板: ' + key + ' (' + title + ')');
+  return true;
+}
+
 function mountSidebar(m: MountSpec): void {
-  // 插件侧边栏页：创建「活动栏图标」+「面板」，图标点击由 sidebar.ts 事件委托处理
+  // 插件侧边栏页：默认创建「活动栏图标」+「面板」；
+  // spec.merge=true 时不建图标，把面板合并进市场面板的子标签（活动栏只留一个市场图标）。
   const key = m.pluginId + ':' + m.id;
   const tabName = 'plugin-' + m.pluginId + '-' + m.id;
-  const ab = document.querySelector('.ck-activitybar');
-  const panelBody = document.querySelector('.ck-panel-body');
-  if (!ab || !panelBody) return;
   const title = (m.spec && m.spec.title) || m.id;
 
-  // 已存在 → 仅更新内容
+  if (m.spec && m.spec.merge) {
+    if (mountSidebarMerge(m, key, title)) return;
+    console.warn('[plugin-shell] 合并容器不存在，回退到独立图标: ' + key);
+  }
+
+  const ab = document.querySelector('.ck-activitybar');
+  const panelBody = document.querySelector('.ck-panel-body');
+  if (!ab || !panelBody) {
+    console.warn('[plugin-shell] 挂载失败（缺容器）: ' + key + ' ab=' + !!ab + ' panelBody=' + !!panelBody);
+    return;
+  }
+
+  // 已存在 → 更新内容 + 重跑脚本
   const existPanel = panelBody.querySelector('[data-plugin-panel="' + key + '"]') as any;
   if (existPanel) {
     if (m.spec && m.spec.html) existPanel.innerHTML = m.spec.html;
+    if (m.spec && m.spec.script) runPanelScript(m.pluginId, m.id, m.spec.script);
     return;
   }
 
@@ -96,6 +156,10 @@ function mountSidebar(m: MountSpec): void {
   panel.setAttribute('data-plugin-panel', key);
   panel.innerHTML = (m.spec && m.spec.html) || '<div style="padding:12px;color:var(--ck-text-dim);font-size:12px">' + escapeHtml(String(title)) + '</div>';
   panelBody.appendChild(panel);
+
+  // ⚠️ innerHTML 里的 <script> 不会执行，隐藏容器里的 <img onerror> 也不触发。
+  // 插件面板的初始化逻辑必须走 spec.script，由这里主动执行。
+  if (m.spec && m.spec.script) runPanelScript(m.pluginId, m.id, m.spec.script);
 
   // 兜底样式：插件面板默认隐藏，激活时显示
   if (!document.getElementById('ck-plugin-panel-style')) {

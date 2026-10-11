@@ -1,57 +1,64 @@
-            <!-- ===== 插件市场 ===== -->
+            <!-- ===== 插件（市场 + 插件面板 融合）===== -->
             <div class="ck-tab" data-panel="plugins">
-              <div class="ck-mkt-hero">
-                <div class="ck-mkt-head">
-                  <div>
-                    <div class="ck-mkt-title">插件市场</div>
-                    <div class="ck-mkt-sub" id="plugin-market-updated">加载中…</div>
+              <!-- 子标签条：市场 / 已安装 / DSH / 插件面板（动态） -->
+              <div class="ck-mkt-tabs" id="ck-mkt-tabs">
+                <button class="ck-mkt-subtab active" data-subtab="market">市场</button>
+                <button class="ck-mkt-subtab" data-subtab="installed">已安装</button>
+                <button class="ck-mkt-subtab" data-subtab="dsh">DSH</button>
+              </div>
+
+              <div class="ck-mkt-subpanels" id="ck-mkt-subpanels">
+                <!-- 市场 -->
+                <div class="ck-mkt-subpanel active" data-subpanel="market">
+                  <div class="ck-mkt-hero">
+                    <div class="ck-mkt-head">
+                      <div class="ck-mkt-sub" id="plugin-market-updated">加载中…</div>
+                      <div class="ck-mkt-headbtns">
+                        <button class="ck-icon-btn" id="plugin-market-refresh" title="刷新目录">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                        </button>
+                        <button class="ck-icon-btn" id="plugin-open-dir" title="打开插件目录">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                    <input class="ck-input ck-mkt-search" id="plugin-market-search" placeholder="搜索插件名 / 简介 / 作者…" />
+                    <div class="ck-mkt-cats" id="plugin-market-cats"></div>
                   </div>
-                  <div class="ck-mkt-headbtns">
-                    <button class="ck-icon-btn" id="plugin-market-refresh" title="刷新目录">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-                    </button>
-                    <button class="ck-icon-btn" id="plugin-open-dir" title="打开插件目录">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                    </button>
+                  <div class="ck-mkt-grid" id="plugin-market-list">
+                    <div class="ck-list-empty">加载中…</div>
+                  </div>
+                  <div class="ck-mkt-foot">
+                    <label class="ck-mkt-auto" title="开启后每天自动检查并更新已装插件">
+                      <input type="checkbox" id="plugin-auto-update"> 自动更新
+                    </label>
+                    <button class="ck-btn ck-btn-secondary ck-mkt-check" id="plugin-check-updates">检查更新</button>
+                  </div>
+                  <div class="ck-mkt-upload">
+                    <span class="ck-mkt-upload-t">想上架你的插件？给仓库打 topic <b>cuckoo-plugin</b></span>
+                    <button class="ck-btn ck-btn-secondary ck-mkt-upload-btn" id="plugin-upload-guide">说明</button>
                   </div>
                 </div>
-                <input class="ck-input ck-mkt-search" id="plugin-market-search" placeholder="搜索插件名 / 简介 / 作者…" />
-                <div class="ck-mkt-cats" id="plugin-market-cats"></div>
-              </div>
 
-              <div class="ck-mkt-grid" id="plugin-market-list">
-                <div class="ck-list-empty">加载中…</div>
-              </div>
-
-              <div class="ck-mkt-foot">
-                <label class="ck-mkt-auto" title="开启后每天自动检查并更新已装插件">
-                  <input type="checkbox" id="plugin-auto-update"> 自动更新
-                </label>
-                <button class="ck-btn ck-btn-secondary ck-mkt-check" id="plugin-check-updates">检查更新</button>
-              </div>
-
-              <div class="ck-mkt-upload">
-                <span class="ck-mkt-upload-t">想上架你的插件？给仓库打 topic <b>cuckoo-plugin</b></span>
-                <button class="ck-btn ck-btn-secondary ck-mkt-upload-btn" id="plugin-upload-guide">说明</button>
-              </div>
-
-              <details class="ck-mkt-fold" open>
-                <summary>已安装插件</summary>
-                <div class="ck-list" id="plugin-installed-list">
-                  <div class="ck-list-empty">加载中…</div>
+                <!-- 已安装 -->
+                <div class="ck-mkt-subpanel" data-subpanel="installed">
+                  <div class="ck-list" id="plugin-installed-list">
+                    <div class="ck-list-empty">加载中…</div>
+                  </div>
                 </div>
-              </details>
 
-              <details class="ck-mkt-fold">
-                <summary>DSH 插件（npm）</summary>
-                <div class="ck-mkt-foldbar">
-                  <button class="ck-btn ck-btn-secondary" id="ckp-install-btn">安装 npm 包</button>
-                  <button class="ck-btn ck-btn-secondary" id="ckp-open-dir">打开目录</button>
+                <!-- DSH 插件（npm） -->
+                <div class="ck-mkt-subpanel" data-subpanel="dsh">
+                  <div class="ck-mkt-foldbar">
+                    <button class="ck-btn ck-btn-secondary" id="ckp-install-btn">安装 npm 包</button>
+                    <button class="ck-btn ck-btn-secondary" id="ckp-open-dir">打开目录</button>
+                  </div>
+                  <div class="ck-list" id="ckp-list">
+                    <div class="ck-list-empty">加载中…</div>
+                  </div>
                 </div>
-                <div class="ck-list" id="ckp-list">
-                  <div class="ck-list-empty">加载中…</div>
-                </div>
-              </details>
+                <!-- 插件面板（memory / snapshot / agent-mode / ai-gateway）动态合并到这里 -->
+              </div>
 
               <!-- 插件详情弹窗 -->
               <div class="ck-modal-mask cuckoo-hidden" id="plugin-detail-mask">

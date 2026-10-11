@@ -555,6 +555,21 @@ async function installPluginFromMarket(item: any, isUpgrade: boolean): Promise<v
   await loadPlugins();
 }
 
+// ===== 子标签切换（市场 / 已安装 / DSH / 插件面板）=====
+// 插件面板由 plugin-shell.ts 动态合并进来（data-subtab="p:插件id:面板id"），
+// 所以用事件委托，不逐条绑定。
+document.getElementById('ck-mkt-tabs')?.addEventListener('click', (e: any) => {
+  const btn = e.target && e.target.closest ? e.target.closest('.ck-mkt-subtab') : null;
+  if (!btn) return;
+  const sub = btn.getAttribute('data-subtab');
+  if (!sub) return;
+  document.querySelectorAll('#ck-mkt-tabs .ck-mkt-subtab').forEach((b: any) => b.classList.remove('active'));
+  document.querySelectorAll('#ck-mkt-subpanels .ck-mkt-subpanel').forEach((p: any) => p.classList.remove('active'));
+  btn.classList.add('active');
+  const panel = document.querySelector('#ck-mkt-subpanels [data-subpanel="' + sub + '"]');
+  if (panel) panel.classList.add('active');
+});
+
 document.getElementById('plugin-refresh')?.addEventListener('click', () => loadPluginMarket(true));
 document.getElementById('plugin-market-refresh')?.addEventListener('click', () => loadPluginMarket(true));
 

@@ -712,6 +712,25 @@
   .ck-agent-detail-v { color: var(--ck-text); word-break: break-word; flex: 1; }
   .ck-agent-detail-path { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: #7dd3fc; word-break: break-all; }
   .ck-agent-detail-actions { margin-top: 12px; }
+  /* ===== 插件面板：子标签（市场/已安装/DSH/插件）===== */
+  .ck-mkt-tabs {
+    display: flex; gap: 2px; padding: 0 0 8px;
+    border-bottom: 1px solid var(--ck-border); margin-bottom: 10px;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .ck-mkt-tabs::-webkit-scrollbar { display: none; }
+  .ck-mkt-subtab {
+    font-family: inherit; font-size: 12px; font-weight: 600;
+    padding: 6px 12px; border: 0; border-radius: 7px;
+    background: transparent; color: var(--ck-text-dim);
+    cursor: pointer; white-space: nowrap;
+    transition: background .15s, color .15s;
+  }
+  .ck-mkt-subtab:hover { color: var(--ck-text); background: var(--ck-surface-hover); }
+  .ck-mkt-subtab.active { color: var(--ck-primary); background: var(--ck-primary-soft); }
+  .ck-mkt-subpanel { display: none; }
+  .ck-mkt-subpanel.active { display: block; }
+
   /* ===== 插件市场（宽敞版）===== */
   .ck-mkt-hero { padding: 2px 0 12px; }
   .ck-mkt-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }

@@ -986,6 +986,25 @@
   .ck-agent-detail-v { color: var(--ck-text); word-break: break-word; flex: 1; }
   .ck-agent-detail-path { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: #7dd3fc; word-break: break-all; }
   .ck-agent-detail-actions { margin-top: 12px; }
+  /* ===== 插件面板：子标签（市场/已安装/DSH/插件）===== */
+  .ck-mkt-tabs {
+    display: flex; gap: 2px; padding: 0 0 8px;
+    border-bottom: 1px solid var(--ck-border); margin-bottom: 10px;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .ck-mkt-tabs::-webkit-scrollbar { display: none; }
+  .ck-mkt-subtab {
+    font-family: inherit; font-size: 12px; font-weight: 600;
+    padding: 6px 12px; border: 0; border-radius: 7px;
+    background: transparent; color: var(--ck-text-dim);
+    cursor: pointer; white-space: nowrap;
+    transition: background .15s, color .15s;
+  }
+  .ck-mkt-subtab:hover { color: var(--ck-text); background: var(--ck-surface-hover); }
+  .ck-mkt-subtab.active { color: var(--ck-primary); background: var(--ck-primary-soft); }
+  .ck-mkt-subpanel { display: none; }
+  .ck-mkt-subpanel.active { display: block; }
+
   /* ===== 插件市场（宽敞版）===== */
   .ck-mkt-hero { padding: 2px 0 12px; }
   .ck-mkt-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
@@ -1552,60 +1571,67 @@
               </div>
             </div>
 
-            <!-- ===== 插件市场 ===== -->
+            <!-- ===== 插件（市场 + 插件面板 融合）===== -->
             <div class="ck-tab" data-panel="plugins">
-              <div class="ck-mkt-hero">
-                <div class="ck-mkt-head">
-                  <div>
-                    <div class="ck-mkt-title">插件市场</div>
-                    <div class="ck-mkt-sub" id="plugin-market-updated">加载中…</div>
+              <!-- 子标签条：市场 / 已安装 / DSH / 插件面板（动态） -->
+              <div class="ck-mkt-tabs" id="ck-mkt-tabs">
+                <button class="ck-mkt-subtab active" data-subtab="market">市场</button>
+                <button class="ck-mkt-subtab" data-subtab="installed">已安装</button>
+                <button class="ck-mkt-subtab" data-subtab="dsh">DSH</button>
+              </div>
+
+              <div class="ck-mkt-subpanels" id="ck-mkt-subpanels">
+                <!-- 市场 -->
+                <div class="ck-mkt-subpanel active" data-subpanel="market">
+                  <div class="ck-mkt-hero">
+                    <div class="ck-mkt-head">
+                      <div class="ck-mkt-sub" id="plugin-market-updated">加载中…</div>
+                      <div class="ck-mkt-headbtns">
+                        <button class="ck-icon-btn" id="plugin-market-refresh" title="刷新目录">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                        </button>
+                        <button class="ck-icon-btn" id="plugin-open-dir" title="打开插件目录">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                    <input class="ck-input ck-mkt-search" id="plugin-market-search" placeholder="搜索插件名 / 简介 / 作者…" />
+                    <div class="ck-mkt-cats" id="plugin-market-cats"></div>
                   </div>
-                  <div class="ck-mkt-headbtns">
-                    <button class="ck-icon-btn" id="plugin-market-refresh" title="刷新目录">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-                    </button>
-                    <button class="ck-icon-btn" id="plugin-open-dir" title="打开插件目录">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                    </button>
+                  <div class="ck-mkt-grid" id="plugin-market-list">
+                    <div class="ck-list-empty">加载中…</div>
+                  </div>
+                  <div class="ck-mkt-foot">
+                    <label class="ck-mkt-auto" title="开启后每天自动检查并更新已装插件">
+                      <input type="checkbox" id="plugin-auto-update"> 自动更新
+                    </label>
+                    <button class="ck-btn ck-btn-secondary ck-mkt-check" id="plugin-check-updates">检查更新</button>
+                  </div>
+                  <div class="ck-mkt-upload">
+                    <span class="ck-mkt-upload-t">想上架你的插件？给仓库打 topic <b>cuckoo-plugin</b></span>
+                    <button class="ck-btn ck-btn-secondary ck-mkt-upload-btn" id="plugin-upload-guide">说明</button>
                   </div>
                 </div>
-                <input class="ck-input ck-mkt-search" id="plugin-market-search" placeholder="搜索插件名 / 简介 / 作者…" />
-                <div class="ck-mkt-cats" id="plugin-market-cats"></div>
-              </div>
 
-              <div class="ck-mkt-grid" id="plugin-market-list">
-                <div class="ck-list-empty">加载中…</div>
-              </div>
-
-              <div class="ck-mkt-foot">
-                <label class="ck-mkt-auto" title="开启后每天自动检查并更新已装插件">
-                  <input type="checkbox" id="plugin-auto-update"> 自动更新
-                </label>
-                <button class="ck-btn ck-btn-secondary ck-mkt-check" id="plugin-check-updates">检查更新</button>
-              </div>
-
-              <div class="ck-mkt-upload">
-                <span class="ck-mkt-upload-t">想上架你的插件？给仓库打 topic <b>cuckoo-plugin</b></span>
-                <button class="ck-btn ck-btn-secondary ck-mkt-upload-btn" id="plugin-upload-guide">说明</button>
-              </div>
-
-              <details class="ck-mkt-fold" open>
-                <summary>已安装插件</summary>
-                <div class="ck-list" id="plugin-installed-list">
-                  <div class="ck-list-empty">加载中…</div>
+                <!-- 已安装 -->
+                <div class="ck-mkt-subpanel" data-subpanel="installed">
+                  <div class="ck-list" id="plugin-installed-list">
+                    <div class="ck-list-empty">加载中…</div>
+                  </div>
                 </div>
-              </details>
 
-              <details class="ck-mkt-fold">
-                <summary>DSH 插件（npm）</summary>
-                <div class="ck-mkt-foldbar">
-                  <button class="ck-btn ck-btn-secondary" id="ckp-install-btn">安装 npm 包</button>
-                  <button class="ck-btn ck-btn-secondary" id="ckp-open-dir">打开目录</button>
+                <!-- DSH 插件（npm） -->
+                <div class="ck-mkt-subpanel" data-subpanel="dsh">
+                  <div class="ck-mkt-foldbar">
+                    <button class="ck-btn ck-btn-secondary" id="ckp-install-btn">安装 npm 包</button>
+                    <button class="ck-btn ck-btn-secondary" id="ckp-open-dir">打开目录</button>
+                  </div>
+                  <div class="ck-list" id="ckp-list">
+                    <div class="ck-list-empty">加载中…</div>
+                  </div>
                 </div>
-                <div class="ck-list" id="ckp-list">
-                  <div class="ck-list-empty">加载中…</div>
-                </div>
-              </details>
+                <!-- 插件面板（memory / snapshot / agent-mode / ai-gateway）动态合并到这里 -->
+              </div>
 
               <!-- 插件详情弹窗 -->
               <div class="ck-modal-mask cuckoo-hidden" id="plugin-detail-mask">
@@ -5175,6 +5201,17 @@
     await ckAlert(msg + "\n\n\u9ED8\u8BA4\u7981\u7528\u3002\u5728\u300C\u5DF2\u5B89\u88C5\u300D\u5904\u6253\u5F00\u5F00\u5173\u540E\uFF0C\u5B83\u7684\u6280\u80FD / \u4EE3\u7406 / \u89C4\u5219 / MCP / \u53EF\u6267\u884C\u5185\u5BB9\u624D\u4F1A\u751F\u6548\u3002", r.upgraded ? "\u66F4\u65B0\u5B8C\u6210" : "\u5B89\u88C5\u5B8C\u6210");
     await loadPlugins();
   }
+  document.getElementById("ck-mkt-tabs")?.addEventListener("click", (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest(".ck-mkt-subtab") : null;
+    if (!btn) return;
+    const sub = btn.getAttribute("data-subtab");
+    if (!sub) return;
+    document.querySelectorAll("#ck-mkt-tabs .ck-mkt-subtab").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll("#ck-mkt-subpanels .ck-mkt-subpanel").forEach((p) => p.classList.remove("active"));
+    btn.classList.add("active");
+    const panel = document.querySelector('#ck-mkt-subpanels [data-subpanel="' + sub + '"]');
+    if (panel) panel.classList.add("active");
+  });
   document.getElementById("plugin-refresh")?.addEventListener("click", () => loadPluginMarket(true));
   document.getElementById("plugin-market-refresh")?.addEventListener("click", () => loadPluginMarket(true));
   var pms = document.getElementById("plugin-market-search");
@@ -5502,16 +5539,58 @@
     });
     bar.appendChild(btn);
   }
+  function runPanelScript(pluginId, id, script) {
+    try {
+      const fn = new Function("window", "document", "shellAPI", String(script));
+      fn(window, document, window.shellAPI);
+      console.log("[plugin-shell] \u9762\u677F\u811A\u672C\u5DF2\u6267\u884C " + pluginId + ":" + id);
+    } catch (err) {
+      console.error("[plugin-shell] \u9762\u677F\u811A\u672C\u6267\u884C\u5931\u8D25 " + pluginId + ":" + id + " \u2014 " + (err && err.message ? err.message : err));
+    }
+  }
+  function mountSidebarMerge(m, key, title) {
+    const tabsBar = document.getElementById("ck-mkt-tabs");
+    const panelsHost = document.getElementById("ck-mkt-subpanels");
+    if (!tabsBar || !panelsHost) return false;
+    const subKey = "p:" + key;
+    const exist = panelsHost.querySelector('[data-subpanel="' + subKey + '"]');
+    if (exist) {
+      if (m.spec && m.spec.html) exist.innerHTML = m.spec.html;
+      if (m.spec && m.spec.script) runPanelScript(m.pluginId, m.id, m.spec.script);
+      return true;
+    }
+    const tab = document.createElement("button");
+    tab.className = "ck-mkt-subtab";
+    tab.setAttribute("data-subtab", subKey);
+    tab.textContent = title;
+    tabsBar.appendChild(tab);
+    const panel = document.createElement("div");
+    panel.className = "ck-mkt-subpanel";
+    panel.setAttribute("data-subpanel", subKey);
+    panel.innerHTML = m.spec && m.spec.html || '<div style="padding:12px;color:var(--ck-text-dim);font-size:12px">' + escapeHtml2(String(title)) + "</div>";
+    panelsHost.appendChild(panel);
+    if (m.spec && m.spec.script) runPanelScript(m.pluginId, m.id, m.spec.script);
+    console.log("[plugin-shell] \u5DF2\u5408\u5E76\u63D2\u4EF6\u9762\u677F: " + key + " (" + title + ")");
+    return true;
+  }
   function mountSidebar(m) {
     const key = m.pluginId + ":" + m.id;
     const tabName = "plugin-" + m.pluginId + "-" + m.id;
+    const title = m.spec && m.spec.title || m.id;
+    if (m.spec && m.spec.merge) {
+      if (mountSidebarMerge(m, key, title)) return;
+      console.warn("[plugin-shell] \u5408\u5E76\u5BB9\u5668\u4E0D\u5B58\u5728\uFF0C\u56DE\u9000\u5230\u72EC\u7ACB\u56FE\u6807: " + key);
+    }
     const ab = document.querySelector(".ck-activitybar");
     const panelBody = document.querySelector(".ck-panel-body");
-    if (!ab || !panelBody) return;
-    const title = m.spec && m.spec.title || m.id;
+    if (!ab || !panelBody) {
+      console.warn("[plugin-shell] \u6302\u8F7D\u5931\u8D25\uFF08\u7F3A\u5BB9\u5668\uFF09: " + key + " ab=" + !!ab + " panelBody=" + !!panelBody);
+      return;
+    }
     const existPanel = panelBody.querySelector('[data-plugin-panel="' + key + '"]');
     if (existPanel) {
       if (m.spec && m.spec.html) existPanel.innerHTML = m.spec.html;
+      if (m.spec && m.spec.script) runPanelScript(m.pluginId, m.id, m.spec.script);
       return;
     }
     const icon = document.createElement("button");
@@ -5529,6 +5608,7 @@
     panel.setAttribute("data-plugin-panel", key);
     panel.innerHTML = m.spec && m.spec.html || '<div style="padding:12px;color:var(--ck-text-dim);font-size:12px">' + escapeHtml2(String(title)) + "</div>";
     panelBody.appendChild(panel);
+    if (m.spec && m.spec.script) runPanelScript(m.pluginId, m.id, m.spec.script);
     if (!document.getElementById("ck-plugin-panel-style")) {
       const st = document.createElement("style");
       st.id = "ck-plugin-panel-style";
