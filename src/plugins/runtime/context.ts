@@ -138,7 +138,14 @@ function createContext(name: string, host: HostCapabilities, registry?: ServiceR
   const systemPrompt: any = {
     section(sec: any) {
       // 能力统一经 HostCapabilities 注入（本层不直接碰 window/electronAPI）
-      if (host.registerPromptSection) return host.registerPromptSection(sec, name);
+      if (host.registerPromptSection) {
+        const off = host.registerPromptSection(sec, name);
+        if (typeof off === 'function') {
+          // 卸载时清理：移除主进程提示词段，避免残留（进 disposers，与其它服务一致）
+          disposers.push(off);
+          return () => { try { off(); } catch (_) { /* ignore */ } };
+        }
+      }
       return () => {};
     },
   };

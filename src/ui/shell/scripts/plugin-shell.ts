@@ -143,9 +143,10 @@ function mountSidebar(m: MountSpec): void {
   icon.setAttribute('data-tab', tabName);
   icon.setAttribute('data-plugin-tab', key);
   icon.title = String(title);
+  // 无 icon 时用标题首字（比统一的小地球图标更易区分）
   icon.innerHTML = (m.spec && m.spec.icon)
     ? String(m.spec.icon)
-    : '<svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/></svg>';
+    : '<span class="ck-ab-text">' + escapeHtml(String(title).charAt(0) || 'P') + '</span>';
   const spacer = ab.querySelector('.ck-ab-spacer');
   if (spacer) ab.insertBefore(icon, spacer); else ab.appendChild(icon);
 

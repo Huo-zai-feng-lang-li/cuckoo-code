@@ -24,8 +24,26 @@ const SYNC_TIMEOUT = 30 * 1000;
 // 每次工具调用都续命，故合法长任务（多次调用）不会误杀；
 // 异步死循环（如 while(true){ await sleep() }）不经过工具桥接 → 无续命 → 仍会被兜底。
 const RUN_DEADLINE = 60 * 1000;
-// 长任务工具：执行期间不计入脚本 deadline（自身有独立等待/超时，如子代理）
-const LONG_TASK_TOOLS = new Set(['runAgent']);
+// 固定长任务工具：自身有独立等待/超时兜底（子代理默认 10 分钟）
+const LONG_TASK_TOOLS = new Set(['runAgent', 'runAgents']);
+// 命令执行工具：仅当调用方显式声明 > 脚本 deadline 的 timeoutMs 时，自身超时才成为权威
+const SHELL_TOOLS = new Set(['bash', 'pwsh']);
+
+/**
+ * 判断某次工具调用是否属于"长任务"——执行期间暂停脚本的无活动看门狗，
+ * 避免脚本 60 秒 deadline 误杀自身有更长超时的工具。
+ * @param op 工具名
+ * @param args 工具参数
+ * @param deadlineMs 脚本无活动 deadline（RUN_DEADLINE）
+ */
+function isLongRunningTool(op: string, args: any, deadlineMs: number): boolean {
+  if (LONG_TASK_TOOLS.has(op)) return true;
+  if (SHELL_TOOLS.has(op)) {
+    const t = args && typeof args.timeoutMs === 'number' ? args.timeoutMs : 0;
+    return t > deadlineMs;
+  }
+  return false;
+}
 // 输出长度上限
 const OUTPUT_LIMIT = 20000;
 
@@ -182,8 +200,6 @@ class JsRunner {
     // 注意：该函数绝不向沙箱抛出宿主对象（错误一律包装成 { success:false, error } 结果），
     // 避免沙箱内出现宿主 realm 的 Error / Function 逃逸通道。
     const hostBridge = async (op: any, argsJson: any) => {
-      const isLongTask = LONG_TASK_TOOLS.has(op);
-      if (isLongTask) longTaskRunning++;
       lastActivity = Date.now(); // 每次工具调用续命
       let args = {};
       try {
@@ -191,6 +207,9 @@ class JsRunner {
       } catch (e) {
         args = {};
       }
+      // 长任务判定（固定白名单 + 显式长超时命令），执行期间暂停脚本 deadline
+      const isLongTask = isLongRunningTool(op, args, deadlineMs);
+      if (isLongTask) longTaskRunning++;
 
       let result;
       const tool = this.registry.get(op);
@@ -377,7 +396,7 @@ function buildRulesInjection(readFiles: string[], projectDir: any, settings: any
   }
 }
 
-export { JsRunner };
+export { JsRunner, isLongRunningTool };
 
 
 
