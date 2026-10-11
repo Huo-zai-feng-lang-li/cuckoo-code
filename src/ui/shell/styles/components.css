@@ -712,3 +712,30 @@
   .ck-agent-detail-v { color: var(--ck-text); word-break: break-word; flex: 1; }
   .ck-agent-detail-path { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: #7dd3fc; word-break: break-all; }
   .ck-agent-detail-actions { margin-top: 12px; }
+  /* ===== 插件市场卡片 ===== */
+  .ck-market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .ck-market-card {
+    border: 1px solid var(--ck-border); border-radius: 10px; overflow: hidden;
+    background: var(--ck-surface); cursor: pointer;
+    transition: border-color .15s, transform .15s;
+    display: flex; flex-direction: column;
+  }
+  .ck-market-card:hover { border-color: var(--ck-accent, #4c8dff); transform: translateY(-1px); }
+  .ck-market-cover { width: 100%; height: 90px; object-fit: cover; display: block; background: var(--ck-surface-hover); }
+  .ck-market-body { padding: 9px 10px 10px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
+  .ck-market-top { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .ck-market-name { font-size: 12.5px; font-weight: 600; color: var(--ck-text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ck-market-cat { font-size: 10px; padding: 1px 6px; border-radius: 20px; background: rgba(76,141,255,.14); color: #7dd3fc; flex-shrink: 0; }
+  .ck-market-desc {
+    font-size: 11.5px; color: var(--ck-text-dim); line-height: 1.5;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .ck-market-meta { font-size: 10.5px; color: var(--ck-text-dim); font-variant-numeric: tabular-nums; margin-top: auto; }
+  /* 插件详情弹窗 */
+  .ck-plugin-detail-body { padding: 4px 0 10px; max-height: 50vh; overflow-y: auto; }
+  .ck-plugin-shots { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; }
+  .ck-plugin-shots img { height: 120px; border-radius: 8px; border: 1px solid var(--ck-border); flex-shrink: 0; }
+  .ck-plugin-detail-row { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--ck-border); font-size: 12px; }
+  .ck-plugin-detail-row:last-child { border-bottom: none; }
+  .ck-plugin-detail-k { color: var(--ck-text-dim); flex-shrink: 0; width: 44px; }
+  .ck-plugin-detail-v { color: var(--ck-text); word-break: break-word; flex: 1; }

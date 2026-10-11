@@ -78,12 +78,15 @@ export {
   TOPIC,
   CACHE_TTL_MS,
   MANIFEST_CACHE_TTL_MS,
+  CURATED_CACHE_TTL_MS,
   buildSearchUrl,
   normalizeRepo,
   readMarketToken,
   searchPlugins,
+  fetchCurated,
   fetchRemoteManifests,
 } from './market.js';
+export type { CuratedResult } from './market.js';
 
 export {
   INSTALL_META_FILE,

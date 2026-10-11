@@ -13,6 +13,13 @@ let pluginMarketNotice = '';
 // repo → 已安装摘要（来自市场接口）；repo → 远端 plugin.json（来自 remote 接口）
 let pluginInstalled: Record<string, any> = {};
 let pluginRemote: Record<string, any> = {};
+// ===== curated 目录（plugins.json）的状态 =====
+let pluginMarketCategories: Record<string, any> = {};
+let pluginMarketUpdated = '';
+let pluginMarketQuery = '';
+let pluginMarketCat = 'all';
+let pluginDetailItem: any = null;
+let pluginMarketSource: 'curated' | 'topic' = 'topic';
 
 const ICON_INSTALL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>';
 const ICON_UPDATE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
@@ -188,92 +195,201 @@ async function loadInstalledPlugins(): Promise<void> {
   }
 }
 
-/** 渲染市场列表（数据来自 pluginMarketItems / pluginInstalled / pluginRemote） */
-function renderPluginMarket(): void {
-  const listEl = document.getElementById('plugin-market-list');
-  if (!listEl) return;
-  const notice = pluginMarketNotice
-    ? '<div class="ck-list-empty">' + escapeHtml(pluginMarketNotice) + '</div>'
-    : '';
-  if (!pluginMarketItems.length) {
-    // 空就是空：如实告知，并给出可执行的下一步
-    listEl.innerHTML = notice +
-      '<div class="ck-list-empty">暂无插件<br><br>给你的仓库打上 <b>cuckoo-plugin</b> topic，<br>它就会出现在这里</div>';
-    return;
+/** 分类中文名 */
+function catLabel(id: string): string {
+  const c = pluginMarketCategories[id];
+  if (c && c.zh) return c.zh;
+  return id;
+}
+
+/** 按搜索词 + 分类过滤 */
+function filteredMarket(): any[] {
+  const kw = pluginMarketQuery.trim().toLowerCase();
+  return pluginMarketItems.filter((it: any) => {
+    if (pluginMarketCat !== 'all' && (it.category || 'other') !== pluginMarketCat) return false;
+    if (!kw) return true;
+    return (String(it.name || '') + ' ' + String(it.description || '') + ' ' + String(it.id || ''))
+      .toLowerCase().includes(kw);
+  });
+}
+
+/** 渲染分类筛选条 */
+function renderMarketCats(): void {
+  const el = document.getElementById('plugin-market-cats');
+  if (!el) return;
+  const counts: Record<string, number> = {};
+  for (const it of pluginMarketItems) {
+    const c = it.category || 'other';
+    counts[c] = (counts[c] || 0) + 1;
   }
-  listEl.innerHTML = notice + pluginMarketItems.map(marketCardHtml).join('');
-  listEl.querySelectorAll('[data-install]').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const id = (btn as any).dataset.install;
-      const it = pluginMarketItems.filter((x) => x.id === id)[0];
-      if (it) await installPluginFromMarket(it, (btn as any).dataset.upgrade === '1');
+  const ids = Object.keys(pluginMarketCategories).filter((id) => counts[id]);
+  let html = '<button class="ck-chip' + (pluginMarketCat === 'all' ? ' ck-chip-active' : '') + '" data-cat="all">全部 ' + pluginMarketItems.length + '</button>';
+  for (const id of ids) {
+    html += '<button class="ck-chip' + (pluginMarketCat === id ? ' ck-chip-active' : '') + '" data-cat="' + escapeAttr(id) + '">' + escapeHtml(catLabel(id)) + ' ' + counts[id] + '</button>';
+  }
+  el.innerHTML = html;
+  el.querySelectorAll('.ck-chip').forEach((btn: any) => {
+    btn.addEventListener('click', () => {
+      pluginMarketCat = btn.dataset.cat || 'all';
+      renderMarketCats();
+      renderPluginMarket();
     });
   });
 }
 
+/** 渲染市场列表（数据来自 pluginMarketItems / pluginInstalled / pluginRemote） */
+function renderPluginMarket(): void {
+  const listEl = document.getElementById('plugin-market-list');
+  if (!listEl) return;
+  const upd = document.getElementById('plugin-market-updated');
+  if (upd) {
+    upd.textContent = pluginMarketSource === 'curated'
+      ? (pluginMarketUpdated ? '目录 ' + pluginMarketUpdated : '目录')
+      : 'topic 搜索';
+    upd.title = pluginMarketSource === 'curated' ? '来自 curated 目录（含图）' : '来自 GitHub topic 搜索';
+  }
+  const notice = pluginMarketNotice
+    ? '<div class="ck-list-empty">' + escapeHtml(pluginMarketNotice) + '</div>'
+    : '';
+  const items = filteredMarket();
+  if (!items.length) {
+    listEl.innerHTML = notice +
+      '<div class="ck-list-empty">' + (pluginMarketItems.length ? '没有匹配的插件' :
+        '暂无插件<br><br>给你的仓库打上 <b>cuckoo-plugin</b> topic，<br>它就会出现在这里') + '</div>';
+    return;
+  }
+  listEl.innerHTML = notice + items.map(marketCardHtml).join('');
+  listEl.querySelectorAll('.ck-market-card').forEach((card: any) => {
+    card.addEventListener('click', () => {
+      const id = card.dataset.id;
+      const it = pluginMarketItems.filter((x) => x.id === id)[0];
+      if (it) openPluginDetail(it);
+    });
+  });
+}
+
+/** 市场卡片（带封面图） */
 function marketCardHtml(it: any): string {
   const state = pluginUpdateState(it);
-  const remote = pluginRemote[it.id];
 
   let badges = '';
-  if (it.archived) badges += '<span class="ck-plugin-badge archived" title="仓库已归档，可能不再维护">已归档</span>';
+  if (it.archived) badges += '<span class="ck-plugin-badge archived">已归档</span>';
   if (state === 'installed') badges += '<span class="ck-plugin-badge on">已安装</span>';
   if (state === 'update') badges += '<span class="ck-plugin-badge update">可更新</span>';
 
-  // 已安装且无更新 → 不给操作按钮（避免重复安装把用户已改过的内容覆盖掉）
-  let action = '';
-  if (state === 'none') {
-    action = '<button class="ck-snip-icon-btn" data-install="' + escapeAttr(it.id) + '" title="安装">' +
-      ICON_INSTALL + '</button>';
-  } else if (state === 'update') {
-    action = '<button class="ck-snip-icon-btn" data-install="' + escapeAttr(it.id) + '" data-upgrade="1" title="更新到最新">' +
-      ICON_UPDATE + '</button>';
-  }
+  const cover = it.cover
+    ? '<img class="ck-market-cover" src="' + escapeAttr(it.cover) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
+    : '';
 
-  // 版本要求：搜索接口不返回这些，靠远端 plugin.json 补（没拿到就不显示）
-  let req = '';
-  if (remote && remote.ok) {
-    const bits: string[] = [];
-    if (remote.version) bits.push('插件 v' + escapeHtml(remote.version));
-    if (remote.minAppVersion) bits.push('需要 Cuckoo Code ≥ ' + escapeHtml(remote.minAppVersion));
-    if (bits.length) req = '<div class="ck-plugin-req">' + bits.join(' · ') + '</div>';
-  } else if (remote && remote.error) {
-    req = '<div class="ck-plugin-req err">读不到 plugin.json：' + escapeHtml(remote.error) + '</div>';
-  }
+  const cat = it.category
+    ? '<span class="ck-market-cat">' + escapeHtml(catLabel(it.category)) + '</span>'
+    : '';
 
-  return '<div class="ck-plugin-item" data-repo="' + escapeAttr(it.id) + '">' +
-    '<div class="ck-plugin-head">' +
-      '<span class="ck-plugin-name" title="' + escapeAttr(it.id) + '">' + escapeHtml(it.id) + '</span>' +
-      badges +
-      '<div class="ck-plugin-actions">' + action + '</div>' +
+  const meta: string[] = [];
+  if (it.version) meta.push('v' + escapeHtml(it.version));
+  if (it.stars) meta.push('★ ' + it.stars);
+  if (it.language) meta.push(escapeHtml(it.language));
+
+  return '<div class="ck-market-card" data-id="' + escapeAttr(it.id) + '">' +
+    cover +
+    '<div class="ck-market-body">' +
+      '<div class="ck-market-top">' +
+        '<span class="ck-market-name">' + escapeHtml(it.name || it.id) + '</span>' +
+        badges + cat +
+      '</div>' +
+      '<div class="ck-market-desc">' + escapeHtml(it.description || '（无简介）') + '</div>' +
+      '<div class="ck-market-meta">' + meta.map(escapeHtml).join(' · ') + '</div>' +
     '</div>' +
-    '<div class="ck-plugin-desc">' + escapeHtml(it.description || '（无简介）') + '</div>' +
-    pluginMetaHtml([
-      it.language ? escapeHtml(it.language) : '',
-      it.stars ? '★ ' + it.stars : '',
-      it.license ? escapeHtml(it.license) : '',
-      (it.pushedAt || it.updatedAt || '').slice(0, 10),
-    ]) +
-    req +
   '</div>';
+}
+
+/** 打开插件详情弹窗 */
+function openPluginDetail(it: any): void {
+  pluginDetailItem = it;
+  const mask = document.getElementById('plugin-detail-mask');
+  const title = document.getElementById('plugin-detail-title');
+  const body = document.getElementById('plugin-detail-body');
+  const act = document.getElementById('plugin-detail-action') as any;
+  if (!mask || !title || !body || !act) return;
+
+  title.textContent = it.name || it.id;
+  const shots = (it.screenshots && it.screenshots.length) ? it.screenshots : (it.cover ? [it.cover] : []);
+  const shotsHtml = shots.length
+    ? '<div class="ck-plugin-shots">' + shots.map((s: string) =>
+        '<img src="' + escapeAttr(s) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">').join('') + '</div>'
+    : '';
+  const meta: string[] = [];
+  if (it.version) meta.push('v' + it.version);
+  if (it.minAppVersion) meta.push('需要 Cuckoo ≥ ' + it.minAppVersion);
+  if (it.category) meta.push(catLabel(it.category));
+  if (it.stars) meta.push('★ ' + it.stars);
+  if (it.license) meta.push(it.license);
+
+  body.innerHTML = shotsHtml +
+    '<div class="ck-plugin-detail-row"><span class="ck-plugin-detail-k">仓库</span><span class="ck-plugin-detail-v">' + escapeHtml(it.id) + '</span></div>' +
+    (meta.length ? '<div class="ck-plugin-detail-row"><span class="ck-plugin-detail-k">信息</span><span class="ck-plugin-detail-v">' + escapeHtml(meta.join(' · ')) + '</span></div>' : '') +
+    '<div class="ck-plugin-detail-row"><span class="ck-plugin-detail-k">简介</span><span class="ck-plugin-detail-v">' + escapeHtml(it.description || '（无简介）') + '</span></div>';
+
+  const state = pluginUpdateState(it);
+  act.textContent = state === 'installed' ? '已安装' : (state === 'update' ? '更新' : '安装');
+  act.disabled = state === 'installed';
+  act.onclick = async () => {
+    if (state === 'installed') return;
+    closePluginDetail();
+    await installPluginFromMarket(it, state === 'update');
+  };
+  mask.classList.remove('cuckoo-hidden');
+}
+
+function closePluginDetail(): void {
+  document.getElementById('plugin-detail-mask')?.classList.add('cuckoo-hidden');
+  pluginDetailItem = null;
 }
 
 async function loadPluginMarket(force: boolean): Promise<void> {
   const listEl = document.getElementById('plugin-market-list');
-  if (!listEl || !api.pluginMarketList) return;
+  if (!listEl) return;
   listEl.innerHTML = '<div class="ck-list-empty">加载中…</div>';
+
+  // 优先 curated 目录（含封面图/分类/版本）；不可用则退回 topic 搜索
+  const apiAny: any = api as any;
+  if (typeof apiAny.pluginMarketCurated === 'function') {
+    try {
+      const rc = await apiAny.pluginMarketCurated({ force: !!force });
+      if (rc && rc.success && Array.isArray(rc.items) && rc.items.length) {
+        pluginMarketItems = rc.items;
+        pluginInstalled = rc.installed || {};
+        pluginMarketCategories = rc.categories || {};
+        pluginMarketUpdated = rc.updatedAt || '';
+        pluginMarketNotice = rc.error || '';
+        pluginMarketSource = 'curated';
+        pluginMarketCat = 'all';
+        renderMarketCats();
+        renderPluginMarket();
+        return;
+      }
+    } catch (_) { /* 退回 topic */ }
+  }
+
+  // 退回 topic 搜索
+  if (!api.pluginMarketList) { listEl.innerHTML = '<div class="ck-list-empty">市场接口不可用</div>'; return; }
   try {
     const r = await api.pluginMarketList({ force: !!force });
     if (!r || !r.success) {
       pluginMarketItems = [];
       pluginMarketNotice = (r && r.error) || '加载失败';
+      pluginMarketSource = 'topic';
       renderPluginMarket();
       return;
     }
     pluginMarketItems = r.items || [];
     pluginInstalled = (r && r.installed) || {};
     pluginMarketNotice = (r && r.error) || '';
+    pluginMarketSource = 'topic';
+    // topic 搜索没分类，用一套默认的
+    pluginMarketCategories = { other: { zh: '全部' } };
+    pluginMarketCat = 'all';
+    renderMarketCats();
     renderPluginMarket();
     // 搜索接口不返回插件版本/兼容要求，异步补齐后再渲染一次
     loadRemoteManifests();
@@ -327,6 +443,19 @@ async function installPluginFromMarket(item: any, isUpgrade: boolean): Promise<v
 }
 
 document.getElementById('plugin-refresh')?.addEventListener('click', () => loadPluginMarket(true));
+document.getElementById('plugin-market-refresh')?.addEventListener('click', () => loadPluginMarket(true));
+
+const pms = document.getElementById('plugin-market-search') as any;
+if (pms) {
+  pms.addEventListener('input', () => { pluginMarketQuery = pms.value || ''; renderPluginMarket(); });
+}
+
+document.getElementById('plugin-detail-close')?.addEventListener('click', closePluginDetail);
+document.getElementById('plugin-detail-site')?.addEventListener('click', () => {
+  if (pluginDetailItem && pluginDetailItem.url) {
+    try { (api as any).openExternal(pluginDetailItem.url); } catch (_) { /* ignore */ }
+  }
+});
 
 document.getElementById('plugin-open-dir')?.addEventListener('click', async () => {
   if (!api.pluginOpenDir) return;

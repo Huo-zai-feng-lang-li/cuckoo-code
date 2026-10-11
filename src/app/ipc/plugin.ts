@@ -159,6 +159,25 @@ function registerPluginIpc(): void {
     }
   });
 
+  // ===== 市场（curated 目录）：拉 plugins.json（图/分类/版本齐全）=====
+  ipcMain.handle('plugin-market-curated', async (_event: any, { force = false }: any = {}) => {
+    try {
+      const { fetchCurated } = await import('../../plugins/market.js');
+      const r = await fetchCurated({ httpGet, force: !!force });
+      return {
+        success: r.success,
+        items: r.items,
+        categories: r.categories,
+        updatedAt: r.updatedAt,
+        fromCache: r.fromCache,
+        error: r.error,
+        installed: buildInstalledMap(),
+      };
+    } catch (err: any) {
+      return { success: false, items: [], categories: {}, installed: {}, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
   // ===== 远端 plugin.json：拿插件版本与最低应用版本 =====
   // 搜索接口不返回这些，必须单独拉（raw.githubusercontent，不消耗 API 配额）。
   // 逐条降级：单条失败只影响该条，市场列表本身照常显示。

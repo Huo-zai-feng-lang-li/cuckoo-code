@@ -283,10 +283,10 @@ export async function runGatewayQuery(opts: {
   const timeoutMs = opts.timeoutMs || 300000;
   let hardTimer: any = null;
   try {
-    const text = await Promise.race([
+    const text: string = await Promise.race<string>([
       waitForDone(windowId, timeoutMs),
       // 硬超时：waitForDone 之外再加一层，保证无论怎样都会往下走（finally 里强制销毁窗口）
-      new Promise((resolve) => { hardTimer = setTimeout(() => resolve('__GATEWAY_HARD_TIMEOUT__'), timeoutMs + 8000); }),
+      new Promise<string>((resolve) => { hardTimer = setTimeout(() => resolve('__GATEWAY_HARD_TIMEOUT__'), timeoutMs + 8000); }),
     ]);
     if (text === '__SUBAGENT_TIMEOUT__' || text === '__GATEWAY_HARD_TIMEOUT__') {
       return { ok: false, error: '等待回复超时' };

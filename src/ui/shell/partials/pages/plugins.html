@@ -12,11 +12,30 @@
               <div class="ck-list" id="plugin-installed-list">
                 <div class="ck-list-empty">加载中…</div>
               </div>
-              <div class="ck-actions">
-                <span class="ck-set-group-title" style="flex:1;">市场</span>
-                <span class="ck-snip-badge" title="唯一搜索源">topic:cuckoo-plugin</span>
+              <!-- 插件详情弹窗 -->
+              <div class="ck-modal-mask cuckoo-hidden" id="plugin-detail-mask">
+                <div class="ck-modal" style="max-width:520px;width:480px">
+                  <span class="ck-modal-title" id="plugin-detail-title">插件详情</span>
+                  <div class="ck-plugin-detail-body" id="plugin-detail-body"></div>
+                  <div class="ck-modal-foot">
+                    <button class="ck-btn ck-btn-secondary" id="plugin-detail-site">打开仓库</button>
+                    <button class="ck-btn ck-btn-secondary" id="plugin-detail-close">关闭</button>
+                    <button class="ck-btn ck-btn-primary" id="plugin-detail-action">安装</button>
+                  </div>
+                </div>
               </div>
-              <div class="ck-list" id="plugin-market-list">
+              <div class="ck-actions">
+                <span class="ck-set-group-title" style="flex:1;">插件市场</span>
+                <span class="ck-snip-badge" id="plugin-market-updated" title="目录更新时间"></span>
+                <button class="ck-icon-btn" id="plugin-market-refresh" title="刷新目录">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                </button>
+              </div>
+              <div class="ck-field ck-agent-search">
+                <input class="ck-input" id="plugin-market-search" placeholder="搜索插件名 / 简介 / 作者…" />
+              </div>
+              <div class="ck-agent-filter" id="plugin-market-cats"></div>
+              <div class="ck-market-grid" id="plugin-market-list">
                 <div class="ck-list-empty">加载中…</div>
               </div>
               <!-- ===== DSH 兼容插件（npm 安装）===== -->

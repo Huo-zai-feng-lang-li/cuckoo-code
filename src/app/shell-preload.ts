@@ -164,6 +164,7 @@ const shellAPI = {
   // 市场列表（topic:cuckoo-plugin；force=true 跳过本地缓存）。
   // 返回 { items, installed }，installed 为 repo → 已安装摘要（用于隐藏安装按钮 / 显示更新）
   pluginMarketList: (opts?: any) => ipcRenderer.invoke('plugin-market-list', opts || {}),
+  pluginMarketCurated: (opts?: any) => ipcRenderer.invoke('plugin-market-curated', opts || {}),
   // 远端 plugin.json（版本 / 最低应用版本）。搜索接口不返回这些，需单独拉取
   pluginMarketRemote: (targets: any) => ipcRenderer.invoke('plugin-market-remote', { targets }),
   // 安装 / 更新：upgrade=true 时覆盖已安装的同 id 插件

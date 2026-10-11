@@ -512,18 +512,149 @@ async function fetchRemoteManifests(opts: {
   return out;
 }
 
+// ===== curated 目录（plugins.json）=====
+
+/** 目录源（优先级从高到低，逐个尝试） */
+const CURATED_URLS = [
+  'https://cdn.jsdelivr.net/gh/8555uuy/cuckoo-plugin-market@main/plugins.json',
+  'https://raw.githubusercontent.com/8555uuy/cuckoo-plugin-market/main/plugins.json',
+  'https://ghproxy.net/https://raw.githubusercontent.com/8555uuy/cuckoo-plugin-market/main/plugins.json',
+];
+
+const CURATED_CACHE_TTL_MS = 30 * 60 * 1000;
+
+interface CuratedDoc {
+  name?: string;
+  updated?: string;
+  count?: number;
+  categories?: Record<string, { en?: string; zh?: string }>;
+  plugins?: any[];
+}
+
+/** curated 目录缓存文件（与 topic 缓存分开，避免互相覆盖） */
+function getCuratedCacheFile(): string {
+  return getMarketCacheFile().replace(/\.json$/, '-curated.json');
+}
+
+function readCuratedCache(file: string): { cachedAt: string; doc: CuratedDoc } | null {
+  try {
+    if (!fs.existsSync(file)) return null;
+    const raw = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    if (!raw || typeof raw !== 'object' || !raw.doc || typeof raw.cachedAt !== 'string') return null;
+    return { cachedAt: raw.cachedAt, doc: raw.doc };
+  } catch { return null; }
+}
+
+/** 把 curated 条目规整成 MarketItem */
+function normalizeCurated(p: any): MarketItem | null {
+  if (!p || typeof p !== 'object') return null;
+  const id = typeof p.id === 'string' ? p.id.trim() : '';
+  if (!id || id.split('/').length !== 2) return null;
+  const parts = id.split('/');
+  return {
+    id,
+    owner: typeof p.owner === 'string' ? p.owner : parts[0],
+    name: typeof p.name === 'string' ? p.name : parts[1],
+    description: typeof p.description === 'string' ? p.description : '',
+    stars: Number(p.stars) || 0,
+    forks: Number(p.forks) || 0,
+    updatedAt: typeof p.updatedAt === 'string' ? p.updatedAt : '',
+    pushedAt: typeof p.pushedAt === 'string' ? p.pushedAt : '',
+    url: typeof p.url === 'string' ? p.url : 'https://github.com/' + id,
+    defaultBranch: typeof p.defaultBranch === 'string' && p.defaultBranch ? p.defaultBranch : 'main',
+    language: typeof p.language === 'string' ? p.language : '',
+    license: typeof p.license === 'string' ? p.license : '',
+    archived: !!p.archived,
+    topics: Array.isArray(p.topics) ? p.topics : [],
+    cover: typeof p.cover === 'string' ? p.cover : '',
+    screenshots: Array.isArray(p.screenshots) ? p.screenshots : [],
+    category: typeof p.category === 'string' ? p.category : '',
+    version: typeof p.version === 'string' ? p.version : '',
+    minAppVersion: typeof p.minAppVersion === 'string' ? p.minAppVersion : '',
+  };
+}
+
+export interface CuratedResult {
+  success: boolean;
+  items: MarketItem[];
+  categories: Record<string, { en?: string; zh?: string }>;
+  updatedAt: string;
+  fromCache: boolean;
+  error?: string;
+}
+
+/**
+ * 拉取 curated 目录（plugins.json）。
+ *
+ * 为什么要有它：
+ *  - GitHub Search API 未认证 10/min，每次刷新都烧配额；
+ *  - 目录能补充搜索接口给不了的字段（封面图、分类、版本）；
+ *  - GitHub 抽风时客户端还能显示上次快照（缓存兜底）。
+ *
+ * 逐源降级：jsdelivr（CDN）→ raw.githubusercontent → ghproxy。
+ */
+async function fetchCurated(opts: {
+  httpGet: HttpGet;
+  now?: number;
+  cacheFile?: string;
+  force?: boolean;
+}): Promise<CuratedResult> {
+  const now = typeof opts.now === 'number' ? opts.now : Date.now();
+  const cacheFile = opts.cacheFile || getCuratedCacheFile();
+
+  if (!opts.force) {
+    const cache = readCuratedCache(cacheFile);
+    if (cache) {
+      const age = now - Date.parse(cache.cachedAt);
+      if (Number.isFinite(age) && age >= 0 && age < CURATED_CACHE_TTL_MS) {
+        const items = (cache.doc.plugins || []).map(normalizeCurated).filter(Boolean) as MarketItem[];
+        return { success: true, items, categories: cache.doc.categories || {}, updatedAt: cache.doc.updated || '', fromCache: true };
+      }
+    }
+  }
+
+  let lastErr = '';
+  for (const url of CURATED_URLS) {
+    try {
+      const res = await opts.httpGet({ url, timeoutMs: 12000 });
+      if (res.status !== 200) { lastErr = 'HTTP ' + res.status + ' @ ' + url; continue; }
+      const doc = JSON.parse(res.body ? res.body.toString('utf-8') : '') as CuratedDoc;
+      if (!doc || !Array.isArray(doc.plugins)) { lastErr = '格式非法 @ ' + url; continue; }
+      const items = doc.plugins.map(normalizeCurated).filter(Boolean) as MarketItem[];
+      try {
+        fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
+        fs.writeFileSync(cacheFile, JSON.stringify({ cachedAt: new Date(now).toISOString(), doc }, null, 2), 'utf-8');
+      } catch { /* 缓存写失败不影响本次 */ }
+      return { success: true, items, categories: doc.categories || {}, updatedAt: doc.updated || '', fromCache: false };
+    } catch (err: any) {
+      lastErr = (err && err.message) ? err.message : String(err);
+    }
+  }
+
+  // 全部源失败 → 退回旧缓存（哪怕过期）
+  const stale = readCuratedCache(cacheFile);
+  if (stale) {
+    const items = (stale.doc.plugins || []).map(normalizeCurated).filter(Boolean) as MarketItem[];
+    return { success: true, items, categories: stale.doc.categories || {}, updatedAt: stale.doc.updated || '', fromCache: true, error: '目录源不可达，显示缓存' };
+  }
+  return { success: false, items: [], categories: {}, updatedAt: '', fromCache: false, error: lastErr || '目录不可达' };
+}
+
 export {
   TOPIC,
   CACHE_TTL_MS,
   PER_PAGE,
   MANIFEST_CACHE_TTL_MS,
+  CURATED_CACHE_TTL_MS,
   buildSearchUrl,
   normalizeRepo,
   normalizeGiteeRepo,
+  normalizeCurated,
   readMarketToken,
   readGiteeToken,
   readGiteeUsers,
   searchGiteePlugins,
   searchPlugins,
+  fetchCurated,
   fetchRemoteManifests,
 };

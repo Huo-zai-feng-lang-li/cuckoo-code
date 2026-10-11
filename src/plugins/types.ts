@@ -112,6 +112,18 @@ export interface MarketItem {
   /** 已归档的仓库不该被推荐 */
   archived: boolean;
   topics: string[];
+
+  // ===== 以下字段只有 curated 目录（plugins.json）才有，topic 搜索拿不到 =====
+  /** 封面图 URL（GitHub OpenGraph 或作者提供） */
+  cover?: string;
+  /** 截图列表（作者 screenshots.json 策展，最多 6 张） */
+  screenshots?: string[];
+  /** 分类 id（platform / tools / ui / agents / skills / workflow / fun / other） */
+  category?: string;
+  /** 插件版本（来自 plugin.json；curated 目录已带） */
+  version?: string;
+  /** 最低应用版本（来自 plugin.json） */
+  minAppVersion?: string;
 }
 
 /**
