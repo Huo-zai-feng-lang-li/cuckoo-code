@@ -603,12 +603,14 @@
   .ck-modal-foot .ck-btn { white-space: nowrap; }
   #agent-modal .ck-modal { max-width: 360px; }
   /* 通用弹框 */
-  .ck-dialog { max-width: 280px; }
-  .ck-dialog-msg { font-size: 12.5px; color: var(--ck-text-2); line-height: 1.6; word-break: break-word; }
+  .ck-dialog { max-width: 420px; }
+  .ck-dialog-msg { font-size: 12.5px; color: var(--ck-text-2); line-height: 1.6; word-break: break-word; white-space: pre-wrap; }
   /* 侧边栏相对定位（弹层锚点�?*/
   .ck-panel { position: relative; }
   /* 「文件」页内：左树 + 右预览 分栏 */
   .ck-files-cols { flex: 1; min-height: 0; display: flex; flex-direction: row; overflow: hidden; }
+  /* diff 模式：隐藏文件树，预览占满 */
+  .ck-files-cols.diff-mode .ck-ft { display: none; }
   .ck-preview-pane {
     display: none; flex-direction: column;
     width: 420px; flex-shrink: 0;
@@ -641,6 +643,25 @@
   .ck-preview-save:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
   .ck-preview-save.dirty { color: var(--ck-primary); }
   .ck-preview-save.dirty:hover { background: var(--ck-primary-soft); }
+  .ck-preview-diff {
+    padding: 0 8px; height: 22px; display: flex; align-items: center;
+    border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;
+    color: var(--ck-text-dim); transition: background .15s, color .15s;
+  }
+  .ck-preview-diff:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
+  .ck-preview-diff.active { color: var(--ck-primary); background: var(--ck-primary-soft); }
+  .ck-conflict-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 7px 10px; font-size: 11.5px; color: var(--ck-text);
+    background: rgba(255, 180, 60, .12); border-bottom: 1px solid var(--ck-border);
+  }
+  .ck-conflict-bar .ck-cb-actions { display: flex; gap: 6px; }
+  .ck-cb-btn {
+    padding: 3px 9px; border-radius: 6px; font-size: 11px; cursor: pointer;
+    border: 1px solid var(--ck-border); background: var(--ck-surface); color: var(--ck-text-2);
+  }
+  .ck-cb-btn:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
+  .ck-cb-btn.ck-cb-primary { background: var(--ck-primary); color: #fff; border-color: var(--ck-primary); }
   .ck-preview-body { flex: 1; overflow: hidden; position: relative; }
   .ck-monaco { position: absolute; inset: 0; }
   .ck-preview-body pre {
@@ -773,6 +794,7 @@
   }
   .ck-ctx-item:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
   .ck-ctx-item-new { color: var(--ck-primary); }
+  .ck-ctx-item-danger { color: var(--ck-red); }
   /* 收起：只隐藏面板，保留图标栏（宽度从 320 → 46）*/
   .ck-sidebar.ck-collapsed { width: 46px; }
   .ck-sidebar.ck-collapsed .ck-panel { display: none; }
@@ -1598,6 +1620,7 @@
               <span class="ck-modal-title" id="ck-dialog-title">提示</span>
               <div class="ck-dialog-msg" id="ck-dialog-msg"></div>
               <div class="ck-modal-foot">
+                <button class="ck-btn ck-btn-secondary cuckoo-hidden" id="ck-dialog-alt">查看差异</button>
                 <button class="ck-btn ck-btn-secondary cuckoo-hidden" id="ck-dialog-cancel">取消</button>
                 <button class="ck-btn ck-btn-primary" id="ck-dialog-ok">确定</button>
               </div>
@@ -1640,6 +1663,7 @@
                     <span class="ck-preview-size" id="ck-preview-size"></span>
                     <span class="ck-preview-acts">
                       <span class="ck-preview-save" id="ck-preview-save" title="保存 (Ctrl+S)" style="display:none;">保存</span>
+                      <span class="ck-preview-diff" id="ck-preview-diff" title="与 git HEAD 对比" style="display:none;">Diff</span>
                       <span class="ck-preview-btn" id="ck-preview-ext" title="用系统程序打开">↗</span>
                       <span class="ck-preview-btn" id="ck-preview-close" title="关闭预览">✕</span>
                     </span>
@@ -1647,6 +1671,7 @@
                   <div class="ck-preview-body" id="ck-preview-body">
                     <div class="ck-preview-empty" id="ck-preview-empty">点击左侧文件查看内容</div>
                     <div class="ck-monaco" id="ck-monaco" style="display:none;"></div>
+                    <div class="ck-monaco" id="ck-monaco-diff" style="display:none;"></div>
                   </div>
                 </div>
               </div>
@@ -2239,6 +2264,58 @@
   function ckConfirm(message, title) {
     return ckDialog({ title: title || "\u786E\u8BA4", message, confirm: true });
   }
+  function ckDialog3(opts) {
+    return new Promise((resolve) => {
+      const mask = document.getElementById("ck-dialog");
+      const titleEl = document.getElementById("ck-dialog-title");
+      const msgEl = document.getElementById("ck-dialog-msg");
+      const okBtn = document.getElementById("ck-dialog-ok");
+      const altBtn = document.getElementById("ck-dialog-alt");
+      const cancelBtn = document.getElementById("ck-dialog-cancel");
+      if (!mask || !okBtn || !altBtn || !cancelBtn) {
+        resolve("cancel");
+        return;
+      }
+      if (titleEl) titleEl.textContent = opts.title || "\u63D0\u793A";
+      if (msgEl) msgEl.textContent = opts.message || "";
+      okBtn.textContent = opts.primary || "\u786E\u5B9A";
+      altBtn.textContent = opts.alt || "\u67E5\u770B\u5DEE\u5F02";
+      altBtn.classList.remove("cuckoo-hidden");
+      cancelBtn.textContent = opts.cancel || "\u53D6\u6D88";
+      cancelBtn.classList.remove("cuckoo-hidden");
+      function cleanup() {
+        mask.classList.add("cuckoo-hidden");
+        okBtn.removeEventListener("click", onOk);
+        altBtn.removeEventListener("click", onAlt);
+        cancelBtn.removeEventListener("click", onCancel);
+        mask.removeEventListener("click", onMask);
+        altBtn.classList.add("cuckoo-hidden");
+      }
+      function onOk() {
+        cleanup();
+        resolve("primary");
+      }
+      function onAlt() {
+        cleanup();
+        resolve("alt");
+      }
+      function onCancel() {
+        cleanup();
+        resolve("cancel");
+      }
+      function onMask(e) {
+        if (e.target === mask) {
+          cleanup();
+          resolve("cancel");
+        }
+      }
+      okBtn.addEventListener("click", onOk);
+      altBtn.addEventListener("click", onAlt);
+      cancelBtn.addEventListener("click", onCancel);
+      mask.addEventListener("click", onMask);
+      mask.classList.remove("cuckoo-hidden");
+    });
+  }
   function ckAlert(message, title) {
     return ckDialog({ title: title || "\u63D0\u793A", message, confirm: false });
   }
@@ -2429,6 +2506,35 @@
       });
     }
   }
+  async function showDiff(container, fileName, orig, mod) {
+    const monaco = await loadMonaco();
+    const lang = langOf(fileName);
+    if (!diffEditor) {
+      diffEditor = monaco.editor.createDiffEditor(container, {
+        theme: themeName(),
+        readOnly: true,
+        automaticLayout: true,
+        renderSideBySide: false,
+        // 内联（VSCode 默认风格）
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        fontSize: 12.5,
+        renderWhitespace: "none",
+        wordWrap: "off"
+      });
+    }
+    const origModel = monaco.editor.createModel(orig, lang);
+    const modModel = monaco.editor.createModel(mod, lang);
+    const old = diffEditor.getModel();
+    diffEditor.setModel({ original: origModel, modified: modModel });
+    if (old) {
+      try {
+        old.original && old.original.dispose();
+        old.modified && old.modified.dispose();
+      } catch (_) {
+      }
+    }
+  }
   function syncMonacoTheme() {
     if (editor) {
       try {
@@ -2436,8 +2542,14 @@
       } catch (_) {
       }
     }
+    if (diffEditor) {
+      try {
+        window.monaco.editor.setTheme(themeName());
+      } catch (_) {
+      }
+    }
   }
-  var monacoPromise, editor, LANG_MAP, changeCb;
+  var monacoPromise, editor, LANG_MAP, changeCb, diffEditor;
   var init_preview_monaco = __esm({
     "src/ui/shell/scripts/preview-monaco.ts"() {
       "use strict";
@@ -2497,6 +2609,7 @@
         lock: "plaintext"
       };
       changeCb = null;
+      diffEditor = null;
       if (window.matchMedia) {
         try {
           window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", syncMonacoTheme);
@@ -2638,12 +2751,18 @@
       }
       if (sizeEl) sizeEl.textContent = fmtSize(r.size);
       if (monacoEl) {
+        hideConflictBar();
+        setDiffTreeHidden(false);
+        diffMode = false;
+        const diffEl = document.getElementById("ck-monaco-diff");
+        if (diffEl) diffEl.style.display = "none";
         monacoEl.style.display = "block";
         if (emptyEl) emptyEl.style.display = "none";
         dirty = false;
         loadedRelPath = relPath;
         await showInMonaco(monacoEl, relPath, r.content);
         updateSaveBtn();
+        updateDiffBtn();
         try {
           if (api.watchProjectFile) api.watchProjectFile(relPath);
         } catch (_) {
@@ -2657,6 +2776,112 @@
       if (monacoEl) monacoEl.style.display = "none";
     }
   }
+  async function showConflictDiff(relPath) {
+    const editEl = document.getElementById("ck-monaco");
+    const diffEl = document.getElementById("ck-monaco-diff");
+    if (!editEl || !diffEl) return;
+    const cur = await api.readProjectFile(relPath);
+    if (!cur || !cur.success) {
+      await ckAlert("\u8BFB\u53D6\u5931\u8D25");
+      return;
+    }
+    diffMode = true;
+    updateDiffBtn();
+    setDiffTreeHidden(true);
+    const emptyEl = document.getElementById("ck-preview-empty");
+    if (emptyEl) emptyEl.style.display = "none";
+    editEl.style.display = "none";
+    diffEl.style.display = "block";
+    await showDiff(diffEl, relPath, cur.content, getEditorValue());
+    showConflictBar(relPath, cur.content);
+  }
+  function showConflictBar(relPath, externalContent) {
+    const head = document.querySelector(".ck-preview-head");
+    if (!head || !head.parentNode) return;
+    const old = document.getElementById("ck-conflict-bar");
+    if (old) old.remove();
+    const bar = document.createElement("div");
+    bar.id = "ck-conflict-bar";
+    bar.className = "ck-conflict-bar";
+    bar.innerHTML = '<span class="ck-cb-text">\u26A0 \u6587\u4EF6\u5DF2\u88AB\u5916\u90E8\u4FEE\u6539</span><span class="ck-cb-actions"><button class="ck-cb-btn ck-cb-primary" id="ck-cb-take">\u91C7\u7528\u5916\u90E8\u7248</button><button class="ck-cb-btn" id="ck-cb-keep">\u4FDD\u7559\u6211\u7684</button></span>';
+    head.parentNode.insertBefore(bar, head.nextSibling);
+    const takeBtn = bar.querySelector("#ck-cb-take");
+    const keepBtn = bar.querySelector("#ck-cb-keep");
+    if (takeBtn) takeBtn.addEventListener("click", () => {
+      applyExternal(externalContent);
+    });
+    if (keepBtn) keepBtn.addEventListener("click", () => {
+      hideConflictBar();
+      exitDiffToEdit();
+    });
+  }
+  function hideConflictBar() {
+    const bar = document.getElementById("ck-conflict-bar");
+    if (bar) bar.remove();
+  }
+  function applyExternal(content) {
+    hideConflictBar();
+    exitDiffToEdit();
+    const monacoEl = document.getElementById("ck-monaco");
+    if (monacoEl && currentRelPath) {
+      showInMonaco(monacoEl, currentRelPath, content).then(() => {
+        dirty = false;
+        updateSaveBtn();
+      });
+    } else {
+      dirty = false;
+      updateSaveBtn();
+    }
+  }
+  function setDiffTreeHidden(hidden) {
+    const cols = colsEl();
+    if (cols) cols.classList.toggle("diff-mode", hidden);
+  }
+  function exitDiffToEdit() {
+    diffMode = false;
+    updateDiffBtn();
+    setDiffTreeHidden(false);
+    const diffEl = document.getElementById("ck-monaco-diff");
+    const editEl = document.getElementById("ck-monaco");
+    if (diffEl) diffEl.style.display = "none";
+    if (editEl) editEl.style.display = "block";
+  }
+  async function toggleDiff() {
+    if (!currentRelPath) return;
+    const editEl = document.getElementById("ck-monaco");
+    const diffEl = document.getElementById("ck-monaco-diff");
+    if (!editEl || !diffEl) return;
+    if (diffMode) {
+      hideConflictBar();
+      exitDiffToEdit();
+      return;
+    }
+    const r = await api.gitShowFile(currentRelPath);
+    if (!r || !r.success) {
+      await ckAlert("\u65E0\u6CD5\u5BF9\u6BD4\uFF1A" + (r && r.error || "\u672A\u63D0\u4EA4\u6216\u65E0\u57FA\u51C6\u7248\u672C"), "Diff");
+      return;
+    }
+    const curContent = getEditorValue();
+    diffMode = true;
+    updateDiffBtn();
+    setDiffTreeHidden(true);
+    const emptyEl = document.getElementById("ck-preview-empty");
+    if (emptyEl) emptyEl.style.display = "none";
+    editEl.style.display = "none";
+    diffEl.style.display = "block";
+    await showDiff(diffEl, currentRelPath, r.content, curContent);
+  }
+  function updateDiffBtn() {
+    const btn = document.getElementById("ck-preview-diff");
+    if (!btn) return;
+    if (!currentRelPath) {
+      btn.style.display = "none";
+      return;
+    }
+    btn.style.display = "";
+    btn.textContent = diffMode ? "\u8FD4\u56DE" : "Diff";
+    btn.classList.toggle("active", diffMode);
+  }
   async function onExternalChange(relPath) {
     if (relPath !== loadedRelPath || !currentRelPath) return;
     if (!pane() || !pane().classList.contains("open")) return;
@@ -2668,13 +2893,18 @@
     }
     conflictHandling = true;
     try {
-      const ok = await ckConfirm(
-        "\u6587\u4EF6\u300C" + relPath + "\u300D\u5DF2\u5728\u5916\u90E8\u88AB\u4FEE\u6539\uFF0C\u4F60\u672C\u5730\u6709\u672A\u4FDD\u5B58\u7684\u7F16\u8F91\u3002\n\n\u70B9\u300C\u786E\u5B9A\u300D\uFF1A\u52A0\u8F7D\u5916\u90E8\u6700\u65B0\u7248\u672C\uFF08\u653E\u5F03\u4F60\u7684\u672C\u5730\u7F16\u8F91\uFF09\n\u70B9\u300C\u53D6\u6D88\u300D\uFF1A\u4FDD\u7559\u4F60\u7684\u672C\u5730\u7F16\u8F91\uFF08\u7A0D\u540E\u53EF\u624B\u52A8\u4FDD\u5B58\u8986\u76D6\uFF09",
-        "\u6587\u4EF6\u5DF2\u88AB\u5916\u90E8\u4FEE\u6539"
-      );
-      if (ok) {
+      const choice = await ckDialog3({
+        title: "\u6587\u4EF6\u5DF2\u88AB\u5916\u90E8\u4FEE\u6539",
+        message: "\u6587\u4EF6\u300C" + relPath + "\u300D\u5DF2\u5728\u5916\u90E8\u88AB\u4FEE\u6539\uFF0C\u4F60\u672C\u5730\u6709\u672A\u4FDD\u5B58\u7684\u7F16\u8F91\u3002\n\n\xB7 \u91C7\u7528\u5916\u90E8\u7248\uFF1A\u653E\u5F03\u672C\u5730\u7F16\u8F91\uFF0C\u52A0\u8F7D\u5916\u90E8\u6700\u65B0\u7248\n\xB7 \u67E5\u770B\u5DEE\u5F02\uFF1A\u5148\u5BF9\u6BD4\u4E24\u7248\u5185\u5BB9\u518D\u51B3\u5B9A\n\xB7 \u4FDD\u7559\u6211\u7684\uFF1A\u4FDD\u6301\u672C\u5730\u7F16\u8F91\uFF08\u7A0D\u540E\u53EF\u4FDD\u5B58\u8986\u76D6\uFF09",
+        primary: "\u91C7\u7528\u5916\u90E8\u7248",
+        alt: "\u67E5\u770B\u5DEE\u5F02",
+        cancel: "\u4FDD\u7559\u6211\u7684"
+      });
+      if (choice === "primary") {
         dirty = false;
         await loadFile(relPath);
+      } else if (choice === "alt") {
+        await showConflictDiff(relPath);
       }
     } finally {
       conflictHandling = false;
@@ -2724,6 +2954,7 @@
     currentRelPath = "";
     loadedRelPath = "";
     dirty = false;
+    diffMode = false;
     try {
       if (api.unwatchProjectFile) api.unwatchProjectFile();
     } catch (_) {
@@ -2734,7 +2965,7 @@
     if (!currentRelPath) return;
     openPreview(currentRelPath);
   }
-  var PREVIEW_W_KEY, MIN_PREVIEW_W, MIN_TREE_W, openedBaseWidth, currentRelPath, loadedRelPath, dirty, saving, lastSelfSaveAt, conflictHandling;
+  var PREVIEW_W_KEY, MIN_PREVIEW_W, MIN_TREE_W, openedBaseWidth, currentRelPath, loadedRelPath, dirty, saving, lastSelfSaveAt, conflictHandling, diffMode;
   var init_preview = __esm({
     "src/ui/shell/scripts/preview.ts"() {
       "use strict";
@@ -2750,9 +2981,13 @@
       saving = false;
       lastSelfSaveAt = 0;
       conflictHandling = false;
+      diffMode = false;
       document.getElementById("ck-preview-close")?.addEventListener("click", dismissPreview);
       document.getElementById("ck-preview-save")?.addEventListener("click", () => {
         saveFile();
+      });
+      document.getElementById("ck-preview-diff")?.addEventListener("click", () => {
+        toggleDiff();
       });
       document.addEventListener("keydown", (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === "s" && currentRelPath && pane()?.classList.contains("open")) {
@@ -3723,6 +3958,17 @@
         else expanded.add(p);
         loadFiles();
       });
+      el.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        const p = el.dataset.path;
+        const name = p.split("/").pop();
+        showCtxMenu(e.clientX, e.clientY, [
+          { label: "\u65B0\u5EFA\u6587\u4EF6", isNew: true, onClick: () => doCreate(p, false) },
+          { label: "\u65B0\u5EFA\u6587\u4EF6\u5939", isNew: true, onClick: () => doCreate(p, true) },
+          { label: "\u91CD\u547D\u540D", onClick: () => doRename(p, name) },
+          { label: "\u5220\u9664", danger: true, onClick: () => doDelete(p, name, true) }
+        ]);
+      });
     });
     listEl2.querySelectorAll(".ck-ft-file").forEach((el) => {
       el.addEventListener("click", async (e) => {
@@ -3735,11 +3981,81 @@
         } catch (_) {
         }
       });
+      el.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        const p = el.dataset.path;
+        const name = p.split("/").pop();
+        showCtxMenu(e.clientX, e.clientY, [
+          { label: "\u91CD\u547D\u540D", onClick: () => doRename(p, name) },
+          { label: "\u5220\u9664", danger: true, onClick: () => doDelete(p, name, false) }
+        ]);
+      });
     });
   }
   function currentKeyword() {
     const s = document.getElementById("ft-search");
     return s ? String(s.value || "").trim() : "";
+  }
+  function showCtxMenu(x, y, items) {
+    const old = document.getElementById("ck-ft-ctx");
+    if (old) old.remove();
+    const menu = document.createElement("div");
+    menu.id = "ck-ft-ctx";
+    menu.className = "ck-ctx-menu";
+    menu.style.left = Math.min(x, window.innerWidth - 150) + "px";
+    menu.style.top = Math.min(y, window.innerHeight - items.length * 34 - 12) + "px";
+    for (const it of items) {
+      const row = document.createElement("div");
+      row.className = "ck-ctx-item" + (it.danger ? " ck-ctx-item-danger" : "") + (it.isNew ? " ck-ctx-item-new" : "");
+      row.textContent = it.label;
+      row.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        menu.remove();
+        it.onClick();
+      });
+      menu.appendChild(row);
+    }
+    document.body.appendChild(menu);
+    setTimeout(() => {
+      const close = (e) => {
+        if (!menu.contains(e.target)) {
+          menu.remove();
+          document.removeEventListener("mousedown", close, true);
+        }
+      };
+      document.addEventListener("mousedown", close, true);
+    }, 0);
+  }
+  async function doCreate(parentRel, isDir) {
+    const name = await ckPrompt({ title: isDir ? "\u65B0\u5EFA\u6587\u4EF6\u5939" : "\u65B0\u5EFA\u6587\u4EF6", placeholder: "\u8F93\u5165\u540D\u79F0", value: "" });
+    if (!name) return;
+    const r = await api.createProjectEntry(parentRel, name, isDir);
+    if (!r || !r.success) {
+      await ckAlert("\u521B\u5EFA\u5931\u8D25\uFF1A" + (r && r.error || "\u672A\u77E5\u9519\u8BEF"));
+      return;
+    }
+    if (isDir) expanded.add(parentRel ? parentRel + "/" + name : name);
+    await loadFiles();
+  }
+  async function doRename(relPath, oldName) {
+    const newName = await ckPrompt({ title: "\u91CD\u547D\u540D", placeholder: "\u8F93\u5165\u65B0\u540D\u79F0", value: oldName });
+    if (!newName || newName === oldName) return;
+    const r = await api.renameProjectEntry(relPath, newName);
+    if (!r || !r.success) {
+      await ckAlert("\u91CD\u547D\u540D\u5931\u8D25\uFF1A" + (r && r.error || "\u672A\u77E5\u9519\u8BEF"));
+      return;
+    }
+    await loadFiles();
+  }
+  async function doDelete(relPath, name, isDir) {
+    const ok = await ckConfirm("\u786E\u5B9A\u5220\u9664\u300C" + name + "\u300D" + (isDir ? "\uFF08\u53CA\u5176\u5168\u90E8\u5185\u5BB9\uFF09" : "") + "\u5417\uFF1F\n\u5C06\u79FB\u5165\u7CFB\u7EDF\u56DE\u6536\u7AD9\uFF0C\u53EF\u4ECE\u56DE\u6536\u7AD9\u6062\u590D\u3002", "\u5220\u9664\u786E\u8BA4");
+    if (!ok) return;
+    const r = await api.deleteProjectEntry(relPath);
+    if (!r || !r.success) {
+      await ckAlert("\u5220\u9664\u5931\u8D25\uFF1A" + (r && r.error || "\u672A\u77E5\u9519\u8BEF"));
+      return;
+    }
+    await loadFiles();
   }
   async function loadFiles() {
     const listEl2 = document.getElementById("ft-list");
@@ -3777,6 +4093,14 @@
     bindRowEvents(listEl2);
   }
   document.getElementById("ft-refresh")?.addEventListener("click", loadFiles);
+  document.getElementById("ft-list")?.addEventListener("contextmenu", (e) => {
+    if (e.target.closest(".ck-ft-row")) return;
+    e.preventDefault();
+    showCtxMenu(e.clientX, e.clientY, [
+      { label: "\u65B0\u5EFA\u6587\u4EF6", isNew: true, onClick: () => doCreate("", false) },
+      { label: "\u65B0\u5EFA\u6587\u4EF6\u5939", isNew: true, onClick: () => doCreate("", true) }
+    ]);
+  });
   {
     const searchEl2 = document.getElementById("ft-search");
     if (searchEl2) {

@@ -127,6 +127,10 @@ const shellAPI = {
     ipcRenderer.on('project-file-changed', (_e: any, data: any) => cb(data));
   },
   openFileExternal: (relPath: string) => ipcRenderer.invoke('open-project-file-external', { relPath }),
+  createProjectEntry: (parentRel: string, name: string, isDir: boolean) => ipcRenderer.invoke('create-project-entry', { parentRel, name, isDir }),
+  renameProjectEntry: (relPath: string, newName: string) => ipcRenderer.invoke('rename-project-entry', { relPath, newName }),
+  deleteProjectEntry: (relPath: string) => ipcRenderer.invoke('delete-project-entry', { relPath }),
+  gitShowFile: (relPath: string) => ipcRenderer.invoke('git-show-file', { relPath }),
   setProjectArchived: (dir: string, archived: boolean) => ipcRenderer.invoke('set-project-archived', { dir, archived }),
   deleteProjectWorkspace: (dir: string) => ipcRenderer.invoke('delete-project-workspace', { dir }),
   setSessionTitle: (sessionId: string, title: string) => ipcRenderer.invoke('set-session-title', { sessionId, title }),

@@ -101,6 +101,10 @@ export interface ShellAPI {
   unwatchProjectFile?: () => Promise<any>;
   onProjectFileChanged?: (cb: (data: { relPath: string }) => void) => void;
   openFileExternal?: (relPath: string) => Promise<any>;
+  createProjectEntry?: (parentRel: string, name: string, isDir: boolean) => Promise<any>;
+  renameProjectEntry?: (relPath: string, newName: string) => Promise<any>;
+  deleteProjectEntry?: (relPath: string) => Promise<any>;
+  gitShowFile?: (relPath: string) => Promise<any>;
   setProjectArchived?: (dir: string, archived: boolean) => Promise<any>;
   deleteProjectWorkspace?: (dir: string) => Promise<any>;
   setSessionTitle?: (sessionId: string, title: string) => Promise<any>;

@@ -8,8 +8,8 @@
  * 实现：打开预览时「树固定宽 + 预览 flex:1」；
  * 左条改树的固定宽（总宽不动），右条改侧栏总宽（现成机制，树固定故内容跟随）。
  */
-import { api, escapeHtml, ckConfirm, ckAlert } from "./shared.js";
-import { showInMonaco, getEditorValue, onEditorChange } from "./preview-monaco.js";
+import { api, escapeHtml, ckConfirm, ckAlert, ckDialog3 } from "./shared.js";
+import { showInMonaco, showDiff, getEditorValue, onEditorChange } from "./preview-monaco.js";
 
 const PREVIEW_W_KEY = "cuckoo-preview-width";
 const MIN_PREVIEW_W = 180;
@@ -22,6 +22,7 @@ let dirty = false;          // 当前文件是否有未保存改动
 let saving = false;
 let lastSelfSaveAt = 0;     // 本端保存的时间戳（忽略自己写盘触发的变更事件）
 let conflictHandling = false; // 冲突弹框处理中（防重入）
+let diffMode = false;        // 当前是否处于 diff 视图
 
 /** 保存按钮 / 未保存标记 */
 function updateSaveBtn(): void {
@@ -140,12 +141,19 @@ async function loadFile(relPath: string): Promise<void> {
     }
     if (sizeEl) sizeEl.textContent = fmtSize(r.size);
     if (monacoEl) {
+      // 载入新文件：退出 diff 态，显示编辑器
+      hideConflictBar();
+      setDiffTreeHidden(false);
+      diffMode = false;
+      const diffEl = document.getElementById("ck-monaco-diff");
+      if (diffEl) diffEl.style.display = "none";
       monacoEl.style.display = "block";
       if (emptyEl) emptyEl.style.display = "none";
       dirty = false;
       loadedRelPath = relPath;
       await showInMonaco(monacoEl, relPath, r.content);
       updateSaveBtn();
+      updateDiffBtn();
       // 开启对该文件的变更监听（自动刷新用）
       try { if ((api as any).watchProjectFile) (api as any).watchProjectFile(relPath); } catch (_) {}
     }
@@ -153,6 +161,127 @@ async function loadFile(relPath: string): Promise<void> {
     if (emptyEl) { emptyEl.style.display = "block"; emptyEl.textContent = "读取失败: " + escapeHtml(err.message); }
     if (monacoEl) monacoEl.style.display = "none";
   }
+}
+
+/** 在 diff 容器里显示"磁盘外部版 vs 我的未保存编辑"，并显示决策条 */
+async function showConflictDiff(relPath: string): Promise<void> {
+  const editEl = document.getElementById("ck-monaco");
+  const diffEl = document.getElementById("ck-monaco-diff");
+  if (!editEl || !diffEl) return;
+  const cur = await (api as any).readProjectFile(relPath);
+  if (!cur || !cur.success) { await ckAlert("读取失败"); return; }
+  diffMode = true;
+  updateDiffBtn();
+  setDiffTreeHidden(true);
+  const emptyEl = document.getElementById("ck-preview-empty");
+  if (emptyEl) emptyEl.style.display = "none";
+  editEl.style.display = "none";
+  diffEl.style.display = "block";
+  // 左边=磁盘外部最新版，右边=我的编辑器内容（未保存编辑）
+  await showDiff(diffEl, relPath, cur.content, getEditorValue());
+  showConflictBar(relPath, cur.content);
+}
+
+/** 冲突决策条（diff 视图顶部）：采用外部版 / 保留我的 */
+function showConflictBar(relPath: string, externalContent: string): void {
+  const head = document.querySelector(".ck-preview-head");
+  if (!head || !head.parentNode) return;
+  const old = document.getElementById("ck-conflict-bar");
+  if (old) old.remove();
+  const bar = document.createElement("div");
+  bar.id = "ck-conflict-bar";
+  bar.className = "ck-conflict-bar";
+  bar.innerHTML = '<span class="ck-cb-text">⚠ 文件已被外部修改</span>' +
+    '<span class="ck-cb-actions">' +
+      '<button class="ck-cb-btn ck-cb-primary" id="ck-cb-take">采用外部版</button>' +
+      '<button class="ck-cb-btn" id="ck-cb-keep">保留我的</button>' +
+    '</span>';
+  head.parentNode.insertBefore(bar, head.nextSibling);
+  const takeBtn = bar.querySelector("#ck-cb-take");
+  const keepBtn = bar.querySelector("#ck-cb-keep");
+  if (takeBtn) takeBtn.addEventListener("click", () => { applyExternal(externalContent); });
+  if (keepBtn) keepBtn.addEventListener("click", () => {
+    // 保留我的：退出 diff，编辑器内容不动（仍 dirty）
+    hideConflictBar();
+    exitDiffToEdit();
+  });
+}
+
+function hideConflictBar(): void {
+  const bar = document.getElementById("ck-conflict-bar");
+  if (bar) bar.remove();
+}
+
+/** 采用外部版：把编辑器内容替换为磁盘版，清 dirty，退出 diff */
+function applyExternal(content: string): void {
+  hideConflictBar();
+  exitDiffToEdit();
+  // 用新内容刷新编辑器；showInMonaco 会触发 change 回调，故完成后才清 dirty
+  const monacoEl = document.getElementById("ck-monaco");
+  if (monacoEl && currentRelPath) {
+    showInMonaco(monacoEl, currentRelPath, content).then(() => {
+      dirty = false;
+      updateSaveBtn();
+    });
+  } else {
+    dirty = false;
+    updateSaveBtn();
+  }
+}
+
+/** diff 模式：隐藏文件树让预览占满（退出恢复） */
+function setDiffTreeHidden(hidden: boolean): void {
+  const cols = colsEl();
+  if (cols) cols.classList.toggle("diff-mode", hidden);
+}
+
+/** 退出 diff 视图，回到编辑器显示 */
+function exitDiffToEdit(): void {
+  diffMode = false;
+  updateDiffBtn();
+  setDiffTreeHidden(false);
+  const diffEl = document.getElementById("ck-monaco-diff");
+  const editEl = document.getElementById("ck-monaco");
+  if (diffEl) diffEl.style.display = "none";
+  if (editEl) editEl.style.display = "block";
+}
+
+/** 切换 diff 视图：与 git HEAD 对比（用独立容器，不碰编辑器 model，不丢未保存编辑） */
+async function toggleDiff(): Promise<void> {
+  if (!currentRelPath) return;
+  const editEl = document.getElementById("ck-monaco");
+  const diffEl = document.getElementById("ck-monaco-diff");
+  if (!editEl || !diffEl) return;
+
+  if (diffMode) {
+    // 退出 diff → 显示编辑器（其内容/未保存编辑原样保留）
+    hideConflictBar();
+    exitDiffToEdit();
+    return;
+  }
+
+  const r = await (api as any).gitShowFile(currentRelPath);
+  if (!r || !r.success) { await ckAlert("无法对比：" + ((r && r.error) || "未提交或无基准版本"), "Diff"); return; }
+  // modified 用「编辑器当前内容」（含未保存编辑），更实用且不丢数据
+  const curContent = getEditorValue();
+  diffMode = true;
+  updateDiffBtn();
+  setDiffTreeHidden(true);
+  const emptyEl = document.getElementById("ck-preview-empty");
+  if (emptyEl) emptyEl.style.display = "none";
+  editEl.style.display = "none";
+  diffEl.style.display = "block";
+  await showDiff(diffEl, currentRelPath, r.content, curContent);
+}
+
+/** Diff 按钮显隐/文案 */
+function updateDiffBtn(): void {
+  const btn = document.getElementById("ck-preview-diff");
+  if (!btn) return;
+  if (!currentRelPath) { btn.style.display = "none"; return; }
+  btn.style.display = "";
+  btn.textContent = diffMode ? "返回" : "Diff";
+  btn.classList.toggle("active", diffMode);
 }
 
 /** 文件在外部被修改 → 按当前是否有未保存编辑决定：自动刷 / 弹框二选一 */
@@ -171,19 +300,26 @@ async function onExternalChange(relPath: string): Promise<void> {
     return;
   }
 
-  // 有未保存编辑 → 弹框让用户决定（不丢数据）
+  // 有未保存编辑 → 弹框三选一（不丢数据）
   conflictHandling = true;
   try {
-    const ok = await ckConfirm(
-      '文件「' + relPath + '」已在外部被修改，你本地有未保存的编辑。\n\n' +
-      '点「确定」：加载外部最新版本（放弃你的本地编辑）\n' +
-      '点「取消」：保留你的本地编辑（稍后可手动保存覆盖）',
-      '文件已被外部修改'
-    );
-    if (ok) {
+    const choice = await ckDialog3({
+      title: '文件已被外部修改',
+      message: '文件「' + relPath + '」已在外部被修改，你本地有未保存的编辑。\n\n' +
+        '· 采用外部版：放弃本地编辑，加载外部最新版\n' +
+        '· 查看差异：先对比两版内容再决定\n' +
+        '· 保留我的：保持本地编辑（稍后可保存覆盖）',
+      primary: '采用外部版',
+      alt: '查看差异',
+      cancel: '保留我的',
+    });
+    if (choice === 'primary') {
       dirty = false;
       await loadFile(relPath);
+    } else if (choice === 'alt') {
+      await showConflictDiff(relPath);
     }
+    // cancel：什么都不做（保留我的）
   } finally {
     conflictHandling = false;
   }
@@ -233,6 +369,7 @@ export function dismissPreview(): void {
   currentRelPath = "";
   loadedRelPath = "";
   dirty = false;
+  diffMode = false;
   try { if ((api as any).unwatchProjectFile) (api as any).unwatchProjectFile(); } catch (_) {}
   hidePreview();
 }
@@ -247,6 +384,8 @@ export function restorePreview(): void {
 document.getElementById("ck-preview-close")?.addEventListener("click", dismissPreview);
 // 保存按钮
 document.getElementById("ck-preview-save")?.addEventListener("click", () => { saveFile(); });
+// Diff 按钮
+document.getElementById("ck-preview-diff")?.addEventListener("click", () => { toggleDiff(); });
 // Ctrl+S 保存（仅在文件页预览打开时）
 document.addEventListener("keydown", (e: any) => {
   if ((e.ctrlKey || e.metaKey) && e.key === "s" && currentRelPath && pane()?.classList.contains("open")) {

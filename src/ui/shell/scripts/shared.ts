@@ -38,6 +38,49 @@ export function ckConfirm(message: string, title?: string): Promise<boolean> {
   return ckDialog({ title: title || '确认', message, confirm: true });
 }
 
+/**
+ * 三选一弹框（用于冲突场景）。
+ * @returns 'primary' | 'alt' | 'cancel'
+ *  - primary：主按钮（如"采用外部版"）
+ *  - alt：次按钮（如"查看差异"）
+ *  - cancel：取消（如"保留我的"）
+ */
+export function ckDialog3(opts: { title?: string; message?: string; primary?: string; alt?: string; cancel?: string }): Promise<'primary' | 'alt' | 'cancel'> {
+  return new Promise((resolve) => {
+    const mask = document.getElementById('ck-dialog');
+    const titleEl = document.getElementById('ck-dialog-title');
+    const msgEl = document.getElementById('ck-dialog-msg');
+    const okBtn = document.getElementById('ck-dialog-ok') as any;
+    const altBtn = document.getElementById('ck-dialog-alt') as any;
+    const cancelBtn = document.getElementById('ck-dialog-cancel') as any;
+    if (!mask || !okBtn || !altBtn || !cancelBtn) { resolve('cancel'); return; }
+    if (titleEl) titleEl.textContent = opts.title || '提示';
+    if (msgEl) msgEl.textContent = opts.message || '';
+    okBtn.textContent = opts.primary || '确定';
+    altBtn.textContent = opts.alt || '查看差异';
+    altBtn.classList.remove('cuckoo-hidden');
+    cancelBtn.textContent = opts.cancel || '取消';
+    cancelBtn.classList.remove('cuckoo-hidden');
+    function cleanup() {
+      mask!.classList.add('cuckoo-hidden');
+      okBtn.removeEventListener('click', onOk);
+      altBtn.removeEventListener('click', onAlt);
+      cancelBtn.removeEventListener('click', onCancel);
+      mask!.removeEventListener('click', onMask);
+      altBtn.classList.add('cuckoo-hidden');
+    }
+    function onOk() { cleanup(); resolve('primary'); }
+    function onAlt() { cleanup(); resolve('alt'); }
+    function onCancel() { cleanup(); resolve('cancel'); }
+    function onMask(e: any) { if (e.target === mask) { cleanup(); resolve('cancel'); } }
+    okBtn.addEventListener('click', onOk);
+    altBtn.addEventListener('click', onAlt);
+    cancelBtn.addEventListener('click', onCancel);
+    mask.addEventListener('click', onMask);
+    mask.classList.remove('cuckoo-hidden');
+  });
+}
+
 export function ckAlert(message: string, title?: string): Promise<boolean> {
   return ckDialog({ title: title || '提示', message, confirm: false });
 }

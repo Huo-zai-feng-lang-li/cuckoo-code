@@ -108,9 +108,36 @@ export async function showInMonaco(container: HTMLElement, fileName: string, con
   }
 }
 
+let diffEditor: any = null;
+
+/** 显示 diff（原始 vs 修改），内联红绿对比。orig=基准(HEAD)，mod=当前磁盘内容 */
+export async function showDiff(container: HTMLElement, fileName: string, orig: string, mod: string): Promise<void> {
+  const monaco = await loadMonaco();
+  const lang = langOf(fileName);
+  if (!diffEditor) {
+    diffEditor = monaco.editor.createDiffEditor(container, {
+      theme: themeName(),
+      readOnly: true,
+      automaticLayout: true,
+      renderSideBySide: false, // 内联（VSCode 默认风格）
+      minimap: { enabled: false },
+      scrollBeyondLastLine: false,
+      fontSize: 12.5,
+      renderWhitespace: "none",
+      wordWrap: "off",
+    });
+  }
+  const origModel = monaco.editor.createModel(orig, lang);
+  const modModel = monaco.editor.createModel(mod, lang);
+  const old = diffEditor.getModel();
+  diffEditor.setModel({ original: origModel, modified: modModel });
+  if (old) { try { old.original && old.original.dispose(); old.modified && old.modified.dispose(); } catch (_) {} }
+}
+
 /** 主题跟随系统变化 */
 export function syncMonacoTheme(): void {
   if (editor) { try { (window as any).monaco.editor.setTheme(themeName()); } catch (_) { /* ignore */ } }
+  if (diffEditor) { try { (window as any).monaco.editor.setTheme(themeName()); } catch (_) { /* ignore */ } }
 }
 
 if (window.matchMedia) {

@@ -2,7 +2,7 @@
  * 项目文件树页：只读浏览当前项目目录（整树加载，忽略 node_modules/.git 等）。
  * 支持按文件名/路径关键词搜索（前端过滤，扁平显示匹配项）。
  */
-import { api, escapeHtml, escapeAttr } from '../shared.js';
+import { api, escapeHtml, escapeAttr, ckPrompt, ckConfirm, ckAlert } from '../shared.js';
 
 interface TreeNode { name: string; path: string; type: 'dir' | 'file'; children?: TreeNode[] }
 
@@ -183,6 +183,17 @@ function bindRowEvents(listEl: HTMLElement): void {
       if (expanded.has(p)) expanded.delete(p); else expanded.add(p);
       loadFiles();
     });
+    el.addEventListener('contextmenu', (e: any) => {
+      e.preventDefault();
+      const p = el.dataset.path;
+      const name = p.split('/').pop();
+      showCtxMenu(e.clientX, e.clientY, [
+        { label: '新建文件', isNew: true, onClick: () => doCreate(p, false) },
+        { label: '新建文件夹', isNew: true, onClick: () => doCreate(p, true) },
+        { label: '重命名', onClick: () => doRename(p, name) },
+        { label: '删除', danger: true, onClick: () => doDelete(p, name, true) },
+      ]);
+    });
   });
   // 点击文件行 → 打开文件预览（主区域覆盖视图）
   listEl.querySelectorAll('.ck-ft-file').forEach((el: any) => {
@@ -192,12 +203,72 @@ function bindRowEvents(listEl: HTMLElement): void {
       if (!p) return;
       try { const { openPreview } = await import('../preview.js'); await openPreview(p); } catch (_) { /* ignore */ }
     });
+    el.addEventListener('contextmenu', (e: any) => {
+      e.preventDefault();
+      const p = el.dataset.path;
+      const name = p.split('/').pop();
+      showCtxMenu(e.clientX, e.clientY, [
+        { label: '重命名', onClick: () => doRename(p, name) },
+        { label: '删除', danger: true, onClick: () => doDelete(p, name, false) },
+      ]);
+    });
   });
 }
 
 function currentKeyword(): string {
   const s = document.getElementById('ft-search') as any;
   return s ? String(s.value || '').trim() : '';
+}
+
+/** 通用右键菜单：items=[{label, danger?, onClick}] */
+function showCtxMenu(x: number, y: number, items: any[]): void {
+  const old = document.getElementById('ck-ft-ctx');
+  if (old) old.remove();
+  const menu = document.createElement('div');
+  menu.id = 'ck-ft-ctx';
+  menu.className = 'ck-ctx-menu';
+  menu.style.left = Math.min(x, window.innerWidth - 150) + 'px';
+  menu.style.top = Math.min(y, window.innerHeight - items.length * 34 - 12) + 'px';
+  for (const it of items) {
+    const row = document.createElement('div');
+    row.className = 'ck-ctx-item' + (it.danger ? ' ck-ctx-item-danger' : '') + (it.isNew ? ' ck-ctx-item-new' : '');
+    row.textContent = it.label;
+    row.addEventListener('click', (ev) => { ev.stopPropagation(); menu.remove(); it.onClick(); });
+    menu.appendChild(row);
+  }
+  document.body.appendChild(menu);
+  setTimeout(() => {
+    const close = (e: any) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', close, true); } };
+    document.addEventListener('mousedown', close, true);
+  }, 0);
+}
+
+/** 新建文件/文件夹 */
+async function doCreate(parentRel: string, isDir: boolean): Promise<void> {
+  const name = await ckPrompt({ title: isDir ? '新建文件夹' : '新建文件', placeholder: '输入名称', value: '' });
+  if (!name) return;
+  const r = await (api as any).createProjectEntry(parentRel, name, isDir);
+  if (!r || !r.success) { await ckAlert('创建失败：' + ((r && r.error) || '未知错误')); return; }
+  if (isDir) expanded.add(parentRel ? (parentRel + '/' + name) : name);
+  await loadFiles();
+}
+
+/** 重命名 */
+async function doRename(relPath: string, oldName: string): Promise<void> {
+  const newName = await ckPrompt({ title: '重命名', placeholder: '输入新名称', value: oldName });
+  if (!newName || newName === oldName) return;
+  const r = await (api as any).renameProjectEntry(relPath, newName);
+  if (!r || !r.success) { await ckAlert('重命名失败：' + ((r && r.error) || '未知错误')); return; }
+  await loadFiles();
+}
+
+/** 删除（回收站） */
+async function doDelete(relPath: string, name: string, isDir: boolean): Promise<void> {
+  const ok = await ckConfirm('确定删除「' + name + '」' + (isDir ? '（及其全部内容）' : '') + '吗？\n将移入系统回收站，可从回收站恢复。', '删除确认');
+  if (!ok) return;
+  const r = await (api as any).deleteProjectEntry(relPath);
+  if (!r || !r.success) { await ckAlert('删除失败：' + ((r && r.error) || '未知错误')); return; }
+  await loadFiles();
 }
 
 export async function loadFiles(): Promise<void> {
@@ -240,6 +311,15 @@ function renderList(listEl: HTMLElement): void {
 }
 
 document.getElementById('ft-refresh')?.addEventListener('click', loadFiles);
+// 列表空白区右键 → 在项目根新建
+document.getElementById('ft-list')?.addEventListener('contextmenu', (e: any) => {
+  if (e.target.closest('.ck-ft-row')) return; // 点在行上由行处理
+  e.preventDefault();
+  showCtxMenu(e.clientX, e.clientY, [
+    { label: '新建文件', isNew: true, onClick: () => doCreate('', false) },
+    { label: '新建文件夹', isNew: true, onClick: () => doCreate('', true) },
+  ]);
+});
 
 // 搜索：输入防抖 → 过滤
 {

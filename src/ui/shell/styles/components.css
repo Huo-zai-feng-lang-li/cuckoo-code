@@ -319,12 +319,14 @@
   .ck-modal-foot .ck-btn { white-space: nowrap; }
   #agent-modal .ck-modal { max-width: 360px; }
   /* 通用弹框 */
-  .ck-dialog { max-width: 280px; }
-  .ck-dialog-msg { font-size: 12.5px; color: var(--ck-text-2); line-height: 1.6; word-break: break-word; }
+  .ck-dialog { max-width: 420px; }
+  .ck-dialog-msg { font-size: 12.5px; color: var(--ck-text-2); line-height: 1.6; word-break: break-word; white-space: pre-wrap; }
   /* 侧边栏相对定位（弹层锚点�?*/
   .ck-panel { position: relative; }
   /* 「文件」页内：左树 + 右预览 分栏 */
   .ck-files-cols { flex: 1; min-height: 0; display: flex; flex-direction: row; overflow: hidden; }
+  /* diff 模式：隐藏文件树，预览占满 */
+  .ck-files-cols.diff-mode .ck-ft { display: none; }
   .ck-preview-pane {
     display: none; flex-direction: column;
     width: 420px; flex-shrink: 0;
@@ -357,6 +359,25 @@
   .ck-preview-save:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
   .ck-preview-save.dirty { color: var(--ck-primary); }
   .ck-preview-save.dirty:hover { background: var(--ck-primary-soft); }
+  .ck-preview-diff {
+    padding: 0 8px; height: 22px; display: flex; align-items: center;
+    border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;
+    color: var(--ck-text-dim); transition: background .15s, color .15s;
+  }
+  .ck-preview-diff:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
+  .ck-preview-diff.active { color: var(--ck-primary); background: var(--ck-primary-soft); }
+  .ck-conflict-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 7px 10px; font-size: 11.5px; color: var(--ck-text);
+    background: rgba(255, 180, 60, .12); border-bottom: 1px solid var(--ck-border);
+  }
+  .ck-conflict-bar .ck-cb-actions { display: flex; gap: 6px; }
+  .ck-cb-btn {
+    padding: 3px 9px; border-radius: 6px; font-size: 11px; cursor: pointer;
+    border: 1px solid var(--ck-border); background: var(--ck-surface); color: var(--ck-text-2);
+  }
+  .ck-cb-btn:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
+  .ck-cb-btn.ck-cb-primary { background: var(--ck-primary); color: #fff; border-color: var(--ck-primary); }
   .ck-preview-body { flex: 1; overflow: hidden; position: relative; }
   .ck-monaco { position: absolute; inset: 0; }
   .ck-preview-body pre {
@@ -489,6 +510,7 @@
   }
   .ck-ctx-item:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
   .ck-ctx-item-new { color: var(--ck-primary); }
+  .ck-ctx-item-danger { color: var(--ck-red); }
   /* 收起：只隐藏面板，保留图标栏（宽度从 320 → 46）*/
   .ck-sidebar.ck-collapsed { width: 46px; }
   .ck-sidebar.ck-collapsed .ck-panel { display: none; }

@@ -3,13 +3,14 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
 import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { getProviderByUrl, getProvider } from '../../providers/registry.js';
 import { initProject } from '../../session/project-context.js';
 
 const require = createRequire(import.meta.url);
-const { ipcMain } = require('electron');
+const { ipcMain, shell } = require('electron');
 
 // 文件树：忽略的目录 + 节点上限（防超大项目）
 const TREE_IGNORE_DIRS = new Set(['node_modules', '.git', 'dist', 'out', 'build', 'coverage', '.cuckooCode', '.playwright-mcp', '.idea', '.vscode', 'wyp', 'release', 'dist-verify']);
@@ -143,6 +144,80 @@ function registerSessionIpc(): void {
     } catch (err: any) {
       return { success: false, error: err.message };
     }
+  });
+
+  // 新建文件/文件夹（parentRel 为空=项目根）
+  ipcMain.handle('create-project-entry', async (event: any, { parentRel, name, isDir }: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const store = ctx ? ctx.sessionStore : null;
+    if (!name || typeof name !== 'string' || /[\\/:*?"<>|]/.test(name) || name === '.' || name === '..') {
+      return { success: false, error: '非法名称' };
+    }
+    const parentAbs = resolveProjectPath(store, parentRel || '');
+    if (!parentAbs) return { success: false, error: '非法路径或未选目录' };
+    const abs = path.join(parentAbs, name);
+    const rootAbs = path.resolve((store.state.selectedProjectDir) || '');
+    if (abs !== rootAbs && !abs.startsWith(rootAbs + path.sep)) return { success: false, error: '非法路径' };
+    try {
+      if (fs.existsSync(abs)) return { success: false, error: '已存在同名项' };
+      if (isDir) fs.mkdirSync(abs);
+      else fs.writeFileSync(abs, '', 'utf-8');
+      return { success: true };
+    } catch (err: any) { return { success: false, error: err.message }; }
+  });
+
+  // 重命名（文件或目录）
+  ipcMain.handle('rename-project-entry', async (event: any, { relPath, newName }: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const store = ctx ? ctx.sessionStore : null;
+    if (!relPath || typeof relPath !== 'string') return { success: false, error: '缺少路径' };
+    if (!newName || typeof newName !== 'string' || /[\\/:*?"<>|]/.test(newName) || newName === '.' || newName === '..') {
+      return { success: false, error: '非法名称' };
+    }
+    const abs = resolveProjectPath(store, relPath);
+    if (!abs) return { success: false, error: '非法路径或未选目录' };
+    const rootAbsChk = path.resolve((store.state.selectedProjectDir) || '');
+    if (abs === rootAbsChk) return { success: false, error: '不能重命名项目根目录' };
+    const dest = path.join(path.dirname(abs), newName);
+    const rootAbs = path.resolve((store.state.selectedProjectDir) || '');
+    if (dest !== rootAbs && !dest.startsWith(rootAbs + path.sep)) return { success: false, error: '非法路径' };
+    try {
+      if (!fs.existsSync(abs)) return { success: false, error: '源不存在' };
+      if (fs.existsSync(dest)) return { success: false, error: '目标已存在' };
+      fs.renameSync(abs, dest);
+      return { success: true, newRel: path.relative(rootAbs, dest).split(path.sep).join('/') };
+    } catch (err: any) { return { success: false, error: err.message }; }
+  });
+
+  // 删除（走系统回收站，可恢复）
+  ipcMain.handle('delete-project-entry', async (event: any, { relPath }: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const store = ctx ? ctx.sessionStore : null;
+    if (!relPath || typeof relPath !== 'string') return { success: false, error: '缺少路径' };
+    const abs = resolveProjectPath(store, relPath);
+    if (!abs) return { success: false, error: '非法路径或未选目录' };
+    const rootAbsDel = path.resolve((store.state.selectedProjectDir) || '');
+    if (abs === rootAbsDel) return { success: false, error: '不能删除项目根目录' };
+    try {
+      if (!fs.existsSync(abs)) return { success: false, error: '不存在' };
+      await shell.trashItem(abs); // 回收站（可恢复）
+      return { success: true };
+    } catch (err: any) { return { success: false, error: err.message }; }
+  });
+
+  // 取文件在 git HEAD 的版本（用于 diff 基准）
+  ipcMain.handle('git-show-file', async (event: any, { relPath }: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const store = ctx ? ctx.sessionStore : null;
+    const abs = resolveProjectPath(store, relPath);
+    if (!abs) return { success: false, error: '非法路径或未选目录' };
+    const rootAbs = path.resolve((store.state.selectedProjectDir) || '');
+    return await new Promise((resolve) => {
+      execFile('git', ['show', 'HEAD:' + relPath], { cwd: rootAbs, maxBuffer: 4 * 1024 * 1024, windowsHide: true }, (err: any, stdout: string) => {
+        if (err) return resolve({ success: false, error: '未提交或无基准版本' });
+        resolve({ success: true, content: stdout });
+      });
+    });
   });
 
   // 监听项目文件变更（预览自动刷新用）
