@@ -497,20 +497,6 @@
   .ck-wg-body { padding-left: 8px; }
   .ck-wg-ungrouped { opacity: .85; }
   .ck-wg-ungrouped .ck-wg-head { background: transparent; }
-  /* 右键上下文菜单 */
-  .ck-ctx-menu {
-    position: fixed; z-index: 9999;
-    min-width: 140px; padding: 4px;
-    background: var(--ck-surface); border: 1px solid var(--ck-border);
-    border-radius: 9px; box-shadow: 0 6px 24px rgba(0,0,0,.18);
-  }
-  .ck-ctx-item {
-    padding: 7px 10px; border-radius: 6px; font-size: 12px;
-    color: var(--ck-text-2); cursor: pointer; white-space: nowrap;
-  }
-  .ck-ctx-item:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
-  .ck-ctx-item-new { color: var(--ck-primary); }
-  .ck-ctx-item-danger { color: var(--ck-red); }
   /* 收起：只隐藏面板，保留图标栏（宽度从 320 → 46）*/
   .ck-sidebar.ck-collapsed { width: 46px; }
   .ck-sidebar.ck-collapsed .ck-panel { display: none; }
@@ -601,6 +587,21 @@
   .ck-ft-c-txt  { color: #8a8f9b; }
   .ck-ft-c-lock { color: #9ca3af; }
   .ck-ft-name { white-space: nowrap; flex: 1; }
+  /* 行操作图标组：悬停行才显示 */
+  .ck-ft-actions {
+    display: flex; align-items: center; gap: 1px; flex-shrink: 0;
+    margin-left: 6px;
+    visibility: hidden; opacity: 0; transition: opacity .12s;
+  }
+  .ck-ft-row:hover .ck-ft-actions { visibility: visible; opacity: 1; }
+  .ck-ft-act {
+    width: 19px; height: 19px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 5px; color: var(--ck-text-dim); cursor: pointer;
+  }
+  .ck-ft-act svg { width: 13px; height: 13px; }
+  .ck-ft-act:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
+  .ck-ft-act[data-act="delete"]:hover { background: rgba(224,108,117,.16); color: var(--ck-red); }
   /* @ 按钮：悬停行才显示（始终占位防抖动） */
   .ck-ft-at {
     flex-shrink: 0; width: 18px; height: 18px; margin-left: 6px;

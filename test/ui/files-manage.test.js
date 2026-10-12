@@ -4,15 +4,17 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 
-test('项目文件：右键菜单提供 新建/重命名/删除', () => {
+test('项目文件：行内 hover 图标提供 新建/重命名/删除', () => {
   const filesTs = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'src', 'ui', 'shell', 'scripts', 'pages', 'files.ts'), 'utf8');
-  assert.ok(filesTs.includes('function showCtxMenu'), '应有右键菜单构造函数');
+  assert.ok(filesTs.includes('function actionsHtml'), '应有行操作图标生成函数');
+  assert.ok(filesTs.includes('function onActClick'), '应有图标点击处理函数');
   assert.ok(filesTs.includes('doCreate('), '应有新建逻辑');
   assert.ok(filesTs.includes('doRename('), '应有重命名逻辑');
   assert.ok(filesTs.includes('doDelete('), '应有删除逻辑');
   assert.ok(filesTs.includes("createProjectEntry"), '应调用新建 IPC');
   assert.ok(filesTs.includes("renameProjectEntry"), '应调用重命名 IPC');
   assert.ok(filesTs.includes("deleteProjectEntry"), '应调用删除 IPC');
+  assert.ok(!filesTs.includes('function showCtxMenu'), '应已移除右键菜单（关闭体验差）');
 });
 
 test('文件管理：删除走回收站 + 主进程防护（不删根目录/防目录穿越）', () => {

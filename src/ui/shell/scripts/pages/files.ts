@@ -17,6 +17,12 @@ const CARET_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" st
 const FOLDER_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
 const FILE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
 
+// 行操作图标（hover 显示）
+const IC_NEW_FILE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z"/><path d="M13 3v6h6"/><path d="M12 13v5M9.5 15.5h5"/></svg>';
+const IC_NEW_FOLDER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v5M9.5 12.5h5"/></svg>';
+const IC_RENAME = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+const IC_DEL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
+
 /** 转义后的关键词高亮（<mark>） */
 function highlight(text: string, kw: string): string {
   const esc = escapeHtml(text);
@@ -111,6 +117,27 @@ function atBtn(path: string): string {
   return '<span class="ck-ft-at" data-at="' + escapeAttr(path) + '" title="追加 @' + escapeAttr(path) + ' 到输入框">@</span>';
 }
 
+/** 行操作按钮 HTML */
+function actBtn(act: string, path: string, name: string, isDir: boolean, title: string, svg: string): string {
+  return '<span class="ck-ft-act" data-act="' + act + '" data-path="' + escapeAttr(path) +
+    '" data-name="' + escapeAttr(name) + '" data-isdir="' + (isDir ? '1' : '0') +
+    '" title="' + escapeAttr(title) + '">' + svg + '</span>';
+}
+
+/** 行操作图标组（hover 显示）：目录=新建文件/新建文件夹/重命名/删除；文件=重命名/删除 */
+function actionsHtml(path: string, type: 'dir' | 'file'): string {
+  const name = path.split('/').pop() || '';
+  const isDir = type === 'dir';
+  let h = '';
+  if (isDir) {
+    h += actBtn('new-file', path, name, true, '新建文件', IC_NEW_FILE);
+    h += actBtn('new-folder', path, name, true, '新建文件夹', IC_NEW_FOLDER);
+  }
+  h += actBtn('rename', path, name, isDir, '重命名', IC_RENAME);
+  h += actBtn('delete', path, name, isDir, '删除', IC_DEL);
+  return '<span class="ck-ft-actions">' + h + '</span>';
+}
+
 function renderNodes(nodes: TreeNode[], depth: number): string {
   let html = '';
   for (const n of nodes) {
@@ -121,6 +148,7 @@ function renderNodes(nodes: TreeNode[], depth: number): string {
         '<span class="ck-ft-caret">' + CARET_SVG + '</span>' +
         iconHtml(n.name, 'dir') +
         '<span class="' + nameClass(n.name, 'dir') + '">' + escapeHtml(n.name) + '</span>' +
+        actionsHtml(n.path, 'dir') +
         atBtn(n.path) +
       '</div>';
       if (open && n.children) html += renderNodes(n.children, depth + 1);
@@ -129,6 +157,7 @@ function renderNodes(nodes: TreeNode[], depth: number): string {
         '<span class="ck-ft-caret"></span>' +
         iconHtml(n.name, 'file') +
         '<span class="' + nameClass(n.name, 'file') + '">' + escapeHtml(n.name) + '</span>' +
+        actionsHtml(n.path, 'file') +
         atBtn(n.path) +
       '</div>';
     }
@@ -162,12 +191,27 @@ function renderSearch(kw: string): string {
       iconHtml(n.name, n.type) +
       '<span class="' + nameClass(n.name, n.type) + '">' + highlight(n.name, kw) + '</span>' +
       '<span class="ck-ft-path">' + highlight(n.path, kw) + '</span>' +
+      actionsHtml(n.path, n.type) +
       atBtn(n.path) +
     '</div>';
   }).join('') + (matched.length > 500 ? '<div class="ck-ft-truncated">（结果过多，仅显示前 500 项）</div>' : '');
 }
 
-/** 绑定行事件（@ 追加；目录展开/收起） */
+/** 处理行操作图标点击 */
+function onActClick(el: any, e: any): void {
+  e.stopPropagation();
+  const act = el.dataset.act;
+  const p = el.dataset.path;
+  const name = el.dataset.name;
+  const isDir = el.dataset.isdir === '1';
+  if (!act || !p) return;
+  if (act === 'new-file') doCreate(p, false);
+  else if (act === 'new-folder') doCreate(p, true);
+  else if (act === 'rename') doRename(p, name);
+  else if (act === 'delete') doDelete(p, name, isDir);
+}
+
+/** 绑定行事件（@ 追加；操作图标；目录展开/收起） */
 function bindRowEvents(listEl: HTMLElement): void {
   listEl.querySelectorAll('.ck-ft-at').forEach((el: any) => {
     el.addEventListener('click', async (e: any) => {
@@ -177,40 +221,23 @@ function bindRowEvents(listEl: HTMLElement): void {
       try { await api.appendSnippet('@' + p); } catch (_) { /* ignore */ }
     });
   });
+  listEl.querySelectorAll('.ck-ft-act').forEach((el: any) => {
+    el.addEventListener('click', (e: any) => onActClick(el, e));
+  });
   listEl.querySelectorAll('.ck-ft-dir').forEach((el: any) => {
     el.addEventListener('click', () => {
       const p = el.dataset.path;
       if (expanded.has(p)) expanded.delete(p); else expanded.add(p);
       loadFiles();
     });
-    el.addEventListener('contextmenu', (e: any) => {
-      e.preventDefault();
-      const p = el.dataset.path;
-      const name = p.split('/').pop();
-      showCtxMenu(e.clientX, e.clientY, [
-        { label: '新建文件', isNew: true, onClick: () => doCreate(p, false) },
-        { label: '新建文件夹', isNew: true, onClick: () => doCreate(p, true) },
-        { label: '重命名', onClick: () => doRename(p, name) },
-        { label: '删除', danger: true, onClick: () => doDelete(p, name, true) },
-      ]);
-    });
   });
   // 点击文件行 → 打开文件预览（主区域覆盖视图）
   listEl.querySelectorAll('.ck-ft-file').forEach((el: any) => {
     el.addEventListener('click', async (e: any) => {
-      if (e.target.closest('.ck-ft-at')) return; // 点 @ 按钮不触发预览
+      if (e.target.closest('.ck-ft-at') || e.target.closest('.ck-ft-act')) return;
       const p = el.dataset.path;
       if (!p) return;
       try { const { openPreview } = await import('../preview.js'); await openPreview(p); } catch (_) { /* ignore */ }
-    });
-    el.addEventListener('contextmenu', (e: any) => {
-      e.preventDefault();
-      const p = el.dataset.path;
-      const name = p.split('/').pop();
-      showCtxMenu(e.clientX, e.clientY, [
-        { label: '重命名', onClick: () => doRename(p, name) },
-        { label: '删除', danger: true, onClick: () => doDelete(p, name, false) },
-      ]);
     });
   });
 }
@@ -218,29 +245,6 @@ function bindRowEvents(listEl: HTMLElement): void {
 function currentKeyword(): string {
   const s = document.getElementById('ft-search') as any;
   return s ? String(s.value || '').trim() : '';
-}
-
-/** 通用右键菜单：items=[{label, danger?, onClick}] */
-function showCtxMenu(x: number, y: number, items: any[]): void {
-  const old = document.getElementById('ck-ft-ctx');
-  if (old) old.remove();
-  const menu = document.createElement('div');
-  menu.id = 'ck-ft-ctx';
-  menu.className = 'ck-ctx-menu';
-  menu.style.left = Math.min(x, window.innerWidth - 150) + 'px';
-  menu.style.top = Math.min(y, window.innerHeight - items.length * 34 - 12) + 'px';
-  for (const it of items) {
-    const row = document.createElement('div');
-    row.className = 'ck-ctx-item' + (it.danger ? ' ck-ctx-item-danger' : '') + (it.isNew ? ' ck-ctx-item-new' : '');
-    row.textContent = it.label;
-    row.addEventListener('click', (ev) => { ev.stopPropagation(); menu.remove(); it.onClick(); });
-    menu.appendChild(row);
-  }
-  document.body.appendChild(menu);
-  setTimeout(() => {
-    const close = (e: any) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', close, true); } };
-    document.addEventListener('mousedown', close, true);
-  }, 0);
 }
 
 /** 新建文件/文件夹 */
@@ -311,15 +315,8 @@ function renderList(listEl: HTMLElement): void {
 }
 
 document.getElementById('ft-refresh')?.addEventListener('click', loadFiles);
-// 列表空白区右键 → 在项目根新建
-document.getElementById('ft-list')?.addEventListener('contextmenu', (e: any) => {
-  if (e.target.closest('.ck-ft-row')) return; // 点在行上由行处理
-  e.preventDefault();
-  showCtxMenu(e.clientX, e.clientY, [
-    { label: '新建文件', isNew: true, onClick: () => doCreate('', false) },
-    { label: '新建文件夹', isNew: true, onClick: () => doCreate('', true) },
-  ]);
-});
+document.getElementById('ft-new-file')?.addEventListener('click', () => doCreate('', false));
+document.getElementById('ft-new-folder')?.addEventListener('click', () => doCreate('', true));
 
 // 搜索：输入防抖 → 过滤
 {

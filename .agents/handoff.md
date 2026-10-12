@@ -1,38 +1,48 @@
-# 最新接续状态 (2026-10-12 14:06)
+# 最新接续状态 (2026-10-12 15:12)
 
 ## 核心进展
-- **v0.8.13 已发版**：tag `v0.8.13`（commit `9791fc5`）已 push，CI 自动构建 Win+Mac Release（`.github/workflows/release.yml`）。HEAD 已与 origin/master 同步。
-- 本会话完成：纯净模式发送队列/导航、全局自定义 Tooltip、项目文件可编辑、工作区删除、停止双向同步、多轮 tooltip 修复、性能优化、CHANGELOG 补写 + 发版规则。
+- **v0.8.14 已发版**：tag `v0.8.14`（commit `f6238cc`）已 push，CI 自动构建 Win+Mac Release。
+- **本会话（v0.8.14 之后）完成**：文件管理（新建/重命名/删除走回收站）+ git diff + 冲突查看差异 + diff 隐藏树 + 弹框换行 + 纯净/原版叠加修复。
+- **文件树交互改造**：行内操作从「右键菜单」改为「hover 图标」（目录=新建文件/新建文件夹/重命名/删除；文件=重命名/删除）；顶部工具栏加常驻「新建文件/新建文件夹」按钮；**彻底移除右键菜单**（showCtxMenu 函数 + ck-ctx-menu 样式，因右键菜单点非工作区关不掉）。改动文件：src/ui/shell/scripts/pages/files.ts、src/ui/shell/partials/pages/files.html、src/ui/shell/styles/components.css、test/ui/files-manage.test.js。已 compile+typecheck+lint+test 全绿（962 通过）。
+- HEAD 已与 origin/master 同步（`ada6bd7`），工作区干净。
 
 ## 核心动机与背景 (Motivation & Background)
-- **纯净模式体验**：busy 时发消息被丢弃 → 加发送队列；长对话难定位 → 加右侧导航。
-- **Tooltip 统一**：原生 title 丑（系统黄框）→ 全局自定义引擎接管；后按反馈收敛规则：**仅"图标型按钮(≤2字)"或"内容被溢出裁剪"时才弹**。
-- **项目文件只读**：用户要能编辑保存 → 加写入 IPC + 未保存拦截。
-- **停止不同步**：网页模式点停止，纯净模式卡"运行中" → 加 `onUserStop` 事件同步。
-- **性能**：滚动高亮 O(N) reflow、tooltip isClipped 重复遍历 → 审计优化。
+- **文件管理缺失**：文件树只读，用户要能新建/重命名/删除 → 加右键菜单 + IPC。
+- **变更可视化**：要像 VSCode 那样看"相对上次提交改了啥" → 加 git diff 视图。
+- **冲突不丢数据**：外部改了文件且本地有未保存编辑 → 三选一（采用外部版/查看差异/保留我的），而非盲选。
+- **diff 太窄**：预览区被文件树占一半 → diff 时隐藏树。
+- **纯净/原版叠加**：进纯净模式后 AI 页面残留透出 → 治本（body 不透明）+ 双保险（bounds 归零）。
+- **弹框换行**：`\n` 被 HTML 折叠 → `white-space: pre-wrap`。
 
 ## 关键设计与实现 (Implementation & Decisions)
-- **发送队列**：`harness.html` — `sendQueue`/`tryEnqueue`/`maybeFlushQueue`；busy 入队、空闲自动发；编辑/删除**锁对象引用**(防 flush 移队首后 idx 错位)；goal/plan 不入队。
-- **对话导航**：`updateConvNav`（横线+悬停展开）、`fastScrollTo`(180ms 令牌防连点)、`textOverflowsPanel`(复用探针测宽)、`updateConvNavActive`(rAF 节流)。
-- **自定义 Tooltip**：三处实现（`src/ui/shell/scripts/tooltip.ts` + `harness.html` + `platform-select.html` 内联）；`handlePointerOver` 拦截 `[title]→data-ck-title`，`isIconLike||isClipped` 判定；延迟 120ms/20ms(warm)。
-- **项目文件可编辑**：主进程 `write-project-file`(原子写入: 临时文件+rename, 防目录穿越) + `preview.ts`(dirty 标记/Ctrl+S/未保存拦截)。
-- **停止同步**：`observer.ts` 加 `onUserStop` 监听器 → `harness-bridge.ts` 订阅 → `task-idle` 收尾。反向(纯净→网页)走 `harness-stop` IPC 点网页停止按钮(best-effort)。
-- **发版规则**：`.cuckoo/rules/project.md` 新增「发版纪律」：打 tag 前必汇总上次 tag 后提交写 CHANGELOG。
+- **文件管理**（`src/app/ipc/session.ts` + `pages/files.ts`）：
+  - IPC：`create/rename/delete-project-entry`（复用 `resolveProjectPath` 防穿越；删除走 `shell.trashItem` 回收站；拒绝操作项目根目录；非法名正则拦截）。
+  - 前端：`showCtxMenu` 通用右键菜单（目录=新建文件/夹+重命名+删除；文件=重命名+删除；空白=根新建）。
+- **Diff**（`preview-monaco.ts` + `preview.ts`）：
+  - `showDiff` 用 Monaco `createDiffEditor`（`renderSideBySide:false` 内联）。
+  - 基准 = `git show HEAD:<file>`（IPC `git-show-file`，execFile）；修改侧 = 编辑器当前内容。
+  - **独立容器** `#ck-monaco-diff`，不覆盖编辑器 model、不丢未保存编辑。
+- **冲突三选一**：`shared.ts` 加 `ckDialog3`；`preview.ts` `onExternalChange` → primary=采用外部版 / alt=查看差异（`showConflictDiff`+`showConflictBar` 决策条）/ cancel=保留我的。
+- **diff 隐藏树**：`.ck-files-cols.diff-mode .ck-ft{display:none}`，`setDiffTreeHidden()` 控制；退出/切文件恢复。
+- **纯净叠加修复**：`harness.html` body 背景 `transparent→var(--bg)`（不透明治本；插件壁纸用 `!important` 仍可覆盖）；`entry.ts` 隐藏 AI 视图时 `setVisible(false)+setBounds(0)` 双保险。
+- **弹框换行**：`.ck-dialog-msg` 加 `white-space:pre-wrap`，弹框 `max-width 280→420px`。
 
 ## 待办事项 (Next Steps)
-- [ ] **真机验收 v0.8.13**（主进程改动需重启）：① 网页点停止→纯净模式应"就绪" ② 纯净点停止→网页应停 ③ 项目文件编辑/Ctrl+S/未保存拦截 ④ 工作区删除 ⑤ tooltip 各场景
-- [ ] 确认 GitHub Actions CI 构建成功（fork 权限）
+- [ ] **真机验收 v0.8.14 之后改动**（主进程+前端，需重启）：① 行内 hover 图标（目录=新建文件/夹+重命名+删除；文件=重命名+删除）② 删除进回收站可恢复 ③ Diff 按钮对比+树隐藏 ④ 冲突三选一+查看差异 ⑤ 纯净模式无叠加 ⑥ 弹框换行 ⑦ 顶部「新建文件/文件夹」按钮
+- [ ] 确认 GitHub Actions CI 构建成功
 - [ ] 遗留 3 项（backup/pre-ff 有、master 无）：子进程树 taskkill、IPC 白名单、删 fab.ts
 
 ## 关键上下文
-- 目录: D:\Desktop\Super-File\cuckoo-code
+- 目录: D:\\Desktop\\Super-File\\cuckoo-code
 - 主要文件:
-  - `src/ui/harness.html`（纯净模式，手写源，含队列/导航/tooltip 内联）
-  - `src/ui/shell/scripts/tooltip.ts`、`preview.ts`、`preview-monaco.ts`、`pages/workspaces.ts`
-  - `src/app/ipc/session.ts`（read/write-project-file + delete-session/workspace）
-  - `src/bridge/intercept/observer.ts`、`harness-bridge.ts`（停止同步）
-  - `CHANGELOG.md`、`.cuckoo/rules/project.md`
+  - `src/app/ipc/session.ts`（文件 read/write/create/rename/delete + git-show + watch）
+  - `src/ui/shell/scripts/preview.ts`（自动刷新 + 冲突三选一 + diff）
+  - `src/ui/shell/scripts/preview-monaco.ts`（Monaco 编辑 + diff）
+  - `src/ui/shell/scripts/pages/files.ts`（文件树 + 右键菜单）
+  - `src/ui/shell/scripts/shared.ts`（ckDialog/ckDialog3/ckPrompt）
+  - `src/ui/harness.html`（纯净模式，手写源）
+  - `.cuckoo/rules/project.md`（含「发版纪律」）
 - 生成物禁手改：`*.generated.ts`、`src/tools/api.d.ts`、`src/ui/shell.html`（改真源 + `npm run compile`）
 - CDP 调试：Electron `--remote-debugging-port=9333`（`/json` 列 target）
-- 规则: 全局 `~/.cuckoo/rules/`；项目 `.cuckoo/rules/`
-- 用户偏好: **改完代码不主动 commit/push**，等明确指示才提交
+- 发版流程：汇总上次 tag 后提交 → 写 CHANGELOG → bump package.json/lock → commit → tag → push tag（触发 CI）
+- 用户偏好: **改完代码不主动 commit/push**，等明确指示才提交；提交前分离无关改动
