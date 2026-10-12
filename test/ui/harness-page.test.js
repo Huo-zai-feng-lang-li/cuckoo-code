@@ -212,3 +212,25 @@ test('对话导航与全局 Tooltip：告别系统原生 title，统一自定义
   assert.ok(script.includes("removeAttribute('title')"), 'Tooltip 引擎应自动拦截并清除原生 title');
 });
 
+test('消息气泡：纯图标悬浮操作条（编辑/复制/删除），用户消息操作栏置于气泡左侧不遮挡文本', () => {
+  // 1. 纯图标按钮样式及气泡外部排列
+  assert.ok(/\.msg-actions \{/.test(html), '应有 .msg-actions 操作条样式');
+  assert.ok(/\.msg\.user\s*\{\s*display:\s*flex;\s*justify-content:\s*flex-end;\s*align-items:\s*flex-start;\s*gap:\s*8px;/.test(html), '用户气泡与操作栏应 flex 排列，避免遮挡气泡文字');
+  assert.ok(/\.msg-act-btn \{[^}]*width:\s*24px;[^}]*height:\s*24px;/.test(html), '操作按钮应为统一小图标');
+
+  // 2. 支持编辑、复制、删除动作定义与挂载
+  assert.ok(script.includes('function deleteUserMessage'), '应有用户消息删除函数');
+  assert.ok(script.includes('function editUserMessage'), '应有用户消息就地编辑函数');
+  assert.ok(script.includes('function attachUserActions'), '应有用户消息动作条挂载函数');
+  assert.ok(script.includes('function attachAssistantActions'), '应有助手消息动作条挂载函数');
+
+  // 3. 键盘快捷键：输入框为空时按 ArrowUp 快速编辑上一条消息
+  assert.ok(script.includes("e.key === 'ArrowUp'"), '应支持 ArrowUp 快捷键');
+  assert.ok(script.includes("lastUser.querySelector('.act-edit')"), 'ArrowUp 应触发最后一条用户消息的编辑');
+
+  // 4. 队列单条发送：立即触发发出
+  assert.ok(script.includes('function doSendQueueItem'), '应有单条发送执行函数');
+  assert.ok(script.includes('clearAbortSuppression'), '立即发送应清除中止抑制');
+});
+
+
