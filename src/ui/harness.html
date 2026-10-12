@@ -508,6 +508,29 @@
     50% { left: 30%; width: 45%; }
     100% { left: 100%; width: 0; }
   }
+
+  /* ===== 发送队列（运行中排队待发消息）===== */
+  .send-queue { max-width: 780px; margin: 0 auto 8px; display: none; flex-direction: column; gap: 5px; }
+  .send-queue.show { display: flex; }
+  .sq-head { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-dim); padding: 0 2px; }
+  .sq-head .sq-count { color: var(--accent); font-weight: 600; }
+  .sq-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; background: var(--bg-elev); border: 1px solid var(--border); font-size: 12px; color: var(--text-2); }
+  .sq-item .sq-idx { flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 9.5px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+  .sq-item .sq-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sq-item .sq-del { flex-shrink: 0; width: 18px; height: 18px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; border-radius: 5px; display: flex; align-items: center; justify-content: center; }
+  .sq-item .sq-del:hover { background: var(--surface-hover); color: var(--red); }
+  .sq-item .sq-del svg { width: 11px; height: 11px; }
+
+  /* ===== 右侧对话快捷导航（用户消息锚点）===== */
+  .conv-nav { position: fixed; right: 10px; top: 50%; transform: translateY(-50%); display: none; flex-direction: column; gap: 7px; z-index: 20; max-height: 70%; overflow-y: auto; padding: 4px; scrollbar-width: none; }
+  .conv-nav::-webkit-scrollbar { display: none; }
+  .conv-nav.show { display: flex; }
+  .conv-nav-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border-strong); cursor: pointer; transition: background .15s, transform .15s; flex-shrink: 0; position: relative; }
+  .conv-nav-dot:hover { background: var(--accent); transform: scale(1.35); }
+  .conv-nav-dot.active { background: var(--accent); transform: scale(1.35); }
+  .conv-nav-dot .cn-tip { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); max-width: 260px; padding: 5px 9px; border-radius: 7px; background: var(--bg-elev); border: 1px solid var(--border); box-shadow: 0 4px 16px var(--shadow-color); font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; pointer-events: none; transition: opacity .12s; }
+  .conv-nav-dot:hover .cn-tip { opacity: 1; }
+
 </style>
 </head>
 <body>
@@ -564,6 +587,7 @@
   <div class="composer">
     <div class="hint-row" id="hint-row"></div>
     <div class="attach-row" id="attach-row"></div>
+    <div class="send-queue" id="send-queue"></div>
     <button class="init-project-btn" id="init-project-btn" style="display:none">首次对话需选择项目目录</button>
     <div class="composer-inner">
       <button class="scroll-bottom" id="scroll-bottom" title="回到底部"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M8 13l-4-4M8 13l4-4"/></svg></button>
@@ -707,6 +731,7 @@
     }
     try { flushTools(); } catch (err) { try { console.warn('[harness] 历史工具恢复失败:', err && err.message); } catch (_) {} }
     stream.scrollTop = stream.scrollHeight;
+    try { updateConvNav(); } catch (e) { /* ignore */ }
     updateScrollBtn();
   }
   /**
@@ -755,6 +780,8 @@
     saveHist();
     stream.innerHTML = '';
     toolSeq = 0;
+    sendQueue = [];
+    renderSendQueue();
 
     // 计划：连存档一起清（空 sid 的存档就是上一次"新对话"留下的）
     planState = null;
@@ -801,6 +828,8 @@
     cancelGoalNudge();
     cur = null;
     stream.innerHTML = '';
+    sendQueue = [];
+    renderSendQueue();
     if (!history.length) { showEmptyState(); return; }
     restoreHist();
     scrollBottom(true);
@@ -812,6 +841,7 @@
     if (EMPTY_HTML == null) return;
     stream.innerHTML = EMPTY_HTML;
     empty = document.getElementById('empty');
+    try { var cn = getConvNavEl(); if (cn) { cn.classList.remove('show'); cn.innerHTML = ''; } } catch (e) { /* ignore */ }
   }
 
   // ===== Goal（目标）/ Plan（计划）=====
@@ -1608,6 +1638,8 @@
     generating = (state === 'busy');
     if (generating) lastActivityAt = Date.now();
     syncBusyIndicators();
+    // 任务结束（就绪且无工具在跑）：自动发送队列下一条
+    if (state !== 'busy' && !isBusy()) { try { setTimeout(maybeFlushQueue, 30); } catch (e) { /* ignore */ } }
   }
 
   /**
@@ -1749,6 +1781,7 @@
     attachCopy(d, function () { return text; });
     stream.appendChild(d);
     scrollBottom(true);
+    try { updateConvNav(); } catch (e) { /* ignore */ }
   }
 
   var PREFIX_SVG = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l1.8 4.6L14.5 8l-4.7 2.4L8 15l-1.8-4.6L1.5 8l4.7-2.4z"/></svg>';
@@ -2035,6 +2068,132 @@
     api.onAppendInput(function (text) { appendToInput(text); });
   }
 
+  // ===== 发送队列（运行中排队待发消息，任务空闲自动发下一条）=====
+  var sendQueue = []; // { text, files, hints }
+  var sendQueueEl = document.getElementById('send-queue');
+  function renderSendQueue() {
+    if (!sendQueueEl) return;
+    sendQueueEl.innerHTML = '';
+    if (!sendQueue.length) { sendQueueEl.classList.remove('show'); return; }
+    sendQueueEl.classList.add('show');
+    var head = document.createElement('div');
+    head.className = 'sq-head';
+    head.innerHTML = '<span>待发队列</span><span class="sq-count">' + sendQueue.length + '</span><span>条 · 当前任务结束后自动发送</span>';
+    sendQueueEl.appendChild(head);
+    for (var i = 0; i < sendQueue.length; i++) {
+      (function (idx) {
+        var it = sendQueue[idx];
+        var row = document.createElement('div');
+        row.className = 'sq-item';
+        var preview = it.text || ('[附件 ' + (it.files ? it.files.length : 0) + ' 个]');
+        row.innerHTML = '<span class="sq-idx">' + (idx + 1) + '</span>' +
+          '<span class="sq-text"></span>' +
+          '<button class="sq-del" title="移出队列"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>';
+        row.querySelector('.sq-text').textContent = preview;
+        row.querySelector('.sq-del').addEventListener('click', function () {
+          sendQueue.splice(idx, 1);
+          renderSendQueue();
+        });
+        sendQueueEl.appendChild(row);
+      })(i);
+    }
+  }
+  /** 把当前输入内容加入发送队列（goal/plan 指令不入队，保持即时语义）。返回是否入队。 */
+  function tryEnqueue() {
+    var text = input.value.trim();
+    var files = pendingFiles.slice();
+    var hints = pendingHints.slice();
+    if (!text && files.length === 0 && hints.length === 0) return false;
+    var hasGoalChip = false, hasPlanChip = false;
+    for (var gi = 0; gi < hints.length; gi++) {
+      if (hints[gi].isGoal) hasGoalChip = true;
+      if (hints[gi].isPlan) hasPlanChip = true;
+    }
+    // goal/plan 指令：保持原行为（运行中忽略，不排队）
+    if (hasGoalChip || hasPlanChip || /^\/goal(\s|$)/.test(text) || /^\/plan(\s|$)/.test(text)) return false;
+    sendQueue.push({ text: text, files: files, hints: hints });
+    input.value = '';
+    input.style.height = 'auto';
+    pendingFiles = [];
+    pendingHints = [];
+    renderAttach();
+    renderHints();
+    renderSendQueue();
+    return true;
+  }
+  /** 空闲时取出队列首条并发送；返回是否确实发送了 */
+  function maybeFlushQueue() {
+    // 用户主动停止（aborted）后不自动发，保留队列等用户决定
+    if (isBusy() || aborted() || !sendQueue.length) return false;
+    var item = sendQueue.shift();
+    renderSendQueue();
+    // 备份用户此刻正在输入的内容与待发附件（flush 不应打断用户输入）
+    var savedInput = input.value;
+    var savedFiles = pendingFiles.slice();
+    var savedHints = pendingHints.slice();
+    pendingFiles = item.files.slice();
+    pendingHints = item.hints.slice();
+    input.value = item.text;
+    renderAttach();
+    renderHints();
+    send();
+    // 恢复用户输入（send 已同步取走 item 内容）
+    input.value = savedInput;
+    pendingFiles = savedFiles;
+    pendingHints = savedHints;
+    renderAttach();
+    renderHints();
+    return true;
+  }
+
+  // ===== 右侧对话快捷导航（用户消息锚点）=====
+  // 注意：#conv-nav 在 <script> 之后解析，脚本执行时可能尚不存在 → 惰性获取
+  var convNavEl = null;
+  function getConvNavEl() {
+    if (!convNavEl) convNavEl = document.getElementById('conv-nav');
+    return convNavEl;
+  }
+  function updateConvNav() {
+    var convNavEl = getConvNavEl();
+    if (!convNavEl) return;
+    var users = stream.querySelectorAll('.msg.user');
+    // 少于 2 条用户消息时不显示，避免噪音
+    if (users.length < 2) { convNavEl.classList.remove('show'); convNavEl.innerHTML = ''; return; }
+    convNavEl.classList.add('show');
+    convNavEl.innerHTML = '';
+    for (var i = 0; i < users.length; i++) {
+      (function (idx) {
+        var dot = document.createElement('div');
+        dot.className = 'conv-nav-dot';
+        var tip = document.createElement('div');
+        tip.className = 'cn-tip';
+        var full = (users[idx].textContent || '').replace(/\s+/g, ' ').trim();
+        tip.textContent = full.slice(0, 80) || ('第 ' + (idx + 1) + ' 条');
+        dot.appendChild(tip);
+        dot.addEventListener('click', function () {
+          try { users[idx].scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+          catch (e) { stream.scrollTop = users[idx].offsetTop - stream.offsetTop; }
+        });
+        convNavEl.appendChild(dot);
+      })(i);
+    }
+    updateConvNavActive();
+  }
+  function updateConvNavActive() {
+    var convNavEl = getConvNavEl();
+    if (!convNavEl || !convNavEl.classList.contains('show')) return;
+    var users = stream.querySelectorAll('.msg.user');
+    var dots = convNavEl.querySelectorAll('.conv-nav-dot');
+    if (!users.length || !dots.length) return;
+    var best = 0;
+    var streamTop = stream.getBoundingClientRect().top;
+    for (var i = 0; i < users.length; i++) {
+      var top = users[i].getBoundingClientRect().top - streamTop;
+      if (top <= 80) best = i;
+    }
+    for (var j = 0; j < dots.length; j++) dots[j].classList.toggle('active', j === best);
+  }
+
   function send() {
     var text = input.value.trim();
     var files = pendingFiles.slice();
@@ -2204,7 +2363,7 @@
     }
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
-      if (isBusy()) return; // 生成中/工具执行中：忽略 Enter，避免重复发送（可用中止按钮）
+      if (isBusy()) { tryEnqueue(); return; } // 生成中：入队，任务结束后自动发送
       send();
     }
   });
@@ -2559,6 +2718,7 @@
     scrollBtn.addEventListener('click', function () { pinBottom = true; stream.scrollTop = stream.scrollHeight; updateScrollBtn(); });
   }
   stream.addEventListener('scroll', function () {
+    try { updateConvNavActive(); } catch (e) { /* ignore */ }
     if (suppressPin) return; // 折叠等程序化高度变化引发的滚动，不改跟随状态
     pinBottom = isNearBottom();
     updateScrollBtn();
@@ -2678,5 +2838,6 @@
   })();
 })();
 </script>
+<div class="conv-nav" id="conv-nav"></div>
 </body>
 </html>

@@ -87,3 +87,52 @@ test('goal 收束仍走 goalDone 工具事件（回归保护）', () => {
   assert.ok(script.includes("case 'goal-done'"), '事件分发应处理 goal-done');
   assert.ok(!script.includes('[[GOAL_DONE]]'), '不应回退到文本标记方案');
 });
+
+test('发送队列：运行中 Enter 入队而非丢弃', () => {
+  // Enter 分支：busy 时应入队，而不是直接 return 丢弃
+  assert.ok(/if \(isBusy\(\)\) \{ tryEnqueue\(\); return; \}/.test(script), 'busy 时 Enter 应入队');
+  assert.ok(/function tryEnqueue\s*\(/.test(script), '应有 tryEnqueue 函数');
+  assert.ok(/function maybeFlushQueue\s*\(/.test(script), '应有 maybeFlushQueue 函数');
+  assert.ok(/function renderSendQueue\s*\(/.test(script), '应有 renderSendQueue 函数');
+});
+
+test('发送队列：空闲时自动 flush（setStatus 就绪分支）', () => {
+  const idx = script.indexOf("generating = (state === 'busy');");
+  assert.ok(idx > 0, '应能找到 setStatus 的 generating 赋值');
+  const tail = script.slice(idx, idx + 400);
+  assert.ok(tail.includes('maybeFlushQueue'), 'setStatus 就绪时应触发队列 flush');
+});
+
+test('发送队列：用户主动停止后不自动发（aborted 拦截）', () => {
+  const idx = script.indexOf('function maybeFlushQueue');
+  assert.ok(idx > 0, '应有 maybeFlushQueue');
+  const body = script.slice(idx, idx + 300);
+  assert.ok(body.includes('aborted()'), '主动停止后不应自动 flush（应判 aborted）');
+});
+
+test('发送队列：goal/plan 指令不入队（保持即时语义）', () => {
+  const idx = script.indexOf('function tryEnqueue');
+  const body = script.slice(idx, idx + 800);
+  assert.ok(/\\\/goal/.test(body) && /\\\/plan/.test(body), 'tryEnqueue 应识别并排除 goal/plan 指令');
+  assert.ok(body.includes('return false'), 'goal/plan 指令应返回 false 不入队');
+});
+
+test('发送队列：flush 不覆盖用户正在输入的内容（备份/恢复）', () => {
+  const idx = script.indexOf('function maybeFlushQueue');
+  const body = script.slice(idx, idx + 900);
+  assert.ok(body.includes('savedInput'), 'flush 前应备份 input.value');
+  assert.ok(body.includes('input.value = savedInput'), 'flush 后应恢复用户输入');
+});
+
+test('对话导航：基于用户消息重建锚点 + 点击滚动', () => {
+  assert.ok(/function updateConvNav\s*\(/.test(script), '应有 updateConvNav 函数');
+  assert.ok(/function updateConvNavActive\s*\(/.test(script), '应有 updateConvNavActive 函数');
+  assert.ok(script.includes("querySelectorAll('.msg.user')"), '导航应基于用户消息节点');
+  assert.ok(script.includes('scrollIntoView'), '点击锚点应滚动定位');
+});
+
+test('对话导航：空态/切会话时清空（无残留）', () => {
+  const idx = script.indexOf('function showEmptyState');
+  const body = script.slice(idx, idx + 500);
+  assert.ok(body.includes('convNavEl'), '空态应清空导航');
+});
