@@ -2316,7 +2316,7 @@
                     <option value="0.85">小 (85%)</option>
                     <option value="1">标准 (100%)</option>
                     <option value="1.15">大 (115%)</option>
-                    <option value="1.3">特大 (130%)</option>
+                    <option value="1.26">特大 (126%)</option>
                     <option value="1.5">超大 (150%)</option>
                   </select>
                 </div>
@@ -7786,7 +7786,7 @@
     const to = data && data.to || "";
     const detail = data && data.detail || "";
     const title = ok ? "\u7A97\u53E3\u7EC4\u5DF2\u5207\u6362" : "\u7A97\u53E3\u7EC4\u5207\u6362\u5931\u8D25";
-    const body = ok ? reason + "\uFF1A" + from + " \u2192 " + to : reason + "\uFF1A" + (detail || "\u5207\u6362\u672A\u5B8C\u6210");
+    const body = ok ? reason + "\uFF1A" + from + " \u2192 " + to + (detail ? "\uFF08" + detail + "\uFF09" : "") : reason + "\uFF1A" + (detail || "\u5207\u6362\u672A\u5B8C\u6210");
     const el2 = document.createElement("div");
     el2.className = "ck-toast" + (ok ? "" : " ck-toast-error");
     const icon = ok ? "\u2713" : "\u2715";

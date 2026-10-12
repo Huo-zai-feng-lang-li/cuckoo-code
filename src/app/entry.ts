@@ -15,7 +15,7 @@ import * as mcpClient from '../mcp/client.js';
 import { resolveAsset, resolveSrc } from '../infra/paths.js';
 
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, nativeTheme, ipcMain: ipcMainForProfile } = require('electron');
+const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, nativeTheme, ipcMain: ipcMainForProfile, Notification } = require('electron');
 
 // ========== 持久化会话配置 ==========
 const SESSION_DIR = process.env.CUCKOO_SESSION_DIR || 'cuckoo-ai-pro-session';
@@ -900,17 +900,31 @@ function profileDisplayName(profileId: string | null): string {
 }
 
 /**
- * 窗口组切换提示：推给壳页面弹 toast。
- * 切换后焦点已跳到目标 Cuckoo 窗口，用户面前必有壳页面，故只用应用内 toast（不弹系统通知，避免打扰）。
+ * 窗口组切换提示：系统通知 + 壳页面 toast。
+ * 系统通知为主（任何情况可见）；toast 在壳页面右上角，会被 AI WebContentsView 盖住，
+ * 仅在 AI 视图未覆盖处可见，故不能只依赖 toast。
  * @param reason 'rate-limit'（自动，账号限流）| 'manual'（手动转移）
  * @param fromName 源窗口名
  * @param toName 目标窗口名（失败时为空）
  * @param ok 是否成功
- * @param detail 失败原因（可选）
+ * @param detail 失败/成功补充（可选）
  */
 function notifyWindowSwitch(reason: string, fromName: string, toName: string, ok: boolean, detail?: string): void {
   const reasonText = reason === 'rate-limit' ? '账号限流自动切换' : '手动转移对话';
-  // 壳页面 toast（广播给所有窗口，无论哪个在前台都能看到）
+  const title = ok ? '窗口组已切换' : '窗口组切换失败';
+  const body = ok
+    ? (reasonText + '：' + fromName + ' → ' + toName + (detail ? '（' + detail + '）' : ''))
+    : (reasonText + '：' + (detail || '切换未完成'));
+  // 系统通知（主通道）
+  try {
+    if (Notification && Notification.isSupported()) {
+      const n = new Notification({ title, body });
+      n.show();
+      // 保持引用防 GC（Electron 已知坑：局部变量会在 show() 后被回收）
+      setTimeout(() => { try { n.close(); } catch (_) {} }, 8000);
+    }
+  } catch (_) { /* ignore */ }
+  // 壳页面 toast（辅助，广播给所有窗口）
   try {
     for (const c of windowState.getAllContexts()) {
       try {
@@ -923,9 +937,9 @@ function notifyWindowSwitch(reason: string, fromName: string, toName: string, ok
 }
 
 /** 把 fromProfileId 窗口的当前对话分享给组内下一个窗口（返回 { success, ... }） */
-async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSource: boolean = false): Promise<any> {
-    // reason：closeSource=true 为限流自动切换，否则为手动转移
-    const reason = closeSource ? 'rate-limit' : 'manual';
+async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSource: boolean = false, reasonOverride?: string): Promise<any> {
+    // reason 独立于 closeSource：手动转移也可关源窗口，但文案仍是"手动转移"
+    const reason = reasonOverride || (closeSource ? 'rate-limit' : 'manual');
     const fromName = profileDisplayName(fromProfileId);
     // 1) 找源窗口上下文
     const allCtx = windowState.getAllContexts().filter((c: any) => c.profileId === fromProfileId && !c.isSubagent);
@@ -1050,7 +1064,7 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSo
       }, 1500); // 等焦点切到新窗口后再关，避免闪烁
     }
 
-    notifyWindowSwitch(reason, fromName, profileDisplayName(nextProfileId), true);
+    notifyWindowSwitch(reason, fromName, profileDisplayName(nextProfileId), true, closeSource ? '源窗口已关闭' : '');
     return { success: true, toProfileId: nextProfileId };
 }
 
@@ -1059,7 +1073,8 @@ injectWindowGroupDeps({
   runSwitch: async (groupId: string, sender: any) => {
     const cur = (sender && windowState.getContextByWebContents(sender)) || windowState.getMainContext();
     if (!cur || !cur.win || cur.win.isDestroyed()) return { success: false, error: '无活跃窗口' };
-    return runSwitchForGroup(groupId, cur.profileId);
+    // 手动转移也关闭源窗口（closeSource=true），但文案保持"手动转移"
+    return runSwitchForGroup(groupId, cur.profileId, true, 'manual');
   },
 });
 

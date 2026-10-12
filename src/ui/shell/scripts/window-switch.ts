@@ -29,7 +29,7 @@ function showToast(data: any): void {
   const detail = (data && data.detail) || '';
   const title = ok ? '窗口组已切换' : '窗口组切换失败';
   const body = ok
-    ? (reason + '：' + from + ' → ' + to)
+    ? (reason + '：' + from + ' → ' + to + (detail ? '（' + detail + '）' : ''))
     : (reason + '：' + (detail || '切换未完成'));
 
   const el = document.createElement('div');
