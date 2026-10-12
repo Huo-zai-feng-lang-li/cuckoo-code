@@ -69,9 +69,10 @@ test('createSnapshot 目录不存在抛错', () => {
   assert.throws(() => createSnapshot('D:/不存在目录xyz', 'x'), /不存在/);
 });
 
-test('listSnapshots 按时间倒序', () => {
+test('listSnapshots 按时间倒序', async () => {
   const dir = makeProject();
   createSnapshot(dir, 'A');
+  await new Promise((r) => setTimeout(r, 10)); // 确保两次 createdAt 不同，消除同毫秒竞态
   const b = createSnapshot(dir, 'B');
   const list = listSnapshots();
   assert.ok(list.length >= 2);

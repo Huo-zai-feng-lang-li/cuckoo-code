@@ -66,11 +66,6 @@ function getSnapshotDir(id: string): string {
   return path.join(getSnapshotsDir(), id);
 }
 
-/** 生成快照 id：snap-<时间戳>-<随机> */
-function newSnapshotId(): string {
-  return 'snap-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-}
-
 /**
  * 递归收集 projectDir 下需要快照的文件（绝对路径列表），跳过排除目录与符号链接。
  */
@@ -112,7 +107,9 @@ function createSnapshot(projectDir: string, name: string, description: string = 
   const n = typeof name === 'string' ? name.trim() : '';
   if (!n) throw new Error('快照名不能为空');
 
-  const id = newSnapshotId();
+  // 在创建开始时记录时间戳，确保 createdAt 反映创建顺序（不受复制耗时影响）
+  const createdAt = Date.now();
+  const id = 'snap-' + createdAt + '-' + Math.random().toString(36).slice(2, 8);
   const snapDir = getSnapshotDir(id);
   const filesDir = path.join(snapDir, 'files');
   fs.mkdirSync(filesDir, { recursive: true });
@@ -133,7 +130,7 @@ function createSnapshot(projectDir: string, name: string, description: string = 
 
   const meta: SnapshotMeta = {
     id, name: n, description: String(description || ''),
-    projectDir, fileCount: files.length, totalBytes, createdAt: Date.now(),
+    projectDir, fileCount: files.length, totalBytes, createdAt,
   };
   fs.writeFileSync(path.join(snapDir, 'meta.json'), JSON.stringify(meta, null, 2), 'utf-8');
   console.log('[Snapshots] 已创建:', id, meta.fileCount + ' 个文件');
@@ -154,7 +151,10 @@ function listSnapshots(): SnapshotMeta[] {
       }
     } catch { /* 跳过损坏项 */ }
   }
-  return metas.sort((a, b) => b.createdAt - a.createdAt);
+  return metas.sort((a, b) => {
+    if (b.createdAt !== a.createdAt) return b.createdAt - a.createdAt;
+    return b.id.localeCompare(a.id); // 同毫秒时按 id 降序，保证顺序确定
+  });
 }
 
 /** 读取单个快照元数据 */

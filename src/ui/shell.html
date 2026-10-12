@@ -2224,7 +2224,7 @@
               <div class="ck-about-group">
                 <div class="ck-about-group-title">开源地址</div>
                 <p class="ck-about-tip">本系统为开源项目，欢迎点 Star 支持。</p>
-                <a class="ck-about-link" id="about-github">github.com/wangyongpeng90/cuckoo-code</a>
+                <a class="ck-about-link" id="about-github">github.com/Huo-zai-feng-lang-li/cuckoo-code</a>
               </div>
 
               <div class="ck-about-group">
@@ -3962,21 +3962,21 @@
     return type === "dir" ? "ck-ft-name" : "ck-ft-name " + colorClass(name, type);
   }
   function atBtn(path) {
-    return '<span class="ck-ft-at" data-at="' + escapeAttr(path) + '" title="\u8FFD\u52A0 @' + escapeAttr(path) + ' \u5230\u8F93\u5165\u6846">@</span>';
+    return '<span class="ck-ft-at" data-at="' + escapeAttr(path) + '">@</span>';
   }
-  function actBtn(act, path, name, isDir, title, svg) {
-    return '<span class="ck-ft-act" data-act="' + act + '" data-path="' + escapeAttr(path) + '" data-name="' + escapeAttr(name) + '" data-isdir="' + (isDir ? "1" : "0") + '" title="' + escapeAttr(title) + '">' + svg + "</span>";
+  function actBtn(act, path, name, isDir, svg) {
+    return '<span class="ck-ft-act" data-act="' + act + '" data-path="' + escapeAttr(path) + '" data-name="' + escapeAttr(name) + '" data-isdir="' + (isDir ? "1" : "0") + '">' + svg + "</span>";
   }
   function actionsHtml(path, type) {
     const name = path.split("/").pop() || "";
     const isDir = type === "dir";
     let h = "";
     if (isDir) {
-      h += actBtn("new-file", path, name, true, "\u65B0\u5EFA\u6587\u4EF6", IC_NEW_FILE);
-      h += actBtn("new-folder", path, name, true, "\u65B0\u5EFA\u6587\u4EF6\u5939", IC_NEW_FOLDER);
+      h += actBtn("new-file", path, name, true, IC_NEW_FILE);
+      h += actBtn("new-folder", path, name, true, IC_NEW_FOLDER);
     }
-    h += actBtn("rename", path, name, isDir, "\u91CD\u547D\u540D", IC_RENAME);
-    h += actBtn("delete", path, name, isDir, "\u5220\u9664", IC_DEL);
+    h += actBtn("rename", path, name, isDir, IC_RENAME);
+    h += actBtn("delete", path, name, isDir, IC_DEL);
     return '<span class="ck-ft-actions">' + h + "</span>";
   }
   function renderNodes(nodes, depth) {
@@ -4926,7 +4926,7 @@
     }
   }
   document.getElementById("about-github")?.addEventListener("click", () => {
-    if (api.openExternal) api.openExternal("https://github.com/wangyongpeng90/cuckoo-code");
+    if (api.openExternal) api.openExternal("https://github.com/Huo-zai-feng-lang-li/cuckoo-code");
   });
 
   // src/ui/shell/scripts/pages/feishu.ts

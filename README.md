@@ -1,20 +1,20 @@
 # Cuckoo Code
 
 <p align="center">
-  <a href="https://github.com/wangyongpeng90/cuckoo-code/releases/latest"><img src="https://img.shields.io/github/v/release/wangyongpeng90/cuckoo-code?style=flat-square&color=8b93ff" alt="Latest Release"></a>
-  <a href="https://github.com/wangyongpeng90/cuckoo-code/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/wangyongpeng90/cuckoo-code/build.yml?style=flat-square&label=Build" alt="Build Status"></a>
-  <a href="https://github.com/wangyongpeng90/cuckoo-code/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/wangyongpeng90/cuckoo-code/release.yml?style=flat-square&label=Release" alt="Release Status"></a>
-  <a href="https://codecov.io/gh/wangyongpeng90/cuckoo-code"><img src="https://codecov.io/gh/wangyongpeng90/cuckoo-code/branch/master/graph/badge.svg" alt="codecov"></a>
-  <a href="https://github.com/wangyongpeng90/cuckoo-code/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="License"></a>
-  <a href="https://github.com/wangyongpeng90/cuckoo-code"><img src="https://img.shields.io/github/stars/wangyongpeng90/cuckoo-code?style=flat-square&color=yellow" alt="Stars"></a>
-  <a href="https://github.com/wangyongpeng90/cuckoo-code/releases"><img src="https://img.shields.io/github/downloads/wangyongpeng90/cuckoo-code/total?style=flat-square&color=green" alt="Downloads"></a>
-  <a href="https://github.com/wangyongpeng90/cuckoo-code"><img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-8b93ff?style=flat-square" alt="Platform"></a>
-  <a href="https://github.com/wangyongpeng90/cuckoo-code"><img src="https://img.shields.io/badge/Electron-44-47848f?style=flat-square&logo=electron&logoColor=white" alt="Electron"></a>
+  <a href="https://github.com/Huo-zai-feng-lang-li/cuckoo-code/releases/latest"><img src="https://img.shields.io/github/v/release/Huo-zai-feng-lang-li/cuckoo-code?style=flat-square&color=8b93ff" alt="Latest Release"></a>
+  <a href="https://github.com/Huo-zai-feng-lang-li/cuckoo-code/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/Huo-zai-feng-lang-li/cuckoo-code/build.yml?style=flat-square&label=Build" alt="Build Status"></a>
+  <a href="https://github.com/Huo-zai-feng-lang-li/cuckoo-code/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/Huo-zai-feng-lang-li/cuckoo-code/release.yml?style=flat-square&label=Release" alt="Release Status"></a>
+  <a href="https://codecov.io/gh/Huo-zai-feng-lang-li/cuckoo-code"><img src="https://codecov.io/gh/Huo-zai-feng-lang-li/cuckoo-code/branch/master/graph/badge.svg" alt="codecov"></a>
+  <a href="https://github.com/Huo-zai-feng-lang-li/cuckoo-code/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="License"></a>
+  <a href="https://github.com/Huo-zai-feng-lang-li/cuckoo-code"><img src="https://img.shields.io/github/stars/Huo-zai-feng-lang-li/cuckoo-code?style=flat-square&color=yellow" alt="Stars"></a>
+  <a href="https://github.com/Huo-zai-feng-lang-li/cuckoo-code/releases"><img src="https://img.shields.io/github/downloads/Huo-zai-feng-lang-li/cuckoo-code/total?style=flat-square&color=green" alt="Downloads"></a>
+  <a href="https://github.com/Huo-zai-feng-lang-li/cuckoo-code"><img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-8b93ff?style=flat-square" alt="Platform"></a>
+  <a href="https://github.com/Huo-zai-feng-lang-li/cuckoo-code"><img src="https://img.shields.io/badge/Electron-44-47848f?style=flat-square&logo=electron&logoColor=white" alt="Electron"></a>
 </p>
 
 [English](README.en.md) | 中文
 
-[下载最新版本](https://github.com/wangyongpeng90/cuckoo-code/releases/latest)
+[下载最新版本](https://github.com/Huo-zai-feng-lang-li/cuckoo-code/releases/latest)
 
 **Cuckoo Code** 是一个零 Token 成本的 AI Agent 桌面端。
 
@@ -79,7 +79,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/wangyongpeng90/cuckoo-code.git
+git clone https://github.com/Huo-zai-feng-lang-li/cuckoo-code.git
 cd cuckoo-code
 
 # 安装依赖

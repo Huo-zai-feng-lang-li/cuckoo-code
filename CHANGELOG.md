@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.8.17] - 2026-10-12
+
+### Fixed
+- **快照列表排序不稳定**：修复 `listSnapshots` 在 CI 上偶发失败（同毫秒创建的快照顺序颠倒）。根因：`createdAt` 在文件复制完成后才记录，受复制耗时抖动影响。改为创建开始时记录时间戳，并在同毫秒时按 id 降序兜底，保证顺序确定。
+- **文件树行操作按钮 hover 提示**：去掉目录/文件行操作图标（新建文件/新建文件夹/重命名/删除/@）的原生 tooltip。
+
+### Changed
+- **仓库地址迁移**：`package.json`（含 electron-builder publish owner）、`README`、关于页链接、`release.bat` 全部指向新仓库 `Huo-zai-feng-lang-li/cuckoo-code`。
+
 ## [0.8.16] - 2026-10-12
 
 ### Fixed

@@ -114,14 +114,14 @@ function nameClass(name: string, type: 'dir' | 'file'): string {
 
 /** @ 按钮 HTML */
 function atBtn(path: string): string {
-  return '<span class="ck-ft-at" data-at="' + escapeAttr(path) + '" title="追加 @' + escapeAttr(path) + ' 到输入框">@</span>';
+  return '<span class="ck-ft-at" data-at="' + escapeAttr(path) + '">@</span>';
 }
 
 /** 行操作按钮 HTML */
-function actBtn(act: string, path: string, name: string, isDir: boolean, title: string, svg: string): string {
+function actBtn(act: string, path: string, name: string, isDir: boolean, svg: string): string {
   return '<span class="ck-ft-act" data-act="' + act + '" data-path="' + escapeAttr(path) +
     '" data-name="' + escapeAttr(name) + '" data-isdir="' + (isDir ? '1' : '0') +
-    '" title="' + escapeAttr(title) + '">' + svg + '</span>';
+    '">' + svg + '</span>';
 }
 
 /** 行操作图标组（hover 显示）：目录=新建文件/新建文件夹/重命名/删除；文件=重命名/删除 */
@@ -130,11 +130,11 @@ function actionsHtml(path: string, type: 'dir' | 'file'): string {
   const isDir = type === 'dir';
   let h = '';
   if (isDir) {
-    h += actBtn('new-file', path, name, true, '新建文件', IC_NEW_FILE);
-    h += actBtn('new-folder', path, name, true, '新建文件夹', IC_NEW_FOLDER);
+    h += actBtn('new-file', path, name, true, IC_NEW_FILE);
+    h += actBtn('new-folder', path, name, true, IC_NEW_FOLDER);
   }
-  h += actBtn('rename', path, name, isDir, '重命名', IC_RENAME);
-  h += actBtn('delete', path, name, isDir, '删除', IC_DEL);
+  h += actBtn('rename', path, name, isDir, IC_RENAME);
+  h += actBtn('delete', path, name, isDir, IC_DEL);
   return '<span class="ck-ft-actions">' + h + '</span>';
 }
 

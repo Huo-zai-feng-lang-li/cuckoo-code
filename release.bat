@@ -71,7 +71,7 @@ echo.
 echo ==== 5/5 完成！ ====
 echo GitHub Actions 已开始构建，稍后自动发布 Release。
 echo.
-echo 查看进度: https://github.com/wangyongpeng90/cuckoo-code/actions
-echo 下载页面: https://github.com/wangyongpeng90/cuckoo-code/releases
+echo 查看进度: https://github.com/Huo-zai-feng-lang-li/cuckoo-code/actions
+echo 下载页面: https://github.com/Huo-zai-feng-lang-li/cuckoo-code/releases
 echo.
 pause
