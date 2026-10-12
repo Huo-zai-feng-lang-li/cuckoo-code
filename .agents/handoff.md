@@ -62,11 +62,12 @@
 - 已知：backlog 记过"长对话卡是 DeepSeek 自身 O(n²) 渲染，改不了"。
 
 ### 新任务 C：工作区删除（只有归档没有删除）
-- **现状（已确认）**：shell-preload.ts **有** deleteSessionRecord / deleteProjectRecords（暴露了对应 IPC 名），
-  但 **主进程 session.ts 里没有这两个 handler**（11 个 handler 里无 delete-*）→ **需补主进程实现**。
-  shell-preload 里还引用了 navigateSession 对应的 handler 在（其它在）。
-- **UI**：workspaces.ts 只有归档/取消归档，**无删除按钮**。
-- **做法**：确认/补主进程 handler + 在归档项/项目上加「删除」（二次确认）。
+- **现状（已核实，2026-10-12 修正）**：整条删除链路**都不存在**——
+  - shell-preload.ts **没有** deleteSessionRecord / deleteProjectRecords（也无对应 IPC 名）；
+    仅暴露 setSessionArchived / setProjectArchived（归档/取消归档）。
+  - 主进程 ipc/session.ts 只有 set-project-archived / set-session-archived，**无 delete-***。
+  - **UI**：pages/workspaces.ts 只有归档/取消归档，**无删除按钮**。
+- **做法**：从零补三处 —— ① store 层删除方法（src/session/store.ts）② 主进程 handler（ipc/session.ts）③ preload 暴露（shell-preload.ts）+ UI 删除按钮（workspaces.ts，二次确认）。
 
 ### 新任务 D：发布 Releases
 - **现状**：CI 已配好！`.github/workflows/release.yml`——打 tag（v*）→ 自动构建 Win+Mac → 创建 Release。
