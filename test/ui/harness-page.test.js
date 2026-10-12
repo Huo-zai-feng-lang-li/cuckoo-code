@@ -132,9 +132,9 @@ test('对话导航：基于用户消息重建锚点 + 点击滚动', () => {
 });
 
 test('发送队列：编辑/删除锁定对象引用（防 flush 移走队首后 idx 错位）', () => {
-  const idx = script.indexOf('// 点击文本 → 变输入框编辑');
+  const idx = script.indexOf('// 点击文本 → 变多行文本域编辑');
   assert.ok(idx > 0, '应有队列项编辑逻辑');
-  const body = script.slice(idx, idx + 1400);
+  const body = script.slice(idx, idx + 2600);
   assert.ok(body.includes('sendQueue.indexOf(it)'), '编辑保存应按对象引用定位');
   assert.ok(body.includes('var at = sendQueue.indexOf(it)'), '删除应按对象引用定位');
   // 反例：不允许裸 idx 写回/删除
@@ -142,8 +142,20 @@ test('发送队列：编辑/删除锁定对象引用（防 flush 移走队首后
   assert.ok(!/sendQueue\.splice\(idx/.test(body), '不应按 idx 删除');
 });
 
-test('发送队列：编辑框与关闭图标样式', () => {
-  assert.ok(/\.sq-edit \{/.test(html), '应有编辑框样式 sq-edit');
+test('就地编辑统一为多行文本域（ck-mledit）', () => {
+  // 统一编辑类：多行、保留换行
+  assert.ok(/\.ck-mledit \{/.test(html), '应有统一定义的多行编辑类 ck-mledit');
+  assert.ok(/\.ck-mledit \{[^}]*white-space:\s*pre-wrap/.test(html), 'ck-mledit 应保留换行');
+  // 目标框与队列项都使用 textarea + ck-mledit
+  assert.ok(/<textarea class="g-text" id="goal-text"/.test(html), '目标框应为 textarea');
+  const qEdit = script.slice(script.indexOf('// 点击文本 → 变多行文本域编辑'), script.indexOf('// 点击文本 → 变多行文本域编辑') + 500);
+  assert.ok(qEdit.includes("createElement('textarea')"), '队列项编辑应为 textarea');
+  assert.ok(qEdit.includes("'ck-mledit'"), '队列项编辑应使用统一类 ck-mledit');
+  // 多行提交语义：Ctrl/Cmd+Enter 提交（Enter 换行）
+  assert.ok(/key === 'Enter' && \(ev\.ctrlKey \|\| ev\.metaKey\)/.test(script), '队列编辑应 Ctrl+Enter 提交');
+});
+
+test('发送队列：关闭图标尺寸', () => {
   const m = html.match(/\.sq-item \.sq-del \{[^}]*width:\s*(\d+)px/);
   assert.ok(m, '应能找到关闭按钮宽度');
   assert.ok(Number(m[1]) >= 24, '关闭图标按钮宽度应不小于 24px（实测: ' + m[1] + '）');

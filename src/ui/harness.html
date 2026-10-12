@@ -418,11 +418,13 @@
   .goalbar .g-main { flex: 1; min-width: 0; }
   /* 目标文本：本身就是可编辑输入框（就地改目标，不弹窗） */
   .goalbar .g-text {
-    display: block; width: 100%; min-width: 0;
+    display: block; width: 100%; min-width: 0; box-sizing: border-box;
     margin: -1px 0 -1px -5px; padding: 1px 4px;
     background: transparent; border: 1px solid transparent; border-radius: 5px;
     font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--text);
-    outline: none; text-overflow: ellipsis; cursor: text;
+    line-height: 1.6; resize: none; overflow: hidden;
+    white-space: pre-wrap; word-break: break-word;
+    outline: none; cursor: text;
   }
   .goalbar .g-text:hover { border-color: var(--border); }
   .goalbar .g-text:focus { border-color: var(--accent); background: var(--bg); }
@@ -516,9 +518,18 @@
   .sq-head .sq-count { color: var(--accent); font-weight: 600; }
   .sq-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; background: var(--bg-elev); border: 1px solid var(--border); font-size: 12px; color: var(--text-2); }
   .sq-item .sq-idx { flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 9.5px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
-  .sq-item .sq-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; border-radius: 5px; padding: 2px 4px; }
+  .sq-item .sq-text { flex: 1; cursor: text; border-radius: 5px; padding: 2px 4px; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
   .sq-item .sq-text:hover { background: var(--surface-hover); }
-  .sq-item .sq-edit { flex: 1; border: 1px solid var(--accent); border-radius: 5px; background: var(--bg); color: var(--text); font-family: inherit; font-size: 12px; padding: 3px 6px; outline: none; }
+  /* 就地编辑统一用多行文本域 */
+  .ck-mledit {
+    width: 100%; box-sizing: border-box; flex: 1;
+    border: 1px solid var(--accent); border-radius: 6px;
+    background: var(--bg); color: var(--text);
+    font-family: inherit; font-size: 12px; line-height: 1.6;
+    padding: 5px 8px; outline: none; resize: none;
+    white-space: pre-wrap; word-break: break-word;
+    overflow-y: auto; max-height: 200px;
+  }
   .sq-item .sq-del { flex-shrink: 0; width: 26px; height: 26px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
   .sq-item .sq-del:hover { background: var(--surface-hover); color: var(--red); }
   .sq-item .sq-del svg { width: 15px; height: 15px; }
@@ -554,7 +565,7 @@
   <div class="goalbar" id="goalbar">
     <span class="g-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg></span>
     <div class="g-main">
-      <input class="g-text" id="goal-text" type="text" spellcheck="false" placeholder="目标（点击可直接编辑）" />
+      <textarea class="g-text" id="goal-text" rows="1" spellcheck="false" placeholder="目标（点击可直接编辑，Ctrl+Enter 提交）"></textarea>
       <div class="g-meta"><span class="g-state" id="goal-state"><i></i><span id="goal-state-text">进行中</span></span><span>·</span><span id="goal-round"></span></div>
     </div>
     <div class="g-actions">
@@ -961,7 +972,7 @@
     goalbar.className = 'goalbar show ' + (goal.done ? 'done' : (goal.paused ? 'paused' : 'running'));
     if (goalTextEl) {
       // 用户正在编辑时不覆盖输入内容
-      if (document.activeElement !== goalTextEl) goalTextEl.value = stripGoalLabel(goal.text) || goal.text;
+      if (document.activeElement !== goalTextEl) { goalTextEl.value = stripGoalLabel(goal.text) || goal.text; autoGrowTextarea(goalTextEl); }
       goalTextEl.readOnly = !!goal.done;
       goalTextEl.title = goal.text;
     }
@@ -1230,12 +1241,13 @@
     pushHist({ t: 'system', text: '目标已修改：' + t });
   }
 
-  // 目标文本就地编辑（Enter 提交 / Esc 撤销 / 失焦提交）
+  // 目标文本就地编辑（多行：Enter 换行 / Ctrl+Enter 提交 / Esc 撤销 / 失焦提交）
   var goalInput = document.getElementById('goal-text');
   if (goalInput) {
+    goalInput.addEventListener('input', function () { autoGrowTextarea(goalInput); });
     goalInput.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); setGoalText(goalInput.value); goalInput.blur(); }
-      else if (e.key === 'Escape') { e.preventDefault(); if (goal) goalInput.value = stripGoalLabel(goal.text) || goal.text; goalInput.blur(); }
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setGoalText(goalInput.value); goalInput.blur(); }
+      else if (e.key === 'Escape') { e.preventDefault(); if (goal) goalInput.value = stripGoalLabel(goal.text) || goal.text; autoGrowTextarea(goalInput); goalInput.blur(); }
       e.stopPropagation();
     });
     goalInput.addEventListener('blur', function () { setGoalText(goalInput.value); });
@@ -1541,6 +1553,13 @@
   function esc(s) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  /** 多行文本域自动增高（内容多高，框多高；上限由 max-height 控制） */
+  function autoGrowTextarea(ta) {
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 200) + 'px';
   }
 
   // Markdown → HTML：用 marked（GFM）
@@ -2097,14 +2116,16 @@
           '<button class="sq-del" title="移出队列"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>';
         var textEl = row.querySelector('.sq-text');
         textEl.textContent = preview;
-        // 点击文本 → 变输入框编辑（回车/失焦保存，Esc 取消）
+        // 点击文本 → 变多行文本域编辑（Ctrl+Enter/失焦保存，Esc 取消，Enter 换行）
         textEl.addEventListener('click', function () {
           if (row.querySelector('.sq-edit')) return;
-          var inp = document.createElement('input');
-          inp.className = 'sq-edit';
+          var inp = document.createElement('textarea');
+          inp.className = 'ck-mledit';
+          inp.rows = 1;
           // 全程用对象引用 it（而非 idx）：编辑期间 flush 可能移走队首导致 idx 错位
           inp.value = it.text;
           textEl.replaceWith(inp);
+          autoGrowTextarea(inp);
           inp.focus();
           try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e) { /* ignore */ }
           var done = false;
@@ -2114,9 +2135,12 @@
             if (save && sendQueue.indexOf(it) >= 0) it.text = inp.value;
             renderSendQueue();
           }
+          inp.addEventListener('input', function () { autoGrowTextarea(inp); });
           inp.addEventListener('keydown', function (ev) {
-            if (ev.key === 'Enter' && !ev.isComposing) { ev.preventDefault(); commit(true); }
+            // 多行：Enter 换行，Ctrl/Cmd+Enter 提交，Esc 取消
+            if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); commit(true); }
             else if (ev.key === 'Escape') { ev.preventDefault(); commit(false); }
+            ev.stopPropagation();
           });
           inp.addEventListener('blur', function () { commit(true); });
         });
