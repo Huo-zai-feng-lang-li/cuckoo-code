@@ -97,6 +97,9 @@ export interface ShellAPI {
   listProjectTree?: () => Promise<{ success: boolean; root?: string; tree?: any[]; truncated?: boolean; error?: string }>;
   readProjectFile?: (relPath: string) => Promise<any>;
   writeProjectFile?: (relPath: string, content: string) => Promise<any>;
+  watchProjectFile?: (relPath: string) => Promise<any>;
+  unwatchProjectFile?: () => Promise<any>;
+  onProjectFileChanged?: (cb: (data: { relPath: string }) => void) => void;
   openFileExternal?: (relPath: string) => Promise<any>;
   setProjectArchived?: (dir: string, archived: boolean) => Promise<any>;
   deleteProjectWorkspace?: (dir: string) => Promise<any>;

@@ -2536,6 +2536,7 @@
     try {
       const r = await api.writeProjectFile(currentRelPath, getEditorValue());
       if (r && r.success) {
+        lastSelfSaveAt = Date.now();
         dirty = false;
         const sizeEl = document.getElementById("ck-preview-size");
         if (sizeEl) sizeEl.textContent = fmtSize(r.size);
@@ -2643,6 +2644,10 @@
         loadedRelPath = relPath;
         await showInMonaco(monacoEl, relPath, r.content);
         updateSaveBtn();
+        try {
+          if (api.watchProjectFile) api.watchProjectFile(relPath);
+        } catch (_) {
+        }
       }
     } catch (err) {
       if (emptyEl) {
@@ -2650,6 +2655,29 @@
         emptyEl.textContent = "\u8BFB\u53D6\u5931\u8D25: " + escapeHtml(err.message);
       }
       if (monacoEl) monacoEl.style.display = "none";
+    }
+  }
+  async function onExternalChange(relPath) {
+    if (relPath !== loadedRelPath || !currentRelPath) return;
+    if (!pane() || !pane().classList.contains("open")) return;
+    if (Date.now() - lastSelfSaveAt < 800) return;
+    if (conflictHandling) return;
+    if (!dirty) {
+      await loadFile(relPath);
+      return;
+    }
+    conflictHandling = true;
+    try {
+      const ok = await ckConfirm(
+        "\u6587\u4EF6\u300C" + relPath + "\u300D\u5DF2\u5728\u5916\u90E8\u88AB\u4FEE\u6539\uFF0C\u4F60\u672C\u5730\u6709\u672A\u4FDD\u5B58\u7684\u7F16\u8F91\u3002\n\n\u70B9\u300C\u786E\u5B9A\u300D\uFF1A\u52A0\u8F7D\u5916\u90E8\u6700\u65B0\u7248\u672C\uFF08\u653E\u5F03\u4F60\u7684\u672C\u5730\u7F16\u8F91\uFF09\n\u70B9\u300C\u53D6\u6D88\u300D\uFF1A\u4FDD\u7559\u4F60\u7684\u672C\u5730\u7F16\u8F91\uFF08\u7A0D\u540E\u53EF\u624B\u52A8\u4FDD\u5B58\u8986\u76D6\uFF09",
+        "\u6587\u4EF6\u5DF2\u88AB\u5916\u90E8\u4FEE\u6539"
+      );
+      if (ok) {
+        dirty = false;
+        await loadFile(relPath);
+      }
+    } finally {
+      conflictHandling = false;
     }
   }
   async function openPreview(relPath) {
@@ -2696,13 +2724,17 @@
     currentRelPath = "";
     loadedRelPath = "";
     dirty = false;
+    try {
+      if (api.unwatchProjectFile) api.unwatchProjectFile();
+    } catch (_) {
+    }
     hidePreview();
   }
   function restorePreview() {
     if (!currentRelPath) return;
     openPreview(currentRelPath);
   }
-  var PREVIEW_W_KEY, MIN_PREVIEW_W, MIN_TREE_W, openedBaseWidth, currentRelPath, loadedRelPath, dirty, saving;
+  var PREVIEW_W_KEY, MIN_PREVIEW_W, MIN_TREE_W, openedBaseWidth, currentRelPath, loadedRelPath, dirty, saving, lastSelfSaveAt, conflictHandling;
   var init_preview = __esm({
     "src/ui/shell/scripts/preview.ts"() {
       "use strict";
@@ -2716,6 +2748,8 @@
       loadedRelPath = "";
       dirty = false;
       saving = false;
+      lastSelfSaveAt = 0;
+      conflictHandling = false;
       document.getElementById("ck-preview-close")?.addEventListener("click", dismissPreview);
       document.getElementById("ck-preview-save")?.addEventListener("click", () => {
         saveFile();
@@ -2730,6 +2764,12 @@
         dirty = true;
         updateSaveBtn();
       });
+      try {
+        if (api.onProjectFileChanged) api.onProjectFileChanged((d) => {
+          if (d && d.relPath) onExternalChange(d.relPath);
+        });
+      } catch (_) {
+      }
       document.getElementById("ck-preview-ext")?.addEventListener("click", () => {
         if (currentRelPath && api.openFileExternal) api.openFileExternal(currentRelPath).catch(() => {
         });

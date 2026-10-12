@@ -20,6 +20,8 @@ let currentRelPath = "";
 let loadedRelPath = "";     // 编辑器当前实际加载的文件（用于判断切回是否需重载）
 let dirty = false;          // 当前文件是否有未保存改动
 let saving = false;
+let lastSelfSaveAt = 0;     // 本端保存的时间戳（忽略自己写盘触发的变更事件）
+let conflictHandling = false; // 冲突弹框处理中（防重入）
 
 /** 保存按钮 / 未保存标记 */
 function updateSaveBtn(): void {
@@ -45,6 +47,7 @@ async function saveFile(): Promise<boolean> {
   try {
     const r = await (api as any).writeProjectFile(currentRelPath, getEditorValue());
     if (r && r.success) {
+      lastSelfSaveAt = Date.now();
       dirty = false;
       const sizeEl = document.getElementById("ck-preview-size");
       if (sizeEl) sizeEl.textContent = fmtSize(r.size);
@@ -143,10 +146,46 @@ async function loadFile(relPath: string): Promise<void> {
       loadedRelPath = relPath;
       await showInMonaco(monacoEl, relPath, r.content);
       updateSaveBtn();
+      // 开启对该文件的变更监听（自动刷新用）
+      try { if ((api as any).watchProjectFile) (api as any).watchProjectFile(relPath); } catch (_) {}
     }
   } catch (err: any) {
     if (emptyEl) { emptyEl.style.display = "block"; emptyEl.textContent = "读取失败: " + escapeHtml(err.message); }
     if (monacoEl) monacoEl.style.display = "none";
+  }
+}
+
+/** 文件在外部被修改 → 按当前是否有未保存编辑决定：自动刷 / 弹框二选一 */
+async function onExternalChange(relPath: string): Promise<void> {
+  // 只处理当前正在看的文件
+  if (relPath !== loadedRelPath || !currentRelPath) return;
+  // 预览隐藏（切走 tab）时不处理：等 restore 时 loadFile 自然重读，避免后台弹框
+  if (!pane() || !pane()!.classList.contains("open")) return;
+  // 自己刚保存触发的变更 → 忽略
+  if (Date.now() - lastSelfSaveAt < 800) return;
+  if (conflictHandling) return;
+
+  if (!dirty) {
+    // 无未保存编辑 → 静默重载最新内容
+    await loadFile(relPath);
+    return;
+  }
+
+  // 有未保存编辑 → 弹框让用户决定（不丢数据）
+  conflictHandling = true;
+  try {
+    const ok = await ckConfirm(
+      '文件「' + relPath + '」已在外部被修改，你本地有未保存的编辑。\n\n' +
+      '点「确定」：加载外部最新版本（放弃你的本地编辑）\n' +
+      '点「取消」：保留你的本地编辑（稍后可手动保存覆盖）',
+      '文件已被外部修改'
+    );
+    if (ok) {
+      dirty = false;
+      await loadFile(relPath);
+    }
+  } finally {
+    conflictHandling = false;
   }
 }
 
@@ -194,6 +233,7 @@ export function dismissPreview(): void {
   currentRelPath = "";
   loadedRelPath = "";
   dirty = false;
+  try { if ((api as any).unwatchProjectFile) (api as any).unwatchProjectFile(); } catch (_) {}
   hidePreview();
 }
 
@@ -216,6 +256,8 @@ document.addEventListener("keydown", (e: any) => {
 });
 // 编辑器内容变更 → 标记未保存
 onEditorChange(() => { dirty = true; updateSaveBtn(); });
+// 文件在外部被修改 → 自动刷新 / 冲突弹框
+try { if ((api as any).onProjectFileChanged) (api as any).onProjectFileChanged((d: any) => { if (d && d.relPath) onExternalChange(d.relPath); }); } catch (_) {}
 // 系统程序打开
 document.getElementById("ck-preview-ext")?.addEventListener("click", () => {
   if (currentRelPath && (api as any).openFileExternal) (api as any).openFileExternal(currentRelPath).catch(() => {});

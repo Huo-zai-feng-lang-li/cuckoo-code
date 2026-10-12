@@ -40,6 +40,30 @@ function buildFileTree(root: string, rel: string, depth: number, counter: { n: n
   return dirs.concat(files);
 }
 
+// ===== 文件变更监听（供预览自动刷新）=====
+// 按 webContents 维护 watcher：监听文件所在目录（比监听文件本身可靠，
+// 文件被原子替换/删除重建也能捕获），过滤出目标文件，去抖后推送。
+const fileWatchers = new Map<number, { watcher: any; dir: string; file: string; timer: any }>();
+const watcherBoundWc = new Set<number>(); // 已绑定 destroyed 的 wcId（避免重复绑定）
+
+function clearFileWatcher(wcId: number): void {
+  const w = fileWatchers.get(wcId);
+  if (!w) return;
+  try { w.watcher.close(); } catch (_) {}
+  if (w.timer) { try { clearTimeout(w.timer); } catch (_) {} }
+  fileWatchers.delete(wcId);
+}
+
+/** 解析并校验项目内路径（防目录穿越），返回绝对路径或 null */
+function resolveProjectPath(store: any, relPath: string): string | null {
+  const rootDir = (store && store.state && store.state.selectedProjectDir) || null;
+  if (!rootDir || !relPath || typeof relPath !== 'string') return null;
+  const abs = path.resolve(rootDir, relPath);
+  const rootAbs = path.resolve(rootDir);
+  if (abs !== rootAbs && !abs.startsWith(rootAbs + path.sep)) return null;
+  return abs;
+}
+
 function registerSessionIpc(): void {
   // 列出当前项目的文件树（只读浏览；忽略 node_modules/.git 等）
   ipcMain.handle('list-project-tree', async (event: any) => {
@@ -119,6 +143,46 @@ function registerSessionIpc(): void {
     } catch (err: any) {
       return { success: false, error: err.message };
     }
+  });
+
+  // 监听项目文件变更（预览自动刷新用）
+  ipcMain.handle('watch-project-file', async (event: any, { relPath }: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const store = ctx ? ctx.sessionStore : null;
+    const abs = resolveProjectPath(store, relPath);
+    if (!abs) return { success: false, error: '非法路径或未选目录' };
+    const wcId = event.sender.id;
+    clearFileWatcher(wcId);
+    const dir = path.dirname(abs);
+    const file = path.basename(abs);
+    try {
+      const watcher = fs.watch(dir, { persistent: false }, (_evt: string, changed: any) => {
+        if (changed && String(changed) !== file) return;
+        const w = fileWatchers.get(wcId);
+        if (!w) return;
+        if (w.timer) clearTimeout(w.timer);
+        w.timer = setTimeout(() => {
+          try { if (!event.sender.isDestroyed()) event.sender.send('project-file-changed', { relPath }); } catch (_) {}
+        }, 150);
+      });
+      fileWatchers.set(wcId, { watcher, dir, file, timer: null });
+      // 仅首次为该 wcId 绑定 destroyed（清理 watcher + 标记）
+      if (!watcherBoundWc.has(wcId)) {
+        watcherBoundWc.add(wcId);
+        try {
+          event.sender.once('destroyed', () => { clearFileWatcher(wcId); watcherBoundWc.delete(wcId); });
+        } catch (_) { watcherBoundWc.delete(wcId); }
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // 取消文件监听（切换/关闭预览时调用）
+  ipcMain.handle('unwatch-project-file', async (event: any) => {
+    clearFileWatcher(event.sender.id);
+    return { success: true };
   });
 
   // 用系统默认程序打开文件

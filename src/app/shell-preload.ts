@@ -121,6 +121,11 @@ const shellAPI = {
   listProjectTree: () => ipcRenderer.invoke('list-project-tree'),
   readProjectFile: (relPath: string) => ipcRenderer.invoke('read-project-file', { relPath }),
   writeProjectFile: (relPath: string, content: string) => ipcRenderer.invoke('write-project-file', { relPath, content }),
+  watchProjectFile: (relPath: string) => ipcRenderer.invoke('watch-project-file', { relPath }),
+  unwatchProjectFile: () => ipcRenderer.invoke('unwatch-project-file'),
+  onProjectFileChanged: (cb: (data: any) => void) => {
+    ipcRenderer.on('project-file-changed', (_e: any, data: any) => cb(data));
+  },
   openFileExternal: (relPath: string) => ipcRenderer.invoke('open-project-file-external', { relPath }),
   setProjectArchived: (dir: string, archived: boolean) => ipcRenderer.invoke('set-project-archived', { dir, archived }),
   deleteProjectWorkspace: (dir: string) => ipcRenderer.invoke('delete-project-workspace', { dir }),
