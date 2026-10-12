@@ -1,0 +1,18 @@
+#!/bin/sh
+# 提交后自动推送到远程
+# 由 package.json 的 prepare 脚本挂载（git config core.hooksPath .githooks）
+
+# 无 origin 远程 → 跳过
+git remote get-url origin >/dev/null 2>&1 || exit 0
+
+# rebase / merge 进行中 → 跳过，避免推送中间态
+gitdir=$(git rev-parse --git-dir 2>/dev/null)
+[ -d "$gitdir/rebase-merge" ] && exit 0
+[ -d "$gitdir/rebase-apply" ] && exit 0
+[ -f "$gitdir/MERGE_HEAD" ] && exit 0
+
+# 取当前分支；detached HEAD（无分支）→ 跳过
+branch=$(git symbolic-ref --short HEAD 2>/dev/null) || exit 0
+
+# 推送当前分支到 origin（失败不阻断本次提交）
+git push origin "$branch" >/dev/null 2>&1 || true
