@@ -130,7 +130,15 @@ export function initHarnessBridge(): void {
     const text = payload && payload.text;
     if (!text) return;
     clearAbort(); // 新消息：清除中止标志
-    sendToChat(text, 'harness', undefined).catch(() => {});
+    sendToChat(text, 'harness', undefined).then((ok) => {
+      if (!ok) {
+        report({ type: 'status', text: '网页未找到输入框（可能在分享页或页面加载中）', busy: false });
+        report({ type: 'task-idle' });
+      }
+    }).catch((err: any) => {
+      report({ type: 'status', text: '发送失败: ' + ((err && err.message) || String(err)), busy: false });
+      report({ type: 'task-idle' });
+    });
   });
 
   // 停止：取消延时发送 + 中止工具回传
