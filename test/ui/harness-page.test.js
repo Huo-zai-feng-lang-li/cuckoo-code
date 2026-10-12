@@ -202,9 +202,8 @@ test('发送队列：文本去除原生 title、hover 底色铺满变色、文�
 });
 
 test('对话导航与全局 Tooltip：告别系统原生 title，统一自定义 Tooltip 呈现', () => {
-  // 1. 导航圆点不再用原生 title 也不弹 tooltip（收起态为纯横线，完整文本在展开面板）
-  assert.ok(!script.includes('dot.title = full'), '导航圆点不应使用原生 dot.title');
-  assert.ok(!script.includes("dot.setAttribute('data-tooltip', full)"), '导航圆点不应弹 tooltip');
+  // 1. 导航圆点设置 title 供全局 Tooltip 引擎在文本溢出时统一弹出
+  assert.ok(script.includes('if (full) dot.title = full'), '导航圆点应设置 title 供 Tooltip 引擎判定溢出展示');
 
   // 2. harness 内置统一自定义 Tooltip 样式与脚本
   assert.ok(/\.ck-tooltip\s*\{/.test(html), '应包含 .ck-tooltip 样式');
