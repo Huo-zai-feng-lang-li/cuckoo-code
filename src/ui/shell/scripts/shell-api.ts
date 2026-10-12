@@ -112,6 +112,9 @@ export interface ShellAPI {
   gitRestore?: (relPath: string) => Promise<any>;
   gitDiscardUntracked?: (relPath: string) => Promise<any>;
   gitCommit?: (message: string) => Promise<any>;
+  gitCurrentBranch?: () => Promise<any>;
+  gitListBranches?: () => Promise<any>;
+  gitCheckout?: (branch: string, force?: boolean) => Promise<any>;
   setProjectArchived?: (dir: string, archived: boolean) => Promise<any>;
   deleteProjectWorkspace?: (dir: string) => Promise<any>;
   setSessionTitle?: (sessionId: string, title: string) => Promise<any>;

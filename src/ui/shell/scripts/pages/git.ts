@@ -98,6 +98,7 @@ function updateCommitBtn(): void {
 
 /** 读取并渲染状态 */
 export async function loadGit(): Promise<void> {
+  loadBranch(); // 分支显示独立于文件状态，失败也不阻断
   const listEl = document.getElementById('git-list');
   if (!listEl) return;
   if (!api.gitStatus) { listEl.innerHTML = '<div class="ck-list-empty">Git 功能不可用</div>'; return; }
@@ -114,6 +115,63 @@ export async function loadGit(): Promise<void> {
   } catch (err: any) {
     listEl.innerHTML = '<div class="ck-list-empty">' + escapeHtml(err.message || '读取失败') + '</div>';
     refreshBadge(0);
+  }
+}
+
+/** 加载并显示当前分支 */
+async function loadBranch(): Promise<void> {
+  const nameEl = document.getElementById('git-branch-name');
+  if (!nameEl || !api.gitCurrentBranch) return;
+  try {
+    const r = await api.gitCurrentBranch();
+    nameEl.textContent = (r && r.success) ? (r.branch || '—') : '—';
+  } catch (_) {
+    nameEl.textContent = '—';
+  }
+}
+
+/** 展开/收起分支列表 */
+async function toggleBranchList(): Promise<void> {
+  const listEl = document.getElementById('git-branch-list');
+  if (!listEl) return;
+  if (!listEl.classList.contains('ck-hidden')) { listEl.classList.add('ck-hidden'); return; }
+  if (!api.gitListBranches) return;
+  try {
+    const r = await api.gitListBranches();
+    if (!r || !r.success) { await ckAlert('读取分支失败：' + ((r && r.error) || '未知错误'), 'Git'); return; }
+    const branches: string[] = r.branches || [];
+    const current: string = r.current || '';
+    if (!branches.length) {
+      listEl.innerHTML = '<div class="ck-git-branch-empty">无本地分支</div>';
+    } else {
+      listEl.innerHTML = branches.map((b) =>
+        '<div class="ck-git-branch-item' + (b === current ? ' current' : '') + '" data-branch="' + escapeAttr(b) + '">' +
+          '<span class="ck-git-branch-check">' + (b === current ? '✓' : '') + '</span>' +
+          '<span class="ck-git-branch-label">' + escapeHtml(b) + '</span>' +
+        '</div>').join('');
+    }
+    listEl.classList.remove('ck-hidden');
+  } catch (err: any) {
+    await ckAlert('读取分支失败：' + (err && err.message), 'Git');
+  }
+}
+
+/** 切换分支（脏工作区二次确认） */
+async function doCheckout(branch: string): Promise<void> {
+  if (!api.gitCheckout) return;
+  const listEl = document.getElementById('git-branch-list');
+  try {
+    let r: any = await api.gitCheckout(branch, false);
+    if (r && r.dirty) {
+      const ok = await ckConfirm('当前有未提交的改动，切换分支可能失败或丢失改动。\n\n确定要强制切换吗？', '切换分支');
+      if (!ok) return;
+      r = await api.gitCheckout(branch, true);
+    }
+    if (r && !r.success) { await ckAlert('切换失败：' + (r.error || '未知错误'), 'Git'); return; }
+    if (listEl) listEl.classList.add('ck-hidden');
+    await loadGit();
+  } catch (err: any) {
+    await ckAlert('切换失败：' + (err && err.message), 'Git');
   }
 }
 
@@ -198,6 +256,15 @@ async function doCommit(): Promise<void> {
   }
   const refreshBtn = document.getElementById('git-refresh');
   if (refreshBtn) refreshBtn.addEventListener('click', () => { loadGit(); });
+  const branchBar = document.getElementById('git-branch-bar');
+  if (branchBar) branchBar.addEventListener('click', () => { toggleBranchList(); });
+  const branchList = document.getElementById('git-branch-list');
+  if (branchList) {
+    branchList.addEventListener('click', async (e: any) => {
+      const item = e.target && e.target.closest ? e.target.closest('.ck-git-branch-item') : null;
+      if (item && item.dataset.branch) await doCheckout(item.dataset.branch);
+    });
+  }
   const commitBtn = document.getElementById('git-commit-btn');
   if (commitBtn) commitBtn.addEventListener('click', () => { doCommit(); });
   const msgEl = document.getElementById('git-commit-msg') as any;

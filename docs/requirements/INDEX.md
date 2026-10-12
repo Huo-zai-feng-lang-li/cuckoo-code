@@ -32,5 +32,6 @@
 | 025 | feature | [纯净模式真截断（从某条消息重开新会话）](./025-harness-true-truncate.md) | done | feat/025-harness-true-truncate | 2026-10-12 |
 | 026 | feature | [源代码管理面板（Git 暂存/提交/撤销）](./026-git-panel.md) | done | feat/026-git-panel | 2026-10-12 |
 | 027 | feature | [记忆功能内置化（从插件改为内置页）](./027-memory-builtin.md) | done | feat/027-memory-builtin | 2026-10-12 |
+| 028 | feature | [Git 面板分支支持（显示当前分支 + 切换）](./028-git-branch.md) | doing | feat/028-git-branch | 2026-10-12 |
 
-共 27 个需求。
+共 28 个需求。

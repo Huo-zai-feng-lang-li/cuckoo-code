@@ -168,6 +168,54 @@ function registerGitIpc(): void {
     if (!r.success) return { success: false, error: r.stderr.trim() || '提交失败' };
     return { success: true, stdout: r.stdout.trim() };
   });
+
+  // 当前分支名
+  ipcMain.handle('git-current-branch', async (event: any) => {
+    const root = getProjectRoot(event);
+    if (!root) return { success: false, error: '未选择项目目录' };
+    const r = await runGit(root, ['branch', '--show-current']);
+    if (!r.success) {
+      const msg = (r.stderr || '').toLowerCase().includes('not a git repository')
+        ? '当前目录不是 Git 仓库' : (r.stderr || 'git branch 失败');
+      return { success: false, error: msg.trim() };
+    }
+    // 空 = detached HEAD；用短 hash 显示
+    let branch = r.stdout.trim();
+    if (!branch) {
+      const h = await runGit(root, ['rev-parse', '--short', 'HEAD']);
+      branch = h.success ? '(detached ' + h.stdout.trim() + ')' : '(detached)';
+    }
+    return { success: true, branch };
+  });
+
+  // 本地分支列表
+  ipcMain.handle('git-list-branches', async (event: any) => {
+    const root = getProjectRoot(event);
+    if (!root) return { success: false, error: '未选择项目目录' };
+    const cur = await runGit(root, ['branch', '--show-current']);
+    const current = cur.success ? cur.stdout.trim() : '';
+    const r = await runGit(root, ['branch', '--format=%(refname:short)']);
+    if (!r.success) return { success: false, error: r.stderr.trim() };
+    const branches = r.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
+    return { success: true, branches, current };
+  });
+
+  // 切换分支（先检测脏工作区）
+  ipcMain.handle('git-checkout', async (event: any, { branch, force }: any) => {
+    const root = getProjectRoot(event);
+    if (!root) return { success: false, error: '未选择项目目录' };
+    if (!branch || typeof branch !== 'string') return { success: false, error: '缺少分支名' };
+    // 脏工作区检测（未暂存/未跟踪改动会导致切换冲突或丢失）
+    if (!force) {
+      const st = await runGit(root, ['status', '--porcelain=v1', '--untracked-files=all']);
+      if (st.success && st.stdout.trim()) {
+        return { success: false, dirty: true, error: '有未提交的改动' };
+      }
+    }
+    const r = await runGit(root, ['checkout', branch]);
+    if (!r.success) return { success: false, error: r.stderr.trim() || '切换失败' };
+    return { success: true };
+  });
 }
 
 export { registerGitIpc };
