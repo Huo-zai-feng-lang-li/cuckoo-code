@@ -215,6 +215,32 @@
   .ck-ab-item.ck-ab-active { background: var(--ck-primary-soft); }
   .ck-ab-item.ck-ab-active .ck-ab-icon, .ck-ab-item.ck-ab-active .ck-ab-text { opacity: 1; color: var(--ck-primary); }
   .ck-ab-spacer { flex: 1; }
+  /* 全局 toast（窗口组切换等） */
+  .ck-toast-host {
+    position: fixed; top: 52px; right: 16px; z-index: 9999;
+    display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+  }
+  .ck-toast {
+    pointer-events: auto; cursor: pointer;
+    display: flex; align-items: flex-start; gap: 8px;
+    min-width: 220px; max-width: 360px; padding: 10px 12px;
+    border-radius: 10px; background: var(--ck-surface);
+    border: 1px solid var(--ck-border-strong);
+    box-shadow: 0 6px 24px rgba(0,0,0,.28);
+    animation: ck-toast-in .22s ease;
+  }
+  .ck-toast-error { border-color: var(--ck-danger); }
+  .ck-toast-icon {
+    flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: #fff; background: var(--ck-primary);
+  }
+  .ck-toast-error .ck-toast-icon { background: var(--ck-danger); }
+  .ck-toast-body { flex: 1; min-width: 0; }
+  .ck-toast-title { font-size: 12.5px; font-weight: 600; color: var(--ck-text); }
+  .ck-toast-msg { font-size: 11.5px; color: var(--ck-text-2); margin-top: 2px; line-height: 1.5; word-break: break-word; }
+  .ck-toast-hide { opacity: 0; transform: translateX(12px); transition: all .3s; }
+  @keyframes ck-toast-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
   .sb-update-bar { display: inline-block; width: 60px; height: 6px; border-radius: 3px; background: var(--ck-border-strong); overflow: hidden; vertical-align: middle; }
   .sb-update-fill { display: block; height: 100%; width: 0; background: var(--ck-primary); transition: width .2s; }
   .ck-ab-item { user-select: none; }

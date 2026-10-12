@@ -224,6 +224,32 @@
   .ck-ab-item.ck-ab-active { background: var(--ck-primary-soft); }
   .ck-ab-item.ck-ab-active .ck-ab-icon, .ck-ab-item.ck-ab-active .ck-ab-text { opacity: 1; color: var(--ck-primary); }
   .ck-ab-spacer { flex: 1; }
+  /* 全局 toast（窗口组切换等） */
+  .ck-toast-host {
+    position: fixed; top: 52px; right: 16px; z-index: 9999;
+    display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+  }
+  .ck-toast {
+    pointer-events: auto; cursor: pointer;
+    display: flex; align-items: flex-start; gap: 8px;
+    min-width: 220px; max-width: 360px; padding: 10px 12px;
+    border-radius: 10px; background: var(--ck-surface);
+    border: 1px solid var(--ck-border-strong);
+    box-shadow: 0 6px 24px rgba(0,0,0,.28);
+    animation: ck-toast-in .22s ease;
+  }
+  .ck-toast-error { border-color: var(--ck-danger); }
+  .ck-toast-icon {
+    flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: #fff; background: var(--ck-primary);
+  }
+  .ck-toast-error .ck-toast-icon { background: var(--ck-danger); }
+  .ck-toast-body { flex: 1; min-width: 0; }
+  .ck-toast-title { font-size: 12.5px; font-weight: 600; color: var(--ck-text); }
+  .ck-toast-msg { font-size: 11.5px; color: var(--ck-text-2); margin-top: 2px; line-height: 1.5; word-break: break-word; }
+  .ck-toast-hide { opacity: 0; transform: translateX(12px); transition: all .3s; }
+  @keyframes ck-toast-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
   .sb-update-bar { display: inline-block; width: 60px; height: 6px; border-radius: 3px; background: var(--ck-border-strong); overflow: hidden; vertical-align: middle; }
   .sb-update-fill { display: block; height: 100%; width: 0; background: var(--ck-primary); transition: width .2s; }
   .ck-ab-item { user-select: none; }
@@ -7705,9 +7731,71 @@
     });
   }
 
+  // src/ui/shell/scripts/window-switch.ts
+  init_shared();
+  var host = null;
+  function ensureHost() {
+    if (host && host.isConnected) return host;
+    host = document.getElementById("ck-toast-host");
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "ck-toast-host";
+      host.className = "ck-toast-host";
+      document.body.appendChild(host);
+    }
+    return host;
+  }
+  function showToast(data) {
+    const h = ensureHost();
+    if (!h) return;
+    const ok = !!(data && data.ok);
+    const reason = data && data.reason || "";
+    const from = data && data.from || "\u7A97\u53E3";
+    const to = data && data.to || "";
+    const detail = data && data.detail || "";
+    const title = ok ? "\u7A97\u53E3\u7EC4\u5DF2\u5207\u6362" : "\u7A97\u53E3\u7EC4\u5207\u6362\u5931\u8D25";
+    const body = ok ? reason + "\uFF1A" + from + " \u2192 " + to : reason + "\uFF1A" + (detail || "\u5207\u6362\u672A\u5B8C\u6210");
+    const el2 = document.createElement("div");
+    el2.className = "ck-toast" + (ok ? "" : " ck-toast-error");
+    const icon = ok ? "\u2713" : "\u2715";
+    el2.innerHTML = '<span class="ck-toast-icon">' + icon + '</span><div class="ck-toast-body"><div class="ck-toast-title"></div><div class="ck-toast-msg"></div></div>';
+    el2.querySelector(".ck-toast-title").textContent = title;
+    el2.querySelector(".ck-toast-msg").textContent = body;
+    el2.addEventListener("click", () => {
+      try {
+        el2.remove();
+      } catch (_) {
+      }
+    });
+    h.appendChild(el2);
+    const life = ok ? 6e3 : 1e4;
+    setTimeout(() => {
+      el2.classList.add("ck-toast-hide");
+      setTimeout(() => {
+        try {
+          el2.remove();
+        } catch (_) {
+        }
+      }, 300);
+    }, life);
+  }
+  function initWindowSwitchToast() {
+    if (!api.onWindowSwitch) return;
+    api.onWindowSwitch((data) => {
+      try {
+        showToast(data);
+      } catch (_) {
+      }
+    });
+  }
+
   // src/ui/shell/scripts/main.ts
   try {
     initGlobalTooltip();
+  } catch (_) {
+  }
+  try {
+    initWindowSwitchToast();
   } catch (_) {
   }
   try {

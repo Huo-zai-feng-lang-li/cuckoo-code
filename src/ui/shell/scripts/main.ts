@@ -31,9 +31,13 @@ import { initThemePresenter } from './theme-presenter.js';
 import { initGlobalTooltip } from './tooltip.js';
 import { initActivitybarDrag, applyActivitybarOrder } from './activitybar-drag.js';
 import { initUpdateProgress } from './update-progress.js';
+import { initWindowSwitchToast } from './window-switch.js';
 
 // 全局统一自定义 Tooltip（接管所有 title，告别系统原生提示）
 try { initGlobalTooltip(); } catch (_) { /* ignore */ }
+
+// 窗口组切换提示 toast
+try { initWindowSwitchToast(); } catch (_) { /* ignore */ }
 
 // 活动栏图标拖拽排序（顺序持久化）
 try { initActivitybarDrag(); applyActivitybarOrder(); } catch (_) { /* ignore */ }

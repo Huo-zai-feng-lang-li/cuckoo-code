@@ -15,7 +15,7 @@ import * as mcpClient from '../mcp/client.js';
 import { resolveAsset, resolveSrc } from '../infra/paths.js';
 
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, nativeTheme, ipcMain: ipcMainForProfile } = require('electron');
+const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, nativeTheme, ipcMain: ipcMainForProfile, Notification } = require('electron');
 
 // ========== 持久化会话配置 ==========
 const SESSION_DIR = process.env.CUCKOO_SESSION_DIR || 'cuckoo-ai-pro-session';
@@ -879,12 +879,61 @@ async function probeWindow(profileId: string): Promise<string> {
 }
 
 // ========== 窗口组切换编排 ==========
+/** 取窗口显示名（profile.name，回退 profileId） */
+function profileDisplayName(profileId: string | null): string {
+  if (!profileId) return '窗口';
+  try {
+    const p = profileManager.getProfileById(profileId);
+    return (p && p.name) ? p.name : profileId;
+  } catch (_) { return profileId; }
+}
+
+/**
+ * 窗口组切换提示：系统通知 + 推给壳页面 toast。
+ * @param reason 'rate-limit'（自动，账号限流）| 'manual'（手动转移）
+ * @param fromName 源窗口名
+ * @param toName 目标窗口名（失败时为空）
+ * @param ok 是否成功
+ * @param detail 失败原因（可选）
+ */
+function notifyWindowSwitch(reason: string, fromName: string, toName: string, ok: boolean, detail?: string): void {
+  const reasonText = reason === 'rate-limit' ? '账号限流自动切换' : '手动转移对话';
+  const title = ok ? '窗口组已切换' : '窗口组切换失败';
+  const body = ok ? (fromName + ' → ' + toName + '（' + reasonText + '）')
+                  : (detail || '组内窗口均不可用');
+  // 系统通知
+  try {
+    if (Notification && Notification.isSupported()) {
+      const n = new Notification({ title, body });
+      n.show();
+      // 保持引用防 GC（同 renderer.ts 的坑）
+      setTimeout(() => { try { n.close(); } catch (_) {} }, 8000);
+    }
+  } catch (_) { /* ignore */ }
+  // 壳页面 toast（广播给所有窗口，无论哪个在前台都能看到）
+  try {
+    for (const c of windowState.getAllContexts()) {
+      try {
+        if (c && c.win && !c.win.isDestroyed() && c.win.webContents && !c.win.webContents.isDestroyed()) {
+          c.win.webContents.send('shell-window-switch', { ok, reason: reasonText, from: fromName, to: toName, detail: detail || '' });
+        }
+      } catch (_) { /* 单个窗口失败不影响其它 */ }
+    }
+  } catch (_) { /* ignore */ }
+}
+
 /** 把 fromProfileId 窗口的当前对话分享给组内下一个窗口（返回 { success, ... }） */
 async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSource: boolean = false): Promise<any> {
+    // reason：closeSource=true 为限流自动切换，否则为手动转移
+    const reason = closeSource ? 'rate-limit' : 'manual';
+    const fromName = profileDisplayName(fromProfileId);
     // 1) 找源窗口上下文
     const allCtx = windowState.getAllContexts().filter((c: any) => c.profileId === fromProfileId && !c.isSubagent);
     const cur: any = allCtx[0];
-    if (!cur || !cur.win || cur.win.isDestroyed()) return { success: false, error: '源窗口不可用' };
+    if (!cur || !cur.win || cur.win.isDestroyed()) {
+      notifyWindowSwitch(reason, fromName, '', false, '源窗口不可用');
+      return { success: false, error: '源窗口不可用' };
+    }
     const curWindowId = cur.win.id;
     const curProfileId = cur.profileId;
 
@@ -901,6 +950,7 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSo
     const share = await requestShareFromWindow(curWindowId);
     if (!share || !share.ok || !share.shareId) {
       try { cur.view.webContents.send('harness-resume-retry'); } catch (_) { /* ignore */ }
+      notifyWindowSwitch(reason, fromName, '', false, (share && share.error) || '分享失败');
       return { success: false, error: (share && share.error) || '分享失败' };
     }
 
@@ -937,6 +987,7 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSo
       const msg = skippedBusy > 0
         ? '组内其他窗口均在忙（已跳过 ' + skippedBusy + ' 个），已退回重试'
         : '组内窗口均不可用（限流/超时），已退回重试';
+      notifyWindowSwitch(reason, fromName, '', false, msg);
       return { success: false, error: msg, fallback: true, skippedBusy };
     }
 
@@ -999,6 +1050,7 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSo
       }, 1500); // 等焦点切到新窗口后再关，避免闪烁
     }
 
+    notifyWindowSwitch(reason, fromName, profileDisplayName(nextProfileId), true);
     return { success: true, toProfileId: nextProfileId };
 }
 

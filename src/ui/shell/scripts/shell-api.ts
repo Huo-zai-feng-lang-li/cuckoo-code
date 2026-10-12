@@ -13,6 +13,8 @@ export interface ShellAPI {
   onUrlUpdated?: (cb: (data: any) => void) => void;
   /** 自动更新进度（状态栏进度条） */
   onUpdateProgress?: (cb: (data: any) => void) => void;
+  /** 窗口组切换通知（原因/来源/目标/结果） */
+  onWindowSwitch?: (cb: (data: { ok: boolean; reason: string; from: string; to: string; detail?: string }) => void) => void;
   toggleSidebar?: (width: number) => void;
   startSidebarDrag?: () => void;
   endSidebarDrag?: () => void;
