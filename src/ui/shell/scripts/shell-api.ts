@@ -158,6 +158,8 @@ export interface ShellAPI {
   getSettings?: () => Promise<any>;
   saveSettings?: (data: any) => Promise<any>;
   resetSettings?: () => Promise<any>;
+  getUiPrefs?: () => Promise<any>;
+  setUiPrefs?: (data: any) => Promise<any>;
   // 关于
   getAppInfo?: () => Promise<any>;
   checkUpdate?: () => Promise<any>;

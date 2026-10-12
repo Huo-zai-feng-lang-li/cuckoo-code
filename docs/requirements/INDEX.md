@@ -35,5 +35,6 @@
 | 028 | feature | [Git 面板分支支持（显示当前分支 + 切换）](./028-git-branch.md) | doing | feat/028-git-branch | 2026-10-12 |
 | 029 | feature | [活动栏图标拖拽排序](./029-activitybar-drag.md) | done | (直接主分支，用户要求) | 2026-10-12 |
 | 030 | fix | [自动更新下载进度可见（状态栏进度条）](./030-update-progress.md) | done | (直接主分支，用户要求) | 2026-10-12 |
+| 031 | feature | [纯净模式字号缩放（设置项）](./031-harness-font-zoom.md) | done | (直接主分支，用户要求) | 2026-10-12 |
 
-共 30 个需求。
+共 31 个需求。

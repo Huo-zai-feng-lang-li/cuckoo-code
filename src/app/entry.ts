@@ -274,6 +274,11 @@ function createWindow(profile: any) {
       const ctx: any = windowState.getWindowContext(mainWindow.id);
       if (ctx) ctx.harnessView = hv;
     }
+    // 应用纯净模式缩放（用户偏好）
+    try {
+      const { readPrefs: readUiPrefs } = require('./ui-prefs.js');
+      hv.webContents.setZoomFactor(readUiPrefs().harnessZoom);
+    } catch (_) { /* ignore */ }
     // 加载 harness 页面
     hv.webContents.loadFile(resolveSrc('ui/harness.html'));
     hv.webContents.on('did-finish-load', () => {

@@ -138,3 +138,25 @@ if (themeSelect) {
   });
   renderThemeSelect();
 }
+
+// ===== 外观：纯净模式字号（缩放，走主进程 ui-prefs，独立于 settings 存取）=====
+const zoomSelect = document.getElementById('st-harness-zoom') as any;
+if (zoomSelect) {
+  const anyApi = api as any;
+  // 载入当前值
+  if (typeof anyApi.getUiPrefs === 'function') {
+    anyApi.getUiPrefs().then((r: any) => {
+      if (r && r.success && r.data && typeof r.data.harnessZoom === 'number') {
+        zoomSelect.value = String(r.data.harnessZoom);
+      }
+    }).catch(() => {});
+  }
+  // 切换即保存 + 立即应用
+  zoomSelect.addEventListener('change', () => {
+    const z = parseFloat(zoomSelect.value);
+    if (!Number.isFinite(z)) return;
+    if (typeof anyApi.setUiPrefs === 'function') {
+      anyApi.setUiPrefs({ harnessZoom: z }).catch(() => {});
+    }
+  });
+}

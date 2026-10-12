@@ -262,6 +262,8 @@ const shellAPI = {
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (data: any) => ipcRenderer.invoke('save-settings', { data }),
   resetSettings: () => ipcRenderer.invoke('reset-settings'),
+  getUiPrefs: () => ipcRenderer.invoke('get-ui-prefs'),
+  setUiPrefs: (data: any) => ipcRenderer.invoke('set-ui-prefs', { data }),
 };
 
 try {

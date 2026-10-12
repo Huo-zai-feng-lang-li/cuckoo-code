@@ -9,6 +9,7 @@
  */
 import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
+import { readPrefs, writePrefs } from '../ui-prefs.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -91,6 +92,23 @@ function registerSettingsIpc(): void {
   ipcMain.handle('trigger-compact', async (event: any) => {
     const r = await requestFromAiPage(event, 'cuckoo-trigger-compact');
     return r.ok ? { success: true } : { success: false, error: r.error };
+  });
+
+  // ===== UI 偏好（主进程直存，供纯净模式字号等）=====
+  ipcMain.handle('get-ui-prefs', async () => {
+    return { success: true, data: readPrefs() };
+  });
+  ipcMain.handle('set-ui-prefs', async (event: any, { data }: any) => {
+    const next = writePrefs(data || {});
+    // 立即应用到当前窗口的 harness 视图（若已创建）
+    try {
+      const ctx: any = windowState.getContextByWebContents(event.sender);
+      const hv = ctx && ctx.harnessView;
+      if (hv && hv.webContents && !hv.webContents.isDestroyed()) {
+        hv.webContents.setZoomFactor(next.harnessZoom);
+      }
+    } catch (_) { /* ignore */ }
+    return { success: true, data: next };
   });
 }
 
