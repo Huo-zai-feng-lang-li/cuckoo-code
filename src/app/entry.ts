@@ -312,10 +312,13 @@ function createWindow(profile: any) {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const sbw = (mainWindow as any).__ckSidebarWidth ?? SIDEBAR_WIDTH;
     const tbh = (mainWindow as any).__ckToolbarHeight ?? TOOLBAR_HEIGHT;
-    // 用壳页面上报的真实可视尺寸（getContentSize 在 Windows 上会多算菜单栏高度，
-    // 导致 AI view 盖住底部状态栏）。上报值优先，未上报时回退 getContentSize。
+    // 宽度：直接用 getContentSize（客户区宽度，实时准确、不受菜单栏影响）。
+    // 不再依赖壳页面上报的宽度 —— 窗口放大后上报滞后会让 AI view 偏窄、右侧留白
+    // （重启即恢复的症状）。任何视图都不应超过客户区宽度，故以 cw 为基准。
+    // 高度：仍需壳页面上报值修正（getContentSize 在 Windows 上会多算菜单栏高度，
+    // 导致 AI view 盖住底部状态栏）；未上报时回退 getContentSize。
     const [cw, ch] = mainWindow.getContentSize();
-    const w = (mainWindow as any).__ckShellWidth || cw;
+    const w = cw;
     const h = (mainWindow as any).__ckShellHeight || ch;
     view.setBounds({
       x: sbw, y: tbh,
