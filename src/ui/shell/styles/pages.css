@@ -204,3 +204,70 @@
   .ck-plugin-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
   /* 无配置时的占位：占住 ⚙ 的位置，保证各行开关/按钮对齐 */
   .ck-snip-icon-placeholder { visibility: hidden; }
+
+  /* ===== 源代码管理（Git）===== */
+  .ck-git-commit { display: flex; gap: 8px; padding: 0 10px 10px; align-items: flex-end; }
+  .ck-git-msg {
+    flex: 1; min-height: 34px; resize: vertical; font-size: 12px;
+    font-family: inherit; padding: 7px 10px; border-radius: 8px; line-height: 1.45;
+  }
+  /* 覆盖 .ck-btn 基础样式的"独占整行"设计（flex:1/胶囊圆角/字距），改为紧凑按钮 */
+  .ck-git-commit .ck-btn {
+    flex: 0 0 auto; align-self: flex-end;
+    height: 34px; padding: 0 18px; border-radius: 8px;
+    font-size: 12px; font-weight: 600; letter-spacing: 0;
+  }
+  .ck-git-commit .ck-btn:disabled {
+    opacity: .4; cursor: not-allowed; transform: none; box-shadow: none;
+  }
+  .ck-git-group {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px 4px; font-size: 11px; font-weight: 700;
+    color: var(--ck-text-dim); letter-spacing: .3px;
+    cursor: pointer; user-select: none;
+  }
+  /* 折叠箭头：CSS 三角。展开朝下，折叠（ck-git-caret-c）朝右 */
+  .ck-git-caret {
+    width: 0; height: 0; flex-shrink: 0;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-left: 5px solid currentColor;
+    transform: rotate(90deg);
+    transition: transform .15s;
+    opacity: .55;
+  }
+  .ck-git-caret-c { transform: rotate(0deg); }
+  .ck-git-group:hover .ck-git-caret { opacity: 1; }
+  .ck-git-group-title { flex: 1; }
+  .ck-git-group-act {
+    font-size: 10.5px; font-weight: 600; color: var(--ck-primary);
+    cursor: pointer; opacity: .8;
+  }
+  .ck-git-group-act:hover { opacity: 1; text-decoration: underline; }
+  .ck-git-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 3px 10px; cursor: pointer; font-size: 12px;
+    border-radius: 6px; margin: 0 4px;
+  }
+  .ck-git-row:hover { background: var(--ck-surface-hover); }
+  .ck-git-st {
+    flex-shrink: 0; width: 14px; text-align: center;
+    font-weight: 700; font-size: 11px; font-family: "SF Mono", "Consolas", monospace;
+  }
+  .ck-git-m { color: #e2a03f; }
+  .ck-git-a { color: #4caf7d; }
+  .ck-git-d { color: #e05a5a; }
+  .ck-git-r { color: #4a9ee0; }
+  .ck-git-u { color: var(--ck-text-dim); }
+  .ck-git-path {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; color: var(--ck-text-2);
+  }
+  .ck-git-acts { display: flex; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity .15s; }
+  .ck-git-row:hover .ck-git-acts { opacity: 1; }
+  .ck-git-act {
+    width: 18px; height: 18px; border-radius: 5px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: var(--ck-text-dim); cursor: pointer;
+  }
+  .ck-git-act:hover { background: var(--ck-primary-soft); color: var(--ck-primary); }

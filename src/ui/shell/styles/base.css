@@ -215,6 +215,13 @@
   .ck-ab-item.ck-ab-active { background: var(--ck-primary-soft); }
   .ck-ab-item.ck-ab-active .ck-ab-icon, .ck-ab-item.ck-ab-active .ck-ab-text { opacity: 1; color: var(--ck-primary); }
   .ck-ab-spacer { flex: 1; }
+  /* 活动栏图标右上角角标（如 Git 改动数） */
+  .ck-ab-badge {
+    position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px;
+    padding: 0 3px; border-radius: 7px; background: var(--ck-primary); color: #fff;
+    font-size: 9px; font-weight: 700; line-height: 14px; text-align: center;
+    box-sizing: border-box; pointer-events: none;
+  }
 
   .ck-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
   /* 面板列：左（各页）+ 右（文件预览，默认隐藏） */

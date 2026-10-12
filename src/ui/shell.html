@@ -224,6 +224,13 @@
   .ck-ab-item.ck-ab-active { background: var(--ck-primary-soft); }
   .ck-ab-item.ck-ab-active .ck-ab-icon, .ck-ab-item.ck-ab-active .ck-ab-text { opacity: 1; color: var(--ck-primary); }
   .ck-ab-spacer { flex: 1; }
+  /* 活动栏图标右上角角标（如 Git 改动数） */
+  .ck-ab-badge {
+    position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px;
+    padding: 0 3px; border-radius: 7px; background: var(--ck-primary); color: #fff;
+    font-size: 9px; font-weight: 700; line-height: 14px; text-align: center;
+    box-sizing: border-box; pointer-events: none;
+  }
 
   .ck-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
   /* 面板列：左（各页）+ 右（文件预览，默认隐藏） */
@@ -1467,6 +1474,73 @@
   /* 无配置时的占位：占住 ⚙ 的位置，保证各行开关/按钮对齐 */
   .ck-snip-icon-placeholder { visibility: hidden; }
 
+  /* ===== 源代码管理（Git）===== */
+  .ck-git-commit { display: flex; gap: 8px; padding: 0 10px 10px; align-items: flex-end; }
+  .ck-git-msg {
+    flex: 1; min-height: 34px; resize: vertical; font-size: 12px;
+    font-family: inherit; padding: 7px 10px; border-radius: 8px; line-height: 1.45;
+  }
+  /* 覆盖 .ck-btn 基础样式的"独占整行"设计（flex:1/胶囊圆角/字距），改为紧凑按钮 */
+  .ck-git-commit .ck-btn {
+    flex: 0 0 auto; align-self: flex-end;
+    height: 34px; padding: 0 18px; border-radius: 8px;
+    font-size: 12px; font-weight: 600; letter-spacing: 0;
+  }
+  .ck-git-commit .ck-btn:disabled {
+    opacity: .4; cursor: not-allowed; transform: none; box-shadow: none;
+  }
+  .ck-git-group {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px 4px; font-size: 11px; font-weight: 700;
+    color: var(--ck-text-dim); letter-spacing: .3px;
+    cursor: pointer; user-select: none;
+  }
+  /* 折叠箭头：CSS 三角。展开朝下，折叠（ck-git-caret-c）朝右 */
+  .ck-git-caret {
+    width: 0; height: 0; flex-shrink: 0;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-left: 5px solid currentColor;
+    transform: rotate(90deg);
+    transition: transform .15s;
+    opacity: .55;
+  }
+  .ck-git-caret-c { transform: rotate(0deg); }
+  .ck-git-group:hover .ck-git-caret { opacity: 1; }
+  .ck-git-group-title { flex: 1; }
+  .ck-git-group-act {
+    font-size: 10.5px; font-weight: 600; color: var(--ck-primary);
+    cursor: pointer; opacity: .8;
+  }
+  .ck-git-group-act:hover { opacity: 1; text-decoration: underline; }
+  .ck-git-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 3px 10px; cursor: pointer; font-size: 12px;
+    border-radius: 6px; margin: 0 4px;
+  }
+  .ck-git-row:hover { background: var(--ck-surface-hover); }
+  .ck-git-st {
+    flex-shrink: 0; width: 14px; text-align: center;
+    font-weight: 700; font-size: 11px; font-family: "SF Mono", "Consolas", monospace;
+  }
+  .ck-git-m { color: #e2a03f; }
+  .ck-git-a { color: #4caf7d; }
+  .ck-git-d { color: #e05a5a; }
+  .ck-git-r { color: #4a9ee0; }
+  .ck-git-u { color: var(--ck-text-dim); }
+  .ck-git-path {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; color: var(--ck-text-2);
+  }
+  .ck-git-acts { display: flex; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity .15s; }
+  .ck-git-row:hover .ck-git-acts { opacity: 1; }
+  .ck-git-act {
+    width: 18px; height: 18px; border-radius: 5px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: var(--ck-text-dim); cursor: pointer;
+  }
+  .ck-git-act:hover { background: var(--ck-primary-soft); color: var(--ck-primary); }
+
 </style>
 </head>
 <body>
@@ -1527,6 +1601,10 @@
           </button>
           <button class="ck-ab-item" data-tab="files" title="项目文件">
             <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg>
+          </button>
+          <button class="ck-ab-item" data-tab="git" title="源代码管理">
+            <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M6 15V9a3 3 0 0 1 3-3h6"/><path d="M15 18H9"/></svg>
+            <span class="ck-ab-badge" id="git-badge" style="display:none;">0</span>
           </button>
           <button class="ck-ab-item" data-tab="snippets" title="提示词">
             <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
@@ -1735,6 +1813,23 @@
                 </button>
               </div>
               <div class="ck-list" id="conv-list">
+                <div class="ck-list-empty">加载中…</div>
+              </div>
+            </div>
+
+            <!-- ===== 源代码管理（Git） ===== -->
+            <div class="ck-tab" data-panel="git">
+              <div class="ck-actions">
+                <span class="ck-set-group-title" style="flex:1;">源代码管理</span>
+                <button class="ck-icon-btn" id="git-refresh" title="刷新">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                </button>
+              </div>
+              <div class="ck-git-commit">
+                <textarea class="ck-textarea ck-git-msg" id="git-commit-msg" placeholder="提交信息（Ctrl+Enter 提交）" rows="2"></textarea>
+                <button class="ck-btn ck-btn-primary" id="git-commit-btn" disabled>提交</button>
+              </div>
+              <div class="ck-list ck-git" id="git-list">
                 <div class="ck-list-empty">加载中…</div>
               </div>
             </div>
@@ -2755,8 +2850,8 @@
   function baseSidebarWidth() {
     try {
       const v = Number(localStorage.getItem("cuckoo-sidebar-width"));
-      if (Number.isFinite(v) && v >= 360) return Math.round(v);
       if (Number.isFinite(v) && v === 320) return 460;
+      if (Number.isFinite(v) && v >= 240) return Math.round(v);
     } catch (_) {
     }
     return 460;
@@ -2765,7 +2860,7 @@
     let ww = Math.round(total);
     const max = Math.round(window.innerWidth * 0.75);
     if (ww > max) ww = max;
-    if (ww < 360) ww = 360;
+    if (ww < 240) ww = 240;
     const sb = sidebarEl();
     if (sb && !sb.classList.contains("ck-collapsed")) sb.style.width = ww + "px";
     if (api.toggleSidebar) api.toggleSidebar(ww);
@@ -3111,7 +3206,7 @@
   var sidebar = document.getElementById("ck-sidebar");
   var SIDEBAR_EXPANDED = 460;
   var SIDEBAR_COLLAPSED = 46;
-  var MIN_WIDTH = 360;
+  var MIN_WIDTH = 240;
   var MAX_WIDTH = 4e3;
   var WIDTH_KEY = "cuckoo-sidebar-width";
   var LEGACY_DEFAULT = 320;
@@ -3122,8 +3217,8 @@
   var expandedWidth = (() => {
     try {
       const v = Number(localStorage.getItem(WIDTH_KEY));
-      if (Number.isFinite(v) && v >= MIN_WIDTH && v <= MAX_WIDTH) return Math.round(v);
       if (Number.isFinite(v) && v === LEGACY_DEFAULT) return SIDEBAR_EXPANDED;
+      if (Number.isFinite(v) && v >= MIN_WIDTH && v <= MAX_WIDTH) return Math.round(v);
     } catch (_) {
     }
     return SIDEBAR_EXPANDED;
@@ -6433,6 +6528,202 @@
     void remove();
   });
 
+  // src/ui/shell/scripts/pages/git.ts
+  init_shared();
+  init_preview();
+  function statusOf(it, staged) {
+    if (it.x === "?") return { ch: "U", cls: "ck-git-u" };
+    const c = staged ? it.x : it.y;
+    const ch = c === " " || c === "?" ? "M" : c;
+    const map = { M: "ck-git-m", A: "ck-git-a", D: "ck-git-d", R: "ck-git-r", C: "ck-git-a" };
+    return { ch, cls: map[ch] || "ck-git-m" };
+  }
+  var collapsedGroups = /* @__PURE__ */ new Set();
+  function refreshBadge(count) {
+    const badge = document.getElementById("git-badge");
+    if (!badge) return;
+    if (count > 0) {
+      badge.textContent = String(count);
+      badge.style.display = "";
+    } else {
+      badge.style.display = "none";
+    }
+  }
+  function rowHtml(it, staged) {
+    const s = statusOf(it, staged);
+    const p = escapeAttr(it.path);
+    const untracked = it.x === "?";
+    const acts = staged ? '<span class="ck-git-act" data-act="unstage" data-path="' + p + '">\u2212</span>' : '<span class="ck-git-act" data-act="stage" data-path="' + p + '">\uFF0B</span>' + (untracked ? '<span class="ck-git-act" data-act="discard" data-path="' + p + '">\u{1F5D1}</span>' : '<span class="ck-git-act" data-act="restore" data-path="' + p + '">\u21A9</span>');
+    return '<div class="ck-git-row" data-path="' + p + '" title="' + p + '"><span class="ck-git-st ' + s.cls + '">' + s.ch + '</span><span class="ck-git-path">' + escapeHtml(it.path) + '</span><span class="ck-git-acts">' + acts + "</span></div>";
+  }
+  function groupHtml(key, title, count, act, actLabel) {
+    const collapsed = collapsedGroups.has(key);
+    const caret = '<span class="ck-git-caret' + (collapsed ? " ck-git-caret-c" : "") + '"></span>';
+    return '<div class="ck-git-group" data-group="' + key + '">' + caret + '<span class="ck-git-group-title">' + title + " (" + count + ')</span><span class="ck-git-group-act" data-act="' + act + '">' + actLabel + "</span></div>";
+  }
+  var lastItems = [];
+  function renderList4(items) {
+    const listEl2 = document.getElementById("git-list");
+    if (!listEl2) return;
+    lastItems = items;
+    const staged = items.filter((i) => i.staged);
+    const changed = items.filter((i) => i.unstaged && !i.staged).concat(items.filter((i) => i.staged && i.unstaged));
+    let html = "";
+    if (staged.length) {
+      html += groupHtml("staged", "\u5DF2\u6682\u5B58", staged.length, "unstage-all", "\u5168\u90E8\u53D6\u6D88");
+      if (!collapsedGroups.has("staged")) html += staged.map((i) => rowHtml(i, true)).join("");
+    }
+    if (changed.length) {
+      html += groupHtml("changed", "\u66F4\u6539", changed.length, "stage-all", "\u5168\u90E8\u6682\u5B58");
+      if (!collapsedGroups.has("changed")) html += changed.map((i) => rowHtml(i, false)).join("");
+    }
+    if (!staged.length && !changed.length) {
+      html = '<div class="ck-list-empty">\u6CA1\u6709\u6539\u52A8</div>';
+    }
+    listEl2.innerHTML = html;
+    hasStagedFiles = staged.length > 0;
+    updateCommitBtn();
+  }
+  var hasStagedFiles = false;
+  function updateCommitBtn() {
+    const msgEl = document.getElementById("git-commit-msg");
+    const btn = document.getElementById("git-commit-btn");
+    if (!btn) return;
+    const hasMsg = !!(msgEl && String(msgEl.value || "").trim());
+    btn.disabled = !(hasMsg && hasStagedFiles);
+  }
+  async function loadGit() {
+    const listEl2 = document.getElementById("git-list");
+    if (!listEl2) return;
+    if (!api.gitStatus) {
+      listEl2.innerHTML = '<div class="ck-list-empty">Git \u529F\u80FD\u4E0D\u53EF\u7528</div>';
+      return;
+    }
+    try {
+      const r = await api.gitStatus();
+      if (!r || !r.success) {
+        listEl2.innerHTML = '<div class="ck-list-empty">' + escapeHtml(r && r.error || "\u8BFB\u53D6\u5931\u8D25") + "</div>";
+        refreshBadge(0);
+        return;
+      }
+      const items = r.items || [];
+      refreshBadge(items.length);
+      renderList4(items);
+    } catch (err) {
+      listEl2.innerHTML = '<div class="ck-list-empty">' + escapeHtml(err.message || "\u8BFB\u53D6\u5931\u8D25") + "</div>";
+      refreshBadge(0);
+    }
+  }
+  async function doAct(act, relPath) {
+    if (act === "restore") {
+      const ok = await ckConfirm("\u786E\u5B9A\u64A4\u9500\u300C" + relPath + "\u300D\u7684\u4FEE\u6539\uFF1F\u6B64\u64CD\u4F5C\u4F1A\u4E22\u5F03\u672A\u63D0\u4EA4\u7684\u6539\u52A8\uFF0C\u4E0D\u53EF\u6062\u590D\u3002", "\u64A4\u9500\u4FEE\u6539");
+      if (!ok) return;
+    } else if (act === "discard") {
+      const ok = await ckConfirm("\u786E\u5B9A\u5220\u9664\u672A\u8DDF\u8E2A\u6587\u4EF6\u300C" + relPath + "\u300D\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u6062\u590D\u3002", "\u5220\u9664\u6587\u4EF6");
+      if (!ok) return;
+    }
+    try {
+      let r;
+      if (act === "stage") r = await api.gitStage(relPath);
+      else if (act === "unstage") r = await api.gitUnstage(relPath);
+      else if (act === "restore") r = await api.gitRestore(relPath);
+      else if (act === "discard") r = await api.gitDiscardUntracked(relPath);
+      if (r && !r.success) await ckAlert("\u64CD\u4F5C\u5931\u8D25\uFF1A" + (r.error || "\u672A\u77E5\u9519\u8BEF"), "Git");
+    } catch (err) {
+      await ckAlert("\u64CD\u4F5C\u5931\u8D25\uFF1A" + (err && err.message), "Git");
+    }
+    await loadGit();
+  }
+  async function doBulk(act, items) {
+    const targets = act === "stage-all" ? items.filter((i) => i.unstaged) : items.filter((i) => i.staged);
+    for (const it of targets) {
+      try {
+        if (act === "stage-all") await api.gitStage(it.path);
+        else await api.gitUnstage(it.path);
+      } catch (_) {
+      }
+    }
+    await loadGit();
+  }
+  async function doCommit() {
+    const msgEl = document.getElementById("git-commit-msg");
+    const msg = msgEl ? String(msgEl.value || "").trim() : "";
+    if (!msg) {
+      await ckAlert("\u8BF7\u586B\u5199\u63D0\u4EA4\u4FE1\u606F", "\u63D0\u4EA4");
+      return;
+    }
+    const r = await api.gitCommit(msg);
+    if (!r || !r.success) {
+      await ckAlert("\u63D0\u4EA4\u5931\u8D25\uFF1A" + (r && r.error || "\u672A\u77E5\u9519\u8BEF"), "\u63D0\u4EA4");
+      return;
+    }
+    if (msgEl) msgEl.value = "";
+    await ckAlert("\u63D0\u4EA4\u6210\u529F", "Git");
+    await loadGit();
+  }
+  {
+    const listEl2 = document.getElementById("git-list");
+    if (listEl2) {
+      listEl2.addEventListener("click", async (e) => {
+        const actEl = e.target && e.target.closest ? e.target.closest("[data-act]") : null;
+        if (actEl) {
+          const act = actEl.dataset.act;
+          const p = actEl.dataset.path;
+          if (act === "stage" || act === "unstage" || act === "restore" || act === "discard") {
+            await doAct(act, p);
+            return;
+          }
+          if (act === "stage-all" || act === "unstage-all") {
+            const r = await api.gitStatus();
+            if (r && r.success) await doBulk(act, r.items || []);
+            return;
+          }
+        }
+        const grp = e.target && e.target.closest ? e.target.closest(".ck-git-group") : null;
+        if (grp && grp.dataset.group) {
+          const key = grp.dataset.group;
+          if (collapsedGroups.has(key)) collapsedGroups.delete(key);
+          else collapsedGroups.add(key);
+          renderList4(lastItems);
+          return;
+        }
+        const row = e.target && e.target.closest ? e.target.closest(".ck-git-row") : null;
+        if (row && row.dataset.path) {
+          const filesBtn = document.querySelector('.ck-ab-item[data-tab="files"]');
+          if (filesBtn) {
+            filesBtn.click();
+            setTimeout(() => {
+              openPreview(row.dataset.path);
+            }, 60);
+          }
+        }
+      });
+    }
+    const refreshBtn = document.getElementById("git-refresh");
+    if (refreshBtn) refreshBtn.addEventListener("click", () => {
+      loadGit();
+    });
+    const commitBtn = document.getElementById("git-commit-btn");
+    if (commitBtn) commitBtn.addEventListener("click", () => {
+      doCommit();
+    });
+    const msgEl = document.getElementById("git-commit-msg");
+    if (msgEl) {
+      msgEl.addEventListener("input", updateCommitBtn);
+      msgEl.addEventListener("keydown", (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+          e.preventDefault();
+          doCommit();
+        }
+      });
+    }
+  }
+  if (api.onProjectDir) {
+    api.onProjectDir(() => {
+      loadGit();
+    });
+  }
+
   // src/ui/shell/scripts/plugin-shell.ts
   init_shared();
   var mountedStatus = /* @__PURE__ */ new Set();
@@ -6989,6 +7280,7 @@
   registerTab("conversations", loadConversations);
   registerTab("plugins", loadPlugins);
   registerTab("rules", loadRules);
+  registerTab("git", loadGit);
   try {
     loadWorkspaces();
   } catch (_) {
@@ -7003,6 +7295,10 @@
   }
   try {
     renderRecent();
+  } catch (_) {
+  }
+  try {
+    loadGit();
   } catch (_) {
   }
   function renderWindowName() {

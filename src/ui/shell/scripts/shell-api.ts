@@ -105,6 +105,13 @@ export interface ShellAPI {
   renameProjectEntry?: (relPath: string, newName: string) => Promise<any>;
   deleteProjectEntry?: (relPath: string) => Promise<any>;
   gitShowFile?: (relPath: string) => Promise<any>;
+  /** 源代码管理：改动列表 / 暂存 / 取消暂存 / 撤销 / 提交 */
+  gitStatus?: () => Promise<any>;
+  gitStage?: (relPath: string) => Promise<any>;
+  gitUnstage?: (relPath: string) => Promise<any>;
+  gitRestore?: (relPath: string) => Promise<any>;
+  gitDiscardUntracked?: (relPath: string) => Promise<any>;
+  gitCommit?: (message: string) => Promise<any>;
   setProjectArchived?: (dir: string, archived: boolean) => Promise<any>;
   deleteProjectWorkspace?: (dir: string) => Promise<any>;
   setSessionTitle?: (sessionId: string, title: string) => Promise<any>;

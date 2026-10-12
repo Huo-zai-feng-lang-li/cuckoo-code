@@ -1,0 +1,16 @@
+            <!-- ===== 源代码管理（Git） ===== -->
+            <div class="ck-tab" data-panel="git">
+              <div class="ck-actions">
+                <span class="ck-set-group-title" style="flex:1;">源代码管理</span>
+                <button class="ck-icon-btn" id="git-refresh" title="刷新">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                </button>
+              </div>
+              <div class="ck-git-commit">
+                <textarea class="ck-textarea ck-git-msg" id="git-commit-msg" placeholder="提交信息（Ctrl+Enter 提交）" rows="2"></textarea>
+                <button class="ck-btn ck-btn-primary" id="git-commit-btn" disabled>提交</button>
+              </div>
+              <div class="ck-list ck-git" id="git-list">
+                <div class="ck-list-empty">加载中…</div>
+              </div>
+            </div>

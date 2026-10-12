@@ -1,4 +1,32 @@
-# 最新接续状态 (2026-10-12 21:30)
+# 最新接续状态 (2026-10-12 20:30)
+
+## 进行中：需求 026 源代码管理面板（Git）
+
+- **分支**：`feat/026-git-panel`（基于 master 7daf240/v0.8.17）
+- **档案**：`docs/requirements/026-git-panel.md`
+- **状态**：代码完成 + 静态验证全绿（compile/typecheck/lint/test），**待真机验证**
+
+### 改动文件（8 个）
+- 新建 `src/app/ipc/git.ts`（6 IPC：git-status/stage/unstage/restore/discard-untracked/commit）
+- 新建 `src/ui/shell/partials/pages/git.html` + `scripts/pages/git.ts`
+- 改：`src/app/ipc/index.ts`（注册）、`shell-preload.ts`（暴露 6 api）、`shell-api.ts`（类型）、`main.ts`（registerTab + 预加载）、`partials/activitybar.html`（图标+badge）、`index.html`（include）、`styles/base.css`（badge）、`styles/pages.css`（面板）
+
+### 已知修复的 Bug
+1. 未跟踪文件用「删除」而非「撤销」（git restore 对 ?? 无效）
+2. 首次提交前 unstage 回退 `git rm --cached`
+3. 提交按钮误判（区分已暂存组）
+4. 中文文件名八进制乱码（`-c core.quotepath=false` + unquoteGitPath）
+
+### 待真机验证项
+- [ ] 活动栏 Git 图标 + badge 改动数
+- [ ] 暂存/取消暂存/撤销（含二次确认）/删除未跟踪/提交
+- [ ] 点击文件跳转文件页预览
+- [ ] 空改动/非 git 目录/无项目目录 提示
+- [ ] 提交按钮 disabled 状态
+
+---
+
+# 历史接续状态 (2026-10-12 21:30)
 
 ## 核心进展
 - **v0.8.16 已发布**：修复通知点击偶尔打不开窗口（3 根因：Notification 被 GC / 旧窗口引用 / 前台激活弱）。tag + master 均已推送 origin。

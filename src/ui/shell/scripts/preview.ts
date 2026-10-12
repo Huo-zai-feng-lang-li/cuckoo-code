@@ -92,9 +92,9 @@ function savePreviewWidth(w: number): void {
 function baseSidebarWidth(): number {
   try {
     const v = Number(localStorage.getItem("cuckoo-sidebar-width"));
-    if (Number.isFinite(v) && v >= 360) return Math.round(v);
-    // 旧默认 320：不是用户主动选的，升到新默认
+    // 旧默认 320：不是用户主动选的，升到新默认（须在最小宽判断之前）
     if (Number.isFinite(v) && v === 320) return 460;
+    if (Number.isFinite(v) && v >= 240) return Math.round(v);
   } catch (_) { /* ignore */ }
   return 460;
 }
@@ -104,7 +104,7 @@ function setSidebarWidth(total: number): void {
   let ww = Math.round(total);
   const max = Math.round(window.innerWidth * 0.75);
   if (ww > max) ww = max;
-  if (ww < 360) ww = 360;
+  if (ww < 240) ww = 240;
   const sb = sidebarEl();
   if (sb && !sb.classList.contains("ck-collapsed")) sb.style.width = ww + "px";
   if (api.toggleSidebar) api.toggleSidebar(ww);

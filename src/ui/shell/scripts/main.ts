@@ -23,6 +23,7 @@ import { renderRecent } from './recent.js';
 import { loadConversations } from './pages/conversations.js';
 import { loadPlugins } from './pages/plugins.js';
 import { loadRules } from './pages/rules.js';
+import { loadGit } from './pages/git.js';
 import { initPluginShell } from './plugin-shell.js';
 import { initModalGuard } from './modal-guard.js';
 import { initThemePresenter } from './theme-presenter.js';
@@ -46,6 +47,7 @@ registerTab('settings', loadSettings);
 registerTab('conversations', loadConversations);
 registerTab('plugins', loadPlugins);
 registerTab('rules', loadRules);
+registerTab('git', loadGit);
 
 // 预加载：工作区（默认页）+ 提示词 + 自动压缩配置
 try { loadWorkspaces(); } catch (_) { /* ignore */ }
@@ -54,6 +56,9 @@ try { loadAutoCompact(); } catch (_) { /* ignore */ }
 
 // 渲染底部状态栏「最近使用」
 try { renderRecent(); } catch (_) { /* ignore */ }
+
+// 预加载 Git 改动数（活动栏 badge）
+try { loadGit(); } catch (_) { /* ignore */ }
 
 // 渲染底部状态栏「当前窗口名」
 function renderWindowName(): void {

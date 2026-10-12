@@ -642,7 +642,9 @@
   .conv-nav.show { display: flex; }
   /* 悬停整条导航 → 展开为面板 */
   .conv-nav:hover { background: var(--bg-elev); border-color: var(--border); box-shadow: 0 10px 32px var(--shadow-color); }
-  .conv-nav-dot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; cursor: pointer; max-width: 100%; }
+  .conv-nav-dot { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 10px; cursor: pointer; max-width: 100%; }
+  /* 收起态 dot 仅 3px 高横线，命中区过小 → 鼠标易划过触发 pointerout 打断 tooltip；透明伪元素扩到 ~11px 高（不改视觉布局） */
+  .conv-nav-dot::before { content: ''; position: absolute; inset: -4px -6px; }
   .conv-nav-dot .cn-text { display: none; font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
   .conv-nav:hover .conv-nav-dot .cn-text { display: block; }
   .conv-nav-dot .cn-bar { flex-shrink: 0; width: 16px; height: 3px; border-radius: 2px; background: var(--border-strong); transition: background .15s, width .15s; }

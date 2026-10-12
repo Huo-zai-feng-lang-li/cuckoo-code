@@ -9,7 +9,7 @@ const sidebar = document.getElementById('ck-sidebar') as any;
 // 默认展开宽度：460px（插件市场/详情要放得下卡片网格）
 const SIDEBAR_EXPANDED = 460;
 const SIDEBAR_COLLAPSED = 46;
-const MIN_WIDTH = 360;   // 最小宽度：保证内容区不至于挤成一条
+const MIN_WIDTH = 240;   // 最小宽度：保证内容区不至于挤成一条
 const MAX_WIDTH = 4000;  // 实际上不限（避免极端值）
 const WIDTH_KEY = 'cuckoo-sidebar-width';
 // 旧默认宽度（320）。用户没手动拖过的话，localStorage 里会存着它——
@@ -27,9 +27,9 @@ export function registerTab(tab: string, loader: () => void): void {
 let expandedWidth = (() => {
   try {
     const v = Number(localStorage.getItem(WIDTH_KEY));
-    if (Number.isFinite(v) && v >= MIN_WIDTH && v <= MAX_WIDTH) return Math.round(v);
-    // 旧默认 320：不是用户主动选的，直接升到新默认
+    // 旧默认 320：不是用户主动选的，直接升到新默认（须在 MIN_WIDTH 判断之前）
     if (Number.isFinite(v) && v === LEGACY_DEFAULT) return SIDEBAR_EXPANDED;
+    if (Number.isFinite(v) && v >= MIN_WIDTH && v <= MAX_WIDTH) return Math.round(v);
   } catch (_) { /* ignore */ }
   return SIDEBAR_EXPANDED;
 })();

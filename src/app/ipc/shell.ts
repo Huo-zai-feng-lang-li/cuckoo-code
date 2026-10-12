@@ -364,7 +364,7 @@ function registerShellIpc(): void {
     } catch (_) {}
     const { screen } = require('electron');
     const base = ctx.win.getContentBounds(); // 窗口内容区（屏幕坐标）
-    const minW = 360;
+    const minW = 240; // 与壳页面 sidebar.ts 的 MIN_WIDTH 保持一致
     win.__ckSidebarDragTimer = setInterval(() => {
       try {
         if (!win || win.isDestroyed()) return;
