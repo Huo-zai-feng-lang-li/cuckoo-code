@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.8.23] - 2026-10-12
+
+### Fixed
+- **窗口偶发空白**（需求 032）：窗口偶尔内容不显示，缩放或拖动左侧宽度才恢复。根因：Electron `WebContentsView` 首次显示常需重新 `setBounds` 才渲染，而重排只在创建/resize/move 时触发。补齐 `ready-to-show`/`show`/各 `did-finish-load` 重排 + 兜底延时重排；`resize`/`move` 用 16ms 定时器合并防高频重排。
+- **活动栏拖拽 observer 抖动**（029 审计）：`applyActivitybarOrder` 此前每次 DOM 变化都重排（即使顺序已正确），改为"顺序一致则不碰 DOM"，消除无谓重排。
+
 ## [0.8.22] - 2026-10-12
 
 ### Added
