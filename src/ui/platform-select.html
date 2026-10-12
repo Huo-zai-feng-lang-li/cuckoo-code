@@ -381,7 +381,7 @@
         }
         return false;
       }
-      function hasNoVisibleText(el) { return !(el.textContent || '').trim(); }
+      function isIconLike(el) { return (el.textContent || '').trim().length <= 2; }
       function onOver(e) {
         var t = e.target;
         if (!t || !t.closest) return;
@@ -392,7 +392,7 @@
         var text = (el.getAttribute('data-tooltip') || '').trim();
         if (!text) {
           var implicit = (el.getAttribute('data-ck-title') || '').trim();
-          if (implicit && (hasNoVisibleText(el) || isClipped(el))) text = implicit;
+          if (implicit && (isIconLike(el) || isClipped(el))) text = implicit;
         }
         if (!text) { hide(); return; }
         if (activeTarget === el) return;
@@ -406,7 +406,7 @@
             position(el, tip);
             tip.classList.add('show');
           }
-        }, isWarm ? 30 : 260);
+        }, isWarm ? 20 : 120);
       }
       document.addEventListener('pointerover', onOver, true);
       document.addEventListener('pointerout', function (e) {

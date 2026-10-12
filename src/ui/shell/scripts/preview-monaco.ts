@@ -63,7 +63,23 @@ function themeName(): string {
   return (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "vs-dark" : "vs";
 }
 
-/** 在容器里创建（或复用）编辑器并设置内容 */
+let changeCb: (() => void) | null = null;
+
+/** 注册内容变更回调（用于标记"未保存"） */
+export function onEditorChange(cb: () => void): void {
+  changeCb = cb;
+  if (editor) {
+    if ((editor as any).__ckChangeDisposable) { try { (editor as any).__ckChangeDisposable.dispose(); } catch (_) {} }
+    (editor as any).__ckChangeDisposable = editor.onDidChangeModelContent(() => { try { changeCb && changeCb(); } catch (_) {} });
+  }
+}
+
+/** 取当前编辑器内容 */
+export function getEditorValue(): string {
+  return editor && editor.getValue ? editor.getValue() : "";
+}
+
+/** 在容器里创建（或复用）编辑器并设置内容（可编辑） */
 export async function showInMonaco(container: HTMLElement, fileName: string, content: string): Promise<void> {
   const monaco = await loadMonaco();
   const lang = langOf(fileName);
@@ -72,7 +88,7 @@ export async function showInMonaco(container: HTMLElement, fileName: string, con
       value: content,
       language: lang,
       theme: themeName(),
-      readOnly: true,
+      readOnly: false,
       automaticLayout: true,
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
@@ -81,11 +97,14 @@ export async function showInMonaco(container: HTMLElement, fileName: string, con
       renderWhitespace: "none",
       wordWrap: "off",
     });
+    (editor as any).__ckChangeDisposable = editor.onDidChangeModelContent(() => { try { changeCb && changeCb(); } catch (_) {} });
   } else {
     const model = monaco.editor.createModel(content, lang);
     const old = editor.getModel();
     editor.setModel(model);
     if (old) old.dispose();
+    if ((editor as any).__ckChangeDisposable) { try { (editor as any).__ckChangeDisposable.dispose(); } catch (_) {} }
+    (editor as any).__ckChangeDisposable = editor.onDidChangeModelContent(() => { try { changeCb && changeCb(); } catch (_) {} });
   }
 }
 

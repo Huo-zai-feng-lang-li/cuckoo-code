@@ -262,6 +262,23 @@ function emitTaskIdle(): void {
   }
 }
 
+// 用户停止监听器（网页原生"停止"被点；供纯净模式同步收尾；无监听者时零开销）
+const userStopListeners = new Set<() => void>();
+
+/** 注册"用户停止生成"监听器 */
+function onUserStop(cb: () => void): () => void {
+  userStopListeners.add(cb);
+  return () => userStopListeners.delete(cb);
+}
+
+/** 派发"用户停止生成"（无监听者时直接返回） */
+function emitUserStop(): void {
+  if (userStopListeners.size === 0) return;
+  for (const cb of userStopListeners) {
+    try { cb(); } catch (_) { /* ignore */ }
+  }
+}
+
 // 工具调用监听器（供纯净模式等上报工具开始/结束；无监听者时零开销）
 const toolCallListeners = new Set<(ev: any) => void>();
 
@@ -323,6 +340,7 @@ function startInterceptObserver(): void {
       if (detail.status === 'stopped') {
         console.log('[Cuckoo Code][拦截] 检测到用户停止生成，忽略该回复');
         try { watchdog.onResponseReceived('stopped'); } catch (_) { /* ignore */ }
+        try { emitUserStop(); } catch (_) { /* ignore */ }
         return;
       }
       if (!detail.finished) return;
@@ -371,4 +389,4 @@ function getLastInterceptedText(): string {
   return lastInterceptedText;
 }
 
-export { startInterceptObserver, processInterceptedResponse, processInlineMarkers, getLastInterceptedText, onInterceptedResponse, onAiError, onToolCall, onStream, onTaskIdle, requestAbort, clearAbort };
+export { startInterceptObserver, processInterceptedResponse, processInlineMarkers, getLastInterceptedText, onInterceptedResponse, onAiError, onToolCall, onStream, onTaskIdle, onUserStop, requestAbort, clearAbort };

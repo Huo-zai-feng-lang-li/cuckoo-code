@@ -134,6 +134,76 @@ function createSessionStore(profileId: string, storeDir: string, windowState: an
     writeSessionStore(store);
   }
 
+  /** 删除会话（及其挂载的子代理/压缩历史） */
+  function deleteSession(sessionId: string): void {
+    if (!sessionId) return;
+    const store = readSessionStore();
+    if (!store[sessionId]) return;
+
+    // 找出所有以 sessionId 为 parentId 的子项（子代理/压缩节点）
+    const toDelete = new Set<string>([sessionId]);
+    let added = true;
+    while (added) {
+      added = false;
+      for (const [id, val] of Object.entries(store)) {
+        if (toDelete.has(id)) continue;
+        if (val && typeof val === 'object' && (val as any).parentId && toDelete.has((val as any).parentId)) {
+          toDelete.add(id);
+          added = true;
+        }
+      }
+    }
+
+    for (const id of toDelete) {
+      delete store[id];
+      if (state.currentSessionId === id) {
+        state.currentSessionId = null;
+      }
+    }
+
+    writeSessionStore(store);
+    console.log('[Cuckoo Code][' + profileId + '] 已删除会话: ' + sessionId + '（共清理 ' + toDelete.size + ' 项）');
+  }
+
+  /** 删除项目工作区（清理该项目下的所有会话及归档标记） */
+  function deleteProjectWorkspace(dir: string): void {
+    if (!dir) return;
+    const store = readSessionStore();
+
+    // 清理该项目目录下的所有会话
+    const toDelete: string[] = [];
+    for (const [id, val] of Object.entries(store)) {
+      if (id === PROJECT_ARCHIVES_KEY) continue;
+      if (typeof val === 'string' && val === dir) {
+        toDelete.push(id);
+      } else if (val && typeof val === 'object' && (val as any).projectDir === dir) {
+        toDelete.push(id);
+      }
+    }
+
+    for (const id of toDelete) {
+      delete store[id];
+      if (state.currentSessionId === id) {
+        state.currentSessionId = null;
+      }
+    }
+
+    // 从已归档项目列表中剔除
+    if (Array.isArray(store[PROJECT_ARCHIVES_KEY])) {
+      store[PROJECT_ARCHIVES_KEY] = store[PROJECT_ARCHIVES_KEY].filter((d: any) => d !== dir);
+    }
+
+    if (state.selectedProjectDir === dir) {
+      state.selectedProjectDir = null;
+      const view = resolveView();
+      const wc = view && view.webContents ? view.webContents : null;
+      emitProjectDir(wc, null);
+    }
+
+    writeSessionStore(store);
+    console.log('[Cuckoo Code][' + profileId + '] 已删除项目工作区: ' + dir + '（清理会话 ' + toDelete.length + ' 个）');
+  }
+
   /** 更新会话标题（AI 命名对话 / 网页标题抓取）。条目不存在时新建。 */
   function updateSessionTitle(sessionId: string, title: string): void {
     if (!sessionId || !title) return;
@@ -331,8 +401,10 @@ function createSessionStore(profileId: string, storeDir: string, windowState: an
     setSessionLineage,
     supersedeSession,
     setSessionArchived,
+    deleteSession,
     getArchivedProjects,
     setProjectArchived,
+    deleteProjectWorkspace,
     extractSessionIdFromUrl,
     handleUrlChange,
     tryRestoreSessionFromUrl,

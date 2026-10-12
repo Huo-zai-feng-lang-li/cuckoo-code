@@ -20,7 +20,7 @@
  */
 import { createRequire } from 'node:module';
 import {
-  onInterceptedResponse, onToolCall, onStream, onTaskIdle, onAiError,
+  onInterceptedResponse, onToolCall, onStream, onTaskIdle, onAiError, onUserStop,
   requestAbort, clearAbort,
 } from './intercept/observer.js';
 import { sendToChat, cancelPendingSend, onMessageDelivered } from '../overlay/chat-input.js';
@@ -96,6 +96,12 @@ export function initHarnessBridge(): void {
   // AI 请求失败 → 不再处于生成中（重试引擎会重新投递，届时再置忙）
   onAiError(() => {
     setAiGenerating(false);
+  });
+
+  // 网页模式点"停止"（hook 检测到 status=stopped）→ 同步纯净模式收尾
+  onUserStop(() => {
+    setAiGenerating(false);
+    report({ type: 'task-idle' });
   });
 
   // 工具调用事件 → 上报（含计划解析）

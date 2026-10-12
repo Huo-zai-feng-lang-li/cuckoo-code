@@ -115,12 +115,15 @@ const shellAPI = {
   listAllSessions: () => ipcRenderer.invoke('list-all-sessions'),
   navigateSession: (sessionId: string) => ipcRenderer.invoke('navigate-session', { sessionId }),
   setSessionArchived: (sessionId: string, archived: boolean) => ipcRenderer.invoke('set-session-archived', { sessionId, archived }),
+  deleteSession: (sessionId: string) => ipcRenderer.invoke('delete-session', { sessionId }),
   getDirInfo: (dir: string) => ipcRenderer.invoke('get-dir-info', { dir }),
   // 项目文件树（只读浏览）
   listProjectTree: () => ipcRenderer.invoke('list-project-tree'),
   readProjectFile: (relPath: string) => ipcRenderer.invoke('read-project-file', { relPath }),
+  writeProjectFile: (relPath: string, content: string) => ipcRenderer.invoke('write-project-file', { relPath, content }),
   openFileExternal: (relPath: string) => ipcRenderer.invoke('open-project-file-external', { relPath }),
   setProjectArchived: (dir: string, archived: boolean) => ipcRenderer.invoke('set-project-archived', { dir, archived }),
+  deleteProjectWorkspace: (dir: string) => ipcRenderer.invoke('delete-project-workspace', { dir }),
   setSessionTitle: (sessionId: string, title: string) => ipcRenderer.invoke('set-session-title', { sessionId, title }),
   newConversationForProject: (projectDir: string) => ipcRenderer.invoke('new-conversation-for-project', { projectDir }),
   // ========== 快捷提示词 ==========

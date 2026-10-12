@@ -42,13 +42,14 @@ vi.mock('node:module', async (importOriginal) => {
 });
 
 // observer 与 chat-input 是外部边界：只关心 bridge 是否按要求上报
-const CB = { response: null, stream: null, tool: null, delivered: null, taskIdle: null, aiError: null };
+const CB = { response: null, stream: null, tool: null, delivered: null, taskIdle: null, aiError: null, userStop: null };
 vi.mock('../../src/bridge/intercept/observer.js', () => ({
   onInterceptedResponse: (cb) => { CB.response = cb; return () => {}; },
   onStream: (cb) => { CB.stream = cb; return () => {}; },
   onToolCall: (cb) => { CB.tool = cb; return () => {}; },
   onTaskIdle: (cb) => { CB.taskIdle = cb; return () => {}; },
   onAiError: (cb) => { CB.aiError = cb; return () => {}; },
+  onUserStop: (cb) => { CB.userStop = cb; return () => {}; },
   requestAbort: () => {},
   clearAbort: () => {},
 }));
@@ -65,6 +66,7 @@ function streamCb(ev) { return CB.stream(ev); }
 function toolCb(ev) { return CB.tool(ev); }
 function deliveredCb(info) { return CB.delivered(info); }
 function taskIdleCb() { return CB.taskIdle(); }
+function userStopCb() { return CB.userStop(); }
 function types() { return S.reported.map((p) => p.type); }
 function lastAiState() {
   const list = S.reported.filter((p) => p.type === 'ai-state');
@@ -204,4 +206,12 @@ test('收到停止信号 → ai-state 置为已停止', async () => {
   S.stopListener();
   await new Promise((r) => setTimeout(r, 0));
   assert.strictEqual(lastAiState(), false);
+});
+
+test('网页模式点停止（onUserStop）→ 纯净模式收尾（ai-state 停 + task-idle）', async () => {
+  streamCb({ think: '', text: '输出中', finished: false });
+  userStopCb();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.strictEqual(lastAiState(), false, '网页停止应同步 ai-state 停止');
+  assert.ok(types().includes('task-idle'), '网页停止应上报 task-idle 让纯净模式收尾');
 });

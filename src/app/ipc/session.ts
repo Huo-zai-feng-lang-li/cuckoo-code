@@ -87,6 +87,40 @@ function registerSessionIpc(): void {
     }
   });
 
+  // 写入项目文件内容（编辑器保存；原子写入 + 防目录穿越 + 文本校验）
+  ipcMain.handle('write-project-file', async (event: any, { relPath, content }: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const store = ctx ? ctx.sessionStore : null;
+    const rootDir = (store && store.state && store.state.selectedProjectDir) || null;
+    if (!rootDir) return { success: false, error: '未选择项目目录' };
+    if (!relPath || typeof relPath !== 'string') return { success: false, error: '缺少文件路径' };
+    if (typeof content !== 'string') return { success: false, error: '内容格式错误' };
+    // 防目录穿越：拼接后必须在 rootDir 内
+    const abs = path.resolve(rootDir, relPath);
+    const rootAbs = path.resolve(rootDir);
+    if (abs !== rootAbs && !abs.startsWith(rootAbs + path.sep)) {
+      return { success: false, error: '非法路径' };
+    }
+    try {
+      // 目标必须已存在且是普通文件（不支持新建/覆盖目录）
+      const st = fs.statSync(abs);
+      if (!st.isFile()) return { success: false, error: '不是文件' };
+      // 原子写入：先写同目录临时文件，再 rename 覆盖，避免写一半损坏原文件
+      const tmp = abs + '.cuckoo-tmp-' + process.pid + '-' + Date.now();
+      fs.writeFileSync(tmp, content, 'utf-8');
+      try {
+        fs.renameSync(tmp, abs);
+      } catch (e2) {
+        try { fs.unlinkSync(tmp); } catch (_) {}
+        throw e2;
+      }
+      const nowSize = fs.statSync(abs).size;
+      return { success: true, size: nowSize };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
   // 用系统默认程序打开文件
   ipcMain.handle('open-project-file-external', async (event: any, { relPath }: any) => {
     const ctx = windowState.getContextByWebContents(event.sender);
@@ -167,6 +201,34 @@ function registerSessionIpc(): void {
     const store = ctx ? ctx.sessionStore : null;
     if (!store || !sessionId) return { success: false, error: 'no-store-or-id' };
     store.setSessionArchived(sessionId, archived === true);
+    return { success: true };
+  });
+
+  // 删除会话
+  ipcMain.handle('delete-session', async (event: any, { sessionId }: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const store = ctx ? ctx.sessionStore : null;
+    if (!store || !sessionId) return { success: false, error: 'no-store-or-id' };
+    store.deleteSession(sessionId);
+    try {
+      if (ctx && ctx.win && !ctx.win.isDestroyed()) {
+        ctx.win.webContents.send('shell-sessions-changed');
+      }
+    } catch (_) { /* ignore */ }
+    return { success: true };
+  });
+
+  // 删除项目工作区
+  ipcMain.handle('delete-project-workspace', async (event: any, { dir }: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const store = ctx ? ctx.sessionStore : null;
+    if (!store || !dir) return { success: false, error: 'no-store-or-dir' };
+    store.deleteProjectWorkspace(dir);
+    try {
+      if (ctx && ctx.win && !ctx.win.isDestroyed()) {
+        ctx.win.webContents.send('shell-sessions-changed');
+      }
+    } catch (_) { /* ignore */ }
     return { success: true };
   });
 

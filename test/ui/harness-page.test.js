@@ -202,8 +202,9 @@ test('发送队列：文本去除原生 title、hover 底色铺满变色、文�
 });
 
 test('对话导航与全局 Tooltip：告别系统原生 title，统一自定义 Tooltip 呈现', () => {
-  // 1. 导航圆点设置 title 供全局 Tooltip 引擎在文本溢出时统一弹出
-  assert.ok(script.includes('if (full) dot.title = full'), '导航圆点应设置 title 供 Tooltip 引擎判定溢出展示');
+  // 1. 导航圆点：文本超过展开面板宽度（会省略号截断）时才挂 data-tooltip
+  assert.ok(script.includes('textOverflowsPanel(full)'), '导航圆点应用 textOverflowsPanel 判定溢出');
+  assert.ok(script.includes("dot.setAttribute('data-tooltip', full)"), '溢出时导航圆点应挂 data-tooltip');
 
   // 2. harness 内置统一自定义 Tooltip 样式与脚本
   assert.ok(/\.ck-tooltip\s*\{/.test(html), '应包含 .ck-tooltip 样式');
@@ -236,6 +237,24 @@ test('消息气泡：纯图标悬浮操作条（编辑/复制/删除），用户
   assert.ok(!script.includes("delBtn.setAttribute('data-tooltip'"), '删除按钮不应设置 data-tooltip');
   assert.ok(!script.includes('class="sq-btn sq-edit-btn" title='), '队列编辑按钮不应设置 title');
   assert.ok(!script.includes('class="sq-btn sq-del" title='), '队列删除按钮不应设置 title');
+});
+
+test('消息气泡：最后一条重发与历史消息截断重发/填入输入框闭环', () => {
+  // 1. 判定函数存在
+  assert.ok(script.includes('function isLatestUserMessage'), '应有判定是否为最后一条用户消息的函数');
+  assert.ok(script.includes('function countSubsequentUserMessages'), '应有统计后续用户提问轮数的函数');
+  assert.ok(script.includes('function truncateUserMessage'), '应有物理截断消息函数');
+
+  // 2. 截断函数必须彻底 splice 历史
+  const trIdx = script.indexOf('function truncateUserMessage');
+  const trBody = script.slice(trIdx, trIdx + 800);
+  assert.ok(trBody.includes('history.splice(at)'), 'truncateUserMessage 应截断从当前项起的所有历史');
+
+  // 3. 历史消息编辑栏提供填入输入框与截断重发按钮
+  assert.ok(script.includes('msg-edit-quote'), '历史消息编辑栏应有填入输入框按钮');
+  assert.ok(script.includes('msg-edit-truncate'), '历史消息编辑栏应有截断重发按钮');
+  assert.ok(/\.msg-edit-bar \{/.test(html), '应有 .msg-edit-bar 样式');
+  assert.ok(/\.msg-edit-btn \{/.test(html), '应有 .msg-edit-btn 样式');
 });
 
 

@@ -92,11 +92,14 @@ export interface ShellAPI {
   listAllSessions?: () => Promise<any>;
   navigateSession?: (sessionId: string) => Promise<any>;
   setSessionArchived?: (sessionId: string, archived: boolean) => Promise<any>;
+  deleteSession?: (sessionId: string) => Promise<any>;
   getDirInfo?: (dir: string) => Promise<{ success: boolean; dir?: string; createdAt?: string | null; error?: string }>;
   listProjectTree?: () => Promise<{ success: boolean; root?: string; tree?: any[]; truncated?: boolean; error?: string }>;
   readProjectFile?: (relPath: string) => Promise<any>;
+  writeProjectFile?: (relPath: string, content: string) => Promise<any>;
   openFileExternal?: (relPath: string) => Promise<any>;
   setProjectArchived?: (dir: string, archived: boolean) => Promise<any>;
+  deleteProjectWorkspace?: (dir: string) => Promise<any>;
   setSessionTitle?: (sessionId: string, title: string) => Promise<any>;
   newConversationForProject?: (projectDir: string) => Promise<any>;
   // 提示词

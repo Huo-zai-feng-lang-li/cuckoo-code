@@ -7,8 +7,8 @@
  *    [data-tooltip]，并立即 removeAttribute('title')，彻底杜绝系统原生黄色/灰色提示框。
  *
  * 2. 交互体验：
- *    - 首次悬停等待 260ms 展示（防划过误触闪烁）；
- *    - 若处于连贯巡视（warm）模式（300ms 内滑过相邻项），极速 30ms 切换显示；
+ *    - 首次悬停等待 120ms 展示（防划过误触闪烁）；
+ *    - 若处于连贯巡视（warm）模式（300ms 内滑过相邻项），极速 20ms 切换显示；
  *    - 点击、离开、滚动、失焦、Esc 时立即隐藏。
  *
  * 3. 定位与自适应：
@@ -115,9 +115,9 @@ function isClipped(el: HTMLElement): boolean {
   return false;
 }
 
-/** 元素是否无可视文字（纯图标按钮）—— 此时 title 是唯一说明，应展示 */
-function hasNoVisibleText(el: HTMLElement): boolean {
-  return !(el.textContent || '').trim();
+/** 元素是否"图标型"（无可视文字或极短缩写，如"元"）—— 此时 title 是唯一说明，应展示 */
+function isIconLike(el: HTMLElement): boolean {
+  return (el.textContent || '').trim().length <= 2;
 }
 
 function handlePointerOver(e: PointerEvent): void {
@@ -145,7 +145,7 @@ function handlePointerOver(e: PointerEvent): void {
   if (!text) {
     const implicit = (el.getAttribute('data-ck-title') || '').trim();
     // 纯图标按钮（无可见文字）→ 展示；否则仅内容被裁剪时展示
-    if (implicit && (hasNoVisibleText(el) || isClipped(el))) text = implicit;
+    if (implicit && (isIconLike(el) || isClipped(el))) text = implicit;
   }
   if (!text) {
     hideTooltip();
@@ -159,7 +159,7 @@ function handlePointerOver(e: PointerEvent): void {
 
   // 连贯滑动体验（warm mode）：300ms 内滑过多个目标时极速响应
   const isWarm = Date.now() - lastHideTime < 300;
-  const delay = isWarm ? 30 : 260;
+  const delay = isWarm ? 20 : 120;
 
   showTimer = window.setTimeout(() => {
     if (activeTarget === el && el.isConnected) {

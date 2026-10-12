@@ -349,6 +349,14 @@
     transition: background .15s, color .15s;
   }
   .ck-preview-btn:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
+  .ck-preview-save {
+    padding: 0 9px; height: 22px; display: flex; align-items: center;
+    border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;
+    color: var(--ck-text-dim); transition: background .15s, color .15s;
+  }
+  .ck-preview-save:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
+  .ck-preview-save.dirty { color: var(--ck-primary); }
+  .ck-preview-save.dirty:hover { background: var(--ck-primary-soft); }
   .ck-preview-body { flex: 1; overflow: hidden; position: relative; }
   .ck-monaco { position: absolute; inset: 0; }
   .ck-preview-body pre {
@@ -606,6 +614,7 @@
     color: var(--ck-text-dim); cursor: pointer;
   }
   .ck-ws-gact:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
+  .ck-ws-gact.danger:hover, .ck-ws-gact-danger:hover { background: var(--ck-danger); color: #fff; }
   .ck-ws-gact svg { width: 13px !important; height: 13px !important; opacity: 1 !important; }
   .ck-ws-caret { width: 11px !important; height: 11px !important; transition: transform .15s; }
   .ck-ws-group.open .ck-ws-caret { transform: rotate(90deg); }
@@ -641,6 +650,7 @@
     color: var(--ck-text-dim); cursor: pointer;
   }
   .ck-ws-act:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
+  .ck-ws-act.danger:hover, .ck-ws-act-danger:hover { background: var(--ck-danger); color: #fff; }
   .ck-ws-act svg { width: 13px; height: 13px; }
   /* 展开三角（子代理/压缩历史）：右三角，展开旋转 90° */
   .ck-ws-expand {

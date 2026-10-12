@@ -112,3 +112,44 @@ test('handleUrlChange 恢复已保存目录', () => {
   assert.ok(sent.some(([ch]) => ch === 'project-dir-updated'));
 });
 
+test('deleteSession 删除会话及级联子节点，并清空当前 currentSessionId', () => {
+  const store = makeStore();
+  store.saveSessionDirMapping('parent-1', 'C:/proj');
+  store.setSessionLineage('child-1', { parentId: 'parent-1', kind: 'subagent', agentName: 'sub-a' });
+  store.setSessionLineage('grandchild-1', { parentId: 'child-1', kind: 'subagent', agentName: 'sub-b' });
+  store.saveSessionDirMapping('other-1', 'C:/proj');
+
+  store.state.currentSessionId = 'parent-1';
+  store.deleteSession('parent-1');
+
+  const all = store.readSessionStore();
+  assert.strictEqual(all['parent-1'], undefined);
+  assert.strictEqual(all['child-1'], undefined);
+  assert.strictEqual(all['grandchild-1'], undefined);
+  assert.ok(all['other-1']);
+  assert.strictEqual(store.state.currentSessionId, null);
+});
+
+test('deleteProjectWorkspace 批量删除项目下全部会话并清理归档标记', () => {
+  const store = makeStore();
+  store.saveSessionDirMapping('sess-a', 'C:/proj1');
+  store.saveSessionDirMapping('sess-b', 'C:/proj1');
+  store.saveSessionDirMapping('sess-c', 'C:/proj2');
+  store.setProjectArchived('C:/proj1', true);
+  store.setProjectArchived('C:/proj2', true);
+
+  store.state.selectedProjectDir = 'C:/proj1';
+  store.deleteProjectWorkspace('C:/proj1');
+
+  const all = store.readSessionStore();
+  assert.strictEqual(all['sess-a'], undefined);
+  assert.strictEqual(all['sess-b'], undefined);
+  assert.ok(all['sess-c']);
+
+  const archives = store.getArchivedProjects();
+  assert.ok(!archives.includes('C:/proj1'));
+  assert.ok(archives.includes('C:/proj2'));
+  assert.strictEqual(store.state.selectedProjectDir, null);
+});
+
+

@@ -2,7 +2,7 @@
  * 工作区（会话）页：按项目目录分组，列出会话，点击导航。
  * 数据：listAllSessions() → [{ sessionId, projectDir, title, createdAt, updatedAt }]
  */
-import { api, escapeHtml, escapeAttr, ckPrompt } from '../shared.js';
+import { api, escapeHtml, escapeAttr, ckPrompt, ckConfirm } from '../shared.js';
 
 /** 项目目录 → 显示名（取最后一段） */
 function baseName(dir: string): string {
@@ -79,19 +79,22 @@ function renderItem(s: any, currentSessionId: string | null, archived: boolean =
   const label = (s.kind === 'subagent' && s.agentName) ? ('子代理: ' + s.agentName) : (s.title || s.sessionId);
   const time = relTime(s.updatedAt);
   const isCur = s.sessionId === currentSessionId;
-  const renameBtn = '<span class="ck-ws-act" data-act="rename" title="重命名">' +
+  const renameBtn = '<span class="ck-ws-act" data-act="rename" aria-label="重命名">' +
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>' +
   '</span>';
   const act = archived
-    ? '<span class="ck-ws-act" data-act="unarchive" title="取消归档">' +
+    ? '<span class="ck-ws-act" data-act="unarchive" aria-label="取消归档">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M12 10v6"/><path d="M9 13l3-3 3 3"/></svg>' +
       '</span>'
     : (sub
         // 子节点：无"归档"按钮（避免把子代理/旧版归档），改为"切到该会话"提示
         ? ''
-        : '<span class="ck-ws-act" data-act="archive" title="归档">' +
+        : '<span class="ck-ws-act" data-act="archive" aria-label="归档">' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>' +
           '</span>');
+  const delBtn = '<span class="ck-ws-act ck-ws-act-danger" data-act="delete" aria-label="删除对话">' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>' +
+  '</span>';
   const open = hasChildren && expandedNodes.has(s.sessionId);
   const caret = hasChildren
     ? '<span class="ck-ws-expand' + (open ? ' open' : '') + '">' +
@@ -102,7 +105,7 @@ function renderItem(s: any, currentSessionId: string | null, archived: boolean =
     caret +
     '<span class="ck-ws-name">' + escapeHtml(label) + '</span>' +
     (time ? '<span class="ck-ws-time">' + escapeHtml(time) + '</span>' : '') +
-    '<span class="ck-ws-acts">' + renameBtn + act + '</span>' +
+    '<span class="ck-ws-acts">' + renameBtn + act + delBtn + '</span>' +
   '</div>';
 }
 
@@ -210,6 +213,13 @@ function bindWorkspaceEvents(listEl: HTMLElement): void {
         if (!api.setProjectArchived) return;
         try { await api.setProjectArchived(dir, false); } catch (_) { /* ignore */ }
         loadWorkspaces();
+      } else if (act === 'delete') {
+        if (!api.deleteProjectWorkspace) return;
+        const name = baseName(dir);
+        const ok = await ckConfirm('确定要删除项目工作区“' + name + '”及其所有对话记录吗？\n（仅移除工作区记录，不会删除磁盘实际项目文件）', '删除工作区');
+        if (!ok) return;
+        try { await api.deleteProjectWorkspace(dir); } catch (_) { /* ignore */ }
+        loadWorkspaces();
       }
     });
   });
@@ -265,6 +275,25 @@ function bindWorkspaceEvents(listEl: HTMLElement): void {
         const id = el.dataset.sessionId;
         if (!id || !api.setSessionArchived) return;
         try { await api.setSessionArchived(id, false); } catch (_) { /* ignore */ }
+        loadWorkspaces();
+        return;
+      }
+      // 删除按钮
+      if (e.target.closest('[data-act="delete"]')) {
+        e.stopPropagation();
+        const id = el.dataset.sessionId;
+        const name = el.dataset.name || '该对话';
+        if (!id || !api.deleteSession) return;
+        const ok = await ckConfirm('确定要删除对话“' + name + '”吗？此操作不可撤销。', '删除对话');
+        if (!ok) return;
+        try {
+          await api.deleteSession(id);
+          try {
+            localStorage.removeItem('cuckoo-harness-history-v1:' + id);
+            localStorage.removeItem('cuckoo-harness-goal-v1:' + id);
+            localStorage.removeItem('cuckoo-harness-plan-v1:' + id);
+          } catch (_) { /* ignore */ }
+        } catch (_) { /* ignore */ }
         loadWorkspaces();
         return;
       }
@@ -362,12 +391,15 @@ export async function loadWorkspaces(): Promise<void> {
               '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>' +
             '</span>' +
             (archivedProjects.includes(dir)
-              ? '<span class="ck-ws-gact" data-gact="unarchive" title="取消归档">' +
+              ? '<span class="ck-ws-gact" data-gact="unarchive" aria-label="取消归档">' +
                   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v5h5"/><path d="M3.5 12a8.5 8.5 0 1 0 2-5.4L3 9"/></svg>' +
                 '</span>'
-              : '<span class="ck-ws-gact" data-gact="archive" title="归档项目">' +
+              : '<span class="ck-ws-gact" data-gact="archive" aria-label="归档项目">' +
                   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>' +
                 '</span>') +
+            '<span class="ck-ws-gact ck-ws-gact-danger" data-gact="delete" aria-label="删除项目工作区">' +
+              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>' +
+            '</span>' +
           '</span>' +
         '</div>' +
         '<div class="ck-ws-items">' +
