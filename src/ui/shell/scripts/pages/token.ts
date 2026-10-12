@@ -9,6 +9,58 @@ const windowEl = document.getElementById('sb-window');
 const todayEl = document.getElementById('sb-today');
 const systemEl = document.getElementById('sb-system');
 
+/** 本地日期键 YYYY-MM-DD（不能用 toISOString，那是 UTC 会差时区） */
+function localDateKey(): string {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return d.getFullYear() + '-' + m + '-' + day;
+}
+
+/** 是否 DeepSeek 高峰时段（工作日 9-12、14-18，北京时间，未含夏令时）。
+ *  不含法定节假日判断（节假日会略高估为高峰，可接受）。 */
+function isDeepSeekPeak(): boolean {
+  const d = new Date(Date.now() + 8 * 3600 * 1000);
+  const day = d.getUTCDay();      // 0=周日
+  const hour = d.getUTCHours();
+  const weekday = day >= 1 && day <= 5;
+  return weekday && ((hour >= 9 && hour < 12) || (hour >= 14 && hour < 18));
+}
+
+/**
+ * 按 DeepSeek Flash 单价粗略估算费用（元）。
+ * 假设：输出占 15%、输入缓存命中 70%；高峰时段单价翻倍。
+ * 闲时单价（元/百万）：命中 0.02、未命中 1、输出 4。
+ */
+function estimateCost(totalTokens: number): { cost: number; peak: boolean } {
+  const peak = isDeepSeekPeak();
+  if (!isFinite(totalTokens) || totalTokens <= 0) return { cost: 0, peak };
+  const OUT_RATIO = 0.15;
+  const CACHE_HIT = 0.7;
+  const M = 1000000;
+  const output = totalTokens * OUT_RATIO;
+  const input = totalTokens * (1 - OUT_RATIO);
+  const hit = input * CACHE_HIT;
+  const miss = input * (1 - CACHE_HIT);
+  const mul = peak ? 2 : 1;
+  const cost = ((hit / M) * 0.02 + (miss / M) * 1 + (output / M) * 4) * mul;
+  return { cost, peak };
+}
+
+function formatCost(cost: number): string {
+  if (!isFinite(cost) || cost <= 0) return '¥0';
+  if (cost < 0.01) return '<¥0.01';
+  return '¥' + cost.toFixed(2);
+}
+
+function costTooltip(peak: boolean): string {
+  return '基于「今日窗口」粗略估算，非精确账单\n' +
+    '⚠ 假设输出占 15%、输入缓存命中 70%（实际未知）\n' +
+    '当前按【' + (peak ? '高峰' : '闲时') + '】价\n' +
+    '单价(元/百万)：命中 0.02 / 未命中 1 / 输出 4\n' +
+    '高峰时段(工作日 9-12、14-18)翻倍';
+}
+
 function renderChart(daily: any[]): void {
   const chart = document.getElementById('tk-chart');
   if (!chart) return;
@@ -17,17 +69,50 @@ function renderChart(daily: any[]): void {
     return;
   }
   const sorted = daily.slice().sort((a: any, b: any) => String(b.date || '').localeCompare(String(a.date || '')));
-  let max = Math.max.apply(null, sorted.map((d: any) => d.value || 0));
-  if (max <= 0) max = 1;
-  chart.innerHTML = sorted.map((d: any) => {
+  const values = sorted.map((d: any) => d.value || 0);
+  const max = Math.max(1, Math.max.apply(null, values));
+  const total = values.reduce((s: number, v: number) => s + v, 0);
+  const daysWithData = values.filter((v: number) => v > 0).length;
+  const avg = daysWithData > 0 ? total / daysWithData : 0;
+  const peakVal = Math.max.apply(null, values);
+  const peakDate = (sorted[values.indexOf(peakVal)] || {}).date || '';
+  const today = localDateKey();
+  const dayFmt = (s: string) => (s || '').slice(5).replace('-', '/');
+
+  const summary = '<div class="ck-chart-summary">' +
+    '<span>近 10 日合计 <b>' + formatShort(total) + '</b></span>' +
+    '<span>日均 <b>' + formatShort(avg) + '</b></span>' +
+    '<span>峰值 <b>' + formatShort(peakVal) + '</b>（' + (peakDate ? dayFmt(peakDate) : '--') + '）</span>' +
+    '</div>';
+
+  const rows = sorted.map((d: any) => {
     const v = d.value || 0;
     const pct = Math.max(1, Math.round((v / max) * 100));
-    const day = (d.date || '').slice(5).replace('-', '/');
-    return '<div class="ck-bar-row" title="' + d.date + '：' + formatShort(v) + ' tokens">' +
-      '<span class="ck-bar-label">' + day + '</span>' +
+    const isToday = d.date === today;
+    return '<div class="ck-bar-row' + (isToday ? ' today' : '') + '" data-date="' + d.date + '">' +
+      '<span class="ck-bar-label">' + dayFmt(d.date) + '</span>' +
       '<div class="ck-bar-track"><div class="ck-bar" style="width:' + pct + '%;"></div></div>' +
+      '<span class="ck-bar-val">' + formatShort(v) + '</span>' +
     '</div>';
   }).join('');
+
+  chart.innerHTML = summary + rows;
+
+  // 点击某天 → 详情弹窗
+  chart.querySelectorAll('.ck-bar-row').forEach((row: any) => {
+    row.addEventListener('click', () => {
+      const date = row.getAttribute('data-date') || '';
+      const found = sorted.find((x: any) => x.date === date);
+      const v = found ? (found.value || 0) : 0;
+      const share = total > 0 ? (v / total) * 100 : 0;
+      const diff = avg > 0 ? ((v - avg) / avg) * 100 : 0;
+      const diffStr = (diff >= 0 ? '+' : '') + diff.toFixed(0) + '%';
+      ckAlert(
+        '消耗 ' + formatShort(v) + ' tokens ｜ 占近10日 ' + share.toFixed(1) + '% ｜ 较日均 ' + diffStr,
+        date || '详情'
+      );
+    });
+  });
 }
 
 const tkContext = document.getElementById('tk-context');
@@ -35,6 +120,8 @@ const tkCumulative = document.getElementById('tk-cumulative');
 const tkToday = document.getElementById('tk-today');
 const tkWindow = document.getElementById('tk-window');
 const tkSystem = document.getElementById('tk-system');
+const tkCost = document.getElementById('tk-cost');
+const tkCostHint = document.getElementById('tk-cost-hint');
 
 if ((api as any).onTokenUpdated) {
   (api as any).onTokenUpdated((data: any) => {
@@ -47,6 +134,11 @@ if ((api as any).onTokenUpdated) {
     if (tkCumulative) tkCumulative.textContent = formatTokenCount(data.cumulative);
     if (tkToday) tkToday.textContent = formatTokenCount(data.todayCumulative);
     if (tkWindow) tkWindow.textContent = formatTokenCount(data.windowCumulative);
+    if (tkCost) {
+      const est = estimateCost(data.todayCumulative);
+      tkCost.textContent = formatCost(est.cost);
+      if (tkCostHint) tkCostHint.setAttribute('data-tooltip', costTooltip(est.peak));
+    }
     if (data.daily) renderChart(data.daily);
   });
 }

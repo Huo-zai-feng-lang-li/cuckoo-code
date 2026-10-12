@@ -604,7 +604,11 @@ function install(): void {
   // 目的：压缩清 IDB + 刷新后，精确知道 DeepSeek 已把完整历史写回。
   try {
     var hasCompactFlag = false;
-    try { hasCompactFlag = String(location.search).indexOf('cuckoo-compact') !== -1; } catch (e) { /* ignore */ }
+    try {
+      var _s = String(location.search);
+      // cuckoo-compact = 压缩流程；cuckoo-truncate = 真截断流程。两者都要重建 IDB 并等写入事件。
+      hasCompactFlag = _s.indexOf('cuckoo-compact') !== -1 || _s.indexOf('cuckoo-truncate') !== -1;
+    } catch (e) { /* ignore */ }
     if (hasCompactFlag && typeof IDBObjectStore !== 'undefined' && IDBObjectStore.prototype.put) {
       var origPut = IDBObjectStore.prototype.put;
       IDBObjectStore.prototype.put = function (value, key) {

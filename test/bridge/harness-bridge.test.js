@@ -201,6 +201,29 @@ test('状态未变化时不重复上报（避免刷屏）', async () => {
   assert.strictEqual(types().filter((t) => t === 'ai-state').length, 0, '状态未变不应重复上报');
 });
 
+test('assistant-done 透传服务端 msgIds（供真截断定位）', async () => {
+  CB.response('回复内容', { msgIds: { requestMessageId: 100, responseMessageId: 101 } });
+  await new Promise((r) => setTimeout(r, 0));
+  const p = S.reported.find((x) => x.type === 'assistant-done');
+  assert.ok(p, '应上报 assistant-done');
+  assert.deepStrictEqual(p.msgIds, { requestMessageId: 100, responseMessageId: 101 }, '应透传 msgIds');
+});
+
+test('assistant-done：meta 缺失时 msgIds 为 null（不报错）', async () => {
+  CB.response('回复内容');
+  await new Promise((r) => setTimeout(r, 0));
+  const p = S.reported.find((x) => x.type === 'assistant-done');
+  assert.ok(p, '应上报 assistant-done');
+  assert.strictEqual(p.msgIds, null, '无 meta 时应为 null');
+});
+
+test('assistant-done：meta 无 msgIds 字段时也为 null', async () => {
+  CB.response('回复内容', { tokenUsage: { accumulatedTokens: 5 } });
+  await new Promise((r) => setTimeout(r, 0));
+  const p = S.reported.find((x) => x.type === 'assistant-done');
+  assert.strictEqual(p.msgIds, null);
+});
+
 test('收到停止信号 → ai-state 置为已停止', async () => {
   streamCb({ think: '', text: '输出中', finished: false });
   S.stopListener();

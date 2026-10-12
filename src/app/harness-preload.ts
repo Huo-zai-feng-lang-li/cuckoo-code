@@ -23,6 +23,8 @@ const harnessAPI = {
   reload: () => ipcRenderer.invoke('harness-reload'),
   /** 新对话：在 AI 网页中开新会话 */
   newConversation: () => ipcRenderer.invoke('harness-new-conversation'),
+  /** 真截断：从指定网页消息处开新会话（{ webMsgId, newText }） */
+  truncate: (payload: { webMsgId: number; newText: string }) => ipcRenderer.invoke('harness-truncate', payload),
   /** 查询状态：是否需初始化项目（首页且未选目录） */
   getState: () => ipcRenderer.invoke('harness-get-state'),
   /** 初始化项目（弹目录选择框，复用官方逻辑） */

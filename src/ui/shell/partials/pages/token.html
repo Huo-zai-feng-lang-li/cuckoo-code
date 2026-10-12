@@ -1,7 +1,7 @@
             <!-- ===== Token ===== -->
             <div class="ck-tab" data-panel="token">
               <div class="ck-token-hero">
-                <span class="ck-token-hero-label">当前上下文</span>
+                <span class="ck-token-hero-label">本轮上下文<span class="ck-hint" data-tooltip="模型此刻能看到的全部内容（含历史），决定是否触发压缩">!</span></span>
                 <div class="ck-token-hero-value">
                   <span id="tk-context">0</span>
                   <span class="ck-token-hero-unit">tokens</span>
@@ -14,19 +14,29 @@
 
               <div class="ck-stat-list">
                 <div class="ck-stat-item">
-                  <span class="ck-stat-key">对话累计</span>
+                  <span class="ck-stat-key">各轮累计<span class="ck-hint" data-tooltip="各轮上下文之和（每轮都重发完整历史），非单次占用">!</span></span>
                   <span class="ck-stat-val" id="tk-cumulative">0</span>
                 </div>
                 <div class="ck-stat-item">
-                  <span class="ck-stat-key">今日窗口</span>
+                  <span class="ck-stat-key">今日窗口<span class="ck-hint" data-tooltip="今天各轮「完整上下文」之和（含重复历史），非新增内容
+例：3 轮，每轮新增 500
+第1轮 500 → 第2轮 1000 → 第3轮 1500
+合计 3000（不是新增的 1500）">!</span></span>
                   <span class="ck-stat-val" id="tk-today">0</span>
                 </div>
                 <div class="ck-stat-item">
-                  <span class="ck-stat-key">窗口累计</span>
+                  <span class="ck-stat-key">预估费用<span class="ck-hint" id="tk-cost-hint" data-tooltip="基于「今日窗口」粗略估算，非精确账单
+假设：输出占 15%，输入缓存命中 70%
+单价(元/百万)：命中 0.02 / 未命中 1 / 输出 4
+高峰时段(工作日 9-12、14-18)价格翻倍">!</span></span>
+                  <span class="ck-stat-val" id="tk-cost">—</span>
+                </div>
+                <div class="ck-stat-item">
+                  <span class="ck-stat-key">窗口累计<span class="ck-hint" data-tooltip="本窗口所有会话的各轮累计之和">!</span></span>
                   <span class="ck-stat-val" id="tk-window">0</span>
                 </div>
                 <div class="ck-stat-item">
-                  <span class="ck-stat-key">系统总累计</span>
+                  <span class="ck-stat-key">系统总累计<span class="ck-hint" data-tooltip="所有窗口历史累计总和">!</span></span>
                   <span class="ck-stat-val" id="tk-system">0</span>
                 </div>
               </div>

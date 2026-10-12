@@ -96,3 +96,44 @@ test('_pickRecentPairedIds leafId 不存在时用最大 message_id', () => {
   const picked = compaction._pickRecentPairedIds(linearMsgs(), 999, 1);
   assert.ok(picked.includes(4), '回退到最大 id 作为叶子');
 });
+
+// ===== 真截断：sliceChainUpTo =====
+
+test('_sliceChainUpTo 截取主链到目标 id 为止（降序，对齐 share API）', () => {
+  const msgs = [
+    { message_id: 1, role: 'USER', parent_id: null },
+    { message_id: 2, role: 'ASSISTANT', parent_id: 1 },
+    { message_id: 3, role: 'USER', parent_id: 2 },
+    { message_id: 4, role: 'ASSISTANT', parent_id: 3 },
+  ];
+  assert.deepStrictEqual(compaction._sliceChainUpTo(msgs, 4, 2), [2, 1]);
+  assert.deepStrictEqual(compaction._sliceChainUpTo(msgs, 4, 4), [4, 3, 2, 1]);
+});
+
+test('_sliceChainUpTo 目标不在主链 → null（不回退，避免误分享）', () => {
+  const msgs = [
+    { message_id: 1, role: 'USER', parent_id: null },
+    { message_id: 2, role: 'ASSISTANT', parent_id: 1 },
+    { message_id: 5, role: 'ASSISTANT', parent_id: 1 }, // 分支
+  ];
+  // 叶子为 2，主链 1→2；目标 5 在分支上 → null
+  assert.strictEqual(compaction._sliceChainUpTo(msgs, 2, 5), null);
+});
+
+test('_sliceChainUpTo 目标 id 根本不存在 → null', () => {
+  assert.strictEqual(compaction._sliceChainUpTo(linearMsgs(), null, 999), null);
+});
+
+test('_sliceChainUpTo 空数组 → null', () => {
+  assert.strictEqual(compaction._sliceChainUpTo([], null, 1), null);
+});
+
+test('_sliceChainUpTo 截断点非 ASSISTANT → null（防不成对）', () => {
+  const msgs = [
+    { message_id: 1, role: 'USER', parent_id: null },
+    { message_id: 2, role: 'ASSISTANT', parent_id: 1 },
+    { message_id: 3, role: 'USER', parent_id: 2 },
+  ];
+  // 目标 3 是 USER，截到此为止链尾是 USER → 不成对，返回 null
+  assert.strictEqual(compaction._sliceChainUpTo(msgs, 3, 3), null);
+});

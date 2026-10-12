@@ -20,7 +20,21 @@
     background: linear-gradient(160deg, var(--ck-primary-soft), transparent);
     border-radius: 14px;
   }
-  .ck-token-hero-label { font-size: 10.5px; color: var(--ck-text-dim); letter-spacing: .6px; font-weight: 600; }
+  .ck-token-hero-label {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10.5px; color: var(--ck-text-dim); letter-spacing: .6px; font-weight: 600;
+  }
+  /* 指标说明图标：hover 显示 tooltip 描述（配合全局 tooltip.ts）。
+     父容器用 inline-flex + align-items:center 保证垂直居中（baseline 对齐会偏下）。 */
+  .ck-hint {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 12px; height: 12px; flex-shrink: 0; border-radius: 50%;
+    border: 1px solid currentColor; font-size: 8px; font-weight: 700; line-height: 1;
+    opacity: .55; cursor: help; font-style: normal;
+    /* 中文字视觉重心略偏下，图标几何居中显偏上，下移 0.5px 微调 */
+    transform: translateY(0.5px);
+  }
+  .ck-hint:hover { opacity: 1; }
   .ck-token-hero-value { display: flex; align-items: baseline; gap: 6px; }
   .ck-token-hero-value > span:first-child {
     font-size: 36px; font-weight: 700; color: var(--ck-primary);
@@ -44,7 +58,7 @@
     padding: 11px 14px; font-size: 12.5px;
   }
   .ck-stat-item + .ck-stat-item { border-top: 1px solid var(--ck-border); }
-  .ck-stat-key { color: var(--ck-text-2); }
+  .ck-stat-key { display: inline-flex; align-items: center; gap: 4px; color: var(--ck-text-2); }
   .ck-stat-val {
     color: var(--ck-text); font-weight: 600;
     font-family: "SF Mono", "Consolas", monospace; font-size: 13px;
@@ -86,9 +100,24 @@
     box-shadow: var(--ck-shadow-sm);
   }
   .ck-chart { display: flex; flex-direction: column; gap: 8px; }
-  .ck-bar-row { display: flex; align-items: center; gap: 10px; }
+  /* 图表顶部汇总行 */
+  .ck-chart-summary {
+    display: flex; flex-wrap: wrap; gap: 6px 14px;
+    padding-bottom: 10px; margin-bottom: 2px;
+    border-bottom: 1px solid var(--ck-border);
+    font-size: 11.5px; color: var(--ck-text-2);
+  }
+  .ck-chart-summary b { color: var(--ck-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ck-bar-row {
+    display: flex; align-items: center; gap: 10px;
+    /* padding + 负 margin 抵消：hover 背景可横向外扩，但内容左边缘仍与上方文字对齐 */
+    padding: 3px 4px; margin: 0 -4px;
+    border-radius: 6px; cursor: pointer;
+    transition: background .15s;
+  }
+  .ck-bar-row:hover { background: var(--ck-surface); }
   .ck-bar-label {
-    font-size: 10px; color: var(--ck-text-dim); white-space: nowrap;
+    font-size: 10px; line-height: 12px; color: var(--ck-text-dim); white-space: nowrap;
     font-family: "SF Mono", "Consolas", monospace; flex-shrink: 0; width: 34px;
     text-align: right; font-variant-numeric: tabular-nums;
   }
@@ -104,6 +133,16 @@
     min-width: 3px;
   }
   .ck-bar-row:hover .ck-bar { opacity: 1; }
+  /* 条尾数值 */
+  .ck-bar-val {
+    flex-shrink: 0; width: 46px; text-align: right;
+    font-size: 10px; line-height: 12px; color: var(--ck-text-dim);
+    font-family: "SF Mono", "Consolas", monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  /* 今日高亮 */
+  .ck-bar-row.today .ck-bar { opacity: 1; }
+  .ck-bar-row.today .ck-bar-label { color: var(--ck-primary); font-weight: 600; }
 
   /* ===== 代码/结果 ===== */
   .ck-code {

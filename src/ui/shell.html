@@ -1282,7 +1282,21 @@
     background: linear-gradient(160deg, var(--ck-primary-soft), transparent);
     border-radius: 14px;
   }
-  .ck-token-hero-label { font-size: 10.5px; color: var(--ck-text-dim); letter-spacing: .6px; font-weight: 600; }
+  .ck-token-hero-label {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10.5px; color: var(--ck-text-dim); letter-spacing: .6px; font-weight: 600;
+  }
+  /* 指标说明图标：hover 显示 tooltip 描述（配合全局 tooltip.ts）。
+     父容器用 inline-flex + align-items:center 保证垂直居中（baseline 对齐会偏下）。 */
+  .ck-hint {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 12px; height: 12px; flex-shrink: 0; border-radius: 50%;
+    border: 1px solid currentColor; font-size: 8px; font-weight: 700; line-height: 1;
+    opacity: .55; cursor: help; font-style: normal;
+    /* 中文字视觉重心略偏下，图标几何居中显偏上，下移 0.5px 微调 */
+    transform: translateY(0.5px);
+  }
+  .ck-hint:hover { opacity: 1; }
   .ck-token-hero-value { display: flex; align-items: baseline; gap: 6px; }
   .ck-token-hero-value > span:first-child {
     font-size: 36px; font-weight: 700; color: var(--ck-primary);
@@ -1306,7 +1320,7 @@
     padding: 11px 14px; font-size: 12.5px;
   }
   .ck-stat-item + .ck-stat-item { border-top: 1px solid var(--ck-border); }
-  .ck-stat-key { color: var(--ck-text-2); }
+  .ck-stat-key { display: inline-flex; align-items: center; gap: 4px; color: var(--ck-text-2); }
   .ck-stat-val {
     color: var(--ck-text); font-weight: 600;
     font-family: "SF Mono", "Consolas", monospace; font-size: 13px;
@@ -1348,9 +1362,24 @@
     box-shadow: var(--ck-shadow-sm);
   }
   .ck-chart { display: flex; flex-direction: column; gap: 8px; }
-  .ck-bar-row { display: flex; align-items: center; gap: 10px; }
+  /* 图表顶部汇总行 */
+  .ck-chart-summary {
+    display: flex; flex-wrap: wrap; gap: 6px 14px;
+    padding-bottom: 10px; margin-bottom: 2px;
+    border-bottom: 1px solid var(--ck-border);
+    font-size: 11.5px; color: var(--ck-text-2);
+  }
+  .ck-chart-summary b { color: var(--ck-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ck-bar-row {
+    display: flex; align-items: center; gap: 10px;
+    /* padding + 负 margin 抵消：hover 背景可横向外扩，但内容左边缘仍与上方文字对齐 */
+    padding: 3px 4px; margin: 0 -4px;
+    border-radius: 6px; cursor: pointer;
+    transition: background .15s;
+  }
+  .ck-bar-row:hover { background: var(--ck-surface); }
   .ck-bar-label {
-    font-size: 10px; color: var(--ck-text-dim); white-space: nowrap;
+    font-size: 10px; line-height: 12px; color: var(--ck-text-dim); white-space: nowrap;
     font-family: "SF Mono", "Consolas", monospace; flex-shrink: 0; width: 34px;
     text-align: right; font-variant-numeric: tabular-nums;
   }
@@ -1366,6 +1395,16 @@
     min-width: 3px;
   }
   .ck-bar-row:hover .ck-bar { opacity: 1; }
+  /* 条尾数值 */
+  .ck-bar-val {
+    flex-shrink: 0; width: 46px; text-align: right;
+    font-size: 10px; line-height: 12px; color: var(--ck-text-dim);
+    font-family: "SF Mono", "Consolas", monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  /* 今日高亮 */
+  .ck-bar-row.today .ck-bar { opacity: 1; }
+  .ck-bar-row.today .ck-bar-label { color: var(--ck-primary); font-weight: 600; }
 
   /* ===== 代码/结果 ===== */
   .ck-code {
@@ -1782,7 +1821,7 @@
             <!-- ===== Token ===== -->
             <div class="ck-tab" data-panel="token">
               <div class="ck-token-hero">
-                <span class="ck-token-hero-label">当前上下文</span>
+                <span class="ck-token-hero-label">本轮上下文<span class="ck-hint" data-tooltip="模型此刻能看到的全部内容（含历史），决定是否触发压缩">!</span></span>
                 <div class="ck-token-hero-value">
                   <span id="tk-context">0</span>
                   <span class="ck-token-hero-unit">tokens</span>
@@ -1795,19 +1834,29 @@
 
               <div class="ck-stat-list">
                 <div class="ck-stat-item">
-                  <span class="ck-stat-key">对话累计</span>
+                  <span class="ck-stat-key">各轮累计<span class="ck-hint" data-tooltip="各轮上下文之和（每轮都重发完整历史），非单次占用">!</span></span>
                   <span class="ck-stat-val" id="tk-cumulative">0</span>
                 </div>
                 <div class="ck-stat-item">
-                  <span class="ck-stat-key">今日窗口</span>
+                  <span class="ck-stat-key">今日窗口<span class="ck-hint" data-tooltip="今天各轮「完整上下文」之和（含重复历史），非新增内容
+例：3 轮，每轮新增 500
+第1轮 500 → 第2轮 1000 → 第3轮 1500
+合计 3000（不是新增的 1500）">!</span></span>
                   <span class="ck-stat-val" id="tk-today">0</span>
                 </div>
                 <div class="ck-stat-item">
-                  <span class="ck-stat-key">窗口累计</span>
+                  <span class="ck-stat-key">预估费用<span class="ck-hint" id="tk-cost-hint" data-tooltip="基于「今日窗口」粗略估算，非精确账单
+假设：输出占 15%，输入缓存命中 70%
+单价(元/百万)：命中 0.02 / 未命中 1 / 输出 4
+高峰时段(工作日 9-12、14-18)价格翻倍">!</span></span>
+                  <span class="ck-stat-val" id="tk-cost">—</span>
+                </div>
+                <div class="ck-stat-item">
+                  <span class="ck-stat-key">窗口累计<span class="ck-hint" data-tooltip="本窗口所有会话的各轮累计之和">!</span></span>
                   <span class="ck-stat-val" id="tk-window">0</span>
                 </div>
                 <div class="ck-stat-item">
-                  <span class="ck-stat-key">系统总累计</span>
+                  <span class="ck-stat-key">系统总累计<span class="ck-hint" data-tooltip="所有窗口历史累计总和">!</span></span>
                   <span class="ck-stat-val" id="tk-system">0</span>
                 </div>
               </div>
@@ -4685,6 +4734,41 @@
   var windowEl = document.getElementById("sb-window");
   var todayEl = document.getElementById("sb-today");
   var systemEl = document.getElementById("sb-system");
+  function localDateKey() {
+    const d = /* @__PURE__ */ new Date();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return d.getFullYear() + "-" + m + "-" + day;
+  }
+  function isDeepSeekPeak() {
+    const d = new Date(Date.now() + 8 * 3600 * 1e3);
+    const day = d.getUTCDay();
+    const hour = d.getUTCHours();
+    const weekday = day >= 1 && day <= 5;
+    return weekday && (hour >= 9 && hour < 12 || hour >= 14 && hour < 18);
+  }
+  function estimateCost(totalTokens) {
+    const peak = isDeepSeekPeak();
+    if (!isFinite(totalTokens) || totalTokens <= 0) return { cost: 0, peak };
+    const OUT_RATIO = 0.15;
+    const CACHE_HIT = 0.7;
+    const M = 1e6;
+    const output = totalTokens * OUT_RATIO;
+    const input2 = totalTokens * (1 - OUT_RATIO);
+    const hit = input2 * CACHE_HIT;
+    const miss = input2 * (1 - CACHE_HIT);
+    const mul = peak ? 2 : 1;
+    const cost = (hit / M * 0.02 + miss / M * 1 + output / M * 4) * mul;
+    return { cost, peak };
+  }
+  function formatCost(cost) {
+    if (!isFinite(cost) || cost <= 0) return "\xA50";
+    if (cost < 0.01) return "<\xA50.01";
+    return "\xA5" + cost.toFixed(2);
+  }
+  function costTooltip(peak) {
+    return "\u57FA\u4E8E\u300C\u4ECA\u65E5\u7A97\u53E3\u300D\u7C97\u7565\u4F30\u7B97\uFF0C\u975E\u7CBE\u786E\u8D26\u5355\n\u26A0 \u5047\u8BBE\u8F93\u51FA\u5360 15%\u3001\u8F93\u5165\u7F13\u5B58\u547D\u4E2D 70%\uFF08\u5B9E\u9645\u672A\u77E5\uFF09\n\u5F53\u524D\u6309\u3010" + (peak ? "\u9AD8\u5CF0" : "\u95F2\u65F6") + "\u3011\u4EF7\n\u5355\u4EF7(\u5143/\u767E\u4E07)\uFF1A\u547D\u4E2D 0.02 / \u672A\u547D\u4E2D 1 / \u8F93\u51FA 4\n\u9AD8\u5CF0\u65F6\u6BB5(\u5DE5\u4F5C\u65E5 9-12\u300114-18)\u7FFB\u500D";
+  }
   function renderChart(daily) {
     const chart = document.getElementById("tk-chart");
     if (!chart) return;
@@ -4693,20 +4777,45 @@
       return;
     }
     const sorted = daily.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
-    let max = Math.max.apply(null, sorted.map((d) => d.value || 0));
-    if (max <= 0) max = 1;
-    chart.innerHTML = sorted.map((d) => {
+    const values = sorted.map((d) => d.value || 0);
+    const max = Math.max(1, Math.max.apply(null, values));
+    const total = values.reduce((s, v) => s + v, 0);
+    const daysWithData = values.filter((v) => v > 0).length;
+    const avg = daysWithData > 0 ? total / daysWithData : 0;
+    const peakVal = Math.max.apply(null, values);
+    const peakDate = (sorted[values.indexOf(peakVal)] || {}).date || "";
+    const today = localDateKey();
+    const dayFmt = (s) => (s || "").slice(5).replace("-", "/");
+    const summary = '<div class="ck-chart-summary"><span>\u8FD1 10 \u65E5\u5408\u8BA1 <b>' + formatShort(total) + "</b></span><span>\u65E5\u5747 <b>" + formatShort(avg) + "</b></span><span>\u5CF0\u503C <b>" + formatShort(peakVal) + "</b>\uFF08" + (peakDate ? dayFmt(peakDate) : "--") + "\uFF09</span></div>";
+    const rows = sorted.map((d) => {
       const v = d.value || 0;
       const pct = Math.max(1, Math.round(v / max * 100));
-      const day = (d.date || "").slice(5).replace("-", "/");
-      return '<div class="ck-bar-row" title="' + d.date + "\uFF1A" + formatShort(v) + ' tokens"><span class="ck-bar-label">' + day + '</span><div class="ck-bar-track"><div class="ck-bar" style="width:' + pct + '%;"></div></div></div>';
+      const isToday = d.date === today;
+      return '<div class="ck-bar-row' + (isToday ? " today" : "") + '" data-date="' + d.date + '"><span class="ck-bar-label">' + dayFmt(d.date) + '</span><div class="ck-bar-track"><div class="ck-bar" style="width:' + pct + '%;"></div></div><span class="ck-bar-val">' + formatShort(v) + "</span></div>";
     }).join("");
+    chart.innerHTML = summary + rows;
+    chart.querySelectorAll(".ck-bar-row").forEach((row) => {
+      row.addEventListener("click", () => {
+        const date = row.getAttribute("data-date") || "";
+        const found = sorted.find((x) => x.date === date);
+        const v = found ? found.value || 0 : 0;
+        const share = total > 0 ? v / total * 100 : 0;
+        const diff = avg > 0 ? (v - avg) / avg * 100 : 0;
+        const diffStr = (diff >= 0 ? "+" : "") + diff.toFixed(0) + "%";
+        ckAlert(
+          "\u6D88\u8017 " + formatShort(v) + " tokens \uFF5C \u5360\u8FD110\u65E5 " + share.toFixed(1) + "% \uFF5C \u8F83\u65E5\u5747 " + diffStr,
+          date || "\u8BE6\u60C5"
+        );
+      });
+    });
   }
   var tkContext = document.getElementById("tk-context");
   var tkCumulative = document.getElementById("tk-cumulative");
   var tkToday = document.getElementById("tk-today");
   var tkWindow = document.getElementById("tk-window");
   var tkSystem = document.getElementById("tk-system");
+  var tkCost = document.getElementById("tk-cost");
+  var tkCostHint = document.getElementById("tk-cost-hint");
   if (api.onTokenUpdated) {
     api.onTokenUpdated((data) => {
       if (!data) return;
@@ -4718,6 +4827,11 @@
       if (tkCumulative) tkCumulative.textContent = formatTokenCount(data.cumulative);
       if (tkToday) tkToday.textContent = formatTokenCount(data.todayCumulative);
       if (tkWindow) tkWindow.textContent = formatTokenCount(data.windowCumulative);
+      if (tkCost) {
+        const est = estimateCost(data.todayCumulative);
+        tkCost.textContent = formatCost(est.cost);
+        if (tkCostHint) tkCostHint.setAttribute("data-tooltip", costTooltip(est.peak));
+      }
       if (data.daily) renderChart(data.daily);
     });
   }

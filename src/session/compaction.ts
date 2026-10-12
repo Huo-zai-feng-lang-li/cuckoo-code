@@ -23,6 +23,10 @@ import { onInterceptedResponse } from '../bridge/intercept/observer.js';
 import { showToast } from '../overlay/panel.js';
 import * as retryEngine from '../bridge/loop/retry.js';
 import * as watchdog from '../bridge/loop/watchdog.js';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { ipcRenderer } = require('electron');
 
 const SUMMARY_INSTRUCTION =
   '请把以上对话总结成一份详细的摘要，尽可能完整地保留关键信息、背景上下文、' +
@@ -33,6 +37,10 @@ const COMPACT_URL_FLAG = 'cuckoo-compact';
 const COMPACT_DIR_KEY = 'cuckoo-compact-project-dir';
 const PENDING_INIT_KEY = 'cuckoo-compact-pending-init';
 const IDB_WAIT_TIMEOUT = 20000;
+
+// 真截断：URL flag（触发 hook 的 IDB 写入拦截 + 页内检测）与跨刷新 pending 数据 key
+const TRUNCATE_URL_FLAG = 'cuckoo-truncate';
+const TRUNCATE_PENDING_KEY = 'cuckoo-truncate-pending';
 
 function logStep(step: string, msg: string): void {
   console.log('[Cuckoo Compact] [' + step + '] ' + msg);
@@ -382,6 +390,134 @@ async function shareAllForSwitch(): Promise<{ shareId: string; sessionId: string
   return { shareId, sessionId };
 }
 
-export { runCompaction, checkPendingCompact, checkPendingInit, shareAllForSwitch };
+/**
+ * 从全量消息里，沿 parent_id 回溯出主链，截取到 targetWebMsgId 为止（含），返回升序 id。
+ *
+ * 与 pickRecentPairedIds 的区别：后者是「取最近 ratio」，本函数是「精确截到某条」，
+ * 找不到 targetWebMsgId 时返回 null（而不是回退，避免误分享整段会话）。
+ *
+ * @param msgs 全量消息（任意顺序）
+ * @param leafId 当前叶子消息 id；null 时用最大 message_id
+ * @param targetWebMsgId 截断终点（该 assistant 的 message_id）
+ * @returns 升序 message_id 数组；targetWebMsgId 不在主链上时返回 null
+ */
+function sliceChainUpTo(msgs: MessageItem[], leafId: number | null, targetWebMsgId: number): number[] | null {
+  if (!Array.isArray(msgs) || msgs.length === 0) return null;
+  const byId = new Map<number, MessageItem>();
+  for (const m of msgs) byId.set(m.message_id, m);
+  if (!byId.has(targetWebMsgId)) return null;
+
+  let leaf: number | null = (leafId != null && byId.has(leafId)) ? leafId : null;
+  if (leaf == null) {
+    let maxId: number | null = null;
+    for (const m of msgs) if (maxId == null || m.message_id > maxId) maxId = m.message_id;
+    leaf = maxId;
+  }
+  if (leaf == null) return null;
+
+  // 沿 parent_id 回溯主链（叶子 → 根），防环
+  const chain: MessageItem[] = [];
+  const seen = new Set<number>();
+  let cur: number | null = leaf;
+  while (cur != null && byId.has(cur) && !seen.has(cur)) {
+    seen.add(cur);
+    const m: MessageItem = byId.get(cur) as MessageItem;
+    chain.push(m);
+    cur = (typeof m.parent_id === 'number') ? (m.parent_id as number) : null;
+  }
+  chain.reverse(); // 根 → 叶子
+
+  // 在链上找 targetWebMsgId 的位置，截取到它为止
+  const idx = chain.findIndex((m) => m.message_id === targetWebMsgId);
+  if (idx < 0) return null;
+  const picked = chain.slice(0, idx + 1);
+  // 截断点必须是 ASSISTANT（其 parent 是 USER），否则分享链首尾不成对，share/create 会报错
+  const last = picked[picked.length - 1];
+  if (!last || last.role !== 'ASSISTANT') return null;
+  // 与 pickRecentPairedIds 一致：返回降序（share/create API 期望的顺序）
+  return picked.map((m) => m.message_id).sort((a, b) => b - a);
+}
+
+/**
+ * 真截断·段1：清当前会话 IDB → URL 加 cuckoo-truncate flag → 刷新。
+ *
+ * 为什么必须刷新：与压缩同理——同会话内 AI 回复后 IDB 不更新，只有刷新才会让
+ * DeepSeek 重新拉取并写回完整历史。截断要沿 parent_id 精确回溯，必须基于完整 IDB。
+ *
+ * webMsgId / newText 经 localStorage 跨刷新传递，刷新后由 checkPendingTruncate 消费。
+ */
+function prepareTruncate(webMsgId: number, newText: string): void {
+  const sessionId = getSessionIdFromUrl();
+  if (!sessionId) throw new Error('无法从 URL 获取 chat_session_id');
+  try {
+    localStorage.setItem(TRUNCATE_PENDING_KEY, JSON.stringify({ webMsgId: webMsgId, newText: newText || '', ts: Date.now() }));
+  } catch (_) { /* ignore */ }
+  logStep('truncate', '清 IDB 并刷新以重建完整历史（session=' + sessionId + ', webMsgId=' + webMsgId + '）');
+  // 清 IDB 后刷新。clearSessionFromIdb 失败也不阻断——仍刷新，DeepSeek 会重建。
+  clearSessionFromIdb(sessionId).catch(() => {}).then(() => {
+    const url = new URL(location.href);
+    url.searchParams.set(TRUNCATE_URL_FLAG, '1');
+    location.href = url.toString();
+  });
+}
+
+/**
+ * 真截断·段2：刷新后同页 —— 检测 URL flag，等 IDB 重建，创建「到 webMsgId 为止」的分享，
+ * 回执主进程（由主进程导航 AI 页面到分享页并激活新会话）。
+ *
+ * 与 checkPendingCompact 同构，只是终点用 sliceChainUpTo(webMsgId) 精确截断。
+ * @returns 是否已处理（true = 本次导航属于截断流程）
+ */
+async function checkPendingTruncate(): Promise<boolean> {
+  let flag = '';
+  try { flag = new URL(location.href).searchParams.get(TRUNCATE_URL_FLAG) || ''; } catch (_) {}
+  if (!flag) return false;
+
+  // 立即清 URL 参数，避免重复触发
+  try {
+    const url = new URL(location.href);
+    url.searchParams.delete(TRUNCATE_URL_FLAG);
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+    logStep('truncate', '已清除 URL 标记');
+  } catch (_) {}
+
+  let pending: any = null;
+  try { pending = JSON.parse(localStorage.getItem(TRUNCATE_PENDING_KEY) || 'null'); } catch (_) {}
+  if (!pending || typeof pending.webMsgId !== 'number') return false;
+
+  try {
+    const sessionId = getSessionIdFromUrl();
+    if (!sessionId) throw new Error('无法从 URL 获取 chat_session_id');
+
+    logStep('truncate', '等待 DeepSeek 重建 IDB（监听写入事件）');
+    await waitForIdbWrite(IDB_WAIT_TIMEOUT);
+    logStep('truncate', '收到 IDB 写入事件');
+
+    const headers = getCachedHeaders();
+    if (!headers || !headers['authorization']) {
+      throw new Error('未获取到认证请求头（请刷新页面后重试）');
+    }
+    const { list: allMsgs, currentMessageId } = await getMessagesFromIndexedDB(sessionId);
+    if (allMsgs.length === 0) throw new Error('未读取到消息列表');
+    const ids = sliceChainUpTo(allMsgs, currentMessageId, pending.webMsgId);
+    if (!ids || ids.length === 0) {
+      throw new Error('截断点不在当前会话主链上（网页可能已变化，请刷新页面后重试）');
+    }
+    logStep('truncate', '截断分享 ' + ids.length + ' 条消息（到 message_id=' + pending.webMsgId + '）');
+    const shareId = await createShare(sessionId, ids, headers);
+    const shareUrl = location.origin + '/share/' + shareId;
+    try { localStorage.removeItem(TRUNCATE_PENDING_KEY); } catch (_) {}
+    // 回执主进程：由它导航 AI 页面到分享页并激活新会话
+    try { ipcRenderer.send('cuckoo-truncate-share-ready', { shareUrl: shareUrl, shareId: shareId, newText: pending.newText || '' }); } catch (_) {}
+    return true;
+  } catch (err: any) {
+    console.error('[Cuckoo Compact] 截断段2失败:', err);
+    try { localStorage.removeItem(TRUNCATE_PENDING_KEY); } catch (_) {}
+    try { ipcRenderer.send('cuckoo-truncate-share-ready', { error: (err && err.message) || '截断失败' }); } catch (_) {}
+    return false;
+  }
+}
+
+export { runCompaction, checkPendingCompact, checkPendingInit, shareAllForSwitch, prepareTruncate, checkPendingTruncate };
 // 纯函数导出（测试用）
-export { pickRecentPairedIds as _pickRecentPairedIds };
+export { pickRecentPairedIds as _pickRecentPairedIds, sliceChainUpTo as _sliceChainUpTo };

@@ -17,7 +17,7 @@ import * as settingsPanel from '../overlay/panels/settings.js';
 import { wireEvents } from '../overlay/events.js';
 import { getProviderByUrl } from '../providers/registry.js';
 import { startInterceptObserver, onInterceptedResponse, onTaskIdle, onStream } from './intercept/observer.js';
-import { shareAllForSwitch } from '../session/compaction.js';
+import { shareAllForSwitch, prepareTruncate } from '../session/compaction.js';
 import { startRetryEngine } from './loop/retry.js';
 import { startSessionWatcher, startWatchdog, checkSessionChange } from './loop/watchdog.js';
 import { initSubagentIfNeeded } from './subagent.js';
@@ -216,6 +216,16 @@ function init(): void {
         ipcRenderer.send('cuckoo-switch-share-result', { reqId, ok: true, shareId: r.shareId, sessionId: r.sessionId });
       } catch (err: any) {
         ipcRenderer.send('cuckoo-switch-share-result', { reqId, ok: false, error: err.message });
+      }
+    });
+    // 纯净模式真截断·段1：主进程请求"清 IDB + 刷新以重建完整历史"
+    // （截断必须在刷新后基于完整 IDB 精确回溯，故此处只做清 IDB + 刷新；
+    //  刷新后由 overlay/events.ts → compaction.checkPendingTruncate 完成分享并回执主进程）
+    ipcRenderer.on('cuckoo-truncate-prepare', (_e: any, { webMsgId, newText }: any) => {
+      try {
+        prepareTruncate(webMsgId, newText || '');
+      } catch (err: any) {
+        ipcRenderer.send('cuckoo-truncate-share-ready', { error: (err && err.message) || '截断准备失败' });
       }
     });
     // 追加文本到输入框末尾（MCP 名等，不发送）

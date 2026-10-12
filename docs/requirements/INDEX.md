@@ -29,5 +29,6 @@
 | 022 | feature | [DSH 插件兼容（Cuckoo 里安装/运行 DSH 插件）](./022-dsh-plugin-compat.md) | in_progress | direct-on-master（直接 master 提交） | 2026-10-08 |
 | 023 | fix | [edit 编辑混合换行符文件时保留未编辑区域](./023-edit-preserve-eol.md) | done | fix/023-edit-preserve-eol | 2026-10-06 |
 | 024 | feature | [记忆系统 + 工作快照](./024-memory-snapshot.md) | draft | feat/024-memory-snapshot | 2026-10-06 |
+| 025 | feature | [纯净模式真截断（从某条消息重开新会话）](./025-harness-true-truncate.md) | done | feat/025-harness-true-truncate | 2026-10-12 |
 
-共 24 个需求。
+共 25 个需求。

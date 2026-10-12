@@ -79,11 +79,13 @@ export function initHarnessBridge(): void {
   });
 
   // AI 回复完成 → 上报（目标收束由 goalDone 工具在主进程直接推送，这里不再检测文本标记）
-  onInterceptedResponse((text: string) => {
+  onInterceptedResponse((text: string, meta: any) => {
     const raw = text || '';
     // 回复里没有工具调用 → 本轮真的结束（有工具调用时后面还有工具循环）
     if (!HAS_TOOL_BLOCK_RE.test(raw)) setAiGenerating(false);
-    report({ type: 'assistant-done', text: stripToolBlocks(raw).trim() });
+    // 透传服务端权威消息 id（供 harness 真截断定位；平台未提供时为 null）
+    const msgIds = (meta && meta.msgIds) || null;
+    report({ type: 'assistant-done', text: stripToolBlocks(raw).trim(), msgIds });
   });
 
   // 任务空闲（observer 判定：回复里没有工具调用 = 本轮任务真的结束）→ 上报。

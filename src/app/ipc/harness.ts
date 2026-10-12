@@ -93,6 +93,78 @@ function attachFn(doc: any, win: any, b64: any, fileName: any, mimeType: any, ti
   })();
 }
 
+// 真截断：请求 AI 页面「清 IDB + 刷新」，刷新后由渲染进程完成分享并回执 shareUrl。
+// 因中间有整页刷新（reqId 无法跨刷新传递），故用「单飞」pending 而非 reqId map：
+// 一次只允许一个截断请求进行（截断本就是单用户串行操作）。
+let truncatePending: { resolve: (v: any) => void; timer: any } | null = null;
+
+/** AI 页面回执入口（由 registerHarnessIpc 注册到 ipcMain.on）。
+ *  刷新后的渲染进程经 checkPendingTruncate 完成分享，回执 { shareUrl, shareId, newText } 或 { error }。 */
+function onTruncateShareReady(_event: any, payload: any): void {
+  if (!truncatePending) return;
+  const p = truncatePending;
+  truncatePending = null;
+  if (p.timer) clearTimeout(p.timer);
+  p.resolve(payload || {});
+}
+
+/**
+ * 请求 AI 页面执行「清 IDB + 刷新重建历史」（段1），并等待刷新后的渲染进程回执 shareUrl（段2）。
+ * 超时（含刷新 + 等 IDB 重建 + share 请求）后返回 { error }，绝不滞留。
+ */
+function requestTruncateReady(wc: any, webMsgId: number, newText: string, timeoutMs = 60000): Promise<any> {
+  // 防重入：单飞 pending 下并发触发会让后者的回执覆盖前者、且前者定时器误清后者。
+  // 截断本就是单用户串行操作，直接拒绝并发请求即可（UI 侧点击后即移除编辑态，实务不可达，此为兜底）。
+  if (truncatePending) return Promise.resolve({ error: '已有截断正在进行，请稍候' });
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      if (truncatePending) { truncatePending = null; resolve({ error: '截断超时（未收到分享结果）' }); }
+    }, timeoutMs);
+    truncatePending = { resolve, timer };
+    try { wc.send('cuckoo-truncate-prepare', { webMsgId, newText }); }
+    catch (err: any) { truncatePending = null; clearTimeout(timer); resolve({ error: err.message }); }
+  });
+}
+
+/**
+ * 分享页激活：等页面加载完成 → 在分享页发送新消息（触发克隆成活会话）。
+ * 分享页是静态快照，在其中发消息后 URL 会变为 /a/chat/s/<新id>。
+ * 发送可能因 bridge 尚未就绪而失败 → 有限重试。
+ */
+function waitForLoad(wc: any, timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => { if (done) return; done = true; try { wc.off('did-finish-load', finish); } catch (_) {} resolve(); };
+    try { wc.on('did-finish-load', finish); } catch (_) { finish(); return; }
+    setTimeout(finish, timeoutMs);
+  });
+}
+
+async function activateShareSession(wc: any, shareUrl: string, newText: string, fallbackUrl: string): Promise<void> {
+  // 等分享页导航完成（loadURL 已 await，但 WebContentsView 可能还有二次跳转）
+  await waitForLoad(wc, 15000);
+  // 给分享页前端一点渲染时间，再发消息；最多重试 3 次
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    if (wc.isDestroyed()) return;
+    const url = wc.getURL() || '';
+    // 若已变活会话（/a/chat/s/），说明上一条发送已生效，停止
+    if (/\/a\/chat\/s\//.test(url)) {
+      console.log('[Cuckoo Harness] 分享会话已激活: ' + url);
+      return;
+    }
+    try {
+      console.log('[Cuckoo Harness] 在分享页发送新消息（第 ' + (attempt + 1) + ' 次）');
+      wc.send('harness-user-message', { text: newText });
+    } catch (_) { /* ignore */ }
+  }
+  // 全部重试后仍未变活 → 兜底导航回原会话（避免用户卡在静态分享页）
+  if (fallbackUrl && !wc.isDestroyed()) {
+    console.log('[Cuckoo Harness] 分享会话激活失败，回退到原会话: ' + fallbackUrl);
+    try { await wc.loadURL(fallbackUrl); } catch (_) { /* ignore */ }
+  }
+}
+
 /** 该窗口的 harness view（用于状态查询） */
 function getHarnessView(sender: any): any {
   const ctx = windowState.getContextByWebContents(sender);
@@ -321,6 +393,56 @@ function registerHarnessIpc(): void {
       return { success: false, error: err.message };
     }
   });
+
+  // 真截断：从指定网页消息处开新会话，并在其中发送新消息。
+  // 流程：请求 AI 页面清 IDB + 刷新（重建完整历史）→ 刷新后渲染进程精确截断并回执 shareUrl
+  //      → 本进程导航到分享页 → 在其中发新消息把静态快照激活成活会话。
+  ipcMain.handle('harness-truncate', async (event: any, payload: any) => {
+    const ctx = findContext(event.sender);
+    if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) {
+      return { success: false, error: 'no-ai-view' };
+    }
+    const webMsgId = payload && payload.webMsgId;
+    if (typeof webMsgId !== 'number') return { success: false, error: '缺少有效的 webMsgId' };
+    const wc = ctx.view.webContents;
+    const newText = (payload && payload.newText) || '';
+    console.log('[Cuckoo Harness] 真截断请求 webMsgId=' + webMsgId);
+    // 记录当前会话 id（供失败"返回原会话"）
+    let prevSid = '';
+    try {
+      const provider = ctx.providerId ? getProvider(ctx.providerId) : null;
+      if (provider && typeof provider.extractSessionId === 'function') prevSid = provider.extractSessionId(wc.getURL()) || '';
+    } catch (_) { /* ignore */ }
+    // 段1 + 段2：AI 页面清 IDB + 刷新 → 刷新后渲染进程截断分享 → 回执 shareUrl
+    const r = await requestTruncateReady(wc, webMsgId, newText);
+    if (!r || !r.shareUrl) {
+      return { success: false, error: (r && r.error) || '截断分享失败', prevSessionId: prevSid };
+    }
+    // 导航 AI 页面到分享页（静态快照），加载完后再发新消息触发"变活会话"
+    try {
+      console.log('[Cuckoo Harness] 截断成功，导航到 ' + r.shareUrl);
+      await wc.loadURL(r.shareUrl);
+    } catch (err: any) {
+      return { success: false, error: '导航新会话失败: ' + err.message, shareUrl: r.shareUrl, prevSessionId: prevSid };
+    }
+    // 分享页是静态快照；在其中发送一条消息才会克隆成活会话（URL 变为 /a/chat/s/xxx）。
+    // 不能固定延迟——改为轮询：等页面就绪（did-finish-load）后再发，发送失败可重试。
+    if (newText) {
+      // 回退 URL：原会话（供分享会话激活失败时退回）
+      let fallbackUrl = '';
+      try {
+        const provider = ctx.providerId ? getProvider(ctx.providerId) : null;
+        if (provider && provider.sessionUrlBase && prevSid) fallbackUrl = provider.sessionUrlBase + prevSid;
+      } catch (_) { /* ignore */ }
+      activateShareSession(wc, r.shareUrl, newText, fallbackUrl).catch((err: any) => {
+        console.log('[Cuckoo Harness] 激活分享会话失败: ' + (err && err.message));
+      });
+    }
+    return { success: true, shareUrl: r.shareUrl, shareId: r.shareId, prevSessionId: prevSid };
+  });
+
+  // 真截断：AI 页面（刷新后）回执分享结果
+  ipcMain.on('cuckoo-truncate-share-ready', onTruncateShareReady);
 
   // 退出纯净模式，返回网页模式
   ipcMain.handle('harness-exit', (event: any) => {
