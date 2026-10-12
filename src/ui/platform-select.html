@@ -152,6 +152,53 @@
       color: #8a90b8;
       margin-top: 6px;
     }
+
+    /* ===== 全局统一自定义 Tooltip ===== */
+    .ck-tooltip {
+      position: fixed;
+      z-index: 999999;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(2px) scale(0.98);
+      transition: opacity .12s cubic-bezier(.16, 1, .3, 1), transform .12s cubic-bezier(.16, 1, .3, 1);
+      padding: 5px 9px;
+      font-size: 11.5px;
+      line-height: 1.45;
+      color: #f3f4f6;
+      background: rgba(24, 24, 27, 0.94);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 6px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.32), 0 1px 3px rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      max-width: 320px;
+      word-break: break-word;
+      white-space: pre-line;
+      visibility: hidden;
+      user-select: none;
+    }
+    .ck-tooltip.measuring {
+      display: block !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+    }
+    .ck-tooltip.show {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      visibility: visible;
+    }
+    .ck-tooltip-kbd {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 1px 5px;
+      font-size: 10px;
+      font-family: inherit;
+      color: rgba(255, 255, 255, 0.7);
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 4px;
+      vertical-align: middle;
+    }
   </style>
 </head>
 <body>
@@ -293,6 +340,71 @@
         }
       }, 500);
     }
+
+    // 全局统一自定义 Tooltip 引擎
+    (function () {
+      var tipEl = null, activeTarget = null, showTimer = 0, lastHideTime = 0;
+      function ensureTip() {
+        if (!tipEl) {
+          tipEl = document.createElement('div');
+          tipEl.className = 'ck-tooltip';
+          tipEl.setAttribute('role', 'tooltip');
+          document.body.appendChild(tipEl);
+        }
+        return tipEl;
+      }
+      function position(el, tip) {
+        var rect = el.getBoundingClientRect();
+        tip.style.left = '0px'; tip.style.top = '0px'; tip.classList.add('measuring');
+        var w = tip.offsetWidth, h = tip.offsetHeight;
+        tip.classList.remove('measuring');
+        var gap = 6, top = rect.bottom + gap, left = rect.left + (rect.width - w) / 2;
+        if (top + h > window.innerHeight - 8 && rect.top - h - gap >= 8) top = rect.top - h - gap;
+        if (left < 8) left = 8; else if (left + w > window.innerWidth - 8) left = window.innerWidth - 8 - w;
+        tip.style.left = Math.round(left) + 'px';
+        tip.style.top = Math.round(top) + 'px';
+      }
+      function hide() {
+        if (showTimer) { clearTimeout(showTimer); showTimer = 0; }
+        activeTarget = null;
+        if (tipEl && tipEl.classList.contains('show')) {
+          tipEl.classList.remove('show');
+          lastHideTime = Date.now();
+        }
+      }
+      function onOver(e) {
+        var t = e.target;
+        if (!t || !t.closest) return;
+        var el = t.closest('[title], [data-tooltip]');
+        if (!el) { if (activeTarget && !activeTarget.contains(t)) hide(); return; }
+        var raw = el.getAttribute('title');
+        if (raw) { el.setAttribute('data-tooltip', raw); el.removeAttribute('title'); }
+        var text = (el.getAttribute('data-tooltip') || '').trim();
+        if (!text) { hide(); return; }
+        if (activeTarget === el) return;
+        if (showTimer) clearTimeout(showTimer);
+        activeTarget = el;
+        var isWarm = (Date.now() - lastHideTime < 300);
+        showTimer = setTimeout(function () {
+          if (activeTarget === el && el.isConnected) {
+            var tip = ensureTip();
+            tip.textContent = text;
+            position(el, tip);
+            tip.classList.add('show');
+          }
+        }, isWarm ? 30 : 260);
+      }
+      document.addEventListener('pointerover', onOver, true);
+      document.addEventListener('pointerout', function (e) {
+        if (!activeTarget) return;
+        var rel = e.relatedTarget;
+        if (rel && activeTarget.contains(rel)) return;
+        hide();
+      }, true);
+      document.addEventListener('pointerdown', hide, true);
+      window.addEventListener('scroll', hide, true);
+      window.addEventListener('blur', hide);
+    })();
   </script>
 </body>
 </html>

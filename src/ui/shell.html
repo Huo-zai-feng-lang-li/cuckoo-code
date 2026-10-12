@@ -1180,6 +1180,53 @@
   .ck-plugin-detail-k { color: var(--ck-text-dim); flex-shrink: 0; width: 52px; }
   .ck-plugin-detail-v { color: var(--ck-text); word-break: break-word; flex: 1; line-height: 1.65; }
 
+  /* ===== 全局统一自定义 Tooltip ===== */
+  .ck-tooltip {
+    position: fixed;
+    z-index: 999999;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(2px) scale(0.98);
+    transition: opacity .12s cubic-bezier(.16, 1, .3, 1), transform .12s cubic-bezier(.16, 1, .3, 1);
+    padding: 5px 9px;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: #f3f4f6;
+    background: rgba(24, 24, 27, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.32), 0 1px 3px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    max-width: 320px;
+    word-break: break-word;
+    white-space: pre-line;
+    visibility: hidden;
+    user-select: none;
+  }
+  .ck-tooltip.measuring {
+    display: block !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+  }
+  .ck-tooltip.show {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    visibility: visible;
+  }
+  .ck-tooltip-kbd {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 5px;
+    font-size: 10px;
+    font-family: inherit;
+    color: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 4px;
+    vertical-align: middle;
+  }
+
 /* ===== 目录 ===== */
   .ck-dir-path {
     font-family: "SF Mono", "Consolas", monospace; font-size: 11.5px;
@@ -3656,9 +3703,9 @@
             }
           }
         } else {
-          if (api.appendSnippet) {
+          if (api.triggerSnippet) {
             try {
-              await api.appendSnippet(snippetText(type, name));
+              await api.triggerSnippet(snippetText(type, name), true);
             } catch (_) {
             }
           }
@@ -6165,7 +6212,136 @@
     }
   }
 
+  // src/ui/shell/scripts/tooltip.ts
+  var tipEl = null;
+  var activeTarget = null;
+  var showTimer = 0;
+  var lastHideTime = 0;
+  function ensureTooltipEl() {
+    if (!tipEl) {
+      tipEl = document.getElementById("ck-tooltip");
+      if (!tipEl) {
+        tipEl = document.createElement("div");
+        tipEl.id = "ck-tooltip";
+        tipEl.className = "ck-tooltip";
+        tipEl.setAttribute("role", "tooltip");
+        document.body.appendChild(tipEl);
+      }
+    }
+    return tipEl;
+  }
+  function renderTooltipContent(container, text) {
+    container.innerHTML = "";
+    const m = text.match(/^(.*?)(?:\s*\((Ctrl|Shift|Alt|Cmd|Meta|Enter|Esc|Tab|F\d+)[^)]*\))$/i);
+    if (m && m[1]) {
+      const labelSpan = document.createElement("span");
+      labelSpan.textContent = m[1].trim();
+      container.appendChild(labelSpan);
+      const kbd = document.createElement("span");
+      kbd.className = "ck-tooltip-kbd";
+      kbd.textContent = text.slice(m[1].length).replace(/^\s*\(/, "").replace(/\)$/, "");
+      container.appendChild(kbd);
+    } else {
+      container.textContent = text;
+    }
+  }
+  function positionTooltip(el, tip) {
+    const rect = el.getBoundingClientRect();
+    tip.style.left = "0px";
+    tip.style.top = "0px";
+    tip.classList.add("measuring");
+    const tipW = tip.offsetWidth;
+    const tipH = tip.offsetHeight;
+    tip.classList.remove("measuring");
+    const gap = 6;
+    let top = rect.bottom + gap;
+    let left = rect.left + (rect.width - tipW) / 2;
+    if (top + tipH > window.innerHeight - 8 && rect.top - tipH - gap >= 8) {
+      top = rect.top - tipH - gap;
+    }
+    if (left < 8) {
+      left = 8;
+    } else if (left + tipW > window.innerWidth - 8) {
+      left = window.innerWidth - 8 - tipW;
+    }
+    tip.style.left = `${Math.round(left)}px`;
+    tip.style.top = `${Math.round(top)}px`;
+  }
+  function showTooltip(el, text) {
+    const tip = ensureTooltipEl();
+    renderTooltipContent(tip, text);
+    positionTooltip(el, tip);
+    tip.classList.add("show");
+  }
+  function hideTooltip() {
+    if (showTimer) {
+      clearTimeout(showTimer);
+      showTimer = 0;
+    }
+    activeTarget = null;
+    if (tipEl && tipEl.classList.contains("show")) {
+      tipEl.classList.remove("show");
+      lastHideTime = Date.now();
+    }
+  }
+  function handlePointerOver(e) {
+    const target = e.target;
+    if (!target) return;
+    const el = target.closest("[title], [data-tooltip]");
+    if (!el) {
+      if (activeTarget && !activeTarget.contains(target)) {
+        hideTooltip();
+      }
+      return;
+    }
+    const rawTitle = el.getAttribute("title");
+    if (rawTitle) {
+      el.setAttribute("data-tooltip", rawTitle);
+      el.removeAttribute("title");
+    }
+    const text = (el.getAttribute("data-tooltip") || "").trim();
+    if (!text) {
+      hideTooltip();
+      return;
+    }
+    if (activeTarget === el) return;
+    if (showTimer) clearTimeout(showTimer);
+    activeTarget = el;
+    const isWarm = Date.now() - lastHideTime < 300;
+    const delay = isWarm ? 30 : 260;
+    showTimer = window.setTimeout(() => {
+      if (activeTarget === el && el.isConnected) {
+        showTooltip(el, text);
+      }
+    }, delay);
+  }
+  function handlePointerOut(e) {
+    if (!activeTarget) return;
+    const related = e.relatedTarget;
+    if (related && activeTarget.contains(related)) {
+      return;
+    }
+    hideTooltip();
+  }
+  function initGlobalTooltip() {
+    try {
+      document.addEventListener("pointerover", handlePointerOver, true);
+      document.addEventListener("pointerout", handlePointerOut, true);
+      document.addEventListener("pointerdown", hideTooltip, true);
+      window.addEventListener("scroll", hideTooltip, true);
+      window.addEventListener("blur", hideTooltip);
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") hideTooltip();
+      });
+    } catch (_) {
+    }
+  }
+
   // src/ui/shell/scripts/main.ts
+  try {
+    initGlobalTooltip();
+  } catch (_) {
+  }
   registerTab("workspaces", loadWorkspaces);
   registerTab("files", loadFiles);
   registerTab("snippets", loadSnippets);

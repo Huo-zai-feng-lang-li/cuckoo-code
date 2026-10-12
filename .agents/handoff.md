@@ -1,5 +1,19 @@
 # 最新接续状态 (2026-10-12 更新)
 
+## 2026-10-12 会话完成：全局自定义好看 Tooltip + 纯净模式消息队列/导航优化
+
+- **事实确认**：纯净模式右侧导航原先确实使用的是浏览器原生 title（原代码行 `dot.title = full`，会唤起系统默认黄色/灰色方框提示）。现已彻底升级！
+- **改动文件**：
+  - `src/ui/harness.html`：发送队列去除文本原生 title、hover 底色整行高度 100% 铺满变色、文字与按钮垂直几何居中（`align-items: center`）；导航圆点重构为 `data-tooltip`；内联挂载全局自定义 Tooltip 样式与引擎。
+  - `src/ui/shell/scripts/tooltip.ts`（新增）：全局统一自定义 Tooltip 引擎，在 `pointerover` 捕获阶段拦截所有 `[title]` 并移至 `data-tooltip`（从根源杜绝系统默认提示框），提供 260ms 首次防晃动/30ms 连贯巡视无缝切换、智能边界防溢出（保留 8px 视口间距）、空间不足自适应翻转上下、快捷键提取渲染精致 `<kbd>` 微徽标。
+  - `src/ui/shell/scripts/main.ts`：入口加载并初始化全局 Tooltip 引擎。
+  - `src/ui/shell/styles/components.css`：定义 `.ck-tooltip` 与 `.ck-tooltip-kbd` 现代磨砂深灰毛玻璃悬浮样式。
+  - `src/ui/shell.html`：重新编译打包生成。
+  - `src/ui/platform-select.html`：平台选择页也同步统一引入自定义 Tooltip 样式与引擎。
+  - `test/ui/harness-page.test.js` & `test/ui/tooltip.test.js`（新增）：自动化测试守卫，固化防回归。
+- **验证**：typecheck ✅ / test 948 passed ✅ / lint 0 errors ✅ / compile ✅
+- **状态**：交付完成，功能闭环。
+
 ## 2026-10-12 追加会话：纯净模式发送队列 + 右侧对话导航
 
 - **提交**：`bb19a22` feat(harness): 纯净模式发送队列 + 右侧对话快捷导航

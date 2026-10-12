@@ -186,3 +186,29 @@ test('对话导航：空态/切会话时清空（无残留）', () => {
   assert.ok(body.includes('getConvNavEl'), '空态应清空导航');
   assert.ok(body.includes("remove('show')"), '空态应移除导航展开态');
 });
+
+test('发送队列：文本去除原生 title、hover 底色铺满变色、文字垂直居中', () => {
+  // 1. sq-text 不应带有原生 title
+  assert.ok(!/<span class="sq-text" title=/.test(script), 'sq-text 文本不应带有原生 title');
+  assert.ok(/<span class="sq-text"><\/span>/.test(script), 'sq-text 应为纯净无 title 的 span 节点');
+
+  // 2. hover 整条铺满变色
+  assert.ok(/\.sq-item:hover\s*\{[^}]*background:\s*var\(--surface-hover\)/.test(html), 'sq-item:hover 应整行底色变色');
+  assert.ok(!/\.sq-item \.sq-text:hover \{/.test(html), '不应再保留仅文字局部的孤立 hover 底色');
+
+  // 3. 文字垂直居中：align-items: center
+  assert.ok(/\.sq-item\s*\{[^}]*align-items:\s*center;/.test(html), 'sq-item 应采用 align-items: center 垂直居中');
+  assert.ok(/\.sq-item \.sq-text\s*\{[^}]*line-height:\s*20px;/.test(html), 'sq-text 应有固定行高保障居中');
+});
+
+test('对话导航与全局 Tooltip：告别系统原生 title，统一自定义 Tooltip 呈现', () => {
+  // 1. 导航圆点使用 data-tooltip 而非原生 dot.title
+  assert.ok(script.includes("dot.setAttribute('data-tooltip', full)"), '导航圆点应使用 data-tooltip 接入自定义 Tooltip');
+  assert.ok(!script.includes('dot.title = full'), '导航圆点不应使用原生 dot.title');
+
+  // 2. harness 内置统一自定义 Tooltip 样式与脚本
+  assert.ok(/\.ck-tooltip\s*\{/.test(html), '应包含 .ck-tooltip 样式');
+  assert.ok(script.includes('initHarnessTooltip'), '内联脚本应初始化 Tooltip 引擎');
+  assert.ok(script.includes("removeAttribute('title')"), 'Tooltip 引擎应自动拦截并清除原生 title');
+});
+

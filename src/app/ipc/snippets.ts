@@ -68,12 +68,12 @@ function registerSnippetsIpc(): void {
     // event.sender 是壳页面 → 反查所属窗口的 AI 页面 view
     const ctx = windowState.getContextByWebContents(event.sender);
     if (!ctx) return { success: false, error: '未找到窗口' };
-    // 纯净模式可见 → 填入 harness 输入框（不自动发送，让用户确认）
+    // 纯净模式可见 → 填入 harness 输入框（autoSend=true 时由 harness 页直接发送）
     const harnessVisible = !!(ctx.win && (ctx.win as any).__ckHarnessVisible);
     const hv: any = (ctx as any).harnessView;
     if (harnessVisible && hv && !hv.webContents.isDestroyed()) {
       try {
-        hv.webContents.send('harness-append-input', { text: content });
+        hv.webContents.send('harness-append-input', { text: content, autoSend: autoSend !== false });
         return { success: true };
       } catch (err: any) {
         return { success: false, error: err.message };

@@ -515,10 +515,25 @@
   .send-queue { max-width: 100%; margin: 0 auto 8px; display: none; flex-direction: column; gap: 5px; }
   .send-queue.show { display: flex; }
   .sq-head { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-dim); padding: 0 2px; }
-  .sq-head .sq-count { color: var(--accent); font-weight: 600; }
-  .sq-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 10px; border-radius: 8px; background: var(--bg-elev); border: 1px solid var(--border); font-size: 12px; color: var(--text-2); }
-  .sq-item .sq-text { flex: 1; cursor: text; border-radius: 5px; padding: 3px 4px; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
-  .sq-item .sq-text:hover { background: var(--surface-hover); }
+  .sq-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; border-radius: 8px;
+    background: var(--bg-elev); border: 1px solid var(--border);
+    font-size: 12px; color: var(--text-2);
+    transition: background .14s, border-color .14s;
+  }
+  .sq-item:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-strong);
+  }
+  .sq-item:has(.ck-mledit) { align-items: flex-start; }
+  .sq-item .sq-text {
+    flex: 1; cursor: text; border-radius: 5px;
+    padding: 0 4px; line-height: 20px; min-height: 20px;
+    white-space: pre-wrap; word-break: break-word;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+    overflow: hidden;
+  }
   /* 就地编辑统一用多行文本域（隐藏滚动条，靠自动增高） */
   .ck-mledit {
     width: 100%; box-sizing: border-box; flex: 1;
@@ -552,6 +567,53 @@
   .conv-nav-dot:hover .cn-bar { background: var(--accent); width: 20px; }
   .conv-nav-dot.active .cn-bar { background: var(--accent); width: 20px; }
   .conv-nav-dot.active .cn-text { color: var(--accent); font-weight: 600; }
+
+  /* ===== 全局统一自定义 Tooltip ===== */
+  .ck-tooltip {
+    position: fixed;
+    z-index: 999999;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(2px) scale(0.98);
+    transition: opacity .12s cubic-bezier(.16, 1, .3, 1), transform .12s cubic-bezier(.16, 1, .3, 1);
+    padding: 5px 9px;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: #f3f4f6;
+    background: rgba(24, 24, 27, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.32), 0 1px 3px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    max-width: 320px;
+    word-break: break-word;
+    white-space: pre-line;
+    visibility: hidden;
+    user-select: none;
+  }
+  .ck-tooltip.measuring {
+    display: block !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+  }
+  .ck-tooltip.show {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    visibility: visible;
+  }
+  .ck-tooltip-kbd {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 5px;
+    font-size: 10px;
+    font-family: inherit;
+    color: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 4px;
+    vertical-align: middle;
+  }
 
 </style>
 </head>
@@ -2085,17 +2147,21 @@
     });
   }
 
-  /** 追加文本到输入框末尾（不发送）——供"最近"快捷项回显 */
-  function appendToInput(text) {
+  /** 追加文本到输入框末尾；autoSend=true 时回显后直接发送——供"最近"快捷项 */
+  function appendToInput(text, autoSend) {
     if (typeof text !== 'string' || !text) return;
     var cur = input.value || '';
     var next = cur ? (cur + '\n' + text) : text;
     input.value = next;
     try { input.focus(); } catch (e) { /* ignore */ }
     try { input.setSelectionRange(next.length, next.length); } catch (e) { /* ignore */ }
+    if (autoSend) {
+      // 与 Enter 一致：忙时入队（不打断当前任务），空闲时直接发送
+      try { if (isBusy()) { tryEnqueue(); } else { send(); } } catch (e) { /* ignore */ }
+    }
   }
   if (api.onAppendInput) {
-    api.onAppendInput(function (text) { appendToInput(text); });
+    api.onAppendInput(function (text, autoSend) { appendToInput(text, autoSend); });
   }
 
   // ===== 发送队列（运行中排队待发消息，任务空闲自动发下一条）=====
@@ -2132,7 +2198,7 @@
             '<button class="sq-btn sq-send-btn" title="立即发送"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M8 3l-4 4M8 3l4 4"/></svg></button>' +
             '<button class="sq-btn sq-del" title="移出队列"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>' +
           '</div>' +
-          '<span class="sq-text" title="点击编辑"></span>';
+          '<span class="sq-text"></span>';
         var textEl = row.querySelector('.sq-text');
         textEl.textContent = preview;
         // 编辑图标 = 同「点击文本」
@@ -2265,7 +2331,7 @@
         var dot = document.createElement('div');
         dot.className = 'conv-nav-dot';
         var full = (users[idx].textContent || '').replace(/\s+/g, ' ').trim();
-        dot.title = full; // 收起态悬停显示完整文本
+        dot.setAttribute('data-tooltip', full); // 收起态悬停通过全局统一自定义 Tooltip 显示完整文本
         var txt = document.createElement('span');
         txt.className = 'cn-text';
         txt.textContent = full.slice(0, 60) || ('第 ' + (idx + 1) + ' 条');
@@ -2940,6 +3006,154 @@
     if (typeof api.getHarnessBackground === 'function') {
       api.getHarnessBackground().then(function (r) { if (r && r.success && r.background) applyBackground({ url: r.background.url, overlay: r.background.overlay, offsetX: r.offsetX, offsetY: r.offsetY, winW: r.winW, winH: r.winH }); }).catch(function () {});
     }
+  })();
+
+  // ===== 全局统一自定义 Tooltip 引擎（统一接管所有原生 title） =====
+  (function initHarnessTooltip() {
+    var tipEl = null;
+    var activeTarget = null;
+    var showTimer = 0;
+    var lastHideTime = 0;
+
+    function ensureTooltipEl() {
+      if (!tipEl) {
+        tipEl = document.getElementById('ck-tooltip');
+        if (!tipEl) {
+          tipEl = document.createElement('div');
+          tipEl.id = 'ck-tooltip';
+          tipEl.className = 'ck-tooltip';
+          tipEl.setAttribute('role', 'tooltip');
+          document.body.appendChild(tipEl);
+        }
+      }
+      return tipEl;
+    }
+
+    function renderTooltipContent(container, text) {
+      container.innerHTML = '';
+      var m = text.match(/^(.*?)(?:\s*\((Ctrl|Shift|Alt|Cmd|Meta|Enter|Esc|Tab|F\d+)[^)]*\))$/i);
+      if (m && m[1]) {
+        var labelSpan = document.createElement('span');
+        labelSpan.textContent = m[1].trim();
+        container.appendChild(labelSpan);
+
+        var kbd = document.createElement('span');
+        kbd.className = 'ck-tooltip-kbd';
+        kbd.textContent = text.slice(m[1].length).replace(/^\s*\(/, '').replace(/\)$/, '');
+        container.appendChild(kbd);
+      } else {
+        container.textContent = text;
+      }
+    }
+
+    function positionTooltip(el, tip) {
+      var rect = el.getBoundingClientRect();
+      tip.style.left = '0px';
+      tip.style.top = '0px';
+      tip.classList.add('measuring');
+
+      var tipW = tip.offsetWidth;
+      var tipH = tip.offsetHeight;
+      tip.classList.remove('measuring');
+
+      var gap = 6;
+      var top = rect.bottom + gap;
+      var left = rect.left + (rect.width - tipW) / 2;
+
+      // 下方空间不足且上方放得下时，翻转到上方
+      if (top + tipH > window.innerHeight - 8 && rect.top - tipH - gap >= 8) {
+        top = rect.top - tipH - gap;
+      }
+
+      // 水平防溢出保护
+      if (left < 8) {
+        left = 8;
+      } else if (left + tipW > window.innerWidth - 8) {
+        left = window.innerWidth - 8 - tipW;
+      }
+
+      tip.style.left = Math.round(left) + 'px';
+      tip.style.top = Math.round(top) + 'px';
+    }
+
+    function showTooltip(el, text) {
+      var tip = ensureTooltipEl();
+      renderTooltipContent(tip, text);
+      positionTooltip(el, tip);
+      tip.classList.add('show');
+    }
+
+    function hideTooltip() {
+      if (showTimer) {
+        clearTimeout(showTimer);
+        showTimer = 0;
+      }
+      activeTarget = null;
+      if (tipEl && tipEl.classList.contains('show')) {
+        tipEl.classList.remove('show');
+        lastHideTime = Date.now();
+      }
+    }
+
+    function handlePointerOver(e) {
+      var target = e.target;
+      if (!target || !target.closest) return;
+
+      var el = target.closest('[title], [data-tooltip]');
+      if (!el) {
+        if (activeTarget && !activeTarget.contains(target)) {
+          hideTooltip();
+        }
+        return;
+      }
+
+      // 立即拦截原生 title，杜绝系统原生提示框
+      var rawTitle = el.getAttribute('title');
+      if (rawTitle) {
+        el.setAttribute('data-tooltip', rawTitle);
+        el.removeAttribute('title');
+      }
+
+      var text = (el.getAttribute('data-tooltip') || '').trim();
+      if (!text) {
+        hideTooltip();
+        return;
+      }
+
+      if (activeTarget === el) return;
+
+      if (showTimer) clearTimeout(showTimer);
+      activeTarget = el;
+
+      var isWarm = (Date.now() - lastHideTime < 300);
+      var delay = isWarm ? 30 : 260;
+
+      showTimer = setTimeout(function () {
+        if (activeTarget === el && el.isConnected) {
+          showTooltip(el, text);
+        }
+      }, delay);
+    }
+
+    function handlePointerOut(e) {
+      if (!activeTarget) return;
+      var related = e.relatedTarget;
+      if (related && activeTarget.contains(related)) {
+        return;
+      }
+      hideTooltip();
+    }
+
+    try {
+      document.addEventListener('pointerover', handlePointerOver, true);
+      document.addEventListener('pointerout', handlePointerOut, true);
+      document.addEventListener('pointerdown', hideTooltip, true);
+      window.addEventListener('scroll', hideTooltip, true);
+      window.addEventListener('blur', hideTooltip);
+      window.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') hideTooltip();
+      });
+    } catch (_) {}
   })();
 })();
 </script>

@@ -123,8 +123,9 @@ export function renderRecent(): void {
           try { await api.triggerSnippet(it.payload, it.autoSend !== false); } catch (_) { /* ignore */ }
         }
       } else {
-        if (api.appendSnippet) {
-          try { await api.appendSnippet(snippetText(type, name)); } catch (_) { /* ignore */ }
+        // 底栏快捷方式：回显到输入框后直接发送（技能/MCP/子代理）
+        if (api.triggerSnippet) {
+          try { await api.triggerSnippet(snippetText(type, name), true); } catch (_) { /* ignore */ }
         }
       }
     });

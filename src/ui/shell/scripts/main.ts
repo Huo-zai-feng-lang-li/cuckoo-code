@@ -26,6 +26,10 @@ import { loadRules } from './pages/rules.js';
 import { initPluginShell } from './plugin-shell.js';
 import { initModalGuard } from './modal-guard.js';
 import { initThemePresenter } from './theme-presenter.js';
+import { initGlobalTooltip } from './tooltip.js';
+
+// 全局统一自定义 Tooltip（接管所有 title，告别系统原生提示）
+try { initGlobalTooltip(); } catch (_) { /* ignore */ }
 
 // 注册 tab → 加载函数（sidebar 点击时调用）
 registerTab('workspaces', loadWorkspaces);
