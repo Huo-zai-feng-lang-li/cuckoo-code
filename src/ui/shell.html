@@ -6465,6 +6465,7 @@
       el.setAttribute("data-ck-title", rawTitle);
       el.removeAttribute("title");
     }
+    if (activeTarget === el) return;
     let text = (el.getAttribute("data-tooltip") || "").trim();
     if (!text) {
       const implicit = (el.getAttribute("data-ck-title") || "").trim();
@@ -6474,7 +6475,6 @@
       hideTooltip();
       return;
     }
-    if (activeTarget === el) return;
     if (showTimer) clearTimeout(showTimer);
     activeTarget = el;
     const isWarm = Date.now() - lastHideTime < 300;

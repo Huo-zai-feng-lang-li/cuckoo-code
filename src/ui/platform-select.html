@@ -389,13 +389,13 @@
         if (!el) { if (activeTarget && !activeTarget.contains(t)) hide(); return; }
         var raw = el.getAttribute('title');
         if (raw) { el.setAttribute('data-ck-title', raw); el.removeAttribute('title'); }
+        if (activeTarget === el) return;
         var text = (el.getAttribute('data-tooltip') || '').trim();
         if (!text) {
           var implicit = (el.getAttribute('data-ck-title') || '').trim();
           if (implicit && (isIconLike(el) || isClipped(el))) text = implicit;
         }
         if (!text) { hide(); return; }
-        if (activeTarget === el) return;
         if (showTimer) clearTimeout(showTimer);
         activeTarget = el;
         var isWarm = (Date.now() - lastHideTime < 300);

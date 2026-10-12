@@ -2675,15 +2675,17 @@
     }
     requestAnimationFrame(step);
   }
+  // 离屏测量探针：复用一个节点（避免每条消息都 create/append/remove DOM）
+  var measureProbe = null;
   /** 离屏测量文本宽度是否超过展开面板文本区宽度（约 240px），用于决定是否弹提示 */
   function textOverflowsPanel(text) {
-    var probe = document.createElement('span');
-    probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;white-space:nowrap;font-size:12px;visibility:hidden;';
-    probe.textContent = text;
-    document.body.appendChild(probe);
-    var w = probe.offsetWidth;
-    document.body.removeChild(probe);
-    return w > 240;
+    if (!measureProbe) {
+      measureProbe = document.createElement('span');
+      measureProbe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;white-space:nowrap;font-size:12px;visibility:hidden;';
+      document.body.appendChild(measureProbe);
+    }
+    measureProbe.textContent = text;
+    return measureProbe.offsetWidth > 240;
   }
   function updateConvNav() {
     var convNavEl = getConvNavEl();
@@ -3546,6 +3548,9 @@
         el.removeAttribute('title');
       }
 
+      // 同一元素内移动 → 直接返回，避免重复跑 isClipped（O(N) 遍历子元素）
+      if (activeTarget === el) return;
+
       // data-tooltip：显式声明，总是展示；原生 title：纯图标或无裁剪时按需展示
       var text = (el.getAttribute('data-tooltip') || '').trim();
       if (!text) {
@@ -3556,8 +3561,6 @@
         hideTooltip();
         return;
       }
-
-      if (activeTarget === el) return;
 
       if (showTimer) clearTimeout(showTimer);
       activeTarget = el;

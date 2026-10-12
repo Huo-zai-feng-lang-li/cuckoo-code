@@ -132,12 +132,16 @@ function handlePointerOver(e: PointerEvent): void {
     return;
   }
 
-  // 原生 title 转存为 data-ck-title 并移除，杜绝原生提示
+  // 原生 title 转存为 data-ck-title 并移除，杜绝原生提示（幂等：转存后 title 即消失）
   const rawTitle = el.getAttribute('title');
   if (rawTitle) {
     el.setAttribute('data-ck-title', rawTitle);
     el.removeAttribute('title');
   }
+
+  // 同一元素内移动（子元素间 pointerover 反复触发）→ 直接返回，
+  // 避免重复跑下面的 isClipped（O(N) 遍历子元素）
+  if (activeTarget === el) return;
 
   // data-tooltip：显式声明（如导航圆点），总是展示；
   // 原生 title（data-ck-title）：仅当内容被裁剪（显示不全）时才展示，避免到处弹提示。
@@ -151,8 +155,6 @@ function handlePointerOver(e: PointerEvent): void {
     hideTooltip();
     return;
   }
-
-  if (activeTarget === el) return;
 
   if (showTimer) clearTimeout(showTimer);
   activeTarget = el;
