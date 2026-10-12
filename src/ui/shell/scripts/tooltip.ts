@@ -104,11 +104,22 @@ export function hideTooltip(): void {
   }
 }
 
+/** 元素（或其后代）内容是否被裁剪（显示不全）—— 用于判断原生 title 是否值得展示 */
+function isClipped(el: HTMLElement): boolean {
+  const nodes: Element[] = [el, ...Array.from(el.querySelectorAll('*'))];
+  for (const n of nodes) {
+    const h = n as HTMLElement;
+    if (h.clientWidth === 0 && h.clientHeight === 0) continue;
+    if (h.scrollWidth > h.clientWidth + 1 || h.scrollHeight > h.clientHeight + 1) return true;
+  }
+  return false;
+}
+
 function handlePointerOver(e: PointerEvent): void {
   const target = e.target as HTMLElement | null;
   if (!target) return;
 
-  const el = target.closest('[title], [data-tooltip]') as HTMLElement | null;
+  const el = target.closest('[title], [data-tooltip], [data-ck-title]') as HTMLElement | null;
   if (!el) {
     if (activeTarget && !activeTarget.contains(target)) {
       hideTooltip();
@@ -116,14 +127,20 @@ function handlePointerOver(e: PointerEvent): void {
     return;
   }
 
-  // 立即拦截原生 title 并清除，杜绝原生 tooltip 计时器触发
+  // 原生 title 转存为 data-ck-title 并移除，杜绝原生提示
   const rawTitle = el.getAttribute('title');
   if (rawTitle) {
-    el.setAttribute('data-tooltip', rawTitle);
+    el.setAttribute('data-ck-title', rawTitle);
     el.removeAttribute('title');
   }
 
-  const text = (el.getAttribute('data-tooltip') || '').trim();
+  // data-tooltip：显式声明（如导航圆点），总是展示；
+  // 原生 title（data-ck-title）：仅当内容被裁剪（显示不全）时才展示，避免到处弹提示。
+  let text = (el.getAttribute('data-tooltip') || '').trim();
+  if (!text) {
+    const implicit = (el.getAttribute('data-ck-title') || '').trim();
+    if (implicit && isClipped(el)) text = implicit;
+  }
   if (!text) {
     hideTooltip();
     return;

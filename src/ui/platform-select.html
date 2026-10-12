@@ -372,14 +372,27 @@
           lastHideTime = Date.now();
         }
       }
+      function isClipped(el) {
+        var nodes = [el].concat(Array.prototype.slice.call(el.querySelectorAll('*')));
+        for (var i = 0; i < nodes.length; i++) {
+          var h = nodes[i];
+          if (h.clientWidth === 0 && h.clientHeight === 0) continue;
+          if (h.scrollWidth > h.clientWidth + 1 || h.scrollHeight > h.clientHeight + 1) return true;
+        }
+        return false;
+      }
       function onOver(e) {
         var t = e.target;
         if (!t || !t.closest) return;
-        var el = t.closest('[title], [data-tooltip]');
+        var el = t.closest('[title], [data-tooltip], [data-ck-title]');
         if (!el) { if (activeTarget && !activeTarget.contains(t)) hide(); return; }
         var raw = el.getAttribute('title');
-        if (raw) { el.setAttribute('data-tooltip', raw); el.removeAttribute('title'); }
+        if (raw) { el.setAttribute('data-ck-title', raw); el.removeAttribute('title'); }
         var text = (el.getAttribute('data-tooltip') || '').trim();
+        if (!text) {
+          var implicit = (el.getAttribute('data-ck-title') || '').trim();
+          if (implicit && isClipped(el)) text = implicit;
+        }
         if (!text) { hide(); return; }
         if (activeTarget === el) return;
         if (showTimer) clearTimeout(showTimer);

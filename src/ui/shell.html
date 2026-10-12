@@ -6284,10 +6284,19 @@
       lastHideTime = Date.now();
     }
   }
+  function isClipped(el) {
+    const nodes = [el, ...Array.from(el.querySelectorAll("*"))];
+    for (const n of nodes) {
+      const h = n;
+      if (h.clientWidth === 0 && h.clientHeight === 0) continue;
+      if (h.scrollWidth > h.clientWidth + 1 || h.scrollHeight > h.clientHeight + 1) return true;
+    }
+    return false;
+  }
   function handlePointerOver(e) {
     const target = e.target;
     if (!target) return;
-    const el = target.closest("[title], [data-tooltip]");
+    const el = target.closest("[title], [data-tooltip], [data-ck-title]");
     if (!el) {
       if (activeTarget && !activeTarget.contains(target)) {
         hideTooltip();
@@ -6296,10 +6305,14 @@
     }
     const rawTitle = el.getAttribute("title");
     if (rawTitle) {
-      el.setAttribute("data-tooltip", rawTitle);
+      el.setAttribute("data-ck-title", rawTitle);
       el.removeAttribute("title");
     }
-    const text = (el.getAttribute("data-tooltip") || "").trim();
+    let text = (el.getAttribute("data-tooltip") || "").trim();
+    if (!text) {
+      const implicit = (el.getAttribute("data-ck-title") || "").trim();
+      if (implicit && isClipped(el)) text = implicit;
+    }
     if (!text) {
       hideTooltip();
       return;

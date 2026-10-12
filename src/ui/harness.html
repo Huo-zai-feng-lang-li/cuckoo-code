@@ -123,28 +123,51 @@
   .msg { margin-bottom: 18px; animation: fade .16s ease; position: relative; }
   @keyframes fade { from{opacity:0; transform:translateY(3px)} to{opacity:1; transform:none} }
 
-  /* 悬停显示复制按钮（右上角浮出） */
-  .msg .msg-copy {
-    position: absolute; top: 0; right: 0;
-    display: none; align-items: center; gap: 4px;
-    height: 24px; padding: 0 8px; border-radius: 6px;
-    background: var(--bg-elev); border: 1px solid var(--border-strong);
-    color: var(--text-dim); font-size: 11px; cursor: pointer;
-    box-shadow: 0 2px 8px var(--shadow-color);
+  /* 消息悬停操作按钮组 */
+  .msg-actions {
+    display: flex; align-items: center; gap: 4px;
+    opacity: 0; pointer-events: none; transition: opacity .14s;
+    flex-shrink: 0;
   }
-  .msg:hover .msg-copy { display: flex; }
-  .msg .msg-copy:hover { color: var(--text); background: var(--surface); }
-  .msg .msg-copy svg { width: 12px; height: 12px; }
-  .msg .msg-copy.copied { color: var(--green); border-color: var(--green); }
+  .msg:hover .msg-actions { opacity: 1; pointer-events: auto; }
 
-  /* 用户消息：右对齐 */
-  .msg.user { display: flex; justify-content: flex-end; }
+  .msg-act-btn {
+    width: 24px; height: 24px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--bg-elev);
+    color: var(--text-dim); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0; transition: all .14s; box-shadow: 0 1px 3px var(--shadow-color);
+  }
+  .msg-act-btn:hover { color: var(--text); background: var(--surface-hover); border-color: var(--border-strong); }
+  .msg-act-btn svg { width: 13px; height: 13px; }
+  .msg-act-btn.act-del:hover { color: var(--red); border-color: var(--red); }
+  .msg-act-btn.copied { color: var(--green); border-color: var(--green); }
+
+  /* 用户消息：右对齐，操作按钮排在气泡左侧（永不遮挡气泡文字） */
+  .msg.user { display: flex; justify-content: flex-end; align-items: flex-start; gap: 8px; position: relative; }
+  .msg.user .msg-actions { margin-top: 4px; }
   .msg.user .bubble {
     max-width: 80%; background: var(--user-bg); color: var(--text);
     padding: 9px 13px; border-radius: 10px;
     white-space: pre-wrap; word-break: break-word; line-height: 1.6;
-    border: 1px solid var(--border-soft);
+    border: 1px solid var(--border-soft); position: relative;
   }
+  .msg.user .bubble:has(.ck-mledit) { width: 80%; }
+
+  /* 气泡编辑动作按钮 */
+  .msg-edit-bar { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+  .msg-edit-btn {
+    height: 24px; padding: 0 10px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--surface);
+    color: var(--text-2); font-size: 11.5px; cursor: pointer;
+    font-family: inherit; transition: all .14s;
+  }
+  .msg-edit-btn:hover { background: var(--surface-hover); color: var(--text); }
+  .msg-edit-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .msg-edit-btn.primary:hover { opacity: .9; }
+
+  /* 助手消息：操作栏排在消息底部 */
+  .msg.assistant .msg-actions { margin-top: 8px; }
 
   /* 助手消息：左对齐，无气泡，前缀标记 */
   .msg.assistant { position: relative; }
@@ -766,8 +789,219 @@
     history.push(e);
     saveHist();
   }
+  var PREFIX_SVG = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l1.8 4.6L14.5 8l-4.7 2.4L8 15l-1.8-4.6L1.5 8l4.7-2.4z"/></svg>';
+
+  // 消息动作图标（纯图标）
+  var ACT_ICONS = {
+    copy: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V3.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg>',
+    check: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6"/></svg>',
+    edit: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2.5l2.5 2.5-8 8L2 14l1-3.5z"/></svg>',
+    del: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h10M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M4.5 4.5l.7 9a1.5 1.5 0 0 0 1.5 1.5h4.6a1.5 1.5 0 0 0 1.5-1.5l.7-9"/><path d="M6.5 7.5v4.5M9.5 7.5v4.5"/></svg>'
+  };
+
+  function copyTextToClipboard(text, btn) {
+    if (!text) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text);
+      else {
+        var ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+      }
+      btn.classList.add('copied');
+      btn.innerHTML = ACT_ICONS.check;
+      btn.setAttribute('data-tooltip', '已复制');
+      setTimeout(function () {
+        btn.classList.remove('copied');
+        btn.innerHTML = ACT_ICONS.copy;
+        btn.setAttribute('data-tooltip', '复制');
+      }, 1500);
+    } catch (_) {}
+  }
+
+  function deleteUserMessage(msgEl, histItem) {
+    var toRemove = [msgEl];
+    var next = msgEl.nextElementSibling;
+    while (next && !next.classList.contains('user')) {
+      var curNext = next;
+      next = next.nextElementSibling;
+      toRemove.push(curNext);
+    }
+    for (var i = 0; i < toRemove.length; i++) {
+      if (toRemove[i].parentNode) toRemove[i].parentNode.removeChild(toRemove[i]);
+    }
+    if (histItem) {
+      var at = history.indexOf(histItem);
+      if (at >= 0) {
+        var end = at + 1;
+        while (end < history.length && history[end].t !== 'user') end++;
+        history.splice(at, end - at);
+        saveHist();
+      }
+    } else {
+      var t = (msgEl.querySelector('.bubble') || {}).innerText || '';
+      for (var j = history.length - 1; j >= 0; j--) {
+        if (history[j].t === 'user' && history[j].text === t) {
+          var e2 = j + 1;
+          while (e2 < history.length && history[e2].t !== 'user') e2++;
+          history.splice(j, e2 - j);
+          saveHist();
+          break;
+        }
+      }
+    }
+    try { updateConvNav(); } catch (e) { /* ignore */ }
+    var remaining = stream.querySelectorAll('.msg, .tool');
+    if (!remaining.length) showEmptyState();
+  }
+
+  function editUserMessage(msgEl, bubbleEl, origText, histItem) {
+    if (bubbleEl.querySelector('.ck-mledit')) return;
+    var ta = document.createElement('textarea');
+    ta.className = 'ck-mledit';
+    ta.value = origText;
+    var bar = document.createElement('div');
+    bar.className = 'msg-edit-bar';
+    bar.innerHTML = '<button class="msg-edit-btn msg-edit-cancel">取消</button><button class="msg-edit-btn msg-edit-save primary">发送</button>';
+
+    bubbleEl.innerHTML = '';
+    bubbleEl.appendChild(ta);
+    bubbleEl.appendChild(bar);
+    autoGrowTextarea(ta);
+    ta.focus();
+    try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) { /* ignore */ }
+
+    function cancel() {
+      bubbleEl.innerHTML = esc(origText);
+    }
+    function submit() {
+      var newText = ta.value.trim();
+      if (!newText || newText === origText) { cancel(); return; }
+      deleteUserMessage(msgEl, histItem);
+      input.value = newText;
+      send();
+    }
+    ta.addEventListener('input', function () { autoGrowTextarea(ta); });
+    ta.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+      e.stopPropagation();
+    });
+    bar.querySelector('.msg-edit-cancel').addEventListener('click', function (e) { e.stopPropagation(); cancel(); });
+    bar.querySelector('.msg-edit-save').addEventListener('click', function (e) { e.stopPropagation(); submit(); });
+  }
+
+  function attachUserActions(msgEl, bubbleEl, getText, histItem) {
+    if (msgEl.querySelector('.msg-actions')) return;
+    var actions = document.createElement('div');
+    actions.className = 'msg-actions user-actions';
+
+    var editBtn = document.createElement('button');
+    editBtn.className = 'msg-act-btn act-edit';
+    editBtn.innerHTML = ACT_ICONS.edit;
+    editBtn.setAttribute('data-tooltip', '编辑消息');
+    editBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var t = typeof getText === 'function' ? getText() : '';
+      editUserMessage(msgEl, bubbleEl, t, histItem);
+    });
+
+    var copyBtn = document.createElement('button');
+    copyBtn.className = 'msg-act-btn act-copy';
+    copyBtn.innerHTML = ACT_ICONS.copy;
+    copyBtn.setAttribute('data-tooltip', '复制');
+    copyBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var t = typeof getText === 'function' ? getText() : '';
+      copyTextToClipboard(t, copyBtn);
+    });
+
+    var delBtn = document.createElement('button');
+    delBtn.className = 'msg-act-btn act-del';
+    delBtn.innerHTML = ACT_ICONS.del;
+    delBtn.setAttribute('data-tooltip', '删除消息');
+    delBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      deleteUserMessage(msgEl, histItem);
+    });
+
+    actions.appendChild(editBtn);
+    actions.appendChild(copyBtn);
+    actions.appendChild(delBtn);
+    msgEl.insertBefore(actions, bubbleEl);
+  }
+
+  function deleteAssistantMessage(msgEl, histItem) {
+    if (msgEl.parentNode) msgEl.parentNode.removeChild(msgEl);
+    if (histItem) {
+      var at = history.indexOf(histItem);
+      if (at >= 0) { history.splice(at, 1); saveHist(); }
+    } else {
+      var text = (msgEl.querySelector('.body') || {}).innerText || '';
+      for (var i = history.length - 1; i >= 0; i--) {
+        if (history[i].t === 'assistant' && (history[i].text === text || (text && history[i].text && history[i].text.indexOf(text.slice(0, 30)) >= 0))) {
+          history.splice(i, 1);
+          saveHist();
+          break;
+        }
+      }
+    }
+    var remaining = stream.querySelectorAll('.msg, .tool');
+    if (!remaining.length) showEmptyState();
+  }
+
+  function attachAssistantActions(msgEl, getText, histItem) {
+    if (msgEl.querySelector('.msg-actions')) return;
+    var actions = document.createElement('div');
+    actions.className = 'msg-actions assistant-actions';
+
+    var copyBtn = document.createElement('button');
+    copyBtn.className = 'msg-act-btn act-copy';
+    copyBtn.innerHTML = ACT_ICONS.copy;
+    copyBtn.setAttribute('data-tooltip', '复制');
+    copyBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var t = typeof getText === 'function' ? getText() : '';
+      copyTextToClipboard(t, copyBtn);
+    });
+
+    var delBtn = document.createElement('button');
+    delBtn.className = 'msg-act-btn act-del';
+    delBtn.innerHTML = ACT_ICONS.del;
+    delBtn.setAttribute('data-tooltip', '删除消息');
+    delBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      deleteAssistantMessage(msgEl, histItem);
+    });
+
+    actions.appendChild(copyBtn);
+    actions.appendChild(delBtn);
+    msgEl.appendChild(actions);
+  }
+
+  function attachCopy(container, getText) {
+    if (container.classList.contains('assistant')) attachAssistantActions(container, getText);
+    else if (container.classList.contains('user')) {
+      var b = container.querySelector('.bubble');
+      if (b) attachUserActions(container, b, getText);
+    }
+  }
+
+  function addUser(text, histItem) {
+    clearEmpty();
+    var d = document.createElement('div');
+    d.className = 'msg user';
+    var bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.innerHTML = esc(text);
+    d.appendChild(bubble);
+    attachUserActions(d, bubble, function () { return text; }, histItem);
+    stream.appendChild(d);
+    scrollBottom(true);
+    try { updateConvNav(); } catch (e) { /* ignore */ }
+  }
+
   // 静态渲染助手消息（历史恢复专用，不走去重/流式逻辑，避免丢消息）
-  function renderAssistantStatic(text, think) {
+  function renderAssistantStatic(text, think, histItem) {
     clearEmpty();
     var d = document.createElement('div');
     d.className = 'msg assistant';
@@ -780,7 +1014,7 @@
     if (thinkEl) {
       thinkEl.querySelector('.think-head').addEventListener('click', function () { thinkEl.classList.toggle('open'); });
     }
-    attachCopy(d, function () { return (d.querySelector('.body') || {}).innerText || ''; });
+    attachAssistantActions(d, function () { return (d.querySelector('.body') || {}).innerText || ''; }, histItem);
     stream.appendChild(d);
     return d;
   }
@@ -805,8 +1039,8 @@
         var e = history[i];
         if (e.t === 'tool') { pendingTools.push(e); continue; }
         flushTools();
-        if (e.t === 'user') addUser(e.text);
-        else if (e.t === 'assistant') renderAssistantStatic(e.text, e.think);
+        if (e.t === 'user') addUser(e.text, e);
+        else if (e.t === 'assistant') renderAssistantStatic(e.text, e.think, e);
         else if (e.t === 'system') appendSystem(e.text);
         else if (e.t === 'plan') renderPlan(e.todos, false);
       } catch (err) {
@@ -1840,44 +2074,6 @@
     }
   }
 
-  // 给消息节点挂"复制"按钮（悬停显示）
-  var COPY_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V3.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg>';
-  function attachCopy(container, getText) {
-    if (container.querySelector('.msg-copy')) return;
-    var btn = document.createElement('button');
-    btn.className = 'msg-copy';
-    btn.innerHTML = COPY_SVG + '<span>复制</span>';
-    btn.addEventListener('click', function (e) {
-      e.stopPropagation();
-      var t = typeof getText === 'function' ? getText() : '';
-      if (!t) return;
-      try {
-        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t);
-        else {
-          var ta = document.createElement('textarea');
-          ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-        }
-        btn.classList.add('copied');
-        btn.querySelector('span').textContent = '已复制';
-        setTimeout(function () { btn.classList.remove('copied'); var s = btn.querySelector('span'); if (s) s.textContent = '复制'; }, 1500);
-      } catch (err) { /* ignore */ }
-    });
-    container.appendChild(btn);
-  }
-
-  function addUser(text) {
-    clearEmpty();
-    var d = document.createElement('div');
-    d.className = 'msg user';
-    d.innerHTML = '<div class="bubble">' + esc(text) + '</div>';
-    attachCopy(d, function () { return text; });
-    stream.appendChild(d);
-    scrollBottom(true);
-    try { updateConvNav(); } catch (e) { /* ignore */ }
-  }
-
-  var PREFIX_SVG = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l1.8 4.6L14.5 8l-4.7 2.4L8 15l-1.8-4.6L1.5 8l4.7-2.4z"/></svg>';
-
   function createAssistant() {
     clearEmpty();
     var d = document.createElement('div');
@@ -1889,7 +2085,7 @@
         '<div class="think-body"></div>' +
       '</div>' +
       '<div class="body"></div>';
-    attachCopy(d, function () { return (d.querySelector('.body') || {}).innerText || ''; });
+    attachAssistantActions(d, function () { return (d.querySelector('.body') || {}).innerText || ''; });
     stream.appendChild(d);
     var thinkEl = d.querySelector('.think');
     thinkEl.querySelector('.think-head').addEventListener('click', function () { thinkEl.classList.toggle('open'); });
@@ -2167,13 +2363,40 @@
   // ===== 发送队列（运行中排队待发消息，任务空闲自动发下一条）=====
   var sendQueue = []; // { text, files, hints }
   var sendQueueEl = document.getElementById('send-queue');
-  /** 立即发送队列中的某一项：移到队首优先；若当前空闲则马上发出 */
+  function doSendQueueItem(it) {
+    clearAbortSuppression();
+    var savedInput = input.value;
+    var savedFiles = pendingFiles.slice();
+    var savedHints = pendingHints.slice();
+    pendingFiles = (it.files || []).slice();
+    pendingHints = (it.hints || []).slice();
+    input.value = it.text || '';
+    renderAttach();
+    renderHints();
+    send();
+    input.value = savedInput;
+    pendingFiles = savedFiles;
+    pendingHints = savedHints;
+    renderAttach();
+    renderHints();
+  }
+
+  /** 立即发送队列中的某一项：移出队列并立刻发出；若当前正忙则中止当前任务后发出 */
   function sendQueueItemNow(it) {
     var at = sendQueue.indexOf(it);
     if (at < 0) return;
-    if (at > 0) { sendQueue.splice(at, 1); sendQueue.unshift(it); }
+    sendQueue.splice(at, 1);
     renderSendQueue();
-    if (!isBusy() && !aborted()) maybeFlushQueue();
+    clearAbortSuppression();
+    if (isBusy()) {
+      stop();
+      setTimeout(function () {
+        clearAbortSuppression();
+        doSendQueueItem(it);
+      }, 80);
+    } else {
+      doSendQueueItem(it);
+    }
   }
   function renderSendQueue() {
     if (!sendQueueEl) return;
@@ -2433,8 +2656,9 @@
     else if (text) bubbleText = text;
     else if (hints.length) bubbleText = '[指令] ' + hints.map(function (h) { return h.label; }).join('、');
     else bubbleText = '';
-    addUser(attachNote + bubbleText);
-    pushHist({ t: 'user', text: attachNote + bubbleText });
+    var userHistItem = { t: 'user', text: attachNote + bubbleText };
+    pushHist(userHistItem);
+    addUser(attachNote + bubbleText, userHistItem);
     pendingFiles = [];
     pendingHints = [];
     renderAttach();
@@ -2467,7 +2691,22 @@
         // 上传成功：延迟发送，给 AI 网页时间把附件与"发送"绑定（否则附件带不上）
         if (api.sendMessage) {
           setStatus('发送中…', 'busy');
-          setTimeout(function () { api.sendMessage(sendText || ' '); }, 1500);
+          setTimeout(function () {
+            var smP = api.sendMessage(sendText || ' ');
+            if (smP && typeof smP.then === 'function') {
+              smP.then(function (r2) {
+                if (r2 && r2.success === false) {
+                  appendSystem('消息发送失败：' + (r2.error || '网页视图未就绪'));
+                  setStatus('就绪', 'ready');
+                  clearPendingBubble();
+                }
+              }).catch(function (e2) {
+                appendSystem('消息发送异常：' + ((e2 && e2.message) || '未知错误'));
+                setStatus('就绪', 'ready');
+                clearPendingBubble();
+              });
+            }
+          }, 1500);
         }
       }).catch(function (e) {
         appendSystem('附件上传出错：' + ((e && e.message) || '未知错误'));
@@ -2475,7 +2714,20 @@
         cur = null;
       });
     } else if (api.sendMessage) {
-      api.sendMessage(sendText);
+      var smP = api.sendMessage(sendText);
+      if (smP && typeof smP.then === 'function') {
+        smP.then(function (res) {
+          if (res && res.success === false) {
+            appendSystem('消息发送失败：' + (res.error || '网页视图未就绪'));
+            setStatus('就绪', 'ready');
+            clearPendingBubble();
+          }
+        }).catch(function (e) {
+          appendSystem('消息发送异常：' + ((e && e.message) || '未知错误'));
+          setStatus('就绪', 'ready');
+          clearPendingBubble();
+        });
+      }
     }
   }
 
@@ -2528,6 +2780,18 @@
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         if (items[slashIndex]) { e.preventDefault(); items[slashIndex].click(); return; }
         hideSlashMenu(); // 无可选项：收起菜单，走正常发送
+      }
+    }
+    if (e.key === 'ArrowUp' && !e.shiftKey && !e.ctrlKey && !e.altKey && !slashMenu.classList.contains('show')) {
+      if (input.selectionStart === 0 && input.selectionEnd === 0 && !input.value.trim()) {
+        var allUsers = stream.querySelectorAll('.msg.user');
+        if (allUsers.length) {
+          e.preventDefault();
+          var lastUser = allUsers[allUsers.length - 1];
+          var editBtn = lastUser.querySelector('.act-edit');
+          if (editBtn) editBtn.click();
+          return;
+        }
       }
     }
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -3095,11 +3359,22 @@
       }
     }
 
+    /** 元素（或其后代）内容是否被裁剪（显示不全） */
+    function isClipped(el) {
+      var nodes = [el].concat(Array.prototype.slice.call(el.querySelectorAll('*')));
+      for (var i = 0; i < nodes.length; i++) {
+        var h = nodes[i];
+        if (h.clientWidth === 0 && h.clientHeight === 0) continue;
+        if (h.scrollWidth > h.clientWidth + 1 || h.scrollHeight > h.clientHeight + 1) return true;
+      }
+      return false;
+    }
+
     function handlePointerOver(e) {
       var target = e.target;
       if (!target || !target.closest) return;
 
-      var el = target.closest('[title], [data-tooltip]');
+      var el = target.closest('[title], [data-tooltip], [data-ck-title]');
       if (!el) {
         if (activeTarget && !activeTarget.contains(target)) {
           hideTooltip();
@@ -3107,14 +3382,19 @@
         return;
       }
 
-      // 立即拦截原生 title，杜绝系统原生提示框
+      // 原生 title 转存为 data-ck-title 并移除，杜绝系统原生提示框
       var rawTitle = el.getAttribute('title');
       if (rawTitle) {
-        el.setAttribute('data-tooltip', rawTitle);
+        el.setAttribute('data-ck-title', rawTitle);
         el.removeAttribute('title');
       }
 
+      // data-tooltip：显式声明，总是展示；原生 title：仅内容被裁剪时才展示
       var text = (el.getAttribute('data-tooltip') || '').trim();
+      if (!text) {
+        var implicit = (el.getAttribute('data-ck-title') || '').trim();
+        if (implicit && isClipped(el)) text = implicit;
+      }
       if (!text) {
         hideTooltip();
         return;
