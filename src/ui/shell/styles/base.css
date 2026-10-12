@@ -215,6 +215,8 @@
   .ck-ab-item.ck-ab-active { background: var(--ck-primary-soft); }
   .ck-ab-item.ck-ab-active .ck-ab-icon, .ck-ab-item.ck-ab-active .ck-ab-text { opacity: 1; color: var(--ck-primary); }
   .ck-ab-spacer { flex: 1; }
+  .sb-update-bar { display: inline-block; width: 60px; height: 6px; border-radius: 3px; background: var(--ck-border-strong); overflow: hidden; vertical-align: middle; }
+  .sb-update-fill { display: block; height: 100%; width: 0; background: var(--ck-primary); transition: width .2s; }
   .ck-ab-item { user-select: none; }
   .ck-ab-item.ck-ab-dragging { opacity: .6; cursor: grabbing; z-index: 10; }
   /* 活动栏图标右上角角标（如 Git 改动数） */

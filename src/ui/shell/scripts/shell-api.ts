@@ -11,6 +11,8 @@ export interface ShellAPI {
   reload?: () => void;
   home?: () => void;
   onUrlUpdated?: (cb: (data: any) => void) => void;
+  /** 自动更新进度（状态栏进度条） */
+  onUpdateProgress?: (cb: (data: any) => void) => void;
   toggleSidebar?: (width: number) => void;
   startSidebarDrag?: () => void;
   endSidebarDrag?: () => void;

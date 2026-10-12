@@ -224,6 +224,8 @@
   .ck-ab-item.ck-ab-active { background: var(--ck-primary-soft); }
   .ck-ab-item.ck-ab-active .ck-ab-icon, .ck-ab-item.ck-ab-active .ck-ab-text { opacity: 1; color: var(--ck-primary); }
   .ck-ab-spacer { flex: 1; }
+  .sb-update-bar { display: inline-block; width: 60px; height: 6px; border-radius: 3px; background: var(--ck-border-strong); overflow: hidden; vertical-align: middle; }
+  .sb-update-fill { display: block; height: 100%; width: 0; background: var(--ck-primary); transition: width .2s; }
   .ck-ab-item { user-select: none; }
   .ck-ab-item.ck-ab-dragging { opacity: .6; cursor: grabbing; z-index: 10; }
   /* 活动栏图标右上角角标（如 Git 改动数） */
@@ -2390,6 +2392,11 @@
     <div class="statusbar">
       <div class="sb-recent" id="sb-recent"></div>
       <div class="sb-spacer"></div>
+      <div class="sb-item sb-update" id="sb-update" style="display:none" title="正在下载新版本">
+        <span class="sb-label" id="sb-update-label">更新</span>
+        <span class="sb-update-bar"><span class="sb-update-fill" id="sb-update-fill"></span></span>
+        <span class="sb-value" id="sb-update-pct">0%</span>
+      </div>
       <div class="sb-item" id="sb-window-name" title="当前窗口">
         <span class="sb-label">窗口:</span>
         <span class="sb-value" id="sb-window-name-text">--</span>
@@ -3660,9 +3667,9 @@
     if (tip) tip.style.display = "none";
   }
   function bindWorkspaceEvents(listEl2) {
-    listEl2.querySelectorAll(".ck-ws-group-title").forEach((el) => {
-      el.addEventListener("click", () => {
-        const groupEl = el.closest(".ck-ws-group");
+    listEl2.querySelectorAll(".ck-ws-group-title").forEach((el2) => {
+      el2.addEventListener("click", () => {
+        const groupEl = el2.closest(".ck-ws-group");
         if (!groupEl) return;
         const dir = groupEl.dataset.dir;
         const open = groupEl.classList.toggle("open");
@@ -3670,10 +3677,10 @@
         else expandedDirs.delete(dir);
       });
     });
-    listEl2.querySelectorAll(".ck-ws-archived-title").forEach((el) => {
-      el.addEventListener("click", (e) => {
+    listEl2.querySelectorAll(".ck-ws-archived-title").forEach((el2) => {
+      el2.addEventListener("click", (e) => {
         e.stopPropagation();
-        const boxEl = el.closest(".ck-ws-archived");
+        const boxEl = el2.closest(".ck-ws-archived");
         if (!boxEl) return;
         const dir = boxEl.dataset.dir;
         const open = boxEl.classList.toggle("open");
@@ -3681,19 +3688,19 @@
         else archivedOpen.delete(dir);
       });
     });
-    listEl2.querySelectorAll(".ck-ws-archived-projects-title").forEach((el) => {
-      el.addEventListener("click", () => {
-        const boxEl = el.closest(".ck-ws-archived-projects");
+    listEl2.querySelectorAll(".ck-ws-archived-projects-title").forEach((el2) => {
+      el2.addEventListener("click", () => {
+        const boxEl = el2.closest(".ck-ws-archived-projects");
         if (!boxEl) return;
         archivedProjectsOpen.v = boxEl.classList.toggle("open");
       });
     });
-    listEl2.querySelectorAll(".ck-ws-group-title").forEach((el) => {
-      el.addEventListener("mouseenter", () => {
-        const groupEl = el.closest(".ck-ws-group");
-        if (groupEl) showDirTip(groupEl.dataset.dir, el);
+    listEl2.querySelectorAll(".ck-ws-group-title").forEach((el2) => {
+      el2.addEventListener("mouseenter", () => {
+        const groupEl = el2.closest(".ck-ws-group");
+        if (groupEl) showDirTip(groupEl.dataset.dir, el2);
       });
-      el.addEventListener("mouseleave", hideDirTip);
+      el2.addEventListener("mouseleave", hideDirTip);
     });
     listEl2.querySelectorAll(".ck-ws-gact").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
@@ -3735,11 +3742,11 @@
         }
       });
     });
-    listEl2.querySelectorAll(".ck-ws-expand").forEach((el) => {
-      if (el.classList.contains("ck-ws-expand-hidden")) return;
-      el.addEventListener("click", (e) => {
+    listEl2.querySelectorAll(".ck-ws-expand").forEach((el2) => {
+      if (el2.classList.contains("ck-ws-expand-hidden")) return;
+      el2.addEventListener("click", (e) => {
         e.stopPropagation();
-        const itemEl = el.closest(".ck-ws-item");
+        const itemEl = el2.closest(".ck-ws-item");
         if (!itemEl) return;
         const id = itemEl.dataset.sessionId;
         if (!id) return;
@@ -3748,23 +3755,23 @@
         loadWorkspaces();
       });
     });
-    listEl2.querySelectorAll(".ck-ws-subgroup-title").forEach((el) => {
-      el.addEventListener("click", (e) => {
+    listEl2.querySelectorAll(".ck-ws-subgroup-title").forEach((el2) => {
+      el2.addEventListener("click", (e) => {
         e.stopPropagation();
-        const key = el.dataset.subgroup;
+        const key = el2.dataset.subgroup;
         if (!key) return;
         if (expandedSubgroups.has(key)) expandedSubgroups.delete(key);
         else expandedSubgroups.add(key);
         loadWorkspaces();
       });
     });
-    listEl2.querySelectorAll(".ck-ws-item").forEach((el) => {
-      el.addEventListener("click", async (e) => {
+    listEl2.querySelectorAll(".ck-ws-item").forEach((el2) => {
+      el2.addEventListener("click", async (e) => {
         if (e.target.closest('[data-act="rename"]')) {
           e.stopPropagation();
-          const id2 = el.dataset.sessionId;
+          const id2 = el2.dataset.sessionId;
           if (!id2 || !api.setSessionTitle) return;
-          const cur = el.dataset.name || "";
+          const cur = el2.dataset.name || "";
           const name = await ckPrompt({ title: "\u91CD\u547D\u540D\u5BF9\u8BDD", placeholder: "\u8F93\u5165\u5BF9\u8BDD\u540D\u79F0", value: cur === id2 ? "" : cur });
           if (!name) return;
           try {
@@ -3776,7 +3783,7 @@
         }
         if (e.target.closest('[data-act="archive"]')) {
           e.stopPropagation();
-          const id2 = el.dataset.sessionId;
+          const id2 = el2.dataset.sessionId;
           if (!id2 || !api.setSessionArchived) return;
           try {
             await api.setSessionArchived(id2, true);
@@ -3787,7 +3794,7 @@
         }
         if (e.target.closest('[data-act="unarchive"]')) {
           e.stopPropagation();
-          const id2 = el.dataset.sessionId;
+          const id2 = el2.dataset.sessionId;
           if (!id2 || !api.setSessionArchived) return;
           try {
             await api.setSessionArchived(id2, false);
@@ -3798,8 +3805,8 @@
         }
         if (e.target.closest('[data-act="delete"]')) {
           e.stopPropagation();
-          const id2 = el.dataset.sessionId;
-          const name = el.dataset.name || "\u8BE5\u5BF9\u8BDD";
+          const id2 = el2.dataset.sessionId;
+          const name = el2.dataset.name || "\u8BE5\u5BF9\u8BDD";
           if (!id2 || !api.deleteSession) return;
           const ok = await ckConfirm("\u786E\u5B9A\u8981\u5220\u9664\u5BF9\u8BDD\u201C" + name + "\u201D\u5417\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u64A4\u9500\u3002", "\u5220\u9664\u5BF9\u8BDD");
           if (!ok) return;
@@ -3816,7 +3823,7 @@
           loadWorkspaces();
           return;
         }
-        const id = el.dataset.sessionId;
+        const id = el2.dataset.sessionId;
         if (!id || !api.navigateSession) return;
         try {
           await api.navigateSession(id);
@@ -4163,12 +4170,12 @@
       return '<div class="ck-ft-row ' + cls + '" data-path="' + escapeAttr(n.path) + '" title="' + escapeAttr(n.path) + '">' + iconHtml(n.name, n.type) + '<span class="' + nameClass(n.name, n.type) + '">' + highlight(n.name, kw) + '</span><span class="ck-ft-path">' + highlight(n.path, kw) + "</span>" + actionsHtml(n.path, n.type) + atBtn(n.path) + "</div>";
     }).join("") + (matched.length > 500 ? '<div class="ck-ft-truncated">\uFF08\u7ED3\u679C\u8FC7\u591A\uFF0C\u4EC5\u663E\u793A\u524D 500 \u9879\uFF09</div>' : "");
   }
-  function onActClick(el, e) {
+  function onActClick(el2, e) {
     e.stopPropagation();
-    const act = el.dataset.act;
-    const p = el.dataset.path;
-    const name = el.dataset.name;
-    const isDir = el.dataset.isdir === "1";
+    const act = el2.dataset.act;
+    const p = el2.dataset.path;
+    const name = el2.dataset.name;
+    const isDir = el2.dataset.isdir === "1";
     if (!act || !p) return;
     if (act === "new-file") doCreate(p, false);
     else if (act === "new-folder") doCreate(p, true);
@@ -4176,10 +4183,10 @@
     else if (act === "delete") doDelete(p, name, isDir);
   }
   function bindRowEvents(listEl2) {
-    listEl2.querySelectorAll(".ck-ft-at").forEach((el) => {
-      el.addEventListener("click", async (e) => {
+    listEl2.querySelectorAll(".ck-ft-at").forEach((el2) => {
+      el2.addEventListener("click", async (e) => {
         e.stopPropagation();
-        const p = el.dataset.at;
+        const p = el2.dataset.at;
         if (!p || !api.appendSnippet) return;
         try {
           await api.appendSnippet("@" + p);
@@ -4187,21 +4194,21 @@
         }
       });
     });
-    listEl2.querySelectorAll(".ck-ft-act").forEach((el) => {
-      el.addEventListener("click", (e) => onActClick(el, e));
+    listEl2.querySelectorAll(".ck-ft-act").forEach((el2) => {
+      el2.addEventListener("click", (e) => onActClick(el2, e));
     });
-    listEl2.querySelectorAll(".ck-ft-dir").forEach((el) => {
-      el.addEventListener("click", () => {
-        const p = el.dataset.path;
+    listEl2.querySelectorAll(".ck-ft-dir").forEach((el2) => {
+      el2.addEventListener("click", () => {
+        const p = el2.dataset.path;
         if (expanded.has(p)) expanded.delete(p);
         else expanded.add(p);
         loadFiles();
       });
     });
-    listEl2.querySelectorAll(".ck-ft-file").forEach((el) => {
-      el.addEventListener("click", async (e) => {
+    listEl2.querySelectorAll(".ck-ft-file").forEach((el2) => {
+      el2.addEventListener("click", async (e) => {
         if (e.target.closest(".ck-ft-at") || e.target.closest(".ck-ft-act")) return;
-        const p = el.dataset.path;
+        const p = el2.dataset.path;
         if (!p) return;
         try {
           const { openPreview: openPreview2 } = await Promise.resolve().then(() => (init_preview(), preview_exports));
@@ -4377,10 +4384,10 @@
       const tip = typeLabel(it.type) + "\uFF1A" + it.name + "\uFF08\u70B9\u51FB\u8FFD\u52A0\u5230\u8F93\u5165\u6846\uFF0C\u70B9\u51FB \xD7 \u5220\u9664\uFF09";
       return '<span class="' + cls + '" data-type="' + it.type + '" data-name="' + escapeHtml(it.name) + '" title="' + escapeHtml(tip) + '"><span class="sb-chip-name">' + escapeHtml(it.name) + '</span><button class="sb-chip-del" type="button" title="\u5220\u9664\u5FEB\u6377\u65B9\u5F0F" aria-label="\u5220\u9664">\xD7</button></span>';
     }).join("");
-    box.querySelectorAll(".sb-chip").forEach((el) => {
-      const type = el.dataset.type;
-      const name = el.dataset.name;
-      const delBtn = el.querySelector(".sb-chip-del");
+    box.querySelectorAll(".sb-chip").forEach((el2) => {
+      const type = el2.dataset.type;
+      const name = el2.dataset.name;
+      const delBtn = el2.querySelector(".sb-chip-del");
       if (delBtn) {
         delBtn.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -4388,12 +4395,12 @@
           removeRecent(type, name);
         });
       }
-      el.addEventListener("contextmenu", (e) => {
+      el2.addEventListener("contextmenu", (e) => {
         e.stopPropagation();
         e.preventDefault();
         removeRecent(type, name);
       });
-      el.addEventListener("click", async (e) => {
+      el2.addEventListener("click", async (e) => {
         if (e.target?.closest(".sb-chip-del")) return;
         if (type === "snippet") {
           const it = list.find((x) => x.type === "snippet" && x.name === name);
@@ -4439,10 +4446,10 @@
       const badge = s.autoSend ? '<span class="ck-snip-badge">\u81EA\u52A8\u53D1\u9001</span>' : "";
       return '<div class="ck-snip-item" data-id="' + escapeAttr(s.id) + '"><div class="ck-snip-top"><span class="ck-snip-name">' + escapeHtml(s.name) + badge + '</span><div class="ck-snip-actions"><button class="ck-snip-icon-btn" data-edit="' + escapeAttr(s.id) + '" title="\u7F16\u8F91"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button><button class="ck-snip-icon-btn danger" data-del="' + escapeAttr(s.id) + '" title="\u5220\u9664"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></div></div><span class="ck-snip-preview">' + escapeHtml(s.content) + "</span></div>";
     }).join("");
-    listEl2.querySelectorAll(".ck-snip-item").forEach((el) => {
-      el.addEventListener("click", async (e) => {
+    listEl2.querySelectorAll(".ck-snip-item").forEach((el2) => {
+      el2.addEventListener("click", async (e) => {
         if (e.target.closest("[data-edit]") || e.target.closest("[data-del]")) return;
-        const s = snippets.filter((x) => x.id === el.dataset.id)[0];
+        const s = snippets.filter((x) => x.id === el2.dataset.id)[0];
         if (!s || !api.triggerSnippet) return;
         try {
           await api.triggerSnippet(s.content, s.autoSend);
@@ -4555,15 +4562,15 @@
       if (userSkills.length) html += '<div class="ck-mcp-group-title">\u7528\u6237\u7EA7</div>' + userSkills.map(skillCard).join("");
       if (projSkills.length) html += '<div class="ck-mcp-group-title">\u9879\u76EE\u7EA7</div>' + projSkills.map(skillCard).join("");
       listEl2.innerHTML = html;
-      listEl2.querySelectorAll(".ck-skill-item").forEach((el) => {
-        el.addEventListener("click", async () => {
+      listEl2.querySelectorAll(".ck-skill-item").forEach((el2) => {
+        el2.addEventListener("click", async () => {
           if (api.appendSnippet) {
             try {
-              await api.appendSnippet("\u8BF7\u4F7F\u7528 " + el.dataset.name + " \u6280\u80FD");
+              await api.appendSnippet("\u8BF7\u4F7F\u7528 " + el2.dataset.name + " \u6280\u80FD");
             } catch (_) {
             }
           }
-          addRecent("skill", el.dataset.name);
+          addRecent("skill", el2.dataset.name);
         });
       });
     } catch (_) {
@@ -4579,18 +4586,18 @@
   var searchTerm = "";
   var detailAgent = null;
   async function loadRunningSubagents() {
-    const el = document.getElementById("agent-running-list");
-    if (!el) return;
+    const el2 = document.getElementById("agent-running-list");
+    if (!el2) return;
     const apiAny = api;
     if (typeof apiAny.listRunningSubagents !== "function") return;
     try {
       const r = await apiAny.listRunningSubagents();
       const list = r && r.success && r.subagents ? r.subagents : [];
       if (!list.length) {
-        el.innerHTML = "";
+        el2.innerHTML = "";
         return;
       }
-      el.innerHTML = '<div class="ck-mcp-group-title">\u8FD0\u884C\u4E2D</div>' + list.map((s) => {
+      el2.innerHTML = '<div class="ck-mcp-group-title">\u8FD0\u884C\u4E2D</div>' + list.map((s) => {
         const elapsed = Math.max(0, Math.round((Date.now() - (s.startedAt || Date.now())) / 1e3));
         const statusText = s.status === "done" ? "\u5B8C\u6210" : s.status === "error" ? "\u51FA\u9519" : "\u8FD0\u884C\u4E2D";
         const preview = (s.preview || "").slice(-160).replace(/</g, "&lt;");
@@ -4630,16 +4637,16 @@
   function bindListEvents() {
     const listEl2 = document.getElementById("agent-list");
     if (!listEl2) return;
-    listEl2.querySelectorAll(".ck-skill-item").forEach((el) => {
-      el.addEventListener("click", async (e) => {
+    listEl2.querySelectorAll(".ck-skill-item").forEach((el2) => {
+      el2.addEventListener("click", async (e) => {
         if (e.target.closest("[data-edit-agent]") || e.target.closest("[data-del-agent]") || e.target.closest("[data-detail-agent]")) return;
         if (api.appendSnippet) {
           try {
-            await api.appendSnippet("\u8BF7\u4F7F\u7528 " + el.dataset.name + " \u5B50\u4EE3\u7406");
+            await api.appendSnippet("\u8BF7\u4F7F\u7528 " + el2.dataset.name + " \u5B50\u4EE3\u7406");
           } catch (_) {
           }
         }
-        addRecent("agent", el.dataset.name);
+        addRecent("agent", el2.dataset.name);
       });
     });
     listEl2.querySelectorAll("[data-detail-agent]").forEach((btn) => {
@@ -4833,8 +4840,8 @@
   } catch (_) {
   }
   setInterval(() => {
-    const el = document.getElementById("agent-running-list");
-    if (el) loadRunningSubagents();
+    const el2 = document.getElementById("agent-running-list");
+    if (el2) loadRunningSubagents();
   }, 1500);
 
   // src/ui/shell/scripts/pages/mcp.ts
@@ -4859,15 +4866,15 @@
       if (userServers.length) html += '<div class="ck-mcp-group-title">\u7528\u6237\u7EA7</div>' + userServers.map(cardHtml).join("");
       if (projServers.length) html += '<div class="ck-mcp-group-title">\u9879\u76EE\u7EA7</div>' + projServers.map(cardHtml).join("");
       listEl2.innerHTML = html;
-      listEl2.querySelectorAll(".ck-mcp-item").forEach((el) => {
-        el.addEventListener("click", async () => {
+      listEl2.querySelectorAll(".ck-mcp-item").forEach((el2) => {
+        el2.addEventListener("click", async () => {
           if (api.appendSnippet) {
             try {
-              await api.appendSnippet("\u8BF7\u4F7F\u7528 " + el.dataset.name + " \u8FD9\u4E2A MCP");
+              await api.appendSnippet("\u8BF7\u4F7F\u7528 " + el2.dataset.name + " \u8FD9\u4E2A MCP");
             } catch (_) {
             }
           }
-          addRecent("mcp", el.dataset.name);
+          addRecent("mcp", el2.dataset.name);
         });
       });
     } catch (_) {
@@ -5308,12 +5315,12 @@
           }
         });
       });
-      listEl2.querySelectorAll(".ck-win-item").forEach((el) => {
-        el.addEventListener("click", async (e) => {
+      listEl2.querySelectorAll(".ck-win-item").forEach((el2) => {
+        el2.addEventListener("click", async (e) => {
           if (e.target.classList.contains("ck-win-del")) return;
           if (e.target.closest(".ck-win-check")) return;
           try {
-            await api.openProfileWindow?.(el.dataset.profileId);
+            await api.openProfileWindow?.(el2.dataset.profileId);
           } catch (_) {
           }
         });
@@ -5373,11 +5380,11 @@
           if (g) await openGroupManager(g, profiles);
         });
       });
-      listEl2.querySelectorAll(".ck-wg-last").forEach((el) => {
-        el.addEventListener("click", async (e) => {
+      listEl2.querySelectorAll(".ck-wg-last").forEach((el2) => {
+        el2.addEventListener("click", async (e) => {
           e.stopPropagation();
-          const wid = el.dataset.windowId;
-          const sid = el.dataset.sessionId;
+          const wid = el2.dataset.windowId;
+          const sid = el2.dataset.sessionId;
           if (!wid) return;
           try {
             await api.openProfileWindow?.(wid);
@@ -5507,12 +5514,12 @@
     ["attach-delay-max", "attachDelayMax"]
   ];
   function setVal(id, v) {
-    const el = document.getElementById("st-" + id);
-    if (el) el.value = v === null || v === void 0 ? "" : v;
+    const el2 = document.getElementById("st-" + id);
+    if (el2) el2.value = v === null || v === void 0 ? "" : v;
   }
   function getVal(id) {
-    const el = document.getElementById("st-" + id);
-    return el ? el.value : "";
+    const el2 = document.getElementById("st-" + id);
+    return el2 ? el2.value : "";
   }
   function renderSettings(data) {
     if (!data) return;
@@ -5636,8 +5643,8 @@
   function applyBusyState() {
     const listEl2 = document.getElementById("conv-list");
     if (!listEl2) return;
-    listEl2.querySelectorAll(".ck-conv-item").forEach((el) => {
-      el.classList.toggle("ck-conv-disabled", harnessBusy);
+    listEl2.querySelectorAll(".ck-conv-item").forEach((el2) => {
+      el2.classList.toggle("ck-conv-disabled", harnessBusy);
     });
   }
   async function loadConversations(retainOnEmpty) {
@@ -5661,14 +5668,14 @@
       const active = s.href === curUrl ? " ck-conv-active" : "";
       return '<div class="ck-conv-item' + active + '" data-url="' + escapeAttr(s.href) + '" title="' + escapeAttr(s.title) + '"><span class="ck-conv-title">' + escapeHtml(s.title) + "</span></div>";
     }).join("");
-    listEl2.querySelectorAll(".ck-conv-item").forEach((el) => {
-      el.addEventListener("click", () => {
+    listEl2.querySelectorAll(".ck-conv-item").forEach((el2) => {
+      el2.addEventListener("click", () => {
         if (harnessBusy) return;
-        const url = el.getAttribute("data-url");
+        const url = el2.getAttribute("data-url");
         if (url && api.navigateWebSession) {
           api.navigateWebSession(url);
           listEl2.querySelectorAll(".ck-conv-item").forEach((x) => x.classList.remove("ck-conv-active"));
-          el.classList.add("ck-conv-active");
+          el2.classList.add("ck-conv-active");
         }
       });
     });
@@ -5877,8 +5884,8 @@
     });
   }
   function renderMarketCats() {
-    const el = document.getElementById("plugin-market-cats");
-    if (!el) return;
+    const el2 = document.getElementById("plugin-market-cats");
+    if (!el2) return;
     const counts = {};
     for (const it of pluginMarketItems) {
       const c = it.category || "other";
@@ -5892,8 +5899,8 @@
     for (const id of ids) {
       html += '<button class="ck-chip' + (pluginMarketCat === id ? " ck-chip-active" : "") + '" data-cat="' + escapeAttr(id) + '">' + escapeHtml(catLabel(id)) + " " + counts[id] + "</button>";
     }
-    el.innerHTML = html;
-    el.querySelectorAll(".ck-chip").forEach((btn) => {
+    el2.innerHTML = html;
+    el2.querySelectorAll(".ck-chip").forEach((btn) => {
       btn.addEventListener("click", () => {
         pluginMarketCat = btn.dataset.cat || "all";
         renderMarketCats();
@@ -6351,10 +6358,10 @@
         return;
       }
       listEl2.innerHTML = plugins.map(ckpRenderItem).join("");
-      listEl2.querySelectorAll(".ck-list-item").forEach((el) => {
-        const id = el.getAttribute("data-id");
-        const toggle = el.querySelector(".ckp-toggle");
-        const del = el.querySelector(".ckp-del");
+      listEl2.querySelectorAll(".ck-list-item").forEach((el2) => {
+        const id = el2.getAttribute("data-id");
+        const toggle = el2.querySelector(".ckp-toggle");
+        const del = el2.querySelector(".ckp-del");
         if (toggle) {
           toggle.addEventListener("change", async () => {
             const r2 = await apiAny.cuckooPluginToggle(id, !!toggle.checked);
@@ -6440,8 +6447,8 @@
     return d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate()) + " " + p2(d.getHours()) + ":" + p2(d.getMinutes());
   }
   function setError(message) {
-    const el = byId("rule-error");
-    if (el) el.textContent = message;
+    const el2 = byId("rule-error");
+    if (el2) el2.textContent = message;
   }
   function setBusy(busy) {
     ["rule-save", "rule-delete", "rule-cancel"].forEach((id) => {
@@ -6457,14 +6464,14 @@
       return;
     }
     list.innerHTML = records.map((r) => `<button class="ck-skill-item ck-rule-item" data-rule="${escapeHtml(r.fileName)}"><div><div class="ck-skill-name">${escapeHtml(r.fileName)}</div><div class="ck-skill-desc">${escapeHtml(fmtTime(r.updatedAt) || "\u5168\u5C40\u89C4\u5219")}</div></div><span class="ck-rule-item-action">\u7F16\u8F91 \u203A</span></button>`).join("");
-    list.querySelectorAll("[data-rule]").forEach((el) => el.addEventListener("click", () => openRecord(el.dataset.rule || "")));
+    list.querySelectorAll("[data-rule]").forEach((el2) => el2.addEventListener("click", () => openRecord(el2.dataset.rule || "")));
   }
-  function showEditor(show) {
-    byId("rule-editor")?.classList.toggle("cuckoo-hidden", !show);
-    byId("rule-list")?.classList.toggle("cuckoo-hidden", show);
-    byId("rule-new")?.classList.toggle("cuckoo-hidden", show);
-    byId("rule-open-dir")?.classList.toggle("cuckoo-hidden", show);
-    byId("rule-refresh")?.classList.toggle("cuckoo-hidden", show);
+  function showEditor(show2) {
+    byId("rule-editor")?.classList.toggle("cuckoo-hidden", !show2);
+    byId("rule-list")?.classList.toggle("cuckoo-hidden", show2);
+    byId("rule-new")?.classList.toggle("cuckoo-hidden", show2);
+    byId("rule-open-dir")?.classList.toggle("cuckoo-hidden", show2);
+    byId("rule-refresh")?.classList.toggle("cuckoo-hidden", show2);
   }
   function openRecord(fileName) {
     const record = records.find((r) => r.fileName === fileName);
@@ -6945,15 +6952,15 @@
       return;
     }
     mountedStatus.add(key);
-    const el = document.createElement("div");
-    el.className = "sb-item";
-    el.setAttribute("data-plugin", m.pluginId);
-    el.setAttribute("data-plugin-id", m.id);
-    if (m.spec && m.spec.title) el.title = String(m.spec.title);
-    el.innerHTML = '<span class="sb-label">' + escapeHtml2(m.spec && m.spec.text || "") + "</span>";
+    const el2 = document.createElement("div");
+    el2.className = "sb-item";
+    el2.setAttribute("data-plugin", m.pluginId);
+    el2.setAttribute("data-plugin-id", m.id);
+    if (m.spec && m.spec.title) el2.title = String(m.spec.title);
+    el2.innerHTML = '<span class="sb-label">' + escapeHtml2(m.spec && m.spec.text || "") + "</span>";
     const spacer = bar2.querySelector(".sb-spacer");
-    if (spacer && spacer.parentNode === bar2) bar2.insertBefore(el, spacer);
-    else bar2.appendChild(el);
+    if (spacer && spacer.parentNode === bar2) bar2.insertBefore(el2, spacer);
+    else bar2.appendChild(el2);
   }
   function mountToolbar(m) {
     const key = m.pluginId + ":" + m.id;
@@ -7068,13 +7075,13 @@
     if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
     const order = typeof m.order === "number" ? m.order : 100;
     const spec = m.spec || {};
-    const el = document.createElement("button");
-    el.className = "ck-ab-item";
-    el.setAttribute("data-slot-key", key);
-    el.setAttribute("data-plugin", m.pluginId);
-    if (spec.title) el.title = String(spec.title);
-    el.innerHTML = spec.icon ? String(spec.icon) : spec.label ? escapeHtml2(String(spec.label)) : escapeHtml2(m.id);
-    el.addEventListener("click", () => {
+    const el2 = document.createElement("button");
+    el2.className = "ck-ab-item";
+    el2.setAttribute("data-slot-key", key);
+    el2.setAttribute("data-plugin", m.pluginId);
+    if (spec.title) el2.title = String(spec.title);
+    el2.innerHTML = spec.icon ? String(spec.icon) : spec.label ? escapeHtml2(String(spec.label)) : escapeHtml2(m.id);
+    el2.addEventListener("click", () => {
       try {
         const apiAny = api;
         if (spec.command && apiAny && typeof apiAny.commandInvoke === "function") {
@@ -7090,8 +7097,8 @@
     else if (m.slot === "statusbar") container = document.querySelector(".statusbar");
     if (!container) return;
     const spacer = container.querySelector(".ck-ab-spacer");
-    if (m.slot === "activitybar" && spacer) container.insertBefore(el, spacer);
-    else container.appendChild(el);
+    if (m.slot === "activitybar" && spacer) container.insertBefore(el2, spacer);
+    else container.appendChild(el2);
   }
   function escapeHtml2(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -7205,8 +7212,8 @@
         apiAny.onPluginSlotUnregister((m) => {
           try {
             const k = m.pluginId + ":" + m.slot + ":" + m.id;
-            const el = document.querySelector('[data-slot-key="' + k + '"]');
-            if (el && el.parentNode) el.parentNode.removeChild(el);
+            const el2 = document.querySelector('[data-slot-key="' + k + '"]');
+            if (el2 && el2.parentNode) el2.parentNode.removeChild(el2);
           } catch (_) {
           }
         });
@@ -7359,8 +7366,8 @@
       container.textContent = text;
     }
   }
-  function positionTooltip(el, tip) {
-    const rect = el.getBoundingClientRect();
+  function positionTooltip(el2, tip) {
+    const rect = el2.getBoundingClientRect();
     tip.style.left = "0px";
     tip.style.top = "0px";
     tip.classList.add("measuring");
@@ -7381,10 +7388,10 @@
     tip.style.left = `${Math.round(left)}px`;
     tip.style.top = `${Math.round(top)}px`;
   }
-  function showTooltip(el, text) {
+  function showTooltip(el2, text) {
     const tip = ensureTooltipEl();
     renderTooltipContent(tip, text);
-    positionTooltip(el, tip);
+    positionTooltip(el2, tip);
     tip.classList.add("show");
   }
   function hideTooltip() {
@@ -7398,8 +7405,8 @@
       lastHideTime = Date.now();
     }
   }
-  function isClipped(el) {
-    const nodes = [el, ...Array.from(el.querySelectorAll("*"))];
+  function isClipped(el2) {
+    const nodes = [el2, ...Array.from(el2.querySelectorAll("*"))];
     for (const n of nodes) {
       const h = n;
       if (h.clientWidth === 0 && h.clientHeight === 0) continue;
@@ -7407,41 +7414,41 @@
     }
     return false;
   }
-  function isIconLike(el) {
-    return (el.textContent || "").trim().length <= 2;
+  function isIconLike(el2) {
+    return (el2.textContent || "").trim().length <= 2;
   }
   function handlePointerOver(e) {
     const target = e.target;
     if (!target) return;
-    const el = target.closest("[title], [data-tooltip], [data-ck-title]");
-    if (!el) {
+    const el2 = target.closest("[title], [data-tooltip], [data-ck-title]");
+    if (!el2) {
       if (activeTarget && !activeTarget.contains(target)) {
         hideTooltip();
       }
       return;
     }
-    const rawTitle = el.getAttribute("title");
+    const rawTitle = el2.getAttribute("title");
     if (rawTitle) {
-      el.setAttribute("data-ck-title", rawTitle);
-      el.removeAttribute("title");
+      el2.setAttribute("data-ck-title", rawTitle);
+      el2.removeAttribute("title");
     }
-    if (activeTarget === el) return;
-    let text = (el.getAttribute("data-tooltip") || "").trim();
+    if (activeTarget === el2) return;
+    let text = (el2.getAttribute("data-tooltip") || "").trim();
     if (!text) {
-      const implicit = (el.getAttribute("data-ck-title") || "").trim();
-      if (implicit && (isIconLike(el) || isClipped(el))) text = implicit;
+      const implicit = (el2.getAttribute("data-ck-title") || "").trim();
+      if (implicit && (isIconLike(el2) || isClipped(el2))) text = implicit;
     }
     if (!text) {
       hideTooltip();
       return;
     }
     if (showTimer) clearTimeout(showTimer);
-    activeTarget = el;
+    activeTarget = el2;
     const isWarm = Date.now() - lastHideTime < 300;
     const delay = isWarm ? 20 : 120;
     showTimer = window.setTimeout(() => {
-      if (activeTarget === el && el.isConnected) {
-        showTooltip(el, text);
+      if (activeTarget === el2 && el2.isConnected) {
+        showTooltip(el2, text);
       }
     }, delay);
   }
@@ -7480,17 +7487,17 @@
   function bar() {
     return document.querySelector(BAR_SEL);
   }
-  function keyOf(el) {
-    if (el.classList.contains("ck-ab-spacer")) return SPACER_KEY;
-    if (el.classList.contains("ck-ab-item")) return el.dataset.tab || el.dataset.pluginTab || "";
+  function keyOf(el2) {
+    if (el2.classList.contains("ck-ab-spacer")) return SPACER_KEY;
+    if (el2.classList.contains("ck-ab-item")) return el2.dataset.tab || el2.dataset.pluginTab || "";
     return "";
   }
   function saveOrder() {
     const b = bar();
     if (!b) return;
     const keys = [];
-    Array.from(b.children).forEach((el) => {
-      const k = keyOf(el);
+    Array.from(b.children).forEach((el2) => {
+      const k = keyOf(el2);
       if (k) keys.push(k);
     });
     try {
@@ -7514,27 +7521,27 @@
     if (!order.length) return;
     if (observer) observer.disconnect();
     const byKey = /* @__PURE__ */ new Map();
-    Array.from(b.children).forEach((el) => {
-      const k = keyOf(el);
-      if (k) byKey.set(k, el);
+    Array.from(b.children).forEach((el2) => {
+      const k = keyOf(el2);
+      if (k) byKey.set(k, el2);
     });
     const used = /* @__PURE__ */ new Set();
     for (const key of order) {
-      const el = byKey.get(key);
-      if (el && !used.has(el)) {
-        b.appendChild(el);
-        used.add(el);
+      const el2 = byKey.get(key);
+      if (el2 && !used.has(el2)) {
+        b.appendChild(el2);
+        used.add(el2);
       }
     }
     const spacer = b.querySelector(".ck-ab-spacer");
-    byKey.forEach((el) => {
-      if (used.has(el)) return;
-      if (el === spacer) {
-        b.appendChild(el);
+    byKey.forEach((el2) => {
+      if (used.has(el2)) return;
+      if (el2 === spacer) {
+        b.appendChild(el2);
         return;
       }
-      if (spacer) b.insertBefore(el, spacer);
-      else b.appendChild(el);
+      if (spacer) b.insertBefore(el2, spacer);
+      else b.appendChild(el2);
     });
     if (observer) observer.observe(b, { childList: true });
   }
@@ -7606,6 +7613,64 @@
     }
   }
 
+  // src/ui/shell/scripts/update-progress.ts
+  init_shared();
+  var HIDE_DELAY = 4e3;
+  function el(id) {
+    return document.getElementById(id);
+  }
+  function show() {
+    const box = el("sb-update");
+    if (box) box.style.display = "";
+  }
+  function hide() {
+    const box = el("sb-update");
+    if (box) box.style.display = "none";
+  }
+  function setBar(percent) {
+    const fill = el("sb-update-fill");
+    const pct = el("sb-update-pct");
+    const p = Math.max(0, Math.min(100, Math.round(percent)));
+    if (fill) fill.style.width = p + "%";
+    if (pct) pct.textContent = p + "%";
+  }
+  function setLabel(text) {
+    const l = el("sb-update-label");
+    if (l) l.textContent = text;
+  }
+  var hideTimer = null;
+  function scheduleHide() {
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      hide();
+      hideTimer = null;
+    }, HIDE_DELAY);
+  }
+  function initUpdateProgress() {
+    if (!api.onUpdateProgress) return;
+    api.onUpdateProgress((data) => {
+      if (!data || !data.state) return;
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+        hideTimer = null;
+      }
+      if (data.state === "downloading") {
+        show();
+        setLabel("\u66F4\u65B0\u4E2D");
+        setBar(typeof data.percent === "number" ? data.percent : 0);
+      } else if (data.state === "done") {
+        show();
+        setLabel("\u66F4\u65B0\u5DF2\u5C31\u7EEA");
+        setBar(100);
+        scheduleHide();
+      } else if (data.state === "error") {
+        show();
+        setLabel("\u66F4\u65B0\u5931\u8D25");
+        scheduleHide();
+      }
+    });
+  }
+
   // src/ui/shell/scripts/main.ts
   try {
     initGlobalTooltip();
@@ -7614,6 +7679,10 @@
   try {
     initActivitybarDrag();
     applyActivitybarOrder();
+  } catch (_) {
+  }
+  try {
+    initUpdateProgress();
   } catch (_) {
   }
   window.ckPrompt = ckPrompt;
@@ -7656,11 +7725,11 @@
   } catch (_) {
   }
   function renderWindowName() {
-    const el = document.getElementById("sb-window-name-text");
+    const el2 = document.getElementById("sb-window-name-text");
     const fn = api.getWindowName;
-    if (!el || typeof fn !== "function") return;
+    if (!el2 || typeof fn !== "function") return;
     fn().then((r) => {
-      if (r && r.success) el.textContent = r.name || "--";
+      if (r && r.success) el2.textContent = r.name || "--";
     }).catch(() => {
     });
   }
@@ -7670,8 +7739,8 @@
   }
   if (api.onWindowNameUpdated) {
     api.onWindowNameUpdated((name) => {
-      const el = document.getElementById("sb-window-name-text");
-      if (el && name) el.textContent = name;
+      const el2 = document.getElementById("sb-window-name-text");
+      if (el2 && name) el2.textContent = name;
     });
   }
   try {

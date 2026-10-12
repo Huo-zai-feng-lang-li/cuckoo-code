@@ -30,12 +30,16 @@ import { initModalGuard } from './modal-guard.js';
 import { initThemePresenter } from './theme-presenter.js';
 import { initGlobalTooltip } from './tooltip.js';
 import { initActivitybarDrag, applyActivitybarOrder } from './activitybar-drag.js';
+import { initUpdateProgress } from './update-progress.js';
 
 // 全局统一自定义 Tooltip（接管所有 title，告别系统原生提示）
 try { initGlobalTooltip(); } catch (_) { /* ignore */ }
 
 // 活动栏图标拖拽排序（顺序持久化）
 try { initActivitybarDrag(); applyActivitybarOrder(); } catch (_) { /* ignore */ }
+
+// 自动更新进度（状态栏进度条）
+try { initUpdateProgress(); } catch (_) { /* ignore */ }
 
 // 把自定义弹框挂到 window，供插件脚本调用（Electron 禁用原生 prompt，插件需用这套）
 (window as any).ckPrompt = ckPrompt;

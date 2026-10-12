@@ -76,6 +76,15 @@ function isGitHubAccessError(error: any): boolean {
   return githubKeywords.some((kw) => msg.includes(kw));
 }
 
+/** 把更新进度推送给壳页面（状态栏进度条） */
+function sendProgress(data: any): void {
+  try {
+    if (mainWindowRef && !mainWindowRef.isDestroyed() && mainWindowRef.webContents && !mainWindowRef.webContents.isDestroyed()) {
+      mainWindowRef.webContents.send('shell-update-progress', data);
+    }
+  } catch (_) { /* ignore */ }
+}
+
 /** 显示系统通知（不打断用户） */
 function showNotification(title: string, body: string): void {
   if (Notification.isSupported()) {
@@ -184,6 +193,7 @@ autoUpdater.on('update-available', async (info: any) => {
     : await dialog.showMessageBox(options);
   if (result.response === 0) {
     showNotification('开始下载', '正在下载 v' + info.version + '...');
+    sendProgress({ state: 'downloading', percent: 0, version: info.version });
     autoUpdater.downloadUpdate().catch((err) => {
       console.error('[Updater] 下载失败:', err);
     });
@@ -200,11 +210,22 @@ autoUpdater.on('update-not-available', () => {
   isManualCheck = false;
 });
 
+let lastNotifyAt = 0;
 autoUpdater.on('download-progress', (progressObj: any) => {
   const percent = Math.round(progressObj.percent);
   console.log('[Updater] 下载进度:', percent + '%');
-  // 仅在手动检查时显示进度通知
-  if (isManualCheck && percent % 10 === 0) {
+  // 推送给壳页面状态栏（实时进度条）
+  sendProgress({
+    state: 'downloading',
+    percent,
+    transferred: progressObj.transferred || 0,
+    total: progressObj.total || 0,
+    bytesPerSecond: progressObj.bytesPerSecond || 0,
+  });
+  // 系统通知：时间节流（每 3 秒一次），不再依赖 %10（会跳变漏掉）
+  const now = Date.now();
+  if (isManualCheck && now - lastNotifyAt > 3000) {
+    lastNotifyAt = now;
     showNotification('下载更新中', '已下载 ' + percent + '%');
   }
 });
@@ -212,6 +233,7 @@ autoUpdater.on('download-progress', (progressObj: any) => {
 autoUpdater.on('update-downloaded', (info: any) => {
   updateDownloaded = true;
   console.log('[Updater] 新版本已下载:', info.version);
+  sendProgress({ state: 'done', percent: 100, version: info.version });
 
   // 弹窗询问是否立即安装
   const options = {
@@ -239,6 +261,7 @@ autoUpdater.on('update-downloaded', (info: any) => {
 
 autoUpdater.on('error', async (error: any) => {
   console.error('[Updater] 更新错误:', error);
+  sendProgress({ state: 'error', error: (error && error.message) || '更新出错' });
   const shouldRetry = await showUpdateErrorDialog(error, isManualCheck);
   if (shouldRetry) {
     // 用户点击重试

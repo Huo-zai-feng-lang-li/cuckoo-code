@@ -18,6 +18,9 @@ const shellAPI = {
   forward: () => ipcRenderer.invoke('shell-forward'),
   reload: () => ipcRenderer.invoke('shell-reload'),
   home: () => ipcRenderer.invoke('shell-home'),
+  onUpdateProgress: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-update-progress', (_e: any, data: any) => cb(data));
+  },
   onUrlUpdated: (cb: (data: any) => void) => {
     ipcRenderer.on('shell-url-updated', (_e: any, data: any) => cb(data));
   },
