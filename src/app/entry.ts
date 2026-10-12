@@ -15,7 +15,7 @@ import * as mcpClient from '../mcp/client.js';
 import { resolveAsset, resolveSrc } from '../infra/paths.js';
 
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, nativeTheme, ipcMain: ipcMainForProfile, Notification } = require('electron');
+const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, nativeTheme, ipcMain: ipcMainForProfile } = require('electron');
 
 // ========== 持久化会话配置 ==========
 const SESSION_DIR = process.env.CUCKOO_SESSION_DIR || 'cuckoo-ai-pro-session';
@@ -889,7 +889,8 @@ function profileDisplayName(profileId: string | null): string {
 }
 
 /**
- * 窗口组切换提示：系统通知 + 推给壳页面 toast。
+ * 窗口组切换提示：推给壳页面弹 toast。
+ * 切换后焦点已跳到目标 Cuckoo 窗口，用户面前必有壳页面，故只用应用内 toast（不弹系统通知，避免打扰）。
  * @param reason 'rate-limit'（自动，账号限流）| 'manual'（手动转移）
  * @param fromName 源窗口名
  * @param toName 目标窗口名（失败时为空）
@@ -898,18 +899,6 @@ function profileDisplayName(profileId: string | null): string {
  */
 function notifyWindowSwitch(reason: string, fromName: string, toName: string, ok: boolean, detail?: string): void {
   const reasonText = reason === 'rate-limit' ? '账号限流自动切换' : '手动转移对话';
-  const title = ok ? '窗口组已切换' : '窗口组切换失败';
-  const body = ok ? (fromName + ' → ' + toName + '（' + reasonText + '）')
-                  : (detail || '组内窗口均不可用');
-  // 系统通知
-  try {
-    if (Notification && Notification.isSupported()) {
-      const n = new Notification({ title, body });
-      n.show();
-      // 保持引用防 GC（同 renderer.ts 的坑）
-      setTimeout(() => { try { n.close(); } catch (_) {} }, 8000);
-    }
-  } catch (_) { /* ignore */ }
   // 壳页面 toast（广播给所有窗口，无论哪个在前台都能看到）
   try {
     for (const c of windowState.getAllContexts()) {
