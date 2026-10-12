@@ -155,6 +155,16 @@ test('就地编辑统一为多行文本域（ck-mledit）', () => {
   assert.ok(/key === 'Enter' && \(ev\.ctrlKey \|\| ev\.metaKey\)/.test(script), '队列编辑应 Ctrl+Enter 提交');
 });
 
+test('发送队列：左侧三操作按钮（编辑/发送/关闭），无序号', () => {
+  assert.ok(/\.sq-actions \{/.test(html), '应有操作按钮组 sq-actions');
+  assert.ok(/sq-edit-btn/.test(script), '应有编辑按钮');
+  assert.ok(/sq-send-btn/.test(script), '应有立即发送按钮');
+  assert.ok(/function sendQueueItemNow\s*\(/.test(script), '应有立即发送函数');
+  assert.ok(!/sq-idx/.test(script), '不应再有序号元素 sq-idx');
+  // 编辑框隐藏滚动条
+  assert.ok(/\.ck-mledit::-webkit-scrollbar \{ display: none;/.test(html), '编辑框应隐藏滚动条');
+});
+
 test('发送队列：关闭图标尺寸', () => {
   const m = html.match(/\.sq-item \.sq-del \{[^}]*width:\s*(\d+)px/);
   assert.ok(m, '应能找到关闭按钮宽度');

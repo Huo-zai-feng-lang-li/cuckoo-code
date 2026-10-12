@@ -516,11 +516,10 @@
   .send-queue.show { display: flex; }
   .sq-head { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-dim); padding: 0 2px; }
   .sq-head .sq-count { color: var(--accent); font-weight: 600; }
-  .sq-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; background: var(--bg-elev); border: 1px solid var(--border); font-size: 12px; color: var(--text-2); }
-  .sq-item .sq-idx { flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 9.5px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
-  .sq-item .sq-text { flex: 1; cursor: text; border-radius: 5px; padding: 2px 4px; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+  .sq-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 10px; border-radius: 8px; background: var(--bg-elev); border: 1px solid var(--border); font-size: 12px; color: var(--text-2); }
+  .sq-item .sq-text { flex: 1; cursor: text; border-radius: 5px; padding: 3px 4px; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
   .sq-item .sq-text:hover { background: var(--surface-hover); }
-  /* 就地编辑统一用多行文本域 */
+  /* 就地编辑统一用多行文本域（隐藏滚动条，靠自动增高） */
   .ck-mledit {
     width: 100%; box-sizing: border-box; flex: 1;
     border: 1px solid var(--accent); border-radius: 6px;
@@ -529,10 +528,16 @@
     padding: 5px 8px; outline: none; resize: none;
     white-space: pre-wrap; word-break: break-word;
     overflow-y: auto; max-height: 200px;
+    scrollbar-width: none;
   }
-  .sq-item .sq-del { flex-shrink: 0; width: 26px; height: 26px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
-  .sq-item .sq-del:hover { background: var(--surface-hover); color: var(--red); }
-  .sq-item .sq-del svg { width: 15px; height: 15px; }
+  .ck-mledit::-webkit-scrollbar { display: none; }
+  /* 队列项左侧操作按钮组：编辑 / 发送 / 关闭 */
+  .sq-actions { display: flex; gap: 2px; flex-shrink: 0; }
+  .sq-item .sq-btn { flex-shrink: 0; width: 26px; height: 26px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
+  .sq-item .sq-btn:hover { background: var(--surface-hover); color: var(--text); }
+  .sq-item .sq-btn svg { width: 15px; height: 15px; }
+  .sq-item .sq-del { width: 26px; height: 26px; }
+  .sq-item .sq-del:hover { color: var(--red); }
 
   /* ===== 右侧对话快捷导航（用户消息锚点）===== */
   .conv-nav { position: fixed; right: 8px; top: 50%; transform: translateY(-50%); display: none; flex-direction: column; align-items: flex-end; gap: 9px; z-index: 30; max-height: 72%; overflow-y: auto; overflow-x: hidden; padding: 10px 8px; border-radius: 12px; scrollbar-width: none; transition: background .18s, box-shadow .18s, border-color .18s; border: 1px solid transparent; }
@@ -2096,6 +2101,14 @@
   // ===== 发送队列（运行中排队待发消息，任务空闲自动发下一条）=====
   var sendQueue = []; // { text, files, hints }
   var sendQueueEl = document.getElementById('send-queue');
+  /** 立即发送队列中的某一项：移到队首优先；若当前空闲则马上发出 */
+  function sendQueueItemNow(it) {
+    var at = sendQueue.indexOf(it);
+    if (at < 0) return;
+    if (at > 0) { sendQueue.splice(at, 1); sendQueue.unshift(it); }
+    renderSendQueue();
+    if (!isBusy() && !aborted()) maybeFlushQueue();
+  }
   function renderSendQueue() {
     if (!sendQueueEl) return;
     sendQueueEl.innerHTML = '';
@@ -2111,14 +2124,20 @@
         var row = document.createElement('div');
         row.className = 'sq-item';
         var preview = it.text || ('[附件 ' + (it.files ? it.files.length : 0) + ' 个]');
-        row.innerHTML = '<span class="sq-idx">' + (idx + 1) + '</span>' +
-          '<span class="sq-text" title="点击编辑"></span>' +
-          '<button class="sq-del" title="移出队列"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>';
+        row.innerHTML =
+          '<div class="sq-actions">' +
+            '<button class="sq-btn sq-edit-btn" title="编辑"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2.5l2.5 2.5-8 8L2 14l1-3.5z"/></svg></button>' +
+            '<button class="sq-btn sq-send-btn" title="立即发送"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M8 3l-4 4M8 3l4 4"/></svg></button>' +
+            '<button class="sq-btn sq-del" title="移出队列"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>' +
+          '</div>' +
+          '<span class="sq-text" title="点击编辑"></span>';
         var textEl = row.querySelector('.sq-text');
         textEl.textContent = preview;
+        // 编辑图标 = 同「点击文本」
+        row.querySelector('.sq-edit-btn').addEventListener('click', function () { textEl.click(); });
         // 点击文本 → 变多行文本域编辑（Ctrl+Enter/失焦保存，Esc 取消，Enter 换行）
         textEl.addEventListener('click', function () {
-          if (row.querySelector('.sq-edit')) return;
+          if (row.querySelector('.ck-mledit')) return;
           var inp = document.createElement('textarea');
           inp.className = 'ck-mledit';
           inp.rows = 1;
@@ -2144,6 +2163,8 @@
           });
           inp.addEventListener('blur', function () { commit(true); });
         });
+        // 立即发送该条：移到队首优先；空闲则马上发出
+        row.querySelector('.sq-send-btn').addEventListener('click', function () { sendQueueItemNow(it); });
         row.querySelector('.sq-del').addEventListener('click', function () {
           // 用对象引用删除，防止 flush 移走队首后 idx 错删他项
           var at = sendQueue.indexOf(it);
