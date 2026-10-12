@@ -2,7 +2,7 @@
  * 壳页面脚本入口。
  * 导入各模块（副作用：绑定事件），注册 tab 加载器，做预加载。
  */
-import { api } from './shared.js';
+import { api, ckPrompt, ckConfirm, ckAlert } from './shared.js';
 import { registerTab } from './sidebar.js';
 import './toolbar.js';
 import './preview.js';
@@ -23,6 +23,7 @@ import { renderRecent } from './recent.js';
 import { loadConversations } from './pages/conversations.js';
 import { loadPlugins } from './pages/plugins.js';
 import { loadRules } from './pages/rules.js';
+import { loadMemories } from './pages/memories.js';
 import { loadGit } from './pages/git.js';
 import { initPluginShell } from './plugin-shell.js';
 import { initModalGuard } from './modal-guard.js';
@@ -31,6 +32,11 @@ import { initGlobalTooltip } from './tooltip.js';
 
 // 全局统一自定义 Tooltip（接管所有 title，告别系统原生提示）
 try { initGlobalTooltip(); } catch (_) { /* ignore */ }
+
+// 把自定义弹框挂到 window，供插件脚本调用（Electron 禁用原生 prompt，插件需用这套）
+(window as any).ckPrompt = ckPrompt;
+(window as any).ckConfirm = ckConfirm;
+(window as any).ckAlert = ckAlert;
 
 // 注册 tab → 加载函数（sidebar 点击时调用）
 registerTab('workspaces', loadWorkspaces);
@@ -47,6 +53,7 @@ registerTab('settings', loadSettings);
 registerTab('conversations', loadConversations);
 registerTab('plugins', loadPlugins);
 registerTab('rules', loadRules);
+registerTab('memories', loadMemories);
 registerTab('git', loadGit);
 
 // 预加载：工作区（默认页）+ 提示词 + 自动压缩配置
