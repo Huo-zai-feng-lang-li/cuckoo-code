@@ -108,7 +108,7 @@
   .stream::-webkit-scrollbar { width: 9px; }
   .stream::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 5px; border: 2px solid var(--bg); background-clip: padding-box; }
   .stream::-webkit-scrollbar-thumb:hover { background: var(--scroll-hover); background-clip: padding-box; border: 2px solid var(--bg); }
-  .wrap { max-width: 780px; margin: 0 auto; padding: 0 24px; }
+  .wrap { max-width: 100%; margin: 0 auto; padding: 0 24px; }
 
   .empty { text-align: center; color: var(--text-dim); padding: 22vh 20px 0; font-size: 13px; line-height: 1.9; }
   .empty .glyph { margin-bottom: 16px; color: var(--accent); }
@@ -276,7 +276,7 @@
   .composer { flex-shrink: 0; padding: 12px 40px 28px; }
   /* 首次对话需选择项目目录（大虚线按钮，替代输入框） */
   .init-project-btn {
-    display: block; width: 100%; max-width: 780px; margin: 0 auto;
+    display: block; width: 100%; max-width: 100%; margin: 0 auto;
     padding: 22px 24px; border-radius: 12px;
     border: 2px dashed var(--border-strong);
     background: transparent; color: var(--text-2);
@@ -287,7 +287,7 @@
   .init-project-btn:active { transform: scale(.99); }
   .init-project-btn:disabled { opacity: .6; cursor: default; }
   .composer-inner {
-    max-width: 780px; margin: 0 auto;
+    max-width: 100%; margin: 0 auto;
     display: flex; align-items: flex-end; gap: 8px;
     background: var(--bg-elev); border: 1px solid var(--border);
     border-radius: 12px; padding: 10px 10px 10px 14px;
@@ -317,10 +317,10 @@
   #send:disabled { opacity: .35; cursor: default; }
   #send.stop { background: var(--red); }
   #send.stop:hover { opacity: 1; }
-  .composer-hint { max-width: 780px; margin: 7px auto 0; font-size: 10.5px; color: var(--text-dim); text-align: center; }
+  .composer-hint { max-width: 100%; margin: 7px auto 0; font-size: 10.5px; color: var(--text-dim); text-align: center; }
 
   /* 待发指令 chips（技能/工具/计划等，不进对话气泡） */
-  .hint-row { max-width: 780px; margin: 0 auto 6px; display: flex; flex-wrap: wrap; gap: 7px; }
+  .hint-row { max-width: 100%; margin: 0 auto 6px; display: flex; flex-wrap: wrap; gap: 7px; }
   .hint-chip {
     display: flex; align-items: center; gap: 6px;
     background: var(--accent-soft); border: 1px solid var(--border);
@@ -332,7 +332,7 @@
   .hint-chip .hc-del svg { width: 9px; height: 9px; }
 
   /* 附件区 */
-  .attach-row { max-width: 780px; margin: 0 auto 8px; display: flex; flex-wrap: wrap; gap: 7px; }
+  .attach-row { max-width: 100%; margin: 0 auto 8px; display: flex; flex-wrap: wrap; gap: 7px; }
   .attach-chip {
     display: flex; align-items: center; gap: 7px;
     background: var(--surface); border: 1px solid var(--border);
@@ -512,7 +512,7 @@
   }
 
   /* ===== 发送队列（运行中排队待发消息）===== */
-  .send-queue { max-width: 780px; margin: 0 auto 8px; display: none; flex-direction: column; gap: 5px; }
+  .send-queue { max-width: 100%; margin: 0 auto 8px; display: none; flex-direction: column; gap: 5px; }
   .send-queue.show { display: flex; }
   .sq-head { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-dim); padding: 0 2px; }
   .sq-head .sq-count { color: var(--accent); font-weight: 600; }
