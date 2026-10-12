@@ -115,6 +115,11 @@ function isClipped(el: HTMLElement): boolean {
   return false;
 }
 
+/** 元素是否无可视文字（纯图标按钮）—— 此时 title 是唯一说明，应展示 */
+function hasNoVisibleText(el: HTMLElement): boolean {
+  return !(el.textContent || '').trim();
+}
+
 function handlePointerOver(e: PointerEvent): void {
   const target = e.target as HTMLElement | null;
   if (!target) return;
@@ -139,7 +144,8 @@ function handlePointerOver(e: PointerEvent): void {
   let text = (el.getAttribute('data-tooltip') || '').trim();
   if (!text) {
     const implicit = (el.getAttribute('data-ck-title') || '').trim();
-    if (implicit && isClipped(el)) text = implicit;
+    // 纯图标按钮（无可见文字）→ 展示；否则仅内容被裁剪时展示
+    if (implicit && (hasNoVisibleText(el) || isClipped(el))) text = implicit;
   }
   if (!text) {
     hideTooltip();

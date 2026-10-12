@@ -6293,6 +6293,9 @@
     }
     return false;
   }
+  function hasNoVisibleText(el) {
+    return !(el.textContent || "").trim();
+  }
   function handlePointerOver(e) {
     const target = e.target;
     if (!target) return;
@@ -6311,7 +6314,7 @@
     let text = (el.getAttribute("data-tooltip") || "").trim();
     if (!text) {
       const implicit = (el.getAttribute("data-ck-title") || "").trim();
-      if (implicit && isClipped(el)) text = implicit;
+      if (implicit && (hasNoVisibleText(el) || isClipped(el))) text = implicit;
     }
     if (!text) {
       hideTooltip();

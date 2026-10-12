@@ -43,7 +43,8 @@ test('原生 title 仅在内容被裁剪时才弹提示（data-tooltip 显式声
   assert.ok(/scrollWidth > .*clientWidth/.test(src), 'isClipped 应用 scrollWidth/clientWidth 判定');
   // 原生 title 转存为 data-ck-title，且只在裁剪时展示
   assert.ok(src.includes("setAttribute('data-ck-title'"), '原生 title 应转存为 data-ck-title');
-  assert.ok(/if \(implicit && isClipped\(el\)\) text = implicit/.test(src), '原生 title 应仅在裁剪时作为提示');
+  assert.ok(/if \(implicit && \(hasNoVisibleText\(el\) \|\| isClipped\(el\)\)\) text = implicit/.test(src), '原生 title 应在纯图标或裁剪时作为提示');
+  assert.ok(/function hasNoVisibleText\(/.test(src), '应有 hasNoVisibleText 判定（纯图标按钮应展示）');
   // data-tooltip 显式声明仍优先、总是展示
   assert.ok(src.includes("getAttribute('data-tooltip')"), 'data-tooltip 显式声明应始终被读取');
 

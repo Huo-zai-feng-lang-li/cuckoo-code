@@ -898,7 +898,6 @@
     var editBtn = document.createElement('button');
     editBtn.className = 'msg-act-btn act-edit';
     editBtn.innerHTML = ACT_ICONS.edit;
-    editBtn.setAttribute('data-tooltip', '编辑消息');
     editBtn.addEventListener('click', function (e) {
       e.stopPropagation();
       var t = typeof getText === 'function' ? getText() : '';
@@ -918,7 +917,6 @@
     var delBtn = document.createElement('button');
     delBtn.className = 'msg-act-btn act-del';
     delBtn.innerHTML = ACT_ICONS.del;
-    delBtn.setAttribute('data-tooltip', '删除消息');
     delBtn.addEventListener('click', function (e) {
       e.stopPropagation();
       deleteUserMessage(msgEl, histItem);
@@ -967,7 +965,6 @@
     var delBtn = document.createElement('button');
     delBtn.className = 'msg-act-btn act-del';
     delBtn.innerHTML = ACT_ICONS.del;
-    delBtn.setAttribute('data-tooltip', '删除消息');
     delBtn.addEventListener('click', function (e) {
       e.stopPropagation();
       deleteAssistantMessage(msgEl, histItem);
@@ -2554,7 +2551,7 @@
         var dot = document.createElement('div');
         dot.className = 'conv-nav-dot';
         var full = (users[idx].textContent || '').replace(/\s+/g, ' ').trim();
-        dot.setAttribute('data-tooltip', full); // 收起态悬停通过全局统一自定义 Tooltip 显示完整文本
+        // 收起态为纯横线，不弹提示；完整文本在悬停展开面板中可见
         var txt = document.createElement('span');
         txt.className = 'cn-text';
         txt.textContent = full.slice(0, 60) || ('第 ' + (idx + 1) + ' 条');
@@ -3369,6 +3366,10 @@
       }
       return false;
     }
+    /** 元素是否无可视文字（纯图标按钮）—— 此时 title 是唯一说明，应展示 */
+    function hasNoVisibleText(el) {
+      return !(el.textContent || '').trim();
+    }
 
     function handlePointerOver(e) {
       var target = e.target;
@@ -3389,11 +3390,11 @@
         el.removeAttribute('title');
       }
 
-      // data-tooltip：显式声明，总是展示；原生 title：仅内容被裁剪时才展示
+      // data-tooltip：显式声明，总是展示；原生 title：纯图标或无裁剪时按需展示
       var text = (el.getAttribute('data-tooltip') || '').trim();
       if (!text) {
         var implicit = (el.getAttribute('data-ck-title') || '').trim();
-        if (implicit && isClipped(el)) text = implicit;
+        if (implicit && (hasNoVisibleText(el) || isClipped(el))) text = implicit;
       }
       if (!text) {
         hideTooltip();
