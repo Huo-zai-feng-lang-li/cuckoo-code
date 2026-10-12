@@ -224,6 +224,8 @@
   .ck-ab-item.ck-ab-active { background: var(--ck-primary-soft); }
   .ck-ab-item.ck-ab-active .ck-ab-icon, .ck-ab-item.ck-ab-active .ck-ab-text { opacity: 1; color: var(--ck-primary); }
   .ck-ab-spacer { flex: 1; }
+  .ck-ab-item { user-select: none; }
+  .ck-ab-item.ck-ab-dragging { opacity: .6; cursor: grabbing; z-index: 10; }
   /* 活动栏图标右上角角标（如 Git 改动数） */
   .ck-ab-badge {
     position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px;
@@ -3003,13 +3005,13 @@
     if (!head || !head.parentNode) return;
     const old = document.getElementById("ck-conflict-bar");
     if (old) old.remove();
-    const bar = document.createElement("div");
-    bar.id = "ck-conflict-bar";
-    bar.className = "ck-conflict-bar";
-    bar.innerHTML = '<span class="ck-cb-text">\u26A0 \u6587\u4EF6\u5DF2\u88AB\u5916\u90E8\u4FEE\u6539</span><span class="ck-cb-actions"><button class="ck-cb-btn ck-cb-primary" id="ck-cb-take">\u91C7\u7528\u5916\u90E8\u7248</button><button class="ck-cb-btn" id="ck-cb-keep">\u4FDD\u7559\u6211\u7684</button></span>';
-    head.parentNode.insertBefore(bar, head.nextSibling);
-    const takeBtn = bar.querySelector("#ck-cb-take");
-    const keepBtn = bar.querySelector("#ck-cb-keep");
+    const bar2 = document.createElement("div");
+    bar2.id = "ck-conflict-bar";
+    bar2.className = "ck-conflict-bar";
+    bar2.innerHTML = '<span class="ck-cb-text">\u26A0 \u6587\u4EF6\u5DF2\u88AB\u5916\u90E8\u4FEE\u6539</span><span class="ck-cb-actions"><button class="ck-cb-btn ck-cb-primary" id="ck-cb-take">\u91C7\u7528\u5916\u90E8\u7248</button><button class="ck-cb-btn" id="ck-cb-keep">\u4FDD\u7559\u6211\u7684</button></span>';
+    head.parentNode.insertBefore(bar2, head.nextSibling);
+    const takeBtn = bar2.querySelector("#ck-cb-take");
+    const keepBtn = bar2.querySelector("#ck-cb-keep");
     if (takeBtn) takeBtn.addEventListener("click", () => {
       applyExternal(externalContent);
     });
@@ -3019,8 +3021,8 @@
     });
   }
   function hideConflictBar() {
-    const bar = document.getElementById("ck-conflict-bar");
-    if (bar) bar.remove();
+    const bar2 = document.getElementById("ck-conflict-bar");
+    if (bar2) bar2.remove();
   }
   function applyExternal(content) {
     hideConflictBar();
@@ -6934,9 +6936,9 @@
   var mountedToolbar = /* @__PURE__ */ new Set();
   function mountStatusbar(m) {
     const key = m.pluginId + ":" + m.id;
-    const bar = document.querySelector(".statusbar");
-    if (!bar) return;
-    const exist = bar.querySelector('[data-plugin="' + m.pluginId + '"][data-plugin-id="' + m.id + '"]');
+    const bar2 = document.querySelector(".statusbar");
+    if (!bar2) return;
+    const exist = bar2.querySelector('[data-plugin="' + m.pluginId + '"][data-plugin-id="' + m.id + '"]');
     if (exist) {
       const lbl = exist.querySelector(".sb-label");
       if (lbl) lbl.textContent = m.spec && m.spec.text || "";
@@ -6949,16 +6951,16 @@
     el.setAttribute("data-plugin-id", m.id);
     if (m.spec && m.spec.title) el.title = String(m.spec.title);
     el.innerHTML = '<span class="sb-label">' + escapeHtml2(m.spec && m.spec.text || "") + "</span>";
-    const spacer = bar.querySelector(".sb-spacer");
-    if (spacer && spacer.parentNode === bar) bar.insertBefore(el, spacer);
-    else bar.appendChild(el);
+    const spacer = bar2.querySelector(".sb-spacer");
+    if (spacer && spacer.parentNode === bar2) bar2.insertBefore(el, spacer);
+    else bar2.appendChild(el);
   }
   function mountToolbar(m) {
     const key = m.pluginId + ":" + m.id;
     if (mountedToolbar.has(key)) return;
     mountedToolbar.add(key);
-    const bar = document.querySelector(".toolbar");
-    if (!bar) return;
+    const bar2 = document.querySelector(".toolbar");
+    if (!bar2) return;
     const btn = document.createElement("button");
     btn.className = "nav-btn";
     btn.setAttribute("data-plugin", m.pluginId);
@@ -6980,7 +6982,7 @@
       } catch (_) {
       }
     });
-    bar.appendChild(btn);
+    bar2.appendChild(btn);
   }
   function runPanelScript(pluginId, id, script) {
     try {
@@ -7465,9 +7467,153 @@
     }
   }
 
+  // src/ui/shell/scripts/activitybar-drag.ts
+  var BAR_SEL = ".ck-activitybar";
+  var ORDER_KEY = "cuckoo-activitybar-order";
+  var DRAG_THRESHOLD = 6;
+  var SPACER_KEY = "_spacer";
+  var dragEl = null;
+  var startY = 0;
+  var dragging = false;
+  var suppressClick = false;
+  var observer = null;
+  function bar() {
+    return document.querySelector(BAR_SEL);
+  }
+  function keyOf(el) {
+    if (el.classList.contains("ck-ab-spacer")) return SPACER_KEY;
+    if (el.classList.contains("ck-ab-item")) return el.dataset.tab || el.dataset.pluginTab || "";
+    return "";
+  }
+  function saveOrder() {
+    const b = bar();
+    if (!b) return;
+    const keys = [];
+    Array.from(b.children).forEach((el) => {
+      const k = keyOf(el);
+      if (k) keys.push(k);
+    });
+    try {
+      localStorage.setItem(ORDER_KEY, JSON.stringify(keys));
+    } catch (_) {
+    }
+  }
+  function applyActivitybarOrder() {
+    const b = bar();
+    if (!b) return;
+    let order = [];
+    try {
+      const raw = localStorage.getItem(ORDER_KEY);
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (Array.isArray(p)) order = p;
+      }
+    } catch (_) {
+      return;
+    }
+    if (!order.length) return;
+    if (observer) observer.disconnect();
+    const byKey = /* @__PURE__ */ new Map();
+    Array.from(b.children).forEach((el) => {
+      const k = keyOf(el);
+      if (k) byKey.set(k, el);
+    });
+    const used = /* @__PURE__ */ new Set();
+    for (const key of order) {
+      const el = byKey.get(key);
+      if (el && !used.has(el)) {
+        b.appendChild(el);
+        used.add(el);
+      }
+    }
+    const spacer = b.querySelector(".ck-ab-spacer");
+    byKey.forEach((el) => {
+      if (used.has(el)) return;
+      if (el === spacer) {
+        b.appendChild(el);
+        return;
+      }
+      if (spacer) b.insertBefore(el, spacer);
+      else b.appendChild(el);
+    });
+    if (observer) observer.observe(b, { childList: true });
+  }
+  function moveDrag(y) {
+    const b = bar();
+    if (!b || !dragEl) return;
+    const others = Array.from(b.querySelectorAll(".ck-ab-item:not(.ck-ab-dragging)"));
+    let placed = false;
+    for (const it of others) {
+      const r = it.getBoundingClientRect();
+      if (y < r.top + r.height / 2) {
+        if (dragEl.nextSibling !== it) b.insertBefore(dragEl, it);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed && others.length) {
+      const last = others[others.length - 1];
+      if (last.nextSibling !== dragEl) b.insertBefore(dragEl, last.nextSibling);
+    }
+  }
+  function initActivitybarDrag() {
+    const b = bar();
+    if (!b) return;
+    b.addEventListener("mousedown", (e) => {
+      const item = e.target && e.target.closest ? e.target.closest(".ck-ab-item") : null;
+      if (!item || !b.contains(item)) return;
+      dragEl = item;
+      startY = e.clientY;
+      dragging = false;
+    });
+    document.addEventListener("mousemove", (e) => {
+      if (!dragEl) return;
+      if (!dragging) {
+        if (Math.abs(e.clientY - startY) < DRAG_THRESHOLD) return;
+        dragging = true;
+        dragEl.classList.add("ck-ab-dragging");
+        document.body.style.cursor = "grabbing";
+      }
+      e.preventDefault();
+      moveDrag(e.clientY);
+    });
+    document.addEventListener("mouseup", () => {
+      if (!dragEl) return;
+      if (dragging) {
+        dragEl.classList.remove("ck-ab-dragging");
+        document.body.style.cursor = "";
+        saveOrder();
+        suppressClick = true;
+      }
+      dragEl = null;
+      dragging = false;
+    });
+    b.addEventListener("click", (e) => {
+      if (suppressClick) {
+        suppressClick = false;
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    }, true);
+    try {
+      observer = new MutationObserver(() => {
+        if (dragEl) return;
+        applyActivitybarOrder();
+      });
+      observer.observe(b, { childList: true });
+    } catch (_) {
+      observer = null;
+    }
+  }
+
   // src/ui/shell/scripts/main.ts
   try {
     initGlobalTooltip();
+  } catch (_) {
+  }
+  try {
+    initActivitybarDrag();
+    applyActivitybarOrder();
   } catch (_) {
   }
   window.ckPrompt = ckPrompt;

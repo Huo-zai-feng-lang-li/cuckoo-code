@@ -215,6 +215,8 @@
   .ck-ab-item.ck-ab-active { background: var(--ck-primary-soft); }
   .ck-ab-item.ck-ab-active .ck-ab-icon, .ck-ab-item.ck-ab-active .ck-ab-text { opacity: 1; color: var(--ck-primary); }
   .ck-ab-spacer { flex: 1; }
+  .ck-ab-item { user-select: none; }
+  .ck-ab-item.ck-ab-dragging { opacity: .6; cursor: grabbing; z-index: 10; }
   /* 活动栏图标右上角角标（如 Git 改动数） */
   .ck-ab-badge {
     position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px;
