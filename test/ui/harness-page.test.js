@@ -242,7 +242,6 @@ test('消息气泡：纯图标悬浮操作条（编辑/复制/删除），用户
 test('消息气泡：最后一条重发与历史消息截断重发/填入输入框闭环', () => {
   // 1. 判定函数存在
   assert.ok(script.includes('function isLatestUserMessage'), '应有判定是否为最后一条用户消息的函数');
-  assert.ok(script.includes('function countSubsequentUserMessages'), '应有统计后续用户提问轮数的函数');
   assert.ok(script.includes('function truncateUserMessage'), '应有物理截断消息函数');
 
   // 2. 截断函数必须彻底 splice 历史

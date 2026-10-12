@@ -855,17 +855,6 @@
     return true;
   }
 
-  // 统计某条用户消息之后还有多少轮用户提问
-  function countSubsequentUserMessages(msgEl) {
-    var count = 0;
-    var next = msgEl ? msgEl.nextElementSibling : null;
-    while (next) {
-      if (next.classList.contains('user')) count++;
-      next = next.nextElementSibling;
-    }
-    return count;
-  }
-
   // 仅删除当前单轮问答（当前 user 消息及紧随其后的 assistant 节点）
   function deleteUserMessage(msgEl, histItem) {
     var toRemove = [msgEl];
@@ -938,7 +927,6 @@
   function editUserMessage(msgEl, bubbleEl, origText, histItem) {
     if (bubbleEl.querySelector('.ck-mledit')) return;
     var isLatest = isLatestUserMessage(msgEl);
-    var subsequent = countSubsequentUserMessages(msgEl);
 
     var ta = document.createElement('textarea');
     ta.className = 'ck-mledit';
@@ -983,8 +971,6 @@
     function doTruncate() {
       var newText = ta.value.trim();
       if (!newText) { cancel(); return; }
-      var ok = confirm('确定要清除此提问之后的全部对话记录（包含后续 ' + subsequent + ' 轮问答），并从此处重新接续生成吗？\n此操作不可撤销。');
-      if (!ok) return;
       truncateUserMessage(msgEl, histItem);
       input.value = newText;
       send();
@@ -1473,14 +1459,24 @@
     if (api.stop) { try { api.stop().catch(function () { /* ignore */ }); } catch (e) { /* ignore */ } }
   }
 
-  /** 收尾当前助手气泡：只剩加载动画 → 整块移除；否则只摘掉流式光标 */
+  /**
+   * 收尾当前助手气泡：纯占位（仅三点、无思考无正文）→ 整块移除；有内容 → 只摘三点与流式光标。
+   *
+   * 判据基于 DOM 真实内容，**不可**依赖 cur.pending 标志：该标志在首个流式事件（哪怕仅思考）
+   * 到达时即被置 false，而 body 里的三点要到出现正文才被覆盖 —— 用标志判断会在
+   * "仅思考 / 仅工具"回合漏清，三点永久残留在历史里（曾致历史消息恒显"生成中"三点）。
+   */
   function clearPendingBubble() {
     if (!cur) return;
-    var isEmptyPending = cur.pending && cur.body && cur.body.querySelector('.pending-dots');
-    if (isEmptyPending) {
-      if (cur.el && cur.el.parentNode) cur.el.parentNode.removeChild(cur.el);
-    } else if (cur.body) {
-      var cursor = cur.body.querySelector('.streaming-cursor');
+    var dots = cur.body ? cur.body.querySelector('.pending-dots') : null;
+    var cursor = cur.body ? cur.body.querySelector('.streaming-cursor') : null;
+    var hasThink = false, hasText = false;
+    try { hasThink = !!(cur.thinkBody && cur.thinkBody.textContent && cur.thinkBody.textContent.trim()); } catch (e) { /* ignore */ }
+    try { hasText = !!(cur.body && cur.body.textContent && cur.body.textContent.trim()); } catch (e) { /* ignore */ }
+    if (dots && !hasThink && !hasText) {
+      if (cur.el && cur.el.parentNode) cur.el.parentNode.removeChild(cur.el); // 纯占位：整块移除
+    } else {
+      if (dots && dots.parentNode) dots.parentNode.removeChild(dots);
       if (cursor && cursor.parentNode) cursor.parentNode.removeChild(cursor);
     }
     cur = null;
@@ -2264,17 +2260,19 @@
     else setStatus('就绪', 'ready');
     var t = (text || '').trim();
     // 去重：与上一条已完成一致则忽略（防 finished 流 + assistant-done 双触发）
-    if (t && t === lastDoneText) { if (cur) cur = null; return; }
+    if (t && t === lastDoneText) { clearPendingBubble(); return; }
     if (t) lastDoneText = t;
     if (cur) {
       if (t) {
         cur.body.innerHTML = renderMarkdown(t);
       } else {
-        // 纯思考/工具回合：仅收尾思考块（"思考中…" → "已思考 (N 字)"），不新增气泡
+        // 纯思考/工具回合：收尾思考块（"思考中…" → "已思考 (N 字)"），
+        // 并清掉残留三点（有思考则保留气泡，无内容则整块移除）
         try {
           var tl = cur.thinkBody ? cur.thinkBody.textContent : '';
           if (tl && cur.thinkLabel) cur.thinkLabel.textContent = '已思考 (' + tl.length + ' 字)';
         } catch (e) { /* ignore */ }
+        clearPendingBubble();
       }
       cur = null;
       scrollBottom(false);
@@ -2446,7 +2444,7 @@
           // 中止后、尚未开始新任务时到达的工具开始事件：只渲染卡片，不重新置忙
           if (!aborted()) { toolRunningCount++; syncBusyIndicators(); }
           // 工具调用开始 = 当前助手回合结束：收尾思考块并关闭当前气泡，避免"思考中…"悬留
-          if (cur) { try { var tl0 = cur.thinkBody ? cur.thinkBody.textContent : ''; if (tl0 && cur.thinkLabel) cur.thinkLabel.textContent = '已思考 (' + tl0.length + ' 字)'; } catch (e) { /* ignore */ } cur = null; }
+          if (cur) { try { var tl0 = cur.thinkBody ? cur.thinkBody.textContent : ''; if (tl0 && cur.thinkLabel) cur.thinkLabel.textContent = '已思考 (' + tl0.length + ' 字)'; } catch (e) { /* ignore */ } clearPendingBubble(); }
           addToolStart(payload.code); setStatus('工具运行中…', 'busy'); pushHist({ t: 'tool', code: payload.code, success: null, output: '', error: '' }); break;
         case 'tool-end': if (toolRunningCount > 0) toolRunningCount--; addToolEnd(payload.success, payload.output, payload.error);
           // 工具结束不等于任务结束，但也不等于"仍在生成"：
@@ -2840,7 +2838,7 @@
           appendSystem('附件上传失败：' + (detail || '当前平台可能不支持自动上传附件'));
           pushHist({ t: 'system', text: '附件上传失败：' + (detail || '当前平台可能不支持自动上传附件') });
           setStatus('就绪', 'ready');
-          cur = null;
+          clearPendingBubble();
           return;
         }
         // 上传成功：延迟发送，给 AI 网页时间把附件与"发送"绑定（否则附件带不上）
@@ -2866,7 +2864,7 @@
       }).catch(function (e) {
         appendSystem('附件上传出错：' + ((e && e.message) || '未知错误'));
         setStatus('就绪', 'ready');
-        cur = null;
+        clearPendingBubble();
       });
     } else if (api.sendMessage) {
       var smP = api.sendMessage(sendText);
