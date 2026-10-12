@@ -8,6 +8,39 @@ import * as profileManager from '../profile.js';
 const require = createRequire(import.meta.url);
 const { ipcMain, Notification } = require('electron');
 
+/**
+ * 持有已展示通知的引用，防止被 GC。
+ * Electron 已知坑：new Notification() 若只是局部变量、无其它引用，
+ * 可能在 show() 后被回收，导致 click 事件不触发（"点通知没反应"）。
+ *
+ * 用定长数组 + 上限，避免依赖 'close' 事件（Windows 上不一定触发）
+ * 造成 Set 只增不减的内存泄漏。
+ */
+const liveNotifications: any[] = [];
+const MAX_LIVE_NOTIFICATIONS = 20;
+function trackNotification(n: any): void {
+  liveNotifications.push(n);
+  while (liveNotifications.length > MAX_LIVE_NOTIFICATIONS) liveNotifications.shift();
+}
+
+/**
+ * 把窗口强制带到前台。
+ * Windows 前台锁定：仅 show()+focus() 常无法从后台抢焦点，
+ * 用「先置顶再取消 + moveTop」双保险。
+ */
+function bringWindowToFront(win: any): void {
+  if (!win || win.isDestroyed()) return;
+  try {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    // 临时置顶，绕过 Windows 前台锁定，再取消置顶
+    win.setAlwaysOnTop(true);
+    win.focus();
+    win.setAlwaysOnTop(false);
+    if (typeof win.moveTop === 'function') win.moveTop();
+  } catch (_) { /* ignore */ }
+}
+
 function registerRendererIpc(): void {
   // AI 回复完成时：窗口已聚焦则不打扰；否则弹通知并让任务栏/Dock 闪烁
   ipcMain.handle('show-ai-notification', async (event: any) => {
@@ -21,8 +54,9 @@ function registerRendererIpc(): void {
 
       if (win && !win.isDestroyed()) {
         let windowName = 'Cuckoo Code';
-        if (ctx && ctx.profileId) {
-          const profile = profileManager.getProfileById(ctx.profileId);
+        const profileId = ctx ? ctx.profileId : null;
+        if (profileId) {
+          const profile = profileManager.getProfileById(profileId);
           if (profile && profile.name) windowName = profile.name;
         }
 
@@ -30,16 +64,26 @@ function registerRendererIpc(): void {
           title: windowName + ' - AI任务已完成',
           body: 'AI 已完成回复',
         });
-        // 点击通知 → 聚焦到对应窗口（还原最小化 + 显示 + 聚焦）
+        // 点击通知 → 聚焦到对应窗口
         notification.on('click', () => {
           try {
-            if (!win || win.isDestroyed()) return;
-            if (win.isMinimized()) win.restore();
-            win.show();
-            win.focus();
-            win.flashFrame(false);
+            // 动态重查：优先按 profileId 找当前窗口（原窗口关闭后重开也能命中）；
+            // 找不到再退回弹通知时捕获的 win（若未销毁）。
+            let target: any = null;
+            if (profileId) {
+              const ctx2 = windowState.getWindowByProfileId(profileId);
+              if (ctx2 && ctx2.win && !ctx2.win.isDestroyed()) target = ctx2.win;
+            }
+            if (!target && win && !win.isDestroyed()) target = win;
+            if (!target) {
+              // 原窗口已关闭且无同 profile 窗口：退回主窗口
+              const main = windowState.getMainWindow();
+              if (main && !main.isDestroyed()) target = main;
+            }
+            if (target) bringWindowToFront(target);
           } catch (_) { /* ignore */ }
         });
+        trackNotification(notification);
         notification.show();
 
         win.flashFrame(true);
