@@ -42,6 +42,10 @@ const IDB_WAIT_TIMEOUT = 20000;
 const TRUNCATE_URL_FLAG = 'cuckoo-truncate';
 const TRUNCATE_PENDING_KEY = 'cuckoo-truncate-pending';
 
+// 窗口组切换：URL flag + 跨刷新 pending reqId（切换需完整 IDB，故与压缩/截断同走"清 IDB + 刷新"）
+const SWITCH_URL_FLAG = 'cuckoo-switch-share';
+const SWITCH_PENDING_KEY = 'cuckoo-switch-pending';
+
 function logStep(step: string, msg: string): void {
   console.log('[Cuckoo Compact] [' + step + '] ' + msg);
 }
@@ -370,27 +374,6 @@ function checkPendingInit(): void {
 }
 
 /**
- * 全量分享当前会话（供"窗口组切换"用）。
- * 与压缩不同：这里分享**全部消息**（ratio=1），用于把当前对话完整交给另一个窗口。
- * @returns { shareId, sessionId }
- */
-async function shareAllForSwitch(): Promise<{ shareId: string; sessionId: string }> {
-  const sessionId = getSessionIdFromUrl();
-  if (!sessionId) throw new Error('无法从 URL 获取 chat_session_id');
-  const headers = getCachedHeaders();
-  if (!headers || !headers['authorization']) {
-    throw new Error('未获取到认证请求头（请刷新页面后重试）');
-  }
-  const { list: allMsgs, currentMessageId } = await getMessagesFromIndexedDB(sessionId);
-  if (allMsgs.length === 0) throw new Error('未读取到消息列表');
-  const ids = pickRecentPairedIds(allMsgs, currentMessageId, 1.0);
-  if (ids.length === 0) throw new Error('无有效消息可分享');
-  logStep('switch', '全量分享 ' + ids.length + ' 条消息（会话 ' + sessionId + '）');
-  const shareId = await createShare(sessionId, ids, headers);
-  return { shareId, sessionId };
-}
-
-/**
  * 从全量消息里，沿 parent_id 回溯出主链，截取到 targetWebMsgId 为止（含），返回升序 id。
  *
  * 与 pickRecentPairedIds 的区别：后者是「取最近 ratio」，本函数是「精确截到某条」，
@@ -518,6 +501,82 @@ async function checkPendingTruncate(): Promise<boolean> {
   }
 }
 
-export { runCompaction, checkPendingCompact, checkPendingInit, shareAllForSwitch, prepareTruncate, checkPendingTruncate };
+/**
+ * 窗口组切换·段1：清当前会话 IDB → URL 加 cuckoo-switch-share flag → 刷新。
+ *
+ * 为什么必须刷新：与压缩/截断同理——同会话内 AI 回复后 IDB 不更新，只有刷新才会让
+ * DeepSeek 重新拉取并写回完整历史。切换要把对话**完整**交给另一个窗口，必须基于完整 IDB。
+ * （原实现直接读 IDB，常报"IndexedDB 无该会话消息"。）
+ *
+ * reqId 经 localStorage 跨刷新传递，刷新后由 checkPendingSwitchShare 消费并回执主进程。
+ */
+function prepareSwitchShare(reqId: string): void {
+  const sessionId = getSessionIdFromUrl();
+  if (!sessionId) throw new Error('无法从 URL 获取 chat_session_id');
+  try {
+    localStorage.setItem(SWITCH_PENDING_KEY, JSON.stringify({ reqId: reqId, ts: Date.now() }));
+  } catch (_) { /* ignore */ }
+  logStep('switch', '清 IDB 并刷新以重建完整历史（session=' + sessionId + '）');
+  // 清 IDB 后刷新。clearSessionFromIdb 失败也不阻断——仍刷新，DeepSeek 会重建。
+  clearSessionFromIdb(sessionId).catch(() => {}).then(() => {
+    const url = new URL(location.href);
+    url.searchParams.set(SWITCH_URL_FLAG, '1');
+    location.href = url.toString();
+  });
+}
+
+/**
+ * 窗口组切换·段2：刷新后同页 —— 检测 URL flag，等 IDB 重建，创建全量分享，回执主进程。
+ * 与 checkPendingTruncate 同构，只是取全量（ratio=1.0）。
+ * @returns 是否已处理（true = 本次导航属于切换流程）
+ */
+async function checkPendingSwitchShare(): Promise<boolean> {
+  let flag = '';
+  try { flag = new URL(location.href).searchParams.get(SWITCH_URL_FLAG) || ''; } catch (_) {}
+  if (!flag) return false;
+
+  // 立即清 URL 参数，避免重复触发
+  try {
+    const url = new URL(location.href);
+    url.searchParams.delete(SWITCH_URL_FLAG);
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+    logStep('switch', '已清除 URL 标记');
+  } catch (_) {}
+
+  let pending: any = null;
+  try { pending = JSON.parse(localStorage.getItem(SWITCH_PENDING_KEY) || 'null'); } catch (_) {}
+  if (!pending || !pending.reqId) return false;
+
+  try {
+    const sessionId = getSessionIdFromUrl();
+    if (!sessionId) throw new Error('无法从 URL 获取 chat_session_id');
+
+    logStep('switch', '等待 DeepSeek 重建 IDB（监听写入事件）');
+    await waitForIdbWrite(IDB_WAIT_TIMEOUT);
+    logStep('switch', '收到 IDB 写入事件');
+
+    const headers = getCachedHeaders();
+    if (!headers || !headers['authorization']) {
+      throw new Error('未获取到认证请求头（请刷新页面后重试）');
+    }
+    const { list: allMsgs, currentMessageId } = await getMessagesFromIndexedDB(sessionId);
+    if (allMsgs.length === 0) throw new Error('未读取到消息列表');
+    const ids = pickRecentPairedIds(allMsgs, currentMessageId, 1.0);
+    if (ids.length === 0) throw new Error('无有效消息可分享');
+    logStep('switch', '全量分享 ' + ids.length + ' 条消息（会话 ' + sessionId + '）');
+    const shareId = await createShare(sessionId, ids, headers);
+    try { localStorage.removeItem(SWITCH_PENDING_KEY); } catch (_) {}
+    // 回执主进程（reqId 来自跨刷新的 localStorage）
+    try { ipcRenderer.send('cuckoo-switch-share-result', { reqId: pending.reqId, ok: true, shareId: shareId, sessionId: sessionId }); } catch (_) {}
+    return true;
+  } catch (err: any) {
+    console.error('[Cuckoo Compact] 切换分享失败:', err);
+    try { localStorage.removeItem(SWITCH_PENDING_KEY); } catch (_) {}
+    try { ipcRenderer.send('cuckoo-switch-share-result', { reqId: pending.reqId, ok: false, error: (err && err.message) || '分享失败' }); } catch (_) {}
+    return false;
+  }
+}
+
+export { runCompaction, checkPendingCompact, checkPendingInit, prepareSwitchShare, checkPendingSwitchShare, prepareTruncate, checkPendingTruncate };
 // 纯函数导出（测试用）
 export { pickRecentPairedIds as _pickRecentPairedIds, sliceChainUpTo as _sliceChainUpTo };

@@ -85,35 +85,53 @@ export function ckAlert(message: string, title?: string): Promise<boolean> {
   return ckDialog({ title: title || '提示', message, confirm: false });
 }
 
-/** 通用输入弹窗。返回输入值（取消/关闭返回 null）。 */
-export function ckPrompt(opts: { title?: string; placeholder?: string; value?: string }): Promise<string | null> {
+/**
+ * 通用输入弹窗。返回输入值（取消/关闭返回 null）。
+ * @param opts.multiline 多行模式（textarea）：Enter 换行，Ctrl/Cmd+Enter 提交
+ */
+export function ckPrompt(opts: { title?: string; placeholder?: string; value?: string; multiline?: boolean }): Promise<string | null> {
   return new Promise((resolve) => {
     const mask = document.getElementById('input-modal');
     const titleEl = document.getElementById('input-modal-title');
     const inputEl = document.getElementById('input-modal-value') as any;
+    const areaEl = document.getElementById('input-modal-textarea') as any;
     const okBtn = document.getElementById('input-modal-ok') as any;
     const cancelBtn = document.getElementById('input-modal-cancel') as any;
     if (!mask || !okBtn || !cancelBtn || !inputEl) { resolve(null); return; }
+    const multi = !!opts.multiline && !!areaEl;
+    // 按模式互斥显示单行 input / 多行 textarea
+    const fieldEl = multi ? areaEl : inputEl;
+    inputEl.classList.toggle('cuckoo-hidden', multi);
+    if (areaEl) areaEl.classList.toggle('cuckoo-hidden', !multi);
     if (titleEl) titleEl.textContent = opts.title || '输入';
-    inputEl.placeholder = opts.placeholder || '';
-    inputEl.value = opts.value || '';
+    fieldEl.placeholder = opts.placeholder || '';
+    fieldEl.value = opts.value || '';
     function cleanup() {
       mask!.classList.add('cuckoo-hidden');
       okBtn.removeEventListener('click', onOk);
       cancelBtn.removeEventListener('click', onCancel);
       mask!.removeEventListener('click', onMask);
-      inputEl.removeEventListener('keydown', onKey);
+      fieldEl.removeEventListener('keydown', onKey);
     }
-    function onOk() { const v = String(inputEl.value || '').trim(); cleanup(); resolve(v || null); }
+    function onOk() { const v = String(fieldEl.value || '').trim(); cleanup(); resolve(v || null); }
     function onCancel() { cleanup(); resolve(null); }
     function onMask(e: any) { if (e.target === mask) { cleanup(); resolve(null); } }
-    function onKey(e: any) { if (e.key === 'Enter') { e.preventDefault(); onOk(); } else if (e.key === 'Escape') { onCancel(); } }
+    function onKey(e: any) {
+      if (multi) {
+        // 多行：Ctrl/Cmd+Enter 提交，Esc 取消，普通 Enter 换行
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onOk(); }
+        else if (e.key === 'Escape') { onCancel(); }
+      } else {
+        if (e.key === 'Enter') { e.preventDefault(); onOk(); }
+        else if (e.key === 'Escape') { onCancel(); }
+      }
+    }
     okBtn.addEventListener('click', onOk);
     cancelBtn.addEventListener('click', onCancel);
     mask.addEventListener('click', onMask);
-    inputEl.addEventListener('keydown', onKey);
+    fieldEl.addEventListener('keydown', onKey);
     mask.classList.remove('cuckoo-hidden');
-    setTimeout(() => { inputEl.focus(); inputEl.select(); }, 50);
+    setTimeout(() => { fieldEl.focus(); try { fieldEl.select(); } catch (_) {} }, 50);
   });
 }
 

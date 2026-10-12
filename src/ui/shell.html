@@ -649,6 +649,7 @@
   }
   .ck-input:focus, .ck-textarea:focus { outline: none; border-color: var(--ck-primary); box-shadow: 0 0 0 3px var(--ck-primary-soft); }
   .ck-textarea { resize: vertical; min-height: 220px; line-height: 1.6; }
+  .ck-textarea-sm { min-height: 110px; }
   .ck-modal-foot { display: flex; gap: 8px; flex-wrap: wrap; }
   .ck-modal-foot .ck-btn { white-space: nowrap; }
   #agent-modal .ck-modal { max-width: 360px; }
@@ -1797,6 +1798,7 @@
               <span class="ck-modal-title" id="input-modal-title">重命名</span>
               <div class="ck-field">
                 <input class="ck-input" id="input-modal-value" placeholder="" />
+                <textarea class="ck-textarea ck-textarea-sm cuckoo-hidden" id="input-modal-textarea" placeholder=""></textarea>
               </div>
               <div class="ck-modal-foot">
                 <button class="ck-btn ck-btn-secondary" id="input-modal-cancel">取消</button>
@@ -2585,24 +2587,29 @@
       const mask = document.getElementById("input-modal");
       const titleEl = document.getElementById("input-modal-title");
       const inputEl = document.getElementById("input-modal-value");
+      const areaEl = document.getElementById("input-modal-textarea");
       const okBtn = document.getElementById("input-modal-ok");
       const cancelBtn = document.getElementById("input-modal-cancel");
       if (!mask || !okBtn || !cancelBtn || !inputEl) {
         resolve(null);
         return;
       }
+      const multi = !!opts.multiline && !!areaEl;
+      const fieldEl = multi ? areaEl : inputEl;
+      inputEl.classList.toggle("cuckoo-hidden", multi);
+      if (areaEl) areaEl.classList.toggle("cuckoo-hidden", !multi);
       if (titleEl) titleEl.textContent = opts.title || "\u8F93\u5165";
-      inputEl.placeholder = opts.placeholder || "";
-      inputEl.value = opts.value || "";
+      fieldEl.placeholder = opts.placeholder || "";
+      fieldEl.value = opts.value || "";
       function cleanup() {
         mask.classList.add("cuckoo-hidden");
         okBtn.removeEventListener("click", onOk);
         cancelBtn.removeEventListener("click", onCancel);
         mask.removeEventListener("click", onMask);
-        inputEl.removeEventListener("keydown", onKey);
+        fieldEl.removeEventListener("keydown", onKey);
       }
       function onOk() {
-        const v = String(inputEl.value || "").trim();
+        const v = String(fieldEl.value || "").trim();
         cleanup();
         resolve(v || null);
       }
@@ -2617,21 +2624,33 @@
         }
       }
       function onKey(e) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          onOk();
-        } else if (e.key === "Escape") {
-          onCancel();
+        if (multi) {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            onOk();
+          } else if (e.key === "Escape") {
+            onCancel();
+          }
+        } else {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onOk();
+          } else if (e.key === "Escape") {
+            onCancel();
+          }
         }
       }
       okBtn.addEventListener("click", onOk);
       cancelBtn.addEventListener("click", onCancel);
       mask.addEventListener("click", onMask);
-      inputEl.addEventListener("keydown", onKey);
+      fieldEl.addEventListener("keydown", onKey);
       mask.classList.remove("cuckoo-hidden");
       setTimeout(() => {
-        inputEl.focus();
-        inputEl.select();
+        fieldEl.focus();
+        try {
+          fieldEl.select();
+        } catch (_) {
+        }
       }, 50);
     });
   }
@@ -6686,7 +6705,7 @@
         e.stopPropagation();
         const m = memories.filter((x) => x.id === btn.dataset.edit)[0];
         if (!m) return;
-        const text = await ckPrompt({ title: "\u7F16\u8F91\u8BB0\u5FC6", value: m.text });
+        const text = await ckPrompt({ title: "\u7F16\u8F91\u8BB0\u5FC6", value: m.text, multiline: true });
         if (text === null) return;
         const t = text.trim();
         if (!t) {
@@ -6720,7 +6739,7 @@
     });
   }
   document.getElementById("mem-add")?.addEventListener("click", async () => {
-    const text = await ckPrompt({ title: "\u65B0\u5EFA\u8BB0\u5FC6", placeholder: "\u5982\uFF1A\u7528\u6237\u504F\u597D\u7528\u4E2D\u6587\u56DE\u590D" });
+    const text = await ckPrompt({ title: "\u65B0\u5EFA\u8BB0\u5FC6", placeholder: "\u5982\uFF1A\u7528\u6237\u504F\u597D\u7528\u4E2D\u6587\u56DE\u590D", multiline: true });
     if (text === null) return;
     const t = text.trim();
     if (!t) {

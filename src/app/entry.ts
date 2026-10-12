@@ -360,6 +360,12 @@ function createWindow(profile: any) {
   };
   mainWindow.on('resize', scheduleLayout);
   mainWindow.on('move', scheduleLayout);
+  // 最小化恢复：restore 不触发 show，必须显式重排，否则 WebContentsView 恢复后空白
+  mainWindow.on('restore', () => {
+    try { layoutView(); } catch (_) {}
+    // 恢复瞬间窗口尺寸可能还在变化，延迟再排一次兜底
+    setTimeout(() => { try { layoutView(); } catch (_) {} }, 100);
+  });
   // 窗口首次显示后必须再排一次：Electron 的 WebContentsView 首次显示时
   // 常需重新 setBounds 才渲染（否则偶发空白，缩放/拖宽触发 resize 才恢复）。
   mainWindow.once('ready-to-show', () => { try { layoutView(); } catch (_) {} });
@@ -465,6 +471,11 @@ function createWindow(profile: any) {
       try { profileManager.setLastActiveProfileId(profileData.id); } catch (_) { /* ignore */ }
     });
   }
+
+  // 从后台切回前台：重排一次，修复 WebContentsView 偶发不重绘（对子代理窗口同样生效）
+  mainWindow.on('focus', () => {
+    try { (mainWindow as any).__ckLayout && (mainWindow as any).__ckLayout(); } catch (_) { /* ignore */ }
+  });
 
   // 初始化自动更新（仅第一个窗口时初始化）
   if (windowState.getAllWindows().length === 1) {

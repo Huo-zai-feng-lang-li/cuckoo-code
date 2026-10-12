@@ -607,7 +607,7 @@ function install(): void {
     try {
       var _s = String(location.search);
       // cuckoo-compact = 压缩流程；cuckoo-truncate = 真截断流程。两者都要重建 IDB 并等写入事件。
-      hasCompactFlag = _s.indexOf('cuckoo-compact') !== -1 || _s.indexOf('cuckoo-truncate') !== -1;
+      hasCompactFlag = _s.indexOf('cuckoo-compact') !== -1 || _s.indexOf('cuckoo-truncate') !== -1 || _s.indexOf('cuckoo-switch-share') !== -1;
     } catch (e) { /* ignore */ }
     if (hasCompactFlag && typeof IDBObjectStore !== 'undefined' && IDBObjectStore.prototype.put) {
       var origPut = IDBObjectStore.prototype.put;

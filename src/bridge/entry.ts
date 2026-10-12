@@ -17,7 +17,7 @@ import * as settingsPanel from '../overlay/panels/settings.js';
 import { wireEvents } from '../overlay/events.js';
 import { getProviderByUrl } from '../providers/registry.js';
 import { startInterceptObserver, onInterceptedResponse, onTaskIdle, onStream } from './intercept/observer.js';
-import { shareAllForSwitch, prepareTruncate } from '../session/compaction.js';
+import { prepareSwitchShare, prepareTruncate } from '../session/compaction.js';
 import { startRetryEngine } from './loop/retry.js';
 import { startSessionWatcher, startWatchdog, checkSessionChange } from './loop/watchdog.js';
 import { initSubagentIfNeeded } from './subagent.js';
@@ -209,11 +209,12 @@ function init(): void {
         ipcRenderer.send('cuckoo-autocompact-result', { reqId, ok: false, error: err.message });
       }
     });
-    // 窗口组切换：主进程请求"全量分享当前会话"，回执 shareId
+    // 窗口组切换：主进程请求"全量分享当前会话"。
+    // 直接读 IDB 常失败（同会话内 IDB 不更新）；改用"清 IDB + 刷新 + 等重建"流程，
+    // 刷新后由 overlay/events.ts → compaction.checkPendingSwitchShare 完成分享并回执。
     ipcRenderer.on('cuckoo-switch-share', async (_e: any, { reqId }: any) => {
       try {
-        const r = await shareAllForSwitch();
-        ipcRenderer.send('cuckoo-switch-share-result', { reqId, ok: true, shareId: r.shareId, sessionId: r.sessionId });
+        prepareSwitchShare(reqId);
       } catch (err: any) {
         ipcRenderer.send('cuckoo-switch-share-result', { reqId, ok: false, error: err.message });
       }

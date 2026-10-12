@@ -42,7 +42,7 @@ function renderMemories(): void {
       e.stopPropagation();
       const m = memories.filter((x: any) => x.id === btn.dataset.edit)[0];
       if (!m) return;
-      const text = await ckPrompt({ title: '编辑记忆', value: m.text });
+      const text = await ckPrompt({ title: '编辑记忆', value: m.text, multiline: true });
       if (text === null) return;
       const t = text.trim();
       if (!t) { await ckAlert('内容不能为空'); return; }
@@ -64,7 +64,7 @@ function renderMemories(): void {
 }
 
 document.getElementById('mem-add')?.addEventListener('click', async () => {
-  const text = await ckPrompt({ title: '新建记忆', placeholder: '如：用户偏好用中文回复' });
+  const text = await ckPrompt({ title: '新建记忆', placeholder: '如：用户偏好用中文回复', multiline: true });
   if (text === null) return;
   const t = text.trim();
   if (!t) { await ckAlert('内容不能为空'); return; }

@@ -23,7 +23,8 @@ function onSwitchShareResult(_event: any, payload: any): void {
 }
 
 /** 让指定窗口的 AI 页面执行全量分享，返回 { ok, shareId, sessionId, error } */
-function requestShareFromWindow(windowId: number, timeoutMs = 30000): Promise<any> {
+// 超时 90s：切换现走"清 IDB + 刷新 + 等重建 + 分享"流程（跨页面刷新），比直接读 IDB 慢
+function requestShareFromWindow(windowId: number, timeoutMs = 90000): Promise<any> {
   return new Promise((resolve) => {
     const ctx = windowState.getWindowContext(windowId);
     const view = ctx && ctx.view;

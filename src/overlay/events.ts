@@ -7,7 +7,7 @@ import { state } from './state.js';
 import { hideOverlay, showOverlay, renderHistory, commandHistory, showToast, hideFirstTimeDialog } from './panel.js';
 import { handleInitProject, renderSessions } from './session-list.js';
 import { sendToChat } from './chat-input.js';
-import { runCompaction, checkPendingCompact, checkPendingInit, checkPendingTruncate } from '../session/compaction.js';
+import { runCompaction, checkPendingCompact, checkPendingInit, checkPendingSwitchShare, checkPendingTruncate } from '../session/compaction.js';
 import { renderWindowList, openWindowManager, closeWindowManager, handleGenerateDoc } from './panels/window-manager.js';
 import { loadMcpConfigToJson, renderMcpList, openMcpManager, closeMcpManager, handleMcpSave } from './panels/mcp-manager.js';
 import { openSettings, closeSettings, resetSettings, saveSettings } from './panels/settings.js';
@@ -584,12 +584,16 @@ function bindEvents() {
   // 启动输入框 token 估算 + 自动压缩检查
   startTokenCounter();
 
-  // 刷新后流程链：真截断段2（cuckoo-truncate）→ 压缩段2（cuckoo-compact）→ 分享页初始化段3。
-  // 三者靠不同 URL flag 互斥，串联即可（各自未命中返回 false 交棒）。
+  // 刷新后流程链：真截断段2（cuckoo-truncate）→ 窗口组切换段2（cuckoo-switch-share）
+  //   → 压缩段2（cuckoo-compact）→ 分享页初始化段3。
+  // 四者靠不同 URL flag 互斥，串联即可（各自未命中返回 false 交棒）。
   checkPendingTruncate().then((handled) => {
     if (handled) return;
-    checkPendingCompact().then((h2) => {
-      if (!h2) checkPendingInit();
+    checkPendingSwitchShare().then((hs) => {
+      if (hs) return;
+      checkPendingCompact().then((h2) => {
+        if (!h2) checkPendingInit();
+      });
     });
   });
 
