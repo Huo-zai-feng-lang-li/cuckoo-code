@@ -72,7 +72,9 @@
   html, body {
     margin: 0; height: 100%;
     font-family: var(--sans);
-    background: transparent; color: var(--text);
+    /* 默认用主题底色（不透明）：防止 AI 视图未隐藏时两层叠加透出。
+       插件壁纸注入时用 !important 覆盖此值（见 applyBackground），仍能透出壁纸。 */
+    background: var(--bg); color: var(--text);
     overflow: hidden; font-size: 14px;
     -webkit-font-smoothing: antialiased;
   }

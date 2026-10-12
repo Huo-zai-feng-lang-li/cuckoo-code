@@ -400,8 +400,15 @@ function createWindow(profile: any) {
       // 懒加载：首次进入纯净模式才创建 harness 视图
       const hv = ensureHarnessView();
       try { hv.setVisible(true); } catch (_) {}
-      // 隐藏 AI 视图（DS 页面）→ harness 透明可透出壳页面壁纸，天然对齐
-      try { if (view && !view.webContents.isDestroyed()) view.setVisible(false); } catch (_) {}
+      // 隐藏 AI 视图（DS 页面）→ harness 透明可透出壳页面壁纸，天然对齐。
+      // setVisible + setBounds 双保险：某些平台 WebContentsView 的 setVisible 偶发不生效，
+      // 归零 bounds 可确保 AI 页面不残留（否则两层叠加）。
+      try {
+        if (view && !view.webContents.isDestroyed()) {
+          view.setVisible(false);
+          view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+        }
+      } catch (_) {}
       layoutView();
       if (hv && !hv.webContents.isDestroyed()) hv.webContents.focus();
     } else {
