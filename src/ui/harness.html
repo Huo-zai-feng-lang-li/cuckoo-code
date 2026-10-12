@@ -540,7 +540,7 @@
   .sq-item .sq-del:hover { color: var(--red); }
 
   /* ===== 右侧对话快捷导航（用户消息锚点）===== */
-  .conv-nav { position: fixed; right: 8px; top: 50%; transform: translateY(-50%); display: none; flex-direction: column; align-items: flex-end; gap: 9px; z-index: 30; max-height: 72%; overflow-y: auto; overflow-x: hidden; padding: 10px 8px; border-radius: 12px; scrollbar-width: none; transition: background .18s, box-shadow .18s, border-color .18s; border: 1px solid transparent; }
+  .conv-nav { position: fixed; right: 8px; top: 0; bottom: 0; display: none; flex-direction: column; align-items: flex-end; justify-content: space-evenly; gap: 6px; z-index: 30; overflow-y: auto; overflow-x: hidden; padding: 14px 8px; border-radius: 12px; scrollbar-width: none; transition: background .18s, box-shadow .18s, border-color .18s; border: 1px solid transparent; }
   .conv-nav::-webkit-scrollbar { display: none; }
   .conv-nav.show { display: flex; }
   /* 悬停整条导航 → 展开为面板 */
@@ -2123,7 +2123,9 @@
         var it = sendQueue[idx];
         var row = document.createElement('div');
         row.className = 'sq-item';
-        var preview = it.text || ('[附件 ' + (it.files ? it.files.length : 0) + ' 个]');
+        var preview = it.text || '';
+        if (it.files && it.files.length) preview = '[附件 ' + it.files.length + '] ' + preview;
+        if (!preview) preview = '[空消息]';
         row.innerHTML =
           '<div class="sq-actions">' +
             '<button class="sq-btn sq-edit-btn" title="编辑"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2.5l2.5 2.5-8 8L2 14l1-3.5z"/></svg></button>' +
