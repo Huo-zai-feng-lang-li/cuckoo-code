@@ -42,6 +42,13 @@ name: project
 - 工作区常混有多条功能线 → 提交前**分离无关改动**，别一把梭。
 - 生成物由 `npm run compile` 产出，不手改。
 
+## 发版纪律
+
+- **打 tag 发版前，必须先汇总上次 tag 之后的全部提交并写入 `CHANGELOG.md`**（遵循已有 Keep a Changelog 格式：Added/Changed/Fixed/Performance 等分类）。
+- 版本号三处一致：`package.json` / `CHANGELOG.md` 顶部 / git tag（`vX.Y.Z`）。
+- CI 已配好（`.github/workflows/release.yml`）：push tag（`v*`）→ 自动构建 Win+Mac → 创建 Release。
+- **禁止漏更 CHANGELOG**（v0.8.12 曾漏记一次，事后补写）。
+
 ## 环境
 
 - 外网代理：`http://127.0.0.1:51081`
