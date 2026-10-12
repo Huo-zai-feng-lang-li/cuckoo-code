@@ -131,8 +131,18 @@ test('对话导航：基于用户消息重建锚点 + 点击滚动', () => {
   assert.ok(script.includes('scrollIntoView'), '点击锚点应滚动定位');
 });
 
+test('对话导航：收起态为横线、悬停展开为摘要面板', () => {
+  // 收起态：只显示细横线（cn-bar），文本（cn-text）默认隐藏
+  assert.ok(/\.conv-nav-dot \.cn-text \{ display: none;/.test(html), 'cn-text 收起态应隐藏');
+  assert.ok(/\.conv-nav-dot \.cn-bar \{/.test(html), '应有横线条样式 cn-bar');
+  // 悬停整条导航 → 文本显现（展开态）
+  assert.ok(/\.conv-nav:hover \.conv-nav-dot \.cn-text \{ display: block;/.test(html), '悬停 nav 应展开文本');
+  assert.ok(/\.conv-nav-dot\.active \.cn-bar/.test(html), '当前项横线应高亮');
+});
+
 test('对话导航：空态/切会话时清空（无残留）', () => {
   const idx = script.indexOf('function showEmptyState');
   const body = script.slice(idx, idx + 500);
-  assert.ok(body.includes('convNavEl'), '空态应清空导航');
+  assert.ok(body.includes('getConvNavEl'), '空态应清空导航');
+  assert.ok(body.includes("remove('show')"), '空态应移除导航展开态');
 });

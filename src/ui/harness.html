@@ -522,14 +522,18 @@
   .sq-item .sq-del svg { width: 11px; height: 11px; }
 
   /* ===== 右侧对话快捷导航（用户消息锚点）===== */
-  .conv-nav { position: fixed; right: 10px; top: 50%; transform: translateY(-50%); display: none; flex-direction: column; gap: 7px; z-index: 20; max-height: 70%; overflow-y: auto; padding: 4px; scrollbar-width: none; }
+  .conv-nav { position: fixed; right: 8px; top: 50%; transform: translateY(-50%); display: none; flex-direction: column; align-items: flex-end; gap: 9px; z-index: 30; max-height: 72%; overflow-y: auto; overflow-x: hidden; padding: 10px 8px; border-radius: 12px; scrollbar-width: none; transition: background .18s, box-shadow .18s, border-color .18s; border: 1px solid transparent; }
   .conv-nav::-webkit-scrollbar { display: none; }
   .conv-nav.show { display: flex; }
-  .conv-nav-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border-strong); cursor: pointer; transition: background .15s, transform .15s; flex-shrink: 0; position: relative; }
-  .conv-nav-dot:hover { background: var(--accent); transform: scale(1.35); }
-  .conv-nav-dot.active { background: var(--accent); transform: scale(1.35); }
-  .conv-nav-dot .cn-tip { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); max-width: 260px; padding: 5px 9px; border-radius: 7px; background: var(--bg-elev); border: 1px solid var(--border); box-shadow: 0 4px 16px var(--shadow-color); font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; pointer-events: none; transition: opacity .12s; }
-  .conv-nav-dot:hover .cn-tip { opacity: 1; }
+  /* 悬停整条导航 → 展开为面板 */
+  .conv-nav:hover { background: var(--bg-elev); border-color: var(--border); box-shadow: 0 10px 32px var(--shadow-color); }
+  .conv-nav-dot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; cursor: pointer; max-width: 100%; }
+  .conv-nav-dot .cn-text { display: none; font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+  .conv-nav:hover .conv-nav-dot .cn-text { display: block; }
+  .conv-nav-dot .cn-bar { flex-shrink: 0; width: 16px; height: 3px; border-radius: 2px; background: var(--border-strong); transition: background .15s, width .15s; }
+  .conv-nav-dot:hover .cn-bar { background: var(--accent); width: 20px; }
+  .conv-nav-dot.active .cn-bar { background: var(--accent); width: 20px; }
+  .conv-nav-dot.active .cn-text { color: var(--accent); font-weight: 600; }
 
 </style>
 </head>
@@ -2165,11 +2169,15 @@
       (function (idx) {
         var dot = document.createElement('div');
         dot.className = 'conv-nav-dot';
-        var tip = document.createElement('div');
-        tip.className = 'cn-tip';
         var full = (users[idx].textContent || '').replace(/\s+/g, ' ').trim();
-        tip.textContent = full.slice(0, 80) || ('第 ' + (idx + 1) + ' 条');
-        dot.appendChild(tip);
+        dot.title = full; // 收起态悬停显示完整文本
+        var txt = document.createElement('span');
+        txt.className = 'cn-text';
+        txt.textContent = full.slice(0, 60) || ('第 ' + (idx + 1) + ' 条');
+        var bar = document.createElement('span');
+        bar.className = 'cn-bar';
+        dot.appendChild(txt);
+        dot.appendChild(bar);
         dot.addEventListener('click', function () {
           try { users[idx].scrollIntoView({ behavior: 'smooth', block: 'start' }); }
           catch (e) { stream.scrollTop = users[idx].offsetTop - stream.offsetTop; }
