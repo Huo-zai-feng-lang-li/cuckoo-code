@@ -2157,6 +2157,22 @@
     if (!convNavEl) convNavEl = document.getElementById('conv-nav');
     return convNavEl;
   }
+  /** 快速平滑滚动：约 180ms 缓动到目标（比浏览器原生 smooth 快很多） */
+  function fastScrollTo(el) {
+    if (!el) return;
+    var target = el.offsetTop - 12;
+    var start = stream.scrollTop;
+    var dist = target - start;
+    if (Math.abs(dist) < 2) { stream.scrollTop = target; return; }
+    var dur = 180, t0 = performance.now();
+    function ease(x) { return 1 - Math.pow(1 - x, 3); }
+    function step(now) {
+      var p = Math.min(1, (now - t0) / dur);
+      stream.scrollTop = start + dist * ease(p);
+      if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
   function updateConvNav() {
     var convNavEl = getConvNavEl();
     if (!convNavEl) return;
@@ -2179,8 +2195,8 @@
         dot.appendChild(txt);
         dot.appendChild(bar);
         dot.addEventListener('click', function () {
-          try { users[idx].scrollIntoView({ behavior: 'smooth', block: 'start' }); }
-          catch (e) { stream.scrollTop = users[idx].offsetTop - stream.offsetTop; }
+          try { fastScrollTo(users[idx]); }
+          catch (e) { stream.scrollTop = users[idx].offsetTop; }
         });
         convNavEl.appendChild(dot);
       })(i);
