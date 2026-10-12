@@ -540,7 +540,7 @@
   .sq-item .sq-del:hover { color: var(--red); }
 
   /* ===== 右侧对话快捷导航（用户消息锚点）===== */
-  .conv-nav { position: fixed; right: 8px; top: 0; bottom: 0; display: none; flex-direction: column; align-items: flex-end; justify-content: space-evenly; gap: 6px; z-index: 30; overflow-y: auto; overflow-x: hidden; padding: 14px 8px; border-radius: 12px; scrollbar-width: none; transition: background .18s, box-shadow .18s, border-color .18s; border: 1px solid transparent; }
+  .conv-nav { position: fixed; right: 8px; top: 50%; transform: translateY(-50%); display: none; flex-direction: column; align-items: flex-end; gap: 9px; z-index: 30; max-height: 72%; overflow-y: auto; overflow-x: hidden; padding: 10px 8px; border-radius: 12px; scrollbar-width: none; transition: background .18s, box-shadow .18s, border-color .18s; border: 1px solid transparent; }
   .conv-nav::-webkit-scrollbar { display: none; }
   .conv-nav.show { display: flex; }
   /* 悬停整条导航 → 展开为面板 */
