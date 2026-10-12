@@ -231,6 +231,12 @@ test('消息气泡：纯图标悬浮操作条（编辑/复制/删除），用户
   // 4. 队列单条发送：立即触发发出
   assert.ok(script.includes('function doSendQueueItem'), '应有单条发送执行函数');
   assert.ok(script.includes('clearAbortSuppression'), '立即发送应清除中止抑制');
+
+  // 5. 编辑和删除按钮 hover 不需要 tip
+  assert.ok(!script.includes("editBtn.setAttribute('data-tooltip'"), '编辑按钮不应设置 data-tooltip');
+  assert.ok(!script.includes("delBtn.setAttribute('data-tooltip'"), '删除按钮不应设置 data-tooltip');
+  assert.ok(!script.includes('class="sq-btn sq-edit-btn" title='), '队列编辑按钮不应设置 title');
+  assert.ok(!script.includes('class="sq-btn sq-del" title='), '队列删除按钮不应设置 title');
 });
 
 
