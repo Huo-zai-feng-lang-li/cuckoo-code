@@ -7555,24 +7555,28 @@
       const k = keyOf(el2);
       if (k) byKey.set(k, el2);
     });
+    const spacerEl = b.querySelector(".ck-ab-spacer");
+    const desired = [];
     const used = /* @__PURE__ */ new Set();
     for (const key of order) {
       const el2 = byKey.get(key);
-      if (el2 && !used.has(el2)) {
-        b.appendChild(el2);
+      if (el2 && el2 !== spacerEl && !used.has(el2)) {
+        desired.push(el2);
         used.add(el2);
       }
     }
-    const spacer = b.querySelector(".ck-ab-spacer");
     byKey.forEach((el2) => {
-      if (used.has(el2)) return;
-      if (el2 === spacer) {
-        b.appendChild(el2);
-        return;
-      }
-      if (spacer) b.insertBefore(el2, spacer);
-      else b.appendChild(el2);
+      if (el2 === spacerEl || used.has(el2)) return;
+      desired.push(el2);
+      used.add(el2);
     });
+    if (spacerEl) desired.push(spacerEl);
+    const cur = Array.from(b.children).filter((el2) => keyOf(el2));
+    if (cur.length === desired.length && cur.every((el2, i) => el2 === desired[i])) {
+      if (observer) observer.observe(b, { childList: true });
+      return;
+    }
+    for (const el2 of desired) b.appendChild(el2);
     if (observer) observer.observe(b, { childList: true });
   }
   function moveDrag(y) {

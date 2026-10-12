@@ -352,8 +352,21 @@ function createWindow(profile: any) {
   };
   (mainWindow as any).__ckLayout = layoutView;
   layoutView();
-  mainWindow.on('resize', layoutView);
-  mainWindow.on('move', layoutView);
+  // resize/move 用定时器合并（避免高频重排；主进程无 rAF）
+  let layoutTimer: any = null;
+  const scheduleLayout = () => {
+    if (layoutTimer) return;
+    layoutTimer = setTimeout(() => { layoutTimer = null; layoutView(); }, 16);
+  };
+  mainWindow.on('resize', scheduleLayout);
+  mainWindow.on('move', scheduleLayout);
+  // 窗口首次显示后必须再排一次：Electron 的 WebContentsView 首次显示时
+  // 常需重新 setBounds 才渲染（否则偶发空白，缩放/拖宽触发 resize 才恢复）。
+  mainWindow.once('ready-to-show', () => { try { layoutView(); } catch (_) {} });
+  mainWindow.on('show', () => { try { layoutView(); } catch (_) {} });
+  // 兜底：内容稳定后再排两次（覆盖首次 show 与 WebContentsView 附加的时序竞争）
+  setTimeout(() => { try { layoutView(); } catch (_) {} }, 200);
+  setTimeout(() => { try { layoutView(); } catch (_) {} }, 600);
 
   // 覆盖层：把"确保创建"挂到 windowState 的 ctx（供 IPC 调用；IPC 通过 getAllContexts 拿）
   {
@@ -374,6 +387,8 @@ function createWindow(profile: any) {
     pushUrlState(view);
     // 平台未选择：通知壳页面隐藏侧边栏 + 项目选择器
     try { mainWindow.webContents.send('shell-platform-mode', { selecting: !providerChosen }); } catch (_) {}
+    // 壳就绪后重排（此时尺寸才准，修首次空白）
+    try { (mainWindow as any).__ckLayout && (mainWindow as any).__ckLayout(); } catch (_) {}
   });
 
   // 保存 session 引用（窗口销毁后 webContents 不可访问）
@@ -538,6 +553,8 @@ function createWindow(profile: any) {
       sessionStore.tryRestoreSessionFromUrl(view);
       pushUrlState(view);
       autoConnectMcp();
+      // AI 内容就绪后重排一次（view 首帧渲染需要正确 bounds，修偶发空白）
+      try { (mainWindow as any).__ckLayout && (mainWindow as any).__ckLayout(); } catch (_) {}
     }
   });
 

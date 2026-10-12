@@ -55,24 +55,38 @@ export function applyActivitybarOrder(): void {
   // 改 DOM 前断开 observer，改完再挂（否则自己触发自己 → 死循环）
   if (observer) observer.disconnect();
 
+  // 建索引：key → element
   const byKey = new Map<string, HTMLElement>();
   Array.from(b.children).forEach((el: any) => {
     const k = keyOf(el);
     if (k) byKey.set(k, el);
   });
+  const spacerEl = b.querySelector('.ck-ab-spacer') as HTMLElement | null;
 
+  // 算"期望顺序"：
+  //   ① 按持久化 order 命中的元素
+  //   ② spacer 固定在末尾（其前插入所有未命中的新元素）
+  const desired: HTMLElement[] = [];
   const used = new Set<HTMLElement>();
   for (const key of order) {
     const el = byKey.get(key);
-    if (el && !used.has(el)) { b.appendChild(el); used.add(el); }
+    if (el && el !== spacerEl && !used.has(el)) { desired.push(el); used.add(el); }
   }
-  // 未在顺序里的（新增 / 插件动态图标）→ 插到 spacer 前
-  const spacer = b.querySelector('.ck-ab-spacer');
+  // 未命中的新元素（插件动态图标等）插到末尾（spacer 之后位置视作末尾）
   byKey.forEach((el) => {
-    if (used.has(el)) return;
-    if (el === spacer) { b.appendChild(el); return; }
-    if (spacer) b.insertBefore(el, spacer); else b.appendChild(el);
+    if (el === spacerEl || used.has(el)) return;
+    desired.push(el);
+    used.add(el);
   });
+  if (spacerEl) desired.push(spacerEl);
+
+  // 与当前顺序一致 → 不碰 DOM（避免无谓重排 / observer 抖动）
+  const cur: HTMLElement[] = Array.from(b.children).filter((el: any) => keyOf(el)) as HTMLElement[];
+  if (cur.length === desired.length && cur.every((el, i) => el === desired[i])) {
+    if (observer) observer.observe(b, { childList: true });
+    return;
+  }
+  for (const el of desired) b.appendChild(el);
 
   if (observer) observer.observe(b, { childList: true });
 }
