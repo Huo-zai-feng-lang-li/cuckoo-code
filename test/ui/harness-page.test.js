@@ -131,6 +131,24 @@ test('对话导航：基于用户消息重建锚点 + 点击滚动', () => {
   assert.ok(script.includes('scrollIntoView'), '点击锚点应滚动定位');
 });
 
+test('发送队列：编辑/删除锁定对象引用（防 flush 移走队首后 idx 错位）', () => {
+  const idx = script.indexOf('// 点击文本 → 变输入框编辑');
+  assert.ok(idx > 0, '应有队列项编辑逻辑');
+  const body = script.slice(idx, idx + 1400);
+  assert.ok(body.includes('sendQueue.indexOf(it)'), '编辑保存应按对象引用定位');
+  assert.ok(body.includes('var at = sendQueue.indexOf(it)'), '删除应按对象引用定位');
+  // 反例：不允许裸 idx 写回/删除
+  assert.ok(!/sendQueue\[idx\]\.text = /.test(body), '不应按 idx 写回');
+  assert.ok(!/sendQueue\.splice\(idx/.test(body), '不应按 idx 删除');
+});
+
+test('发送队列：编辑框与关闭图标样式', () => {
+  assert.ok(/\.sq-edit \{/.test(html), '应有编辑框样式 sq-edit');
+  const m = html.match(/\.sq-item \.sq-del \{[^}]*width:\s*(\d+)px/);
+  assert.ok(m, '应能找到关闭按钮宽度');
+  assert.ok(Number(m[1]) >= 24, '关闭图标按钮宽度应不小于 24px（实测: ' + m[1] + '）');
+});
+
 test('对话导航：收起态为横线、悬停展开为摘要面板', () => {
   // 收起态：只显示细横线（cn-bar），文本（cn-text）默认隐藏
   assert.ok(/\.conv-nav-dot \.cn-text \{ display: none;/.test(html), 'cn-text 收起态应隐藏');
