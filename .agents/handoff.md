@@ -2,7 +2,18 @@
 
 ## 核心进展
 
-**v0.8.60**：深度性能排查修复两处确凿热点（需求 047）。已提交、打 tag、推送 origin。最新 tag **v0.8.60**。
+**v0.8.61**：harness 流式渲染节流（需求 048）。已提交、打 tag、推送 origin。最新 tag **v0.8.61**。
+
+### v0.8.61 改动（性能）
+harness 流式渲染 O(n²)（src/ui/harness.html）：onStream 每帧对全量正文跑 renderMarkdown（marked+KaTeX 全解析）+ innerHTML 重建。改为非 finished 帧用 rAF 合并（同帧多次只渲最后一次），finished 帧立即渲染。
+
+### v0.8.61 验证
+- typecheck / test 980 / lint 0 error 全绿
+- 真机：注入 3 帧非 finished + 1 帧 finished，最终正文完整、收尾光标正确消失 ✅
+- code-reviewer 审查：无必须修复项，采纳 2 条建议（cancel 清 text / clearTransientState 调 cancel）
+
+### v0.8.60（同轮）
+深度性能排查修复两处确凿热点（token 统计 IO 放大 + stripToolBlocks O(n²)）。
 
 ### v0.8.60 改动（性能）
 1. **token 统计同步 IO 放大**（src/app/token-stats.ts）：每次 token 上报触发 1 写 + 8 读整个 token-stats.json（全同步阻塞主进程）。加内存缓存 _cache（读命中不读盘、写同步缓存）；写盘失败使缓存失效。保持原同步并发语义。

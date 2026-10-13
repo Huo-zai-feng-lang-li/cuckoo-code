@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.8.61] - 2026-10-14
+
+### Performance
+- **harness 流式渲染 O(n²)**：`onStream` 每帧携带全量正文，原实现逐帧对全量跑 `renderMarkdown`（marked + KaTeX 全解析）+ `innerHTML` 重建，长回复累计 O(n²)。改为对非 finished 帧用 `requestAnimationFrame` 合并（同一帧多次只渲染最后一次），finished 帧仍立即渲染保证收尾无延迟。
+
 ## [0.8.60] - 2026-10-13
 
 ### Performance

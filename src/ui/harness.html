@@ -1301,6 +1301,7 @@
     renderAttach();
     pendingHints = [];
     renderHints();
+    cancelStreamRender(); // 取消挂起的流式渲染，避免切会话后多余的滚动副作用
     cur = null;
   }
 
@@ -2411,6 +2412,31 @@
   var lastDoneText = '';
   // 去重：已写入历史的最新 assistant 文本
   var lastPushedAssistant = '';
+  // ===== 流式正文渲染节流 =====
+  // onStream 每帧都带「全量正文」，而 renderMarkdown 是全量解析（marked + KaTeX）。
+  // 逐帧渲染 → 单轮回复累计 O(n²)（正文越长每帧越贵）。用 rAF 合并同一帧内多次更新，
+  // 只渲染最后一次；finished 帧绕过节流立即渲染，保证收尾不留延迟、光标正确消失。
+  var _streamRenderBody = null;
+  var _streamRenderText = '';
+  var _streamRenderPending = false;
+  function _doStreamRender() {
+    _streamRenderPending = false;
+    var body = _streamRenderBody, text = _streamRenderText;
+    _streamRenderBody = null;
+    if (body && body.isConnected && cur && cur.body === body) {
+      body.innerHTML = renderMarkdown(text) + '<span class="streaming-cursor"></span>';
+    }
+    scrollBottom(false);
+  }
+  function scheduleStreamRender(body, text) {
+    _streamRenderBody = body;
+    _streamRenderText = text;
+    if (_streamRenderPending) return;
+    _streamRenderPending = true;
+    (window.requestAnimationFrame || function (cb) { return setTimeout(cb, 16); })(_doStreamRender);
+  }
+  function cancelStreamRender() { _streamRenderBody = null; _streamRenderText = ''; }
+
   // 流式更新：think/text 均为全量快照
   function onStream(think, text, finished) {
     if (!think && !text && !finished) return; // 空心跳，忽略
@@ -2432,8 +2458,14 @@
       else if (cur.thinkEl.classList.contains('open') && !cur.userToggled) cur.thinkEl.classList.remove('open');
     }
     if (text) {
-      // 工具调用（```cuckoo 块）已由 bridge 的 stripToolBlocks 剥离，这里直接渲染
-      cur.body.innerHTML = renderMarkdown(text) + (finished ? '' : '<span class="streaming-cursor"></span>');
+      if (finished) {
+        // 收尾帧：绕过节流立即渲染（去掉光标），保证结束无延迟
+        cancelStreamRender();
+        cur.body.innerHTML = renderMarkdown(text);
+      } else {
+        // 流式帧：rAF 合并，同一帧多次只渲染最后一次
+        scheduleStreamRender(cur.body, text);
+      }
     }
     scrollBottom(false); // 跟随但不打扰往上翻看
     // 注意：finished 时不置空 cur，交给 onAssistantDone 收尾（否则会重复渲染一条）

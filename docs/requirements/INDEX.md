@@ -52,5 +52,6 @@
 | 045 | fix | [列表卡片 hover 抖动 + 过渡过快的平滑修复](./045-hover-smooth.md) | done | fix/045-hover-smooth | 2026-10-13 |
 | 046 | feature | [提交详情查看 diff（源代码管理）](./046-commit-diff.md) | doing | feat/046-commit-diff | 2026-10-13 |
 | 047 | performance | [性能修复：token 统计同步 IO 放大 + 流式 stripToolBlocks O(n²)](./047-perf-token-stream.md) | doing | (直接主分支) | 2026-10-13 |
+| 048 | performance | [harness 流式渲染节流（rAF 合并，消除 O(n²)）](./048-harness-stream-throttle.md) | doing | (直接主分支) | 2026-10-14 |
 
-共 47 个需求。
+共 48 个需求。
