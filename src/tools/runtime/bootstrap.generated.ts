@@ -4,7 +4,7 @@
 
 const TOOL_BOOTSTRAP = [
   "  globalThis.attachFile = async function (filePath) {\n      return await __call('attachFile', { filePath: filePath });\n  };",
-  "  globalThis.bash = async function (command, options) {\n      options = options || {};\n      return await __call('bash', {\n          command: command,\n          description: options.description,\n          workdir: options.workdir || options.cwd,\n          timeoutMs: options.timeoutMs || options.timeout,\n      });\n  };",
+  "  globalThis.bash = async function (command, options) {\n      options = options || {};\n      return await __call('bash', {\n          command: command,\n          description: options.description,\n          workdir: options.workdir || options.cwd,\n          timeoutMs: options.timeoutMs || options.timeout,\n          background: options.background === true,\n      });\n  };",
   "  globalThis.deleteFile = async function (filePath) {\n      return await __call('deleteFile', { filePath: filePath });\n  };",
   "  globalThis.edit = async function (filePath, oldString, newString, replaceAll, dryRun) {\n      return await __call('edit', {\n          filePath: filePath,\n          oldString: oldString,\n          newString: newString,\n          replaceAll: replaceAll === true,\n          dryRun: dryRun === true,\n      });\n  };",
   "  globalThis.glob = async function (pattern, searchPath) {\n      return await __call('glob', { pattern: pattern, path: searchPath });\n  };",

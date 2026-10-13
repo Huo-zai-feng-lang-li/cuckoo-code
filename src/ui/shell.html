@@ -1647,6 +1647,59 @@
   }
   .ck-git-commit-meta { display: block; font-size: 10.5px; color: var(--ck-text-dim); margin-top: 2px; }
 
+/* ===== 任务页 ===== */
+.ck-task-input {
+  display: flex; gap: 6px; padding: 4px 8px 8px;
+}
+.ck-task-input .ck-input { flex: 1; min-width: 0; }
+.ck-task-scripts-head {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 6px 10px; color: var(--ck-text-2); font-size: 12px; user-select: none;
+}
+.ck-task-scripts-head:hover { color: var(--ck-text); }
+.ck-task-scripts-title { flex: 1; }
+.ck-task-scripts-count { color: var(--ck-text-3); font-size: 11px; }
+.ck-task-scripts {
+  display: flex; flex-direction: column; gap: 2px; padding: 0 8px 6px;
+}
+.ck-task-script {
+  display: flex; align-items: center; gap: 8px; text-align: left;
+  background: transparent; border: none; border-radius: 6px;
+  padding: 5px 8px; cursor: pointer; color: var(--ck-text);
+  font-size: 12px; width: 100%;
+}
+.ck-task-script:hover { background: var(--ck-surface); }
+.ck-task-script-name { font-weight: 500; flex-shrink: 0; }
+.ck-task-script-cmd {
+  color: var(--ck-text-3); font-size: 11px; font-family: "SF Mono", "Consolas", monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ck-task-list-head { padding: 8px 10px 4px; color: var(--ck-text-2); font-size: 12px; }
+.ck-task-item { border-bottom: 1px solid var(--ck-border); }
+.ck-task-row {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer;
+}
+.ck-task-row:hover { background: var(--ck-surface); }
+.ck-task-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.ck-task-dot-run { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,.6); }
+.ck-task-dot-exit { background: var(--ck-text-3); }
+.ck-task-main { flex: 1; min-width: 0; }
+.ck-task-name {
+  font-size: 12px; font-family: "SF Mono", "Consolas", monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ck-task-meta { font-size: 11px; color: var(--ck-text-3); margin-top: 2px; }
+.ck-task-ops { flex-shrink: 0; }
+.ck-task-stop {
+  font-size: 11px; padding: 2px 8px; cursor: pointer;
+}
+.ck-task-output {
+  margin: 0; padding: 8px 12px; max-height: 240px; overflow: auto;
+  background: var(--ck-bg-2, rgba(0,0,0,.15)); border-radius: 6px;
+  font-family: "SF Mono", "Consolas", monospace; font-size: 11px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-all; color: var(--ck-text-2);
+}
+
 </style>
 </head>
 <body>
@@ -1711,6 +1764,10 @@
           <button class="ck-ab-item" data-tab="git" title="源代码管理">
             <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M6 15V9a3 3 0 0 1 3-3h6"/><path d="M15 18H9"/></svg>
             <span class="ck-ab-badge" id="git-badge" style="display:none;">0</span>
+          </button>
+          <button class="ck-ab-item" data-tab="tasks" title="任务（命令 / scripts）">
+            <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 9l3 3-3 3"/><path d="M12 15h6"/></svg>
+            <span class="ck-ab-badge" id="task-badge" style="display:none;">0</span>
           </button>
           <button class="ck-ab-item" data-tab="snippets" title="提示词">
             <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
@@ -1979,6 +2036,41 @@
                   <span class="ck-git-history-count" id="git-history-count"></span>
                 </div>
                 <div class="ck-git-history-list ck-hidden" id="git-history-list"></div>
+              </div>
+            </div>
+
+            <!-- ===== 任务（命令 / scripts） ===== -->
+            <div class="ck-tab" data-panel="tasks">
+              <div class="ck-actions">
+                <span class="ck-set-group-title" style="flex:1;">任务</span>
+                <button class="ck-icon-btn" id="task-clear" title="清空已结束">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                </button>
+                <button class="ck-icon-btn" id="task-refresh" title="刷新">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                </button>
+              </div>
+
+              <!-- 手动输入命令 -->
+              <div class="ck-task-input">
+                <input class="ck-input" id="task-cmd-input" placeholder="输入命令，回车运行（后台）" />
+                <button class="ck-btn ck-btn-primary" id="task-run-btn">运行</button>
+              </div>
+
+              <!-- package.json scripts -->
+              <div class="ck-task-scripts-head" id="task-scripts-head">
+                <span class="ck-git-caret" id="task-scripts-caret"></span>
+                <span class="ck-task-scripts-title">package.json 脚本</span>
+                <span class="ck-task-scripts-count" id="task-scripts-count"></span>
+              </div>
+              <div class="ck-task-scripts" id="task-scripts"></div>
+
+              <!-- 运行中的任务 -->
+              <div class="ck-task-list-head">
+                <span class="ck-task-list-title">任务列表</span>
+              </div>
+              <div class="ck-list ck-task-list" id="task-list">
+                <div class="ck-list-empty">暂无任务</div>
               </div>
             </div>
 
@@ -7238,6 +7330,208 @@ paths:            # 可选；省略 = 始终生效
     });
   }
 
+  // src/ui/shell/scripts/pages/tasks.ts
+  init_shared();
+  var expanded2 = /* @__PURE__ */ new Map();
+  var scriptListCache = [];
+  function fmtTime2(ts) {
+    if (!ts) return "";
+    const d = new Date(ts);
+    const p = (n) => String(n).padStart(2, "0");
+    return p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+  }
+  function renderTaskItem(t) {
+    const running = t.status === "running";
+    const dot = running ? "ck-task-dot-run" : "ck-task-dot-exit";
+    const statusText = running ? "\u8FD0\u884C\u4E2D" : t.exitCode === 0 || t.exitCode === null ? "\u5DF2\u7ED3\u675F" : "\u9000\u51FA\u7801 " + t.exitCode;
+    const sourceLabel = t.source === "script" ? "\u811A\u672C" : t.source === "ai" ? "AI" : "\u624B\u52A8";
+    const title = t.label ? escapeHtml(t.label) + " \xB7 " : "";
+    return '<div class="ck-task-item" data-id="' + escapeAttr(t.id) + '"><div class="ck-task-row" data-id="' + escapeAttr(t.id) + '"><span class="ck-task-dot ' + dot + '"></span><div class="ck-task-main"><div class="ck-task-name">' + title + escapeHtml(t.command) + '</div><div class="ck-task-meta">' + escapeHtml(sourceLabel) + " \xB7 " + statusText + (t.pid ? " \xB7 PID " + t.pid : "") + " \xB7 " + fmtTime2(t.startedAt) + '</div></div><div class="ck-task-ops">' + (running ? '<button class="ck-btn ck-task-stop" data-id="' + escapeAttr(t.id) + '">\u505C\u6B62</button>' : '<button class="ck-icon-btn ck-task-remove" data-id="' + escapeAttr(t.id) + '" title="\u79FB\u9664">\u2715</button>') + '</div></div><pre class="ck-task-output ck-hidden" data-id="' + escapeAttr(t.id) + '"></pre></div>';
+  }
+  function renderScripts(scripts) {
+    const el2 = document.getElementById("task-scripts");
+    const countEl = document.getElementById("task-scripts-count");
+    if (!el2) return;
+    if (countEl) countEl.textContent = scripts.length ? String(scripts.length) : "";
+    if (!scripts.length) {
+      el2.innerHTML = '<div class="ck-list-empty">\u5F53\u524D\u9879\u76EE\u65E0 package.json \u6216\u65E0 scripts</div>';
+      return;
+    }
+    el2.innerHTML = scripts.map(
+      (s) => '<button class="ck-task-script" data-name="' + escapeAttr(s.name) + '" data-cmd="' + escapeAttr(s.command) + '" title="' + escapeAttr(s.command) + '"><span class="ck-task-script-name">' + escapeHtml(s.name) + '</span><span class="ck-task-script-cmd">' + escapeHtml(s.command) + "</span></button>"
+    ).join("");
+    el2.querySelectorAll(".ck-task-script").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const name = btn.dataset.name;
+        const cmd = btn.dataset.cmd;
+        try {
+          const r = await api.taskStart?.(cmd, name, "script");
+          if (r && !r.success) alert("\u542F\u52A8\u5931\u8D25\uFF1A" + (r.error || "\u672A\u77E5\u9519\u8BEF"));
+        } catch (err) {
+          alert("\u542F\u52A8\u5931\u8D25\uFF1A" + (err.message || String(err)));
+        }
+      });
+    });
+  }
+  var lastListSig = "";
+  function renderTasks(tasks) {
+    const el2 = document.getElementById("task-list");
+    if (!el2) return;
+    if (!tasks.length) {
+      if (lastListSig === "") return;
+      lastListSig = "";
+      el2.innerHTML = '<div class="ck-list-empty">\u6682\u65E0\u4EFB\u52A1</div>';
+      return;
+    }
+    const sig = tasks.map((t) => t.id + "|" + t.status + "|" + (t.exitCode ?? "") + "|" + t.command).join("\n");
+    if (sig === lastListSig) {
+      el2.querySelectorAll(".ck-task-item").forEach((item) => {
+        const id = item.dataset.id;
+        if (expanded2.has(id)) {
+          const pre = item.querySelector(".ck-task-output");
+          if (pre) refreshOutput(id, pre);
+        }
+      });
+      return;
+    }
+    lastListSig = sig;
+    el2.innerHTML = tasks.map(renderTaskItem).join("");
+    el2.querySelectorAll(".ck-task-item").forEach((item) => {
+      const id = item.dataset.id;
+      const pre = item.querySelector(".ck-task-output");
+      if (expanded2.has(id) && pre) {
+        pre.classList.remove("ck-hidden");
+        refreshOutput(id, pre);
+      }
+    });
+    el2.querySelectorAll(".ck-task-row").forEach((row) => {
+      row.addEventListener("click", (e) => {
+        if (e.target.closest(".ck-task-stop") || e.target.closest(".ck-task-remove")) return;
+        const id = row.dataset.id;
+        const item = row.closest(".ck-task-item");
+        const pre = item.querySelector(".ck-task-output");
+        if (!pre) return;
+        if (expanded2.has(id)) {
+          expanded2.delete(id);
+          pre.classList.add("ck-hidden");
+        } else {
+          expanded2.set(id, 0);
+          pre.classList.remove("ck-hidden");
+          refreshOutput(id, pre);
+        }
+      });
+    });
+    el2.querySelectorAll(".ck-task-stop").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        btn.textContent = "\u505C\u6B62\u4E2D\u2026";
+        btn.style.pointerEvents = "none";
+        try {
+          await api.taskStop?.(id);
+        } catch (_) {
+        }
+        loadTasks();
+      });
+    });
+    el2.querySelectorAll(".ck-task-remove").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        try {
+          await api.taskRemove?.(btn.dataset.id);
+        } catch (_) {
+        }
+        expanded2.delete(btn.dataset.id);
+        loadTasks();
+      });
+    });
+  }
+  async function refreshOutput(id, pre) {
+    try {
+      const from = expanded2.get(id) || 0;
+      const r = await api.taskOutput?.(id, from);
+      if (!r || !r.success) return;
+      if (r.text) {
+        if (from === 0) pre.textContent = r.text;
+        else pre.textContent += r.text;
+        expanded2.set(id, r.totalBytes || 0);
+        pre.scrollTop = pre.scrollHeight;
+      } else {
+        expanded2.set(id, r.totalBytes || from);
+      }
+    } catch (_) {
+    }
+  }
+  function updateBadge(tasks) {
+    const badge = document.getElementById("task-badge");
+    if (!badge) return;
+    const n = tasks.filter((t) => t.status === "running").length;
+    if (n > 0) {
+      badge.textContent = String(n);
+      badge.style.display = "";
+    } else badge.style.display = "none";
+  }
+  async function loadTasks() {
+    try {
+      const [listRes, scriptsRes] = await Promise.all([
+        api.taskList?.(),
+        api.taskReadScripts?.()
+      ]);
+      const tasks = listRes && listRes.success ? listRes.tasks || [] : [];
+      renderTasks(tasks);
+      updateBadge(tasks);
+      if (scriptsRes && scriptsRes.success) {
+        scriptListCache = scriptsRes.scripts || [];
+        renderScripts(scriptListCache);
+      }
+    } catch (_) {
+    }
+  }
+  document.getElementById("task-refresh")?.addEventListener("click", () => loadTasks());
+  document.getElementById("task-clear")?.addEventListener("click", async () => {
+    try {
+      await api.taskClearExited?.();
+    } catch (_) {
+    }
+    loadTasks();
+  });
+  var runBtn = document.getElementById("task-run-btn");
+  var cmdInput = document.getElementById("task-cmd-input");
+  var doRun = async () => {
+    const cmd = String(cmdInput?.value || "").trim();
+    if (!cmd) return;
+    try {
+      const r = await api.taskStart?.(cmd, void 0, "manual");
+      if (r && !r.success) {
+        alert("\u542F\u52A8\u5931\u8D25\uFF1A" + (r.error || "\u672A\u77E5\u9519\u8BEF"));
+        return;
+      }
+      if (cmdInput) cmdInput.value = "";
+      loadTasks();
+    } catch (err) {
+      alert("\u542F\u52A8\u5931\u8D25\uFF1A" + (err.message || String(err)));
+    }
+  };
+  runBtn?.addEventListener("click", doRun);
+  cmdInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      doRun();
+    }
+  });
+  document.getElementById("task-scripts-head")?.addEventListener("click", () => {
+    const el2 = document.getElementById("task-scripts");
+    const caret = document.getElementById("task-scripts-caret");
+    if (!el2) return;
+    const hidden = el2.classList.toggle("ck-hidden");
+    if (caret) caret.textContent = hidden ? "\u25B8" : "\u25BE";
+  });
+  if (api.onTasksChanged) {
+    api.onTasksChanged(() => {
+      loadTasks();
+    });
+  }
+
   // src/ui/shell/scripts/plugin-shell.ts
   init_shared();
   var mountedStatus = /* @__PURE__ */ new Set();
@@ -8071,6 +8365,7 @@ paths:            # 可选；省略 = 始终生效
   registerTab("rules", loadRules);
   registerTab("memories", loadMemories);
   registerTab("git", loadGit);
+  registerTab("tasks", loadTasks);
   try {
     loadWorkspaces();
   } catch (_) {

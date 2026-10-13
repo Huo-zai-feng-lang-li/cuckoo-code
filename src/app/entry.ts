@@ -48,6 +48,7 @@ if (RENDERER_LOG_DIR) {
 }
 
 import { registerIpcHandlers } from './ipc/index.js';
+import * as taskManager from '../infra/task-manager.js';
 import { buildChromeUserAgent, buildClientHintsHeaders } from '../infra/user-agent.js';
 import { initFeishu } from './ipc/feishu.js';
 import { injectSubagentDeps, runAgent as runAgentImpl, runGatewayQuery as runGatewayQueryImpl } from './subagent.js';
@@ -1454,6 +1455,8 @@ app.on('before-quit', (event: any) => {
   if (quitFlushed) return;
   event.preventDefault();
   quitFlushed = true;
+  // 杀掉所有后台任务进程树，防孤儿进程
+  try { taskManager.dispose(); } catch (_) { /* ignore */ }
   Promise.all([
     flushAllSessions().catch(() => {}),
     mcpClient.disconnectAll().catch(() => {}),

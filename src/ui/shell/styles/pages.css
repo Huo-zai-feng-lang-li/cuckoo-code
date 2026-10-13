@@ -318,3 +318,56 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .ck-git-commit-meta { display: block; font-size: 10.5px; color: var(--ck-text-dim); margin-top: 2px; }
+
+/* ===== 任务页 ===== */
+.ck-task-input {
+  display: flex; gap: 6px; padding: 4px 8px 8px;
+}
+.ck-task-input .ck-input { flex: 1; min-width: 0; }
+.ck-task-scripts-head {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 6px 10px; color: var(--ck-text-2); font-size: 12px; user-select: none;
+}
+.ck-task-scripts-head:hover { color: var(--ck-text); }
+.ck-task-scripts-title { flex: 1; }
+.ck-task-scripts-count { color: var(--ck-text-3); font-size: 11px; }
+.ck-task-scripts {
+  display: flex; flex-direction: column; gap: 2px; padding: 0 8px 6px;
+}
+.ck-task-script {
+  display: flex; align-items: center; gap: 8px; text-align: left;
+  background: transparent; border: none; border-radius: 6px;
+  padding: 5px 8px; cursor: pointer; color: var(--ck-text);
+  font-size: 12px; width: 100%;
+}
+.ck-task-script:hover { background: var(--ck-surface); }
+.ck-task-script-name { font-weight: 500; flex-shrink: 0; }
+.ck-task-script-cmd {
+  color: var(--ck-text-3); font-size: 11px; font-family: "SF Mono", "Consolas", monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ck-task-list-head { padding: 8px 10px 4px; color: var(--ck-text-2); font-size: 12px; }
+.ck-task-item { border-bottom: 1px solid var(--ck-border); }
+.ck-task-row {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer;
+}
+.ck-task-row:hover { background: var(--ck-surface); }
+.ck-task-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.ck-task-dot-run { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,.6); }
+.ck-task-dot-exit { background: var(--ck-text-3); }
+.ck-task-main { flex: 1; min-width: 0; }
+.ck-task-name {
+  font-size: 12px; font-family: "SF Mono", "Consolas", monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ck-task-meta { font-size: 11px; color: var(--ck-text-3); margin-top: 2px; }
+.ck-task-ops { flex-shrink: 0; }
+.ck-task-stop {
+  font-size: 11px; padding: 2px 8px; cursor: pointer;
+}
+.ck-task-output {
+  margin: 0; padding: 8px 12px; max-height: 240px; overflow: auto;
+  background: var(--ck-bg-2, rgba(0,0,0,.15)); border-radius: 6px;
+  font-family: "SF Mono", "Consolas", monospace; font-size: 11px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-all; color: var(--ck-text-2);
+}

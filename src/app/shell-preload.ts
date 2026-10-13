@@ -152,6 +152,15 @@ const shellAPI = {
   gitWatchStop: () => ipcRenderer.invoke('git-watch-stop'),
   /** 项目文件变化 → 壳页面自动刷新 Git 状态 */
   onGitChanged: (cb: () => void) => { ipcRenderer.on('shell-git-changed', () => cb()); },
+  // ========== 后台任务 ==========
+  taskStart: (command: string, label?: string, source?: string) => ipcRenderer.invoke('task-start', { command, label, source }),
+  taskStop: (id: string) => ipcRenderer.invoke('task-stop', { id }),
+  taskList: () => ipcRenderer.invoke('task-list'),
+  taskOutput: (id: string, from?: number) => ipcRenderer.invoke('task-output', { id, from }),
+  taskRemove: (id: string) => ipcRenderer.invoke('task-remove', { id }),
+  taskClearExited: () => ipcRenderer.invoke('task-clear-exited'),
+  taskReadScripts: () => ipcRenderer.invoke('task-read-scripts'),
+  onTasksChanged: (cb: () => void) => { ipcRenderer.on('shell-tasks-changed', () => cb()); },
   setProjectArchived: (dir: string, archived: boolean) => ipcRenderer.invoke('set-project-archived', { dir, archived }),
   deleteProjectWorkspace: (dir: string) => ipcRenderer.invoke('delete-project-workspace', { dir }),
   setSessionTitle: (sessionId: string, title: string) => ipcRenderer.invoke('set-session-title', { sessionId, title }),

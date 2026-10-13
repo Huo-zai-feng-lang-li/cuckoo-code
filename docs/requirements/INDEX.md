@@ -41,5 +41,6 @@
 | 034 | fix | [修复窗口组「转移对话」报错「IndexedDB 无该会话消息」](./034-switch-share-idb.md) | done | (直接主分支) | 2026-10-12 |
 | 035 | feature | [Git 面板增强——提交历史 + 自动刷新](./035-git-history-refresh.md) | done | feat/035-git-history-refresh | 2026-10-13 |
 | 036 | refactor | [统一项目规则目录到 .agents/rules/](./036-unify-agent-rules.md) | done | refactor/036-unify-agent-rules | 2026-10-13 |
+| 037 | feature | [任务运行器（命令 / scripts / AI 后台命令统一管理）](./037-task-runner.md) | done | feat/037-task-runner | 2026-10-13 |
 
-共 36 个需求。
+共 37 个需求。

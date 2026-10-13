@@ -146,6 +146,8 @@ interface BashOptions {
   workdir?: string;
   /** 超时毫秒数，默认 30000 */
   timeoutMs?: number;
+  /** 后台运行（长驻命令如 dev server/watch）：立即返回任务 ID，不阻塞，可在「任务」页查看/停止 */
+  background?: boolean;
 }
 
 /**
@@ -154,8 +156,9 @@ interface BashOptions {
  * 必须用 log() 方法打印才能看到返回内容。
  * 非零退出不抛异常，通过 [exit code] 标记报告。
  * 危险命令会被安全策略拒绝并抛异常。
+ * background=true 时立即返回任务 ID（适合 dev server 等长驻命令），输出与停止见壳页面「任务」页。
  * @param command 要执行的 shell 命令
- * @param options 可选，{ description?: string, workdir?: string, timeoutMs?: number }
+ * @param options 可选，{ description?: string, workdir?: string, timeoutMs?: number, background?: boolean }
  * @returns 纯文本：stdout + [stderr] 分节 + 状态标记（[exit code]、[timed out]）
  * @throws 危险命令被安全策略拒绝时抛出异常
  */
