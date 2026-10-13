@@ -36,6 +36,16 @@ function showEditor(show: boolean): void {
   byId('rule-new')?.classList.toggle('cuckoo-hidden', show);
   byId('rule-open-dir')?.classList.toggle('cuckoo-hidden', show);
   byId('rule-refresh')?.classList.toggle('cuckoo-hidden', show);
+  if (show) scrollToEditor();
+}
+
+/** 打开编辑器后滚到编辑区（上方是格式说明，编辑区在下方） */
+function scrollToEditor(): void {
+  // 等布局完成（display 切换后），再滚动
+  requestAnimationFrame(() => {
+    const editor = byId('rule-editor');
+    if (editor) editor.scrollIntoView({ block: 'start' });
+  });
 }
 
 function openRecord(fileName: string): void {

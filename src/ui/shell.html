@@ -6657,6 +6657,13 @@ paths:            # 可选；省略 = 始终生效
     byId("rule-new")?.classList.toggle("cuckoo-hidden", show2);
     byId("rule-open-dir")?.classList.toggle("cuckoo-hidden", show2);
     byId("rule-refresh")?.classList.toggle("cuckoo-hidden", show2);
+    if (show2) scrollToEditor();
+  }
+  function scrollToEditor() {
+    requestAnimationFrame(() => {
+      const editor2 = byId("rule-editor");
+      if (editor2) editor2.scrollIntoView({ block: "start" });
+    });
   }
   function openRecord(fileName) {
     const record = records.find((r) => r.fileName === fileName);
