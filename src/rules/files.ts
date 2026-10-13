@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { DEFAULT_RULE_FILE, DEFAULT_RULE_CONTENT } from './defaults.js';
 
 export interface RuleFileRecord { name: string; fileName: string; rulePath: string; content: string; hash: string; updatedAt: string; }
 function rulesDir(): string { return path.resolve(process.env.CUCKOO_HOME || path.join(os.homedir(), '.cuckoo'), 'rules'); }
@@ -64,3 +65,34 @@ export function saveUserRule(fileName: unknown, content: unknown, expectedHash: 
 }
 export function deleteUserRule(fileName: unknown, expectedHash: unknown): void { const rulePath = safePath(fileName); if (!rulePath) throw new Error('规则文件名非法'); const current = readRecord(rulePath); if (!current) throw new Error('规则文件不存在或不安全'); if (typeof expectedHash !== 'string' || current.hash !== expectedHash) throw new Error('文件已被外部修改，请重新加载'); fs.unlinkSync(rulePath); }
 export function openUserRulesDir(): string { return ensureDirectory(); }
+
+/** seed 标记文件（存在则不再 seed，防止"用户删除后复活"） */
+function seedMarkerPath(): string {
+  return path.join(path.dirname(rulesDir()), '.rules-seeded');
+}
+
+/**
+ * 首次启动 seed 默认全局规则。
+ * 条件：未 seed 过 且 规则目录为空 → 写入默认；否则跳过（绝不覆盖用户规则）。
+ */
+export function seedDefaultRules(): void {
+  try {
+    if (fs.existsSync(seedMarkerPath())) return; // 已 seed 过
+    const dir = rulesDir();
+    if (fs.existsSync(dir)) {
+      const existing = fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.md'));
+      if (existing.length > 0) { markSeeded(); return; } // 用户已有规则
+    }
+    ensureDirectory();
+    const target = path.join(dir, DEFAULT_RULE_FILE);
+    fs.writeFileSync(target, DEFAULT_RULE_CONTENT, { encoding: 'utf8', flag: 'wx' });
+    markSeeded();
+    console.log('[Rules] 已写入默认全局规则:', target);
+  } catch (err: any) {
+    console.error('[Rules] seed 默认规则失败:', err.message);
+  }
+}
+
+function markSeeded(): void {
+  try { fs.writeFileSync(seedMarkerPath(), new Date().toISOString(), 'utf8'); } catch (_) { /* ignore */ }
+}

@@ -17,11 +17,13 @@
 
 | 作用域 | 路径 | 说明 |
 |---|---|---|
-| **项目级** | `<项目根>/.cuckoo/rules/<name>.md` | 随仓库走，团队共享 |
+| **项目级** | `<项目根>/.agents/rules/<name>.md` | 随仓库走，团队共享（**推荐**，多 AI 工具统一入口） |
+| **项目级**（旧） | `<项目根>/.cuckoo/rules/<name>.md` | 兼容未迁移项目（优先 `.agents/rules/`，不存在才回退到这里） |
 | **用户级** | `~/.cuckoo/rules/<name>.md` | 所有项目通用 |
 
 - 扫描 rules 目录下的 `.md` 文件（一层）
 - **同名规则都生效**（用户级 + 项目级不覆盖，靠**路径**区分）
+- 项目级目录**二选一**：优先 `.agents/rules/`（与其他 AI 工具如 Codex/Cursor 统一），不存在则回退 `.cuckoo/rules/`
 
 ## 三、规则文件格式
 
@@ -78,7 +80,7 @@ paths:
 
 ## 五、完整示例
 
-`.cuckoo/rules/test.md`（读测试文件时才生效）：
+`.agents/rules/test.md`（读测试文件时才生效）：
 
 ```markdown
 ---
@@ -93,7 +95,7 @@ paths:
 - 优先覆盖失败路径
 ```
 
-`.cuckoo/rules/global.md`（无 `paths`，始终生效）：
+`.agents/rules/global.md`（无 `paths`，始终生效）：
 
 ```markdown
 ---

@@ -1,11 +1,14 @@
 /**
- * 解析规则 frontmatter（在通用 key:value 基础上，额外支持 `paths` 数组）
+ * 解析规则 frontmatter。支持两种生态的写法：
  *
- * 支持两种写法：
- *   paths:
- *     - "src/api/**"
- *     - "src/routes/**"
- *   paths: ["src/api/**"]        （单行数组，也支持）
+ * ① Cuckoo 原生（paths 数组）：
+ *      paths: 后接 - "src/api/**" 列表，或 paths: ["src/api/**"] 单行数组
+ *
+ * ② Cursor 风格（trigger + globs）——无 paths 时自动兼容：
+ *      trigger: glob 且 globs 为逗号分隔的路径模式
+ *      trigger: always_on 表示始终注入（paths 为空）
+ *
+ * 优先级：有 paths 用 paths；否则用 globs；都没有则始终注入。
  */
 import { parseFrontmatter } from '../skills/frontmatter.js';
 
@@ -15,10 +18,45 @@ export function parseRuleFrontmatter(content: string): { name: string; paths: st
   const { data, body } = parseFrontmatter(content);
   const name = (data.name || '').trim();
 
-  // 单独解析 paths（数组，通用解析器不支持）
-  const paths = parsePaths(content);
+  // 优先 Cuckoo 原生 paths
+  let paths = parsePaths(content);
+  // 无 paths → 兼容 Cursor 的 trigger/globs
+  if (paths.length === 0) paths = parseCursorGlobs(content);
 
   return { name, paths, body };
+}
+
+/**
+ * 解析 Cursor 风格 frontmatter：trigger + globs → paths 数组。
+ * - trigger: always_on → 始终注入（返回空数组）
+ * - 其余有 globs 时：按逗号拆分，过滤掉"等于 * / ** / **"的项（那是"全部"语义，等于始终注入）
+ */
+function parseCursorGlobs(content: string): string[] {
+  const text = content.replace(/\r\n/g, '\n');
+  if (!text.startsWith('---\n')) return [];
+  const endIdx = text.indexOf('\n---', 3);
+  if (endIdx === -1) return [];
+  const fmText = text.slice(4, endIdx);
+
+  let trigger = '';
+  let globsRaw = '';
+  for (const line of fmText.split('\n')) {
+    const t = line.trim();
+    const tm = t.match(/^trigger\s*:\s*(.+)$/);
+    if (tm) { trigger = stripQuotes(tm[1].trim()); continue; }
+    const gm = t.match(/^globs\s*:\s*(.+)$/);
+    if (gm) { globsRaw = stripQuotes(gm[1].trim()); continue; }
+  }
+
+  // always_on → 无 paths（始终注入）
+  if (trigger === 'always_on') return [];
+  if (!globsRaw) return [];
+
+  // 逗号分隔 → 拆分为多条路径，过滤"全部"语义项
+  return globsRaw
+    .split(',')
+    .map((s) => stripQuotes(s.trim()))
+    .filter((s) => s && s !== '*' && s !== '**' && s !== '**/*');
 }
 
 /** 从原文的 frontmatter 块中提取 paths 数组 */
