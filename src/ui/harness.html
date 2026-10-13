@@ -1595,7 +1595,9 @@
     var hasThink = false, hasText = false;
     try { hasThink = !!(cur.thinkBody && cur.thinkBody.textContent && cur.thinkBody.textContent.trim()); } catch (e) { /* ignore */ }
     try { hasText = !!(cur.body && cur.body.textContent && cur.body.textContent.trim()); } catch (e) { /* ignore */ }
-    if (dots && !hasThink && !hasText) {
+    // 无思考、无正文 → 空占位，整块移除（不论有无三点 dots；
+    // 经 onStream 创建的占位气泡本就不含 dots，旧条件会漏删而残留空白气泡）
+    if (!hasThink && !hasText) {
       if (cur.el && cur.el.parentNode) cur.el.parentNode.removeChild(cur.el); // 纯占位：整块移除
     } else {
       if (dots && dots.parentNode) dots.parentNode.removeChild(dots);
