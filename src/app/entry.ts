@@ -1406,6 +1406,21 @@ if (!gotSingleInstanceLock) {
   });
 
   app.whenReady().then(() => {
+    // 更新进行中门禁：静默安装期间用户若再次双击旧 exe，会与安装程序争用文件。
+    // 命中标记 → 提示并退出，等新版本启动后自动放行（见 updater.isUpdatePending）。
+    try {
+      if (updater.isUpdatePending()) {
+        dialog.showMessageBoxSync({
+          type: 'info',
+          title: '更新进行中',
+          message: 'Cuckoo Code 正在更新，请稍候…',
+          detail: '更新完成后应用会自动重启，无需手动操作。',
+          buttons: ['知道了'],
+        });
+        app.quit();
+        return;
+      }
+    } catch (_) { /* ignore */ }
     setupAppMenu();
     // 首次启动写入默认全局规则（用户已有规则则不覆盖）
     try { seedDefaultRules(); } catch (_) { /* ignore */ }

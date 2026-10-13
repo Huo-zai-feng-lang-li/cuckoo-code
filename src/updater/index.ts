@@ -4,6 +4,8 @@
  * 职责：检查更新、下载进度提示、下载完成提醒、网络错误友好提示。
  */
 import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import path from 'node:path';
 import updaterPkg from 'electron-updater';
 
 // electron 特殊：其 index.js 导出字符串，须用 createRequire（见 P3a 手册 1.5）
@@ -33,6 +35,74 @@ let mainWindowRef: any = null;   // 主窗口引用（用于弹出对话框）
 /** 设置主窗口引用，用于对话框定位 */
 function setMainWindow(win: any): void {
   mainWindowRef = win;
+}
+
+// ========== 更新进行中标记（并发保护） ==========
+// 静默安装期间应用会退出、文件正被替换，若用户此时再双击旧图标启动，
+// 会与安装程序争用文件锁 → 安装失败 / 版本混乱。用标记文件做"门禁"。
+const UPDATE_PENDING_TTL_MS = 10 * 60 * 1000; // 标记有效期 10 分钟（安装远超此值视为异常，放行）
+
+function updatePendingPath(): string {
+  try { return path.join(app.getPath('userData'), 'update-pending.json'); }
+  catch (_) { return ''; }
+}
+
+/** 安装前写标记：记录目标版本，供下次启动判断更新是否已完成 */
+function markUpdatePending(targetVersion?: string): void {
+  const p = updatePendingPath();
+  if (!p) return;
+  try {
+    fs.writeFileSync(p, JSON.stringify({ targetVersion: targetVersion || '', at: Date.now() }), 'utf-8');
+  } catch (err: any) {
+    console.error('[Updater] 写更新标记失败:', err && err.message);
+  }
+}
+
+/**
+ * 启动时检查是否有"未完成的更新"。
+ * 命中条件：标记存在 && 当前版本仍 < 目标版本 && 距写入未超过 TTL。
+ * 命中返回 true（调用方提示并退出）；否则清理过期/已完成标记并返回 false。
+ */
+function isUpdatePending(): boolean {
+  const p = updatePendingPath();
+  if (!p || !fs.existsSync(p)) return false;
+  try {
+    const raw = fs.readFileSync(p, 'utf-8');
+    const data = JSON.parse(raw);
+    const target: string = String(data && data.targetVersion || '');
+    const at: number = Number(data && data.at || 0);
+    const expired = !at || (Date.now() - at > UPDATE_PENDING_TTL_MS);
+    const current = app.getVersion();
+    const done = target && current === target;
+    if (expired || done) {
+      try { fs.unlinkSync(p); } catch (_) { /* ignore */ }
+      return false;
+    }
+    return true;
+  } catch (_) {
+    // 标记损坏：清理并放行，避免卡死启动
+    try { fs.unlinkSync(p); } catch (_) { /* ignore */ }
+    return false;
+  }
+}
+
+/** 清理更新标记（更新成功后由新版本启动时也可主动调用） */
+function clearUpdatePending(): void {
+  const p = updatePendingPath();
+  if (!p) return;
+  try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (_) { /* ignore */ }
+}
+
+/**
+ * 统一的"安装并重启"入口：写标记（并发保护）+ 静默安装。
+ * isSilent=true 传 /S 跳过 NSIS 向导；isForceRunAfter=true 装完自动重启。
+ */
+function installAndRestart(targetVersion?: string): void {
+  markUpdatePending(targetVersion);
+  try { autoUpdater.quitAndInstall(true, true); } catch (err: any) {
+    console.error('[Updater] quitAndInstall 失败:', err && err.message);
+    clearUpdatePending(); // 安装没发起，清标记避免误拦下次启动
+  }
 }
 
 /** 判断错误是否为网络连接类问题 */
@@ -153,8 +223,8 @@ async function checkForUpdates(): Promise<void> {
       ? await dialog.showMessageBox(parent, options)
       : await dialog.showMessageBox(options);
     if (result.response === 0) {
-      // 静默安装（/S 跳过 NSIS 向导）+ 装完自动重启
-      autoUpdater.quitAndInstall(true, true);
+      // 静默安装（/S 跳过 NSIS 向导）+ 装完自动重启（带并发保护标记）
+      installAndRestart();
     }
     return;
   }
@@ -240,8 +310,8 @@ autoUpdater.on('update-downloaded', (info: any) => {
     autoInstallAfterDownload = false;
     console.log('[Updater] 自动安装并重启');
     setTimeout(() => {
-      // 静默安装（isSilent=true 传 /S 给 NSIS，跳过安装向导）+ 装完自动重启
-      try { autoUpdater.quitAndInstall(true, true); } catch (_) { /* ignore */ }
+      // 静默安装（/S 跳过 NSIS 向导）+ 装完自动重启
+      installAndRestart(info && info.version);
     }, 800);
     return;
   }
@@ -266,7 +336,7 @@ autoUpdater.on('update-downloaded', (info: any) => {
     isManualCheck = false;
     if (result.response === 0) {
       // 静默安装（/S 跳过 NSIS 向导）+ 装完自动重启
-      autoUpdater.quitAndInstall(true, true);
+      installAndRestart(info && info.version);
     }
   });
 });
@@ -314,4 +384,6 @@ export {
   setMainWindow,
   isNetworkError,
   isGitHubAccessError,
+  isUpdatePending,
+  clearUpdatePending,
 };

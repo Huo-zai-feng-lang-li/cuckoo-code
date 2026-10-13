@@ -7395,11 +7395,12 @@ paths:            # 可选；省略 = 始终生效
   }
   function renderTaskItem(t) {
     const running = t.status === "running";
+    const stopping = running && !!t.stopping;
     const dot = running ? "ck-task-dot-run" : "ck-task-dot-exit";
-    const statusText = running ? "\u8FD0\u884C\u4E2D" : t.exitCode === 0 || t.exitCode === null ? "\u5DF2\u7ED3\u675F" : "\u9000\u51FA\u7801 " + t.exitCode;
+    const statusText = stopping ? "\u505C\u6B62\u4E2D\u2026" : running ? "\u8FD0\u884C\u4E2D" : t.exitCode === 0 || t.exitCode === null ? "\u5DF2\u7ED3\u675F" : "\u9000\u51FA\u7801 " + t.exitCode;
     const sourceLabel = t.source === "script" ? "\u811A\u672C" : t.source === "ai" ? "AI" : "\u624B\u52A8";
     const title = t.label ? escapeHtml(t.label) + " \xB7 " : "";
-    return '<div class="ck-task-item" data-id="' + escapeAttr(t.id) + '"><div class="ck-task-row" data-id="' + escapeAttr(t.id) + '"><span class="ck-task-dot ' + dot + '"></span><div class="ck-task-main"><div class="ck-task-name">' + title + escapeHtml(t.command) + '</div><div class="ck-task-meta">' + escapeHtml(sourceLabel) + " \xB7 " + statusText + (t.pid ? " \xB7 PID " + t.pid : "") + " \xB7 " + fmtTime2(t.startedAt) + '</div></div><div class="ck-task-ops">' + (running ? '<button class="ck-btn ck-task-stop" data-id="' + escapeAttr(t.id) + '">\u505C\u6B62</button>' : '<button class="ck-icon-btn ck-task-remove" data-id="' + escapeAttr(t.id) + '" title="\u79FB\u9664">\u2715</button>') + '</div></div><pre class="ck-task-output cuckoo-hidden" data-id="' + escapeAttr(t.id) + '"></pre></div>';
+    return '<div class="ck-task-item" data-id="' + escapeAttr(t.id) + '"><div class="ck-task-row" data-id="' + escapeAttr(t.id) + '"><span class="ck-task-dot ' + dot + '"></span><div class="ck-task-main"><div class="ck-task-name">' + title + escapeHtml(t.command) + '</div><div class="ck-task-meta">' + escapeHtml(sourceLabel) + " \xB7 " + statusText + (t.pid ? " \xB7 PID " + t.pid : "") + " \xB7 " + fmtTime2(t.startedAt) + '</div></div><div class="ck-task-ops">' + (running ? '<button class="ck-btn ck-task-stop" data-id="' + escapeAttr(t.id) + '"' + (stopping ? " disabled" : "") + ">" + (stopping ? "\u505C\u6B62\u4E2D\u2026" : "\u505C\u6B62") + "</button>" : '<button class="ck-icon-btn ck-task-remove" data-id="' + escapeAttr(t.id) + '" title="\u79FB\u9664">\u2715</button>') + '</div></div><pre class="ck-task-output cuckoo-hidden" data-id="' + escapeAttr(t.id) + '"></pre></div>';
   }
   function renderScripts(scripts) {
     const el2 = document.getElementById("task-scripts");
@@ -7428,6 +7429,7 @@ paths:            # 可选；省略 = 始终生效
             lastListSig = "";
           }
           await loadTasks();
+          scrollToTaskList();
         } catch (err) {
           alert("\u542F\u52A8\u5931\u8D25\uFF1A" + (err.message || String(err)));
         }
@@ -7444,7 +7446,7 @@ paths:            # 可选；省略 = 始终生效
       el2.innerHTML = '<div class="ck-list-empty">\u6682\u65E0\u4EFB\u52A1</div>';
       return;
     }
-    const sig = tasks.map((t) => t.id + "|" + t.status + "|" + (t.exitCode ?? "") + "|" + t.command).join("\n");
+    const sig = tasks.map((t) => t.id + "|" + t.status + "|" + (t.exitCode ?? "") + "|" + (t.stopping ? "stopping" : "") + "|" + t.command).join("\n");
     if (sig === lastListSig) {
       el2.querySelectorAll(".ck-task-item").forEach((item) => {
         const id = item.dataset.id;
@@ -7486,8 +7488,6 @@ paths:            # 可选；省略 = 始终生效
       btn.addEventListener("click", async (e) => {
         e.stopPropagation();
         const id = btn.dataset.id;
-        btn.textContent = "\u505C\u6B62\u4E2D\u2026";
-        btn.style.pointerEvents = "none";
         try {
           await api.taskStop?.(id);
         } catch (_) {
@@ -7522,6 +7522,10 @@ paths:            # 可选；省略 = 始终生效
       }
     } catch (_) {
     }
+  }
+  function scrollToTaskList() {
+    const body = document.querySelector(".ck-panel-body");
+    if (body) body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
   }
   function updateBadge(tasks) {
     const badge = document.getElementById("task-badge");
@@ -7572,7 +7576,8 @@ paths:            # 可选；省略 = 始终生效
         expanded2.set(r.task.id, 0);
         lastListSig = "";
       }
-      loadTasks();
+      await loadTasks();
+      scrollToTaskList();
     } catch (err) {
       alert("\u542F\u52A8\u5931\u8D25\uFF1A" + (err.message || String(err)));
     }
