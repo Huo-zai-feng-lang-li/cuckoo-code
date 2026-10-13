@@ -148,3 +148,26 @@ AI 看到结果 → 继续下一步（回到顶部）
 - 壳页面 `shell.html` 通过 `window.shellAPI` 调 IPC
 - `ipc/shell.ts`：navigate/back/forward/reload/home → 操作 `ctx.view`
 - 页面导航时（`did-navigate`）→ `pushUrlState(view)` → `win.webContents.send('shell-url-updated', ...)` → 壳页面更新地址栏
+
+## 10. 后台任务（任务页）
+
+**真相源**：`src/infra/task-manager.ts`（infra 层，只依赖 node），进程表 + 进程树杀。
+
+- **统一管理**：手动命令 / package.json scripts / AI 后台命令（`bash` 的 `background` 参数），三者同一张进程表。
+- **启动**：Windows 用 `spawn(command, {shell:true})`；Unix 用 `sh -c` + `detached:true`（自成进程组）。
+- **输出**：环形缓冲（单任务上限 256KB，超出丢头部）；解码用 `decodeOutput`（GBK 兼容 + 剥离 ANSI 控制码，见需求 040）。
+- **停止**（精准杀进程树）：Windows `taskkill /pid <pid> /T /F`；Unix `process.kill(-pid, SIGTERM)`，宽限后 SIGKILL。⚠️ **stop 里不能同时 `child.kill()`**——抢先杀父进程会让 `taskkill /T` 找不到子进程树 → 子进程残留。
+- **停止态**：`TaskInfo.stopping` 由主进程驱动，进程真退出（`finish()`）清 `stopping=false` 并补 `exitCode ?? null`（见需求 039/042）。
+- **IPC**：`src/app/ipc/task.ts`（`task-start/stop/list/output/remove/clear-exited/read-scripts`）。
+- **变更通知**：`taskManager.setChangeListener(broadcastChange)` → `broadcastChange()` 遍历窗口推 `shell-tasks-changed` 给壳页面。
+  ⚠️ **易错点**：`!ctx.win.isDestroyed` 漏括号会让条件恒 false → 通知永不推送（需求 044 踩过）。
+- **壳页面**：`src/ui/shell/scripts/pages/tasks.ts`，订阅 `onTasksChanged` 自动刷新；运行后 `scrollToTask(id)` 定位到新任务卡片（需求 041）。
+
+## 11. 自动更新与并发保护
+
+- **模块**：`src/updater/index.ts`（electron-updater + generic provider / GitHub Releases）。
+- **流程**：启动延迟 5s 检查 → 发现新版本弹窗询问 → 「立即更新」自动下载 → 下载完 `quitAndInstall(true, true)`（`/S` 跳过 NSIS 向导 + 装完自动重启）。
+- **并发保护**（需求 039/042）：静默安装期间应用退出、文件被替换，若用户再双击旧图标会与安装程序争用文件锁。用标记文件 `<userData>/update-pending.json` 做门禁：
+  - 安装前 `markUpdatePending()` 写 `{fromVersion, targetVersion, at}`（原子写）。
+  - 启动时 `isUpdatePending()`：**过期 / 版本已变 / 已达目标 / 数据不完整** → 放行并清理；否则命中 → `entry.ts` 提示「更新进行中」+ `app.quit()`。
+- ⚠️ **仅打包版生效**：`app.isPackaged` 为假时跳过自动检查，开发版测不了此逻辑。

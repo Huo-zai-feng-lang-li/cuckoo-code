@@ -44,8 +44,11 @@
 | 037 | feature | [任务运行器（命令 / scripts / AI 后台命令统一管理）](./037-task-runner.md) | done | feat/037-task-runner | 2026-10-13 |
 | 038 | feature | [Token 统计按窗口展示今日用量](./038-token-by-window.md) | done | feat/038-token-by-window | 2026-10-13 |
 | 039 | fix | [任务停止态修复 + 运行后滚动 + 更新并发保护](./039-task-stop-and-update-guard.md) | done | fix/039-task-stop-and-update-guard | 2026-10-13 |
+| 040 | fix | [任务输出剥离 ANSI 控制码](./040-strip-ansi-output.md) | done | fix/040-strip-ansi-output | 2026-10-13 |
+| 041 | fix | [运行任务后滚动定位到刚运行的任务](./041-scroll-to-new-task.md) | done | fix/041-scroll-to-new-task | 2026-10-13 |
+| 042 | fix | [子代理审查修复（更新门禁锁死 + 停止兜底 exitCode）](./042-review-fixes.md) | done | fix/042-review-fixes | 2026-10-13 |
 | 043 | fix | [规则页保存提示撑坏布局（icon-only 按钮被改 textContent）](./043-rule-save-tip.md) | done | fix/043-rule-save-tip | 2026-10-13 |
 | 044 | fix | [任务状态变更不自动刷新（isDestroyed 漏括号致通知永不推送）](./044-task-notify-missing-parens.md) | done | fix/044-task-notify-missing-parens | 2026-10-13 |
 | 045 | fix | [列表卡片 hover 抖动 + 过渡过快的平滑修复](./045-hover-smooth.md) | done | fix/045-hover-smooth | 2026-10-13 |
 
-共 42 个需求。
+共 45 个需求。

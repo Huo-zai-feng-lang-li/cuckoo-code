@@ -163,8 +163,8 @@ export { MyTool };
 
 ```bash
 npm run typecheck   # 两套 tsconfig
-npm test            # 210+ 测试
-npm run lint        # 0 problems
+npm test            # 976 测试
+npm run lint        # 0 errors（既有 warnings 忽略）
 npm run compile     # 构建 + 生成物
 ```
 
