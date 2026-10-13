@@ -2,7 +2,23 @@
 
 ## 核心进展
 
-**v0.8.59**：提交详情 UI 三项改进（提交历史默认展开 / 弹框放大为全窗口浮层 + 打开时隐藏原生视图 / 复制不弹二次框）。已提交、打 tag、推送 origin。最新 tag **v0.8.59**。
+**v0.8.60**：深度性能排查修复两处确凿热点（需求 047）。已提交、打 tag、推送 origin。最新 tag **v0.8.60**。
+
+### v0.8.60 改动（性能）
+1. **token 统计同步 IO 放大**（src/app/token-stats.ts）：每次 token 上报触发 1 写 + 8 读整个 token-stats.json（全同步阻塞主进程）。加内存缓存 _cache（读命中不读盘、写同步缓存）；写盘失败使缓存失效。保持原同步并发语义。
+2. **流式 stripToolBlocks O(n²)**（src/bridge/harness-bridge.ts、feishu-bridge.ts）：onStream 每帧对全量正文跑 3 个正则。加无围栏快速路径（indexOf('```')===-1 跳过，严格等价）；删一处冗余 trim。
+
+### v0.8.60 验证
+- typecheck / test 980 / lint 0 error / compile 全绿
+- 真机：连续 token 上报 80000→95000→111111，磁盘与壳页面读值始终一致（缓存无 stale 覆盖）✅
+- code-reviewer 审查：改动 2 严格等价（9/10）；改动 1 采纳其「写盘失败回退」建议
+
+### 仍未修的性能项（待排期）
+- 文件树构建全同步 IO（src/app/ipc/session.ts buildFileTree）
+- 全窗口广播（broadcastSystemTotal/broadcastWindowUsage 遍历所有窗口）
+
+### v0.8.59（同轮）
+提交详情 UI 三项改进（提交历史默认展开 / 弹框放大为全窗口浮层 + 打开时隐藏原生视图 / 复制不弹二次框）。
 
 ### v0.8.59 改动
 - 提交历史默认展开（进入 git 页即加载展示）
