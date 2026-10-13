@@ -1,42 +1,43 @@
-# 最新接续状态 (2026-10-13 16:44)
+# 最新接续状态 (2026-10-13 17:13)
 
 ## 核心进展
 
-本轮（v0.8.39）新增**任务页**——命令 / package.json scripts / AI 后台命令统一管理。代码已完成、验证通过（typecheck/compile/lint/test 全绿 + 核心逻辑真机实测），待提交发版。分支 **feat/037-task-runner**。
+本轮 v0.8.39（任务页）+ v0.8.40（Token 统计按窗口）已完成、验证全绿、待提交发版。分支 **feat/038-token-by-window**（037 已合并 master 并打 tag v0.8.39）。
 
-## 核心动机与背景
+## 本轮两个功能
 
-用户跑 `npm run dev` 这类长驻命令时停不掉、看不到，只能关 exe。根因：现有 `bash` 工具与 `execute-command` IPC 都是"一次性阻塞命令"（exec + 30s timeout），**没有后台任务/进程表概念**。
+### v0.8.39 · 任务页（feat/037-task-runner，已合并 master + tag）
+命令 / package.json scripts / AI 后台命令统一管理。详见 `docs/requirements/037-task-runner.md`。
+- infra/task-manager（进程表 + 进程树杀 taskkill /T /F）、bash 工具 background 参数、app/ipc/task、壳页面任务页
+- **修了个真 bug**：stop 抢先 child.kill() 导致 taskkill /T 找不到子进程树 → 子进程残留；改为只走 taskkill
+- 验证：typecheck/compile/lint/test 全绿 + 核心逻辑实测 11/11 + 进程树杀实测
 
-## 关键设计与实现（需求档案：docs/requirements/037-task-runner.md）
+### v0.8.40 · Token 统计按窗口（feat/038-token-by-window，待提交）
+- **新增「今日全窗口」**（全局 × 今日），填补缺失维度
+- **命名消歧**：「今日窗口」→「今日本窗口」，「窗口累计」→「本窗口历史累计」
+- **柱图改为按窗口展示今日用量**（替换原近 10 天趋势），含窗口名，点击看占比 + 历史累计
+- token-stats.ts 扩展为对象存储（`{cumulative, today, todayDate, name}`，兼容旧 v1 数字格式），跨天自动归零
+- 数据流：overlay 上报 → shell.ts setWindowUsage + broadcastWindowUsage → 壳页面柱图
 
-- **infra/task-manager.ts**（新）：进程表 + `start/stop/list/getOutput/remove/clearExited/dispose/readPackageScripts`。分层：infra 层只依赖 node 内置；通知 UI 用回调注入 `setChangeListener`（不依赖上层）。输出环形缓冲上限 256KB；并发上限 20；停止宽限 3s。
-- **进程树杀**（核心）：Windows `taskkill /pid X /T /F`（连带子进程树）；Unix `spawn detached:true` + `process.kill(-pid, SIGTERM/SIGKILL)`。
-  - ⚠️ **踩坑并修复**：`stop` 原先在 taskkill 之外还抢先 `rec.child.kill()` → 父进程先死，异步 taskkill 找不到子进程树 → 子进程残留。**改为只走 taskkill /T /F**。实测：停止前子进程存活 true → 停止后 false。
-- **tools/impl/bash.ts**：新增 `background` 参数（apiMetas + bootstrap + schema + execute 分支 + 提示词），长驻命令后台启动立即返回任务 ID。
-- **app/ipc/task.ts**（新）：7 个 IPC（task-start/stop/list/output/remove/clear-exited/read-scripts）+ 变更广播 `shell-tasks-changed`（去抖 120ms 在 task-manager 内）。危险命令过 isDangerous；cwd 取当前窗口 selectedProjectDir。
-- **壳页面**：活动栏加「任务」图标（badge 显示运行中数）；partials/pages/tasks.html + scripts/pages/tasks.ts；样式追加到 styles/pages.css。
-- **防闪屏**：任务列表签名（id+status+exitCode+command）未变则只增量刷输出，不重建 DOM（对齐 Git 历史防闪做法）。
-- **退出清理**：entry.ts `before-quit` 调 `taskManager.dispose()` 杀全部后台进程树，防孤儿。
+## 关键设计与实现
+
+详见 `docs/requirements/038-token-by-window.md`。
 
 ## 验证结果
 
-- typecheck ✅ / compile ✅ / lint 0 error ✅ / test 970 passed ✅
-- 核心逻辑真机实测 **11/11 通过**（start/输出捕获/stop/list/remove/readPackageScripts）
-- 进程树杀实测通过（修复顺序 bug 后）
-- Electron 真机启动成功（CDP 9333），**UI 交互尚未人工点验**
+- v0.8.40：typecheck ✅ / compile ✅ / lint 0 error ✅ / test 970 passed ✅
+- 产物确认：shell.html 含「今日全窗口」「本窗口历史累计」改动
 
 ## 待办事项 (Next Steps)
 
-- [ ] **真机点验「任务」页**：手动跑命令 / 点 script / 停止 / 看输出
-- [ ] 装 v0.8.39 exe 复核；确认 CI（tag v0.8.27～v0.8.39）Win+Mac 构建
-- [ ] 旧待办：验证 v0.8.35~v0.8.38 各项（Git 历史不闪、全部折叠、规则滚动、空白气泡等）
+- [ ] **真机点验 v0.8.40**：Token 页看「今日全窗口」、柱图是否按窗口展示今日
+- [ ] 真机点验 v0.8.39「任务」页（手动命令 / script / 停止 / 输出）
+- [ ] 确认 CI（tag v0.8.27～v0.8.40）Win+Mac 构建
 
 ## 关键上下文
 
 - 目录: D:\Desktop\Super-File\cuckoo-code
-- 远端: origin=Huo-zai-feng-lang-li；tag 推送触发 `.github/workflows/release.yml`（Win+Mac）
+- 远端: origin=Huo-zai-feng-lang-li；tag 推送触发 `.github/workflows/release.yml`
 - 生成物禁手改：`*.generated.ts`、`src/tools/api.d.ts`、`src/ui/shell.html`（改真源 + `npm run compile`）
 - 发版流程：写 CHANGELOG → bump package.json/lock（三处一致）→ commit → `git tag -a vX.Y.Z` → push master + push tag
-- git 钩子：`.githooks/pre-commit`（重建生成物 + 刷新需求 INDEX）；`.githooks/post-commit`（自动 push）
 - **用户偏好**：改完代码**主动** commit / push / 递增版本打 tag 发布，并汇报改动与验证结果

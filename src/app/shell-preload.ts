@@ -37,6 +37,10 @@ const shellAPI = {
     ipcRenderer.on('shell-total-updated', (_e: any, data: any) => cb(data));
   },
   getSystemTotal: () => ipcRenderer.invoke('get-system-total'),
+  getWindowUsage: () => ipcRenderer.invoke('get-window-usage'),
+  onWindowUsage: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-window-usage', (_e: any, data: any) => cb(data));
+  },
   getWindowName: () => ipcRenderer.invoke('shell-get-window-name'),
   onWindowNameUpdated: (cb: (name: string) => void) => {
     ipcRenderer.on('shell-window-name-updated', (_e: any, name: any) => cb(name));

@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import * as windowState from '../window.js';
 import * as profileManager from '../profile.js';
 import { getProvider } from '../../providers/registry.js';
-import { setWindowCumulative, getTotal, cleanupSubagentKeys } from '../token-stats.js';
+import { setWindowUsage, getTotal, getTodayTotal, getWindowUsageList, cleanupSubagentKeys } from '../token-stats.js';
 import { resolveAsset, resolveSrc } from '../../infra/paths.js';
 import * as updater from '../../updater/index.js';
 // 新对话要让 harness 视图一起重置 —— 两个入口共用同一段逻辑，避免行为分叉
@@ -75,6 +75,18 @@ function broadcastSystemTotal(): void {
   }
 }
 
+/** 把各窗口今日用量广播给所有窗口的壳页面（供柱图展示） */
+function broadcastWindowUsage(): void {
+  const payload = { todayTotal: getTodayTotal(), windows: getWindowUsageList() };
+  for (const ctx of windowState.getAllContexts()) {
+    try {
+      if (ctx && ctx.win && !ctx.win.isDestroyed()) {
+        ctx.win.webContents.send('shell-window-usage', payload);
+      }
+    } catch (_) {}
+  }
+}
+
 /** 把项目目录推送给壳页面（地址栏最左） */
 function pushProjectDir(view: any, dir: string | null): void {
   const ctx = view ? windowState.getContextByWebContents(view.webContents) : null;
@@ -86,7 +98,11 @@ function pushProjectDir(view: any, dir: string | null): void {
 function pushTokenUsage(view: any, context: number, cumulative: number, windowCumulative = 0, todayCumulative = 0, daily: any = null): void {
   const ctx = view ? windowState.getContextByWebContents(view.webContents) : null;
   if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
-  ctx.win.webContents.send('shell-token-updated', { context, cumulative, windowCumulative, todayCumulative, daily });
+  ctx.win.webContents.send('shell-token-updated', {
+    context, cumulative, windowCumulative, todayCumulative, daily,
+    todayTotal: getTodayTotal(),
+    windows: getWindowUsageList(),
+  });
 }
 
 /** 把输出速度（TPS）展示文本推送给壳页面状态条 */
@@ -130,13 +146,20 @@ function registerShellIpc(): void {
         Array.isArray(daily) ? daily : null
       );
     }
-    // 更新系统总累计并广播给所有窗口
+    // 更新系统总累计 + 窗口今日用量，并广播给所有窗口
     try {
       const ctx = view ? windowState.getContextByWebContents(view.webContents) : null;
       // 子代理与父窗口共用 profileId，写入的是同一个键（幂等，不会重复累计）。
       if (ctx && ctx.profileId && typeof windowCumulative === 'number') {
-        setWindowCumulative(ctx.profileId, windowCumulative);
+        let name = '';
+        try { const p = profileManager.getProfileById(ctx.profileId); if (p && p.name) name = p.name; } catch (_) {}
+        setWindowUsage(ctx.profileId, {
+          cumulative: windowCumulative,
+          today: typeof todayCumulative === 'number' ? todayCumulative : undefined,
+          name,
+        });
         broadcastSystemTotal();
+        broadcastWindowUsage();
       }
     } catch (_) {}
     return { success: true };
@@ -152,6 +175,11 @@ function registerShellIpc(): void {
   // 查询当前系统总累计（壳页面加载时拉取一次）
   ipcMain.handle('get-system-total', async () => {
     return { success: true, systemTotal: getTotal() };
+  });
+
+  // 查询各窗口今日用量（壳页面加载时拉取一次）
+  ipcMain.handle('get-window-usage', async () => {
+    return { success: true, todayTotal: getTodayTotal(), windows: getWindowUsageList() };
   });
 
 
