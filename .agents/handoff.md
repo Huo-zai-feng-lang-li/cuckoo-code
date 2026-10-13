@@ -75,6 +75,16 @@
 - [ ] 真机复核 v0.8.47（任务输出无 ANSI 乱码）、v0.8.48（运行后定位到新任务）——需装打包版验证
 - [ ] 排查预存在失败 `test/plugins/installer.test.js`
 
+## 真机测试实例（已登录，常驻）
+
+- **启动命令**：`set CUCKOO_SESSION_DIR=cuckoo-dev-verify&& npx electron . --remote-debugging-port=9444`（后台起）
+- **数据目录**：`C:\Users\Administrator\AppData\Roaming\cuckoo-dev-verify`（独立，不碰打包版）
+- **CDP 端口**：9444（`http://127.0.0.1:9444/json/list` 列页面；Node 内置 WebSocket 直连 `webSocketDebuggerUrl` 注入 JS）
+- **登录态**：已登录 DeepSeek（2026-10-13），会话持久化在 userData，重启开发版仍有效
+- **用途**：真机验证 UI/交互/运行时逻辑（CDP 注入 JS 读 DOM、模拟操作）
+- **注意**：开发版 ≠ 打包版；`app.isPackaged` 才生效的逻辑（autoUpdater 自动更新/静默安装）开发版测不了，需真机打包版
+- **与打包版隔离**：打包版（`D:\cuckoo-code\Cuckoo-Code.exe`，用户在用）占单实例锁；开发版靠独立 userData 绕开，互不影响
+
 ## 关键上下文
 
 - 目录: D:\Desktop\Super-File\cuckoo-code
