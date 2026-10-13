@@ -297,6 +297,9 @@ function createWindow(profile: any) {
       if (input.control && !input.shift && (input.key === 'r' || input.key === 'R')) {
         hv.webContents.reloadIgnoringCache();
       }
+      if (input.type === 'keyDown' && input.key === 'F12') {
+        hv.webContents.toggleDevTools();
+      }
     });
     return hv;
   };
@@ -388,6 +391,14 @@ function createWindow(profile: any) {
     }
   }
 
+  // F12：打开壳页面 DevTools（焦点在壳页面时）。
+  // 必须判断 keyDown——before-input-event 对 keyDown/keyUp 都触发，
+  // 不判断会"按下开、抬起关"，看起来像没打开。
+  mainWindow.webContents.on('before-input-event', (_event: any, input: any) => {
+    if (input.type === 'keyDown' && input.key === 'F12') {
+      mainWindow.webContents.toggleDevTools();
+    }
+  });
   // 加载地址栏壳页面；壳就绪后主动推一次当前 URL 状态（避免与 view 加载竞态）
   mainWindow.loadFile(resolveSrc('ui/shell.html'));
   mainWindow.webContents.on('did-finish-load', () => {
@@ -596,7 +607,7 @@ function createWindow(profile: any) {
   });
 
   view.webContents.on('before-input-event', (_event: any, input: any) => {
-    if (input.key === 'F12') {
+    if (input.type === 'keyDown' && input.key === 'F12') {
       view.webContents.toggleDevTools();
     }
   });

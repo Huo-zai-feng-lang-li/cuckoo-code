@@ -40,6 +40,14 @@ class BrowserWindowManager {
     // 设置与主窗口一致的普通 Chrome UA（动态取真实内核版本），避免暴露 Electron 标识
     win.webContents.setUserAgent(buildChromeUserAgent());
 
+    // F12 打开本窗口 DevTools（方便调试页面）。
+    // 判断 keyDown：before-input-event 对 keyDown/keyUp 都触发，不判断会"按下开、抬起关"。
+    win.webContents.on('before-input-event', (_event: any, input: any) => {
+      if (input.type === 'keyDown' && input.key === 'F12') {
+        win.webContents.toggleDevTools();
+      }
+    });
+
     if (url) win.loadURL(url);
     this.windows.set(id, win);
     win.on('closed', () => this.windows.delete(id));
