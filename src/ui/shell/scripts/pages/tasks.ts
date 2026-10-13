@@ -6,7 +6,7 @@ import { api, escapeHtml, escapeAttr } from '../shared.js';
 
 /** 展开查看输出的任务 id → 已读字节偏移 */
 const expanded = new Map<string, number>();
-/** 任务 id → 输出容器元素（刷新时保留展开态） */
+/** package.json scripts 缓存（避免重复 IPC 拉取） */
 let scriptListCache: Array<{ name: string; command: string }> = [];
 
 /** 格式化时间戳（HH:MM:SS） */
@@ -22,7 +22,7 @@ function renderTaskItem(t: any): string {
   const running = t.status === 'running';
   const stopping = running && !!t.stopping;
   const dot = running ? 'ck-task-dot-run' : 'ck-task-dot-exit';
-  const statusText = stopping ? '停止中…' : (running ? '运行中' : (t.exitCode === 0 || t.exitCode === null ? '已结束' : '退出码 ' + t.exitCode));
+  const statusText = stopping ? '停止中…' : (running ? '运行中' : (t.exitCode == null || t.exitCode === 0 ? '已结束' : '退出码 ' + t.exitCode));
   const sourceLabel = t.source === 'script' ? '脚本' : (t.source === 'ai' ? 'AI' : '手动');
   const title = t.label ? escapeHtml(t.label) + ' · ' : '';
   return '<div class="ck-task-item" data-id="' + escapeAttr(t.id) + '">' +
@@ -215,6 +215,10 @@ export async function loadTasks(): Promise<void> {
 document.getElementById('task-refresh')?.addEventListener('click', () => loadTasks());
 document.getElementById('task-clear')?.addEventListener('click', async () => {
   try { await api.taskClearExited?.(); } catch (_) { /* ignore */ }
+  // 清空已退出任务后，同步裁剪 expanded，防长会话无界累积
+  const listRes = await api.taskList?.();
+  const ids = new Set(((listRes && listRes.tasks) || []).map((t: any) => t.id));
+  for (const k of [...expanded.keys()]) if (!ids.has(k)) expanded.delete(k);
   loadTasks();
 });
 const runBtn = document.getElementById('task-run-btn');

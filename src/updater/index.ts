@@ -28,6 +28,7 @@ autoUpdater.autoInstallOnAppQuit = true; // 退出时自动安装（支持 NSIS�
 // ========== 状态标志 ==========
 let updateChecked = false;       // 是否已执行过检查
 let updateDownloaded = false;    // 是否已下载完成
+let downloadedVersion = '';      // 已下载的新版本号（供安装时写标记）
 let isManualCheck = false;       // 是否是用户手动触发的检查
 let autoInstallAfterDownload = false; // 下载完成后是否自动重启安装（用户选了"立即更新"）
 let mainWindowRef: any = null;   // 主窗口引用（用于弹出对话框）
@@ -52,7 +53,18 @@ function markUpdatePending(targetVersion?: string): void {
   const p = updatePendingPath();
   if (!p) return;
   try {
-    fs.writeFileSync(p, JSON.stringify({ targetVersion: targetVersion || '', at: Date.now() }), 'utf-8');
+    // 记录「安装前版本」fromVersion + 「目标版本」targetVersion。
+    // 启动时以 fromVersion 为准判断版本是否已变（比单看 target 更稳，
+    // 即使 target 为空/缺失也能正确放行）。
+    const payload = JSON.stringify({
+      fromVersion: app.getVersion(),
+      targetVersion: targetVersion || '',
+      at: Date.now(),
+    });
+    // 原子写：先写临时文件再 rename，避免崩溃残留半截 JSON
+    const tmp = p + '.tmp';
+    fs.writeFileSync(tmp, payload, 'utf-8');
+    fs.renameSync(tmp, p);
   } catch (err: any) {
     console.error('[Updater] 写更新标记失败:', err && err.message);
   }
@@ -60,8 +72,9 @@ function markUpdatePending(targetVersion?: string): void {
 
 /**
  * 启动时检查是否有"未完成的更新"。
- * 命中条件：标记存在 && 当前版本仍 < 目标版本 && 距写入未超过 TTL。
- * 命中返回 true（调用方提示并退出）；否则清理过期/已完成标记并返回 false。
+ * 放行条件（任一）：标记不存在 / 已过期 / 当前版本与「安装前版本」不同（说明更新已发生）/
+ *                  当前版本已达目标版本 / 标记数据不完整（!from 且 !target，避免锁死）。
+ * 命中（未完成）返回 true（调用方提示并退出）；否则清理标记并返回 false。
  */
 function isUpdatePending(): boolean {
   const p = updatePendingPath();
@@ -69,12 +82,18 @@ function isUpdatePending(): boolean {
   try {
     const raw = fs.readFileSync(p, 'utf-8');
     const data = JSON.parse(raw);
+    const from: string = String(data && data.fromVersion || '');
     const target: string = String(data && data.targetVersion || '');
     const at: number = Number(data && data.at || 0);
-    const expired = !at || (Date.now() - at > UPDATE_PENDING_TTL_MS);
     const current = app.getVersion();
-    const done = target && current === target;
-    if (expired || done) {
+    const expired = !at || (Date.now() - at > UPDATE_PENDING_TTL_MS);
+    // 版本已变（安装前 → 现在）说明更新已发生：放行
+    const versionChanged = !!from && current !== from;
+    // 已达目标版本：放行
+    const reachedTarget = !!target && current === target;
+    // 数据不完整（既无 from 又无 target）：无法判断 → 放行，避免锁死
+    const incomplete = !from && !target;
+    if (expired || versionChanged || reachedTarget || incomplete) {
       try { fs.unlinkSync(p); } catch (_) { /* ignore */ }
       return false;
     }
@@ -224,7 +243,7 @@ async function checkForUpdates(): Promise<void> {
       : await dialog.showMessageBox(options);
     if (result.response === 0) {
       // 静默安装（/S 跳过 NSIS 向导）+ 装完自动重启（带并发保护标记）
-      installAndRestart();
+      installAndRestart(downloadedVersion);
     }
     return;
   }
@@ -302,6 +321,7 @@ autoUpdater.on('download-progress', (progressObj: any) => {
 
 autoUpdater.on('update-downloaded', (info: any) => {
   updateDownloaded = true;
+  downloadedVersion = (info && info.version) || '';
   console.log('[Updater] 新版本已下载:', info.version);
   sendProgress({ state: 'done', percent: 100, version: info.version });
 
