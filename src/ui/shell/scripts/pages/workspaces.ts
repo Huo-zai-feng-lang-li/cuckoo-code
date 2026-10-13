@@ -32,6 +32,8 @@ function relTime(iso: string | null): string {
 /** 当前项目目录（默认展开，但不置顶）；用户手动展开的组记在 expandedDirs；已归档组记在 archivedOpen */
 let currentDir: string | null = null;
 let archivedProjects: string[] = [];
+// 用户点"全部收起"后为 true：抑制"当前项目组自动展开"，直到用户手动展开某个组
+let collapseAllActive = false;
 const expandedDirs = new Set<string>();
 const archivedOpen = new Set<string>();
 const archivedProjectsOpen = { v: false };
@@ -164,7 +166,7 @@ function bindWorkspaceEvents(listEl: HTMLElement): void {
       if (!groupEl) return;
       const dir = groupEl.dataset.dir;
       const open = groupEl.classList.toggle('open');
-      if (open) expandedDirs.add(dir); else expandedDirs.delete(dir);
+      if (open) { expandedDirs.add(dir); collapseAllActive = false; } else { expandedDirs.delete(dir); }
     });
   });
   // 已归档：展开/收起
@@ -379,10 +381,11 @@ export async function loadWorkspaces(): Promise<void> {
       const g = groups[dir];
       g.active.sort(byTimeDesc);
       g.archived.sort(byTimeDesc);
-      const isOpen = (dir === currentDir) || expandedDirs.has(dir);
+      const isOpen = !collapseAllActive && ((dir === currentDir) || expandedDirs.has(dir));
       const isArchOpen = archivedOpen.has(dir);
+      // 组标题不再设原生 title——避免与自定义悬停卡片（showDirTip）重复弹两个提示
       return '<div class="ck-ws-group' + (isOpen ? ' open' : '') + '" data-dir="' + escapeAttr(dir) + '">' +
-        '<div class="ck-ws-group-title" title="' + escapeAttr(dir) + '">' +
+        '<div class="ck-ws-group-title">' +
           '<svg class="ck-ws-caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>' +
           '<svg class="ck-ws-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>' +
           '<span class="ck-ws-gname">' + escapeHtml(baseName(dir)) + '</span>' +
@@ -437,6 +440,17 @@ export async function loadWorkspaces(): Promise<void> {
 }
 
 document.getElementById('ws-refresh')?.addEventListener('click', loadWorkspaces);
+
+// 全部收起：清空所有展开状态后重渲染
+document.getElementById('ws-collapse-all')?.addEventListener('click', () => {
+  expandedDirs.clear();
+  expandedNodes.clear();
+  expandedSubgroups.clear();
+  archivedOpen.clear();
+  archivedProjectsOpen.v = false;
+  collapseAllActive = true; // 抑制"当前项目组"自动展开，确保真正全部收起
+  loadWorkspaces();
+});
 
 // 当前项目目录变化 → 刷新（更新默认展开的组）
 if (api.onProjectDir) {

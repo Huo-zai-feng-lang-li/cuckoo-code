@@ -1610,6 +1610,27 @@
     font-size: 12px; font-weight: 700; color: var(--ck-text-dim); cursor: pointer;
   }
   .ck-git-act:hover { background: var(--ck-primary-soft); color: var(--ck-primary); }
+  /* ===== 提交历史 ===== */
+  .ck-git-history { border-top: 1px solid var(--ck-border-soft); flex-shrink: 0; }
+  .ck-git-history-head {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 10px; cursor: pointer; user-select: none;
+  }
+  .ck-git-history-head:hover { background: var(--ck-surface-hover); }
+  .ck-git-history-title { flex: 1; font-size: 12px; font-weight: 600; color: var(--ck-text-2); }
+  .ck-git-history-count { font-size: 11px; color: var(--ck-text-dim); }
+  .ck-git-history-list { max-height: 320px; overflow-y: auto; }
+  .ck-git-history-list.ck-hidden { display: none; }
+  .ck-git-history-empty { padding: 10px; font-size: 12px; color: var(--ck-text-dim); text-align: center; }
+  .ck-git-commit-row {
+    padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--ck-border-soft);
+  }
+  .ck-git-commit-row:hover { background: var(--ck-surface-hover); }
+  .ck-git-commit-subject {
+    display: block; font-size: 12px; color: var(--ck-text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ck-git-commit-meta { display: block; font-size: 10.5px; color: var(--ck-text-dim); margin-top: 2px; }
 
 </style>
 </head>
@@ -1824,6 +1845,9 @@
             <div class="ck-tab ck-tab-active" data-panel="workspaces">
               <div class="ck-actions">
                 <span class="ck-set-group-title" style="flex:1;">工作区</span>
+                <button class="ck-icon-btn" id="ws-collapse-all" title="全部收起">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9l8-6 8 6"/><path d="M4 15l8 6 8-6"/></svg>
+                </button>
                 <button class="ck-icon-btn" id="ws-refresh" title="刷新">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
                 </button>
@@ -1928,6 +1952,15 @@
               </div>
               <div class="ck-list ck-git" id="git-list">
                 <div class="ck-list-empty">加载中…</div>
+              </div>
+              <!-- 提交历史（懒加载：展开时才拉取） -->
+              <div class="ck-git-history" id="git-history">
+                <div class="ck-git-history-head" id="git-history-toggle">
+                  <span class="ck-git-caret" id="git-history-caret"></span>
+                  <span class="ck-git-history-title">提交历史</span>
+                  <span class="ck-git-history-count" id="git-history-count"></span>
+                </div>
+                <div class="ck-git-history-list ck-hidden" id="git-history-list"></div>
               </div>
             </div>
 
@@ -3655,6 +3688,7 @@
   }
   var currentDir = null;
   var archivedProjects = [];
+  var collapseAllActive = false;
   var expandedDirs = /* @__PURE__ */ new Set();
   var archivedOpen = /* @__PURE__ */ new Set();
   var archivedProjectsOpen = { v: false };
@@ -3741,8 +3775,12 @@
         if (!groupEl) return;
         const dir = groupEl.dataset.dir;
         const open = groupEl.classList.toggle("open");
-        if (open) expandedDirs.add(dir);
-        else expandedDirs.delete(dir);
+        if (open) {
+          expandedDirs.add(dir);
+          collapseAllActive = false;
+        } else {
+          expandedDirs.delete(dir);
+        }
       });
     });
     listEl2.querySelectorAll(".ck-ws-archived-title").forEach((el2) => {
@@ -3973,9 +4011,9 @@
         const g = groups[dir];
         g.active.sort(byTimeDesc);
         g.archived.sort(byTimeDesc);
-        const isOpen = dir === currentDir || expandedDirs.has(dir);
+        const isOpen = !collapseAllActive && (dir === currentDir || expandedDirs.has(dir));
         const isArchOpen = archivedOpen.has(dir);
-        return '<div class="ck-ws-group' + (isOpen ? " open" : "") + '" data-dir="' + escapeAttr(dir) + '"><div class="ck-ws-group-title" title="' + escapeAttr(dir) + '"><svg class="ck-ws-caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg><svg class="ck-ws-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="ck-ws-gname">' + escapeHtml(baseName(dir)) + '</span><span class="ck-ws-gacts"><span class="ck-ws-gact" data-gact="new" title="\u7528\u8BE5\u9879\u76EE\u65B0\u5EFA\u5BF9\u8BDD"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></span>' + (archivedProjects.includes(dir) ? '<span class="ck-ws-gact" data-gact="unarchive" aria-label="\u53D6\u6D88\u5F52\u6863"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v5h5"/><path d="M3.5 12a8.5 8.5 0 1 0 2-5.4L3 9"/></svg></span>' : '<span class="ck-ws-gact" data-gact="archive" aria-label="\u5F52\u6863\u9879\u76EE"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg></span>') + '<span class="ck-ws-gact ck-ws-gact-danger" data-gact="delete" aria-label="\u5220\u9664\u9879\u76EE\u5DE5\u4F5C\u533A"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></span></span></div><div class="ck-ws-items">' + g.active.map((s) => renderConversation(s, false)).join("") + (g.archived.length ? '<div class="ck-ws-archived' + (isArchOpen ? " open" : "") + '" data-dir="' + escapeAttr(dir) + '"><div class="ck-ws-archived-title">\u5DF2\u5F52\u6863 ' + g.archived.length + ' \u5BF9\u8BDD</div><div class="ck-ws-archived-items">' + g.archived.map((s) => renderConversation(s, true)).join("") + "</div></div>" : "") + "</div></div>";
+        return '<div class="ck-ws-group' + (isOpen ? " open" : "") + '" data-dir="' + escapeAttr(dir) + '"><div class="ck-ws-group-title"><svg class="ck-ws-caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg><svg class="ck-ws-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="ck-ws-gname">' + escapeHtml(baseName(dir)) + '</span><span class="ck-ws-gacts"><span class="ck-ws-gact" data-gact="new" title="\u7528\u8BE5\u9879\u76EE\u65B0\u5EFA\u5BF9\u8BDD"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></span>' + (archivedProjects.includes(dir) ? '<span class="ck-ws-gact" data-gact="unarchive" aria-label="\u53D6\u6D88\u5F52\u6863"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v5h5"/><path d="M3.5 12a8.5 8.5 0 1 0 2-5.4L3 9"/></svg></span>' : '<span class="ck-ws-gact" data-gact="archive" aria-label="\u5F52\u6863\u9879\u76EE"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg></span>') + '<span class="ck-ws-gact ck-ws-gact-danger" data-gact="delete" aria-label="\u5220\u9664\u9879\u76EE\u5DE5\u4F5C\u533A"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></span></span></div><div class="ck-ws-items">' + g.active.map((s) => renderConversation(s, false)).join("") + (g.archived.length ? '<div class="ck-ws-archived' + (isArchOpen ? " open" : "") + '" data-dir="' + escapeAttr(dir) + '"><div class="ck-ws-archived-title">\u5DF2\u5F52\u6863 ' + g.archived.length + ' \u5BF9\u8BDD</div><div class="ck-ws-archived-items">' + g.archived.map((s) => renderConversation(s, true)).join("") + "</div></div>" : "") + "</div></div>";
       };
       const activeDirs = dirs.filter((d) => !archivedProjects.includes(d));
       const archivedDirs = dirs.filter((d) => archivedProjects.includes(d));
@@ -3991,6 +4029,15 @@
     }
   }
   document.getElementById("ws-refresh")?.addEventListener("click", loadWorkspaces);
+  document.getElementById("ws-collapse-all")?.addEventListener("click", () => {
+    expandedDirs.clear();
+    expandedNodes.clear();
+    expandedSubgroups.clear();
+    archivedOpen.clear();
+    archivedProjectsOpen.v = false;
+    collapseAllActive = true;
+    loadWorkspaces();
+  });
   if (api.onProjectDir) {
     api.onProjectDir((dir) => {
       currentDir = dir;
@@ -6838,6 +6885,13 @@
     btn.disabled = !(hasMsg && hasStagedFiles);
   }
   async function loadGit() {
+    if (!gitWatcherStarted && api.gitWatchStart) {
+      api.gitWatchStart().then((r) => {
+        gitWatcherStarted = !!(r && r.success);
+      }).catch(() => {
+        gitWatcherStarted = false;
+      });
+    }
     loadBranch();
     const listEl2 = document.getElementById("git-list");
     if (!listEl2) return;
@@ -6911,7 +6965,9 @@
         return;
       }
       if (listEl2) listEl2.classList.add("ck-hidden");
+      historyLoaded = false;
       await loadGit();
+      if (historyOpen) await loadHistory();
     } catch (err) {
       await ckAlert("\u5207\u6362\u5931\u8D25\uFF1A" + (err && err.message), "Git");
     }
@@ -6961,7 +7017,9 @@
     }
     if (msgEl) msgEl.value = "";
     await ckAlert("\u63D0\u4EA4\u6210\u529F", "Git");
+    historyLoaded = false;
     await loadGit();
+    if (historyOpen) await loadHistory();
   }
   {
     const listEl2 = document.getElementById("git-list");
@@ -7031,9 +7089,96 @@
       });
     }
   }
+  var historyLoaded = false;
+  var historyOpen = false;
+  function renderHistory(commits) {
+    const listEl2 = document.getElementById("git-history-list");
+    const countEl = document.getElementById("git-history-count");
+    if (!listEl2) return;
+    if (countEl) countEl.textContent = commits.length ? String(commits.length) : "";
+    if (!commits.length) {
+      listEl2.innerHTML = '<div class="ck-git-history-empty">\u6682\u65E0\u63D0\u4EA4</div>';
+      return;
+    }
+    listEl2.innerHTML = commits.map((c) => {
+      const h = escapeAttr(c.hash || "");
+      return '<div class="ck-git-commit-row" data-hash="' + h + '" title="' + escapeAttr(c.subject || "") + '"><span class="ck-git-commit-subject">' + escapeHtml(c.subject || "(\u65E0\u63D0\u4EA4\u4FE1\u606F)") + '</span><span class="ck-git-commit-meta">' + escapeHtml(c.short || "") + " \xB7 " + escapeHtml(c.author || "") + " \xB7 " + escapeHtml(c.date || "") + "</span></div>";
+    }).join("");
+  }
+  async function loadHistory() {
+    const listEl2 = document.getElementById("git-history-list");
+    if (!listEl2 || !api.gitLog) return;
+    listEl2.innerHTML = '<div class="ck-git-history-empty">\u52A0\u8F7D\u4E2D\u2026</div>';
+    try {
+      const r = await api.gitLog(60);
+      if (!r || !r.success) {
+        listEl2.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml(r && r.error || "\u8BFB\u53D6\u5931\u8D25") + "</div>";
+        return;
+      }
+      renderHistory(r.commits || []);
+      historyLoaded = true;
+    } catch (err) {
+      listEl2.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml(err.message || "\u8BFB\u53D6\u5931\u8D25") + "</div>";
+    }
+  }
+  async function toggleHistory() {
+    const listEl2 = document.getElementById("git-history-list");
+    const caret = document.getElementById("git-history-caret");
+    if (!listEl2) return;
+    historyOpen = !historyOpen;
+    if (historyOpen) {
+      listEl2.classList.remove("ck-hidden");
+      if (caret) caret.classList.remove("ck-git-caret-c");
+      if (!historyLoaded) await loadHistory();
+    } else {
+      listEl2.classList.add("ck-hidden");
+      if (caret) caret.classList.add("ck-git-caret-c");
+    }
+  }
+  async function showCommit(hash) {
+    if (!api.gitShowCommit) return;
+    try {
+      const r = await api.gitShowCommit(hash);
+      if (!r || !r.success) {
+        await ckAlert("\u8BFB\u53D6\u63D0\u4EA4\u5931\u8D25\uFF1A" + (r && r.error || "\u672A\u77E5\u9519\u8BEF"), "Git");
+        return;
+      }
+      await ckAlert(r.text || "(\u65E0\u5185\u5BB9)", "\u63D0\u4EA4\u8BE6\u60C5");
+    } catch (err) {
+      await ckAlert("\u8BFB\u53D6\u63D0\u4EA4\u5931\u8D25\uFF1A" + (err && err.message), "Git");
+    }
+  }
+  {
+    const toggle = document.getElementById("git-history-toggle");
+    if (toggle) toggle.addEventListener("click", () => {
+      toggleHistory();
+    });
+    const histList = document.getElementById("git-history-list");
+    if (histList) {
+      histList.addEventListener("click", (e) => {
+        const row = e.target && e.target.closest ? e.target.closest(".ck-git-commit-row") : null;
+        if (row && row.dataset.hash) showCommit(row.dataset.hash);
+      });
+    }
+  }
+  var gitWatcherStarted = false;
+  function isGitPanelActive() {
+    const p = document.querySelector('.ck-tab[data-panel="git"]');
+    return !!(p && p.classList.contains("ck-tab-active"));
+  }
+  if (api.onGitChanged) {
+    api.onGitChanged(() => {
+      if (!isGitPanelActive()) return;
+      loadGit();
+      if (historyOpen) loadHistory();
+    });
+  }
   if (api.onProjectDir) {
     api.onProjectDir(() => {
+      historyLoaded = false;
+      gitWatcherStarted = false;
       loadGit();
+      if (historyOpen) loadHistory();
     });
   }
 

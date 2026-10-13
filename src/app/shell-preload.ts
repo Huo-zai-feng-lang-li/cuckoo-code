@@ -146,6 +146,12 @@ const shellAPI = {
   gitCurrentBranch: () => ipcRenderer.invoke('git-current-branch'),
   gitListBranches: () => ipcRenderer.invoke('git-list-branches'),
   gitCheckout: (branch: string, force?: boolean) => ipcRenderer.invoke('git-checkout', { branch, force }),
+  gitLog: (limit?: number) => ipcRenderer.invoke('git-log', { limit }),
+  gitShowCommit: (hash: string) => ipcRenderer.invoke('git-show-commit', { hash }),
+  gitWatchStart: () => ipcRenderer.invoke('git-watch-start'),
+  gitWatchStop: () => ipcRenderer.invoke('git-watch-stop'),
+  /** 项目文件变化 → 壳页面自动刷新 Git 状态 */
+  onGitChanged: (cb: () => void) => { ipcRenderer.on('shell-git-changed', () => cb()); },
   setProjectArchived: (dir: string, archived: boolean) => ipcRenderer.invoke('set-project-archived', { dir, archived }),
   deleteProjectWorkspace: (dir: string) => ipcRenderer.invoke('delete-project-workspace', { dir }),
   setSessionTitle: (sessionId: string, title: string) => ipcRenderer.invoke('set-session-title', { sessionId, title }),
