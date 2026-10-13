@@ -19,6 +19,8 @@ const { ipcRenderer } = require('electron');
 /** 移除文本中的 cuckoo/js 工具代码块（工具调用另行上报，飞书只显示对话） */
 export function stripToolBlocks(text: string): string {
   if (!text) return '';
+  // 快速路径：无代码围栏则跳过全文正则
+  if (text.indexOf('```') === -1) return text.trim();
   let out = text;
   out = out.replace(/```(?:cuckoo|javascript|js)\s*\n[\s\S]*?```/gi, '');
   out = out.replace(/```(?:cuckoo|javascript|js)\s*\n[\s\S]*$/gi, '');

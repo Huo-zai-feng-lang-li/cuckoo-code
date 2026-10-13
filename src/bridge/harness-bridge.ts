@@ -32,6 +32,10 @@ const { ipcRenderer } = require('electron');
 /** 移除文本中的 cuckoo / js 工具代码块（工具调用改由卡片展示） */
 function stripToolBlocks(text: string): string {
   if (!text) return '';
+  // 快速路径：正文无代码围栏 → 无需跑 3 个全文正则。
+  // 本函数在流式每帧被调用（onStream），正文长度随生成增长；
+  // 绝大多数帧不含围栏，跳过正则可显著降低长回复下的累积开销。
+  if (text.indexOf('```') === -1) return text.trim();
   let out = text;
   out = out.replace(/```(?:cuckoo|javascript|js)\s*\n[\s\S]*?```/gi, '');
   // 流式输出中途：代码块尚未闭合 → 从开标记起全部隐藏，避免 ```cuckoo 内容闪现
@@ -85,7 +89,7 @@ export function initHarnessBridge(): void {
     if (!HAS_TOOL_BLOCK_RE.test(raw)) setAiGenerating(false);
     // 透传服务端权威消息 id（供 harness 真截断定位；平台未提供时为 null）
     const msgIds = (meta && meta.msgIds) || null;
-    report({ type: 'assistant-done', text: stripToolBlocks(raw).trim(), msgIds });
+    report({ type: 'assistant-done', text: stripToolBlocks(raw), msgIds });
   });
 
   // 任务空闲（observer 判定：回复里没有工具调用 = 本轮任务真的结束）→ 上报。

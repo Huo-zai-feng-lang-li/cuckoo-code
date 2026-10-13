@@ -50,6 +50,15 @@ function file(): string {
   return FILE;
 }
 
+/**
+ * 内存缓存（唯一真相源）。
+ * 本模块只被主进程单线程调用，且读-改-写全同步；缓存后：
+ *  - 读命中缓存 → 不再每次 readFileSync（原先一次 token 上报触发 8 次全文件读）
+ *  - 写时更新缓存 + 落盘 → 保持"内存=磁盘"一致
+ * 并发语义不变：仍依赖"同步 IO + 主进程单线程"（见文件头），未引入 await。
+ */
+let _cache: any = null;
+
 /** 本地日期键 YYYY-MM-DD（不能用 toISOString，那是 UTC 会差时区） */
 function localDateKey(): string {
   const d = new Date();
@@ -58,19 +67,32 @@ function localDateKey(): string {
   return d.getFullYear() + '-' + m + '-' + day;
 }
 
-/** 读原始对象（含 __daily__） */
+/**
+ * 读原始对象（含 __daily__）；命中缓存则不再读盘。
+ * ⚠️ 返回共享缓存引用：调用方只读，或原地修改后经 writeRaw 提交。
+ *    不要在只读语义处修改返回对象（会污染全局缓存）。
+ */
 function readRaw(): any {
+  if (_cache) return _cache;
   try {
     const raw = fs.readFileSync(file(), 'utf-8');
     const o = JSON.parse(raw);
-    return (o && typeof o === 'object') ? o : {};
+    _cache = (o && typeof o === 'object') ? o : {};
   } catch (_) {
-    return {};
+    _cache = {};
   }
+  return _cache;
 }
 
+/** 写回磁盘，同时更新内存缓存（保持内存=磁盘） */
 function writeRaw(o: any): void {
-  try { fs.writeFileSync(file(), JSON.stringify(o, null, 2), 'utf-8'); } catch (_) {}
+  _cache = o;
+  try {
+    fs.writeFileSync(file(), JSON.stringify(o, null, 2), 'utf-8');
+  } catch (_) {
+    // 写盘失败 → 使缓存失效，下次读回退到磁盘真相（避免本会话读到未落盘的值）
+    _cache = null;
+  }
 }
 
 /** 读窗口统计（跳过 __daily__ 等特殊键，兼容 v1 数字格式） */

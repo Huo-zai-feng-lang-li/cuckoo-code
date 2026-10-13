@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.8.60] - 2026-10-13
+
+### Performance
+- **token 统计同步 IO 放大**：每次 AI 上报 token（`update-token-usage`）会触发 1 次写 + 8 次读整个 `token-stats.json`，全同步阻塞主进程。给 `token-stats.ts` 加内存缓存（读命中不再读盘、写时同步缓存），一次上报的磁盘 IO 降为最多 1 次写。保持原有同步并发语义；写盘失败时使缓存失效，避免内存/磁盘不一致。
+- **流式 stripToolBlocks O(n²)**：`stripToolBlocks` 在 `onStream` 每帧对全量正文跑 3 个正则，长回复下累积开销显著。加无围栏快速路径（`indexOf('```') === -1` 时跳过正则，与正则路径严格等价），并删除一处冗余 `.trim()`。
+
 ## [0.8.59] - 2026-10-13
 
 ### Changed
