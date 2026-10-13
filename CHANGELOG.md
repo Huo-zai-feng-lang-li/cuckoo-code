@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.8.34] - 2026-10-13
+
+### Added
+- **规则页格式说明**：用户级规则页顶部补充 frontmatter 格式示例（`name` + 可选 `paths`），并说明兼容 Cursor 写法（`trigger: always_on` / `globs`）。
+
 ## [0.8.33] - 2026-10-13
 
 ### Changed

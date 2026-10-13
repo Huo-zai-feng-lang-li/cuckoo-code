@@ -105,6 +105,12 @@
     font-family: var(--mono, monospace); font-size: 11px; color: var(--ck-primary);
   }
   .ck-rule-scope-desc b { color: var(--ck-text); }
+  .ck-rule-scope-code {
+    margin: 6px 0 0; padding: 6px 8px; border-radius: 6px;
+    background: var(--ck-bg, #1a1a1a); border: 1px solid var(--ck-border-soft);
+    font-family: var(--mono, monospace); font-size: 11px; line-height: 1.5;
+    color: var(--ck-text-2); white-space: pre; overflow-x: auto;
+  }
   .ck-rule-editor { padding: 4px 0 10px; }
   .ck-rule-editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
   .ck-rule-editor-title { font-size: 15px; font-weight: 650; color: var(--ck-text); }

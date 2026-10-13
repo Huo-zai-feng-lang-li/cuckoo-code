@@ -439,6 +439,12 @@
     font-family: var(--mono, monospace); font-size: 11px; color: var(--ck-primary);
   }
   .ck-rule-scope-desc b { color: var(--ck-text); }
+  .ck-rule-scope-code {
+    margin: 6px 0 0; padding: 6px 8px; border-radius: 6px;
+    background: var(--ck-bg, #1a1a1a); border: 1px solid var(--ck-border-soft);
+    font-family: var(--mono, monospace); font-size: 11px; line-height: 1.5;
+    color: var(--ck-text-2); white-space: pre; overflow-x: auto;
+  }
   .ck-rule-editor { padding: 4px 0 10px; }
   .ck-rule-editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
   .ck-rule-editor-title { font-size: 15px; font-weight: 650; color: var(--ck-text); }
@@ -2225,6 +2231,17 @@
               <div class="ck-rule-scope-hint">
                 <span class="ck-rule-scope-title">本页 = 用户级全局规则</span>
                 <span class="ck-rule-scope-desc">保存于 ~/.cuckoo/rules/，<b>所有项目通用</b>。项目专属规则请在项目根建 <code>.agents/rules/README.md</code>（随仓库走，多 AI 工具共用）。</span>
+                <span class="ck-rule-scope-desc" style="margin-top:6px;">
+                  <b>格式</b>：<code>---</code> 开头写 frontmatter，<code>name</code> 为规则名；<code>paths</code>（可选）限定生效路径，不写则每轮都注入。
+                </span>
+                <pre class="ck-rule-scope-code">---
+name: 规则名
+paths:            # 可选；省略 = 始终生效
+  - "src/api/**"
+---
+
+规则正文（Markdown）</pre>
+                <span class="ck-rule-scope-desc">兼容 Cursor 写法：<code>trigger: always_on</code>（始终）、<code>globs: 'src/**/*.ts'</code>（按路径，逗号分隔多条）。</span>
               </div>
               <div class="ck-list" id="rule-list"><div class="ck-list-empty">加载中…</div></div>
               <div id="rule-editor" class="ck-rule-editor cuckoo-hidden">
