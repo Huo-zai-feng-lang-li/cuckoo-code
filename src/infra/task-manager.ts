@@ -41,6 +41,8 @@ export interface TaskInfo {
   endedAt?: number;
   /** 该任务是否有子进程（用于提示"杀进程树"） */
   hasChild?: boolean;
+  /** 停止中：已发起停止、等进程退出（UI 据此显示"停止中…"） */
+  stopping?: boolean;
 }
 
 interface TaskRecord extends TaskInfo {
@@ -167,6 +169,7 @@ export function start(opts: StartOptions): TaskInfo {
     rec.status = 'exited';
     rec.exitCode = code;
     rec.endedAt = Date.now();
+    rec.stopping = false; // 已退出：清"停止中"标记，避免语义残留
     notifyChange();
   };
   child.on('error', (err: any) => {
@@ -212,6 +215,7 @@ function toInfo(rec: TaskRecord): TaskInfo {
     startedAt: rec.startedAt,
     endedAt: rec.endedAt,
     hasChild: rec.hasChild,
+    stopping: rec.stopping,
   };
 }
 

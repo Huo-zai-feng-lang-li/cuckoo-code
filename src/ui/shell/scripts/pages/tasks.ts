@@ -20,8 +20,9 @@ function fmtTime(ts?: number): string {
 /** 单个任务卡片 HTML */
 function renderTaskItem(t: any): string {
   const running = t.status === 'running';
+  const stopping = running && !!t.stopping;
   const dot = running ? 'ck-task-dot-run' : 'ck-task-dot-exit';
-  const statusText = running ? '运行中' : (t.exitCode === 0 || t.exitCode === null ? '已结束' : '退出码 ' + t.exitCode);
+  const statusText = stopping ? '停止中…' : (running ? '运行中' : (t.exitCode === 0 || t.exitCode === null ? '已结束' : '退出码 ' + t.exitCode));
   const sourceLabel = t.source === 'script' ? '脚本' : (t.source === 'ai' ? 'AI' : '手动');
   const title = t.label ? escapeHtml(t.label) + ' · ' : '';
   return '<div class="ck-task-item" data-id="' + escapeAttr(t.id) + '">' +
@@ -34,7 +35,7 @@ function renderTaskItem(t: any): string {
       '</div>' +
       '<div class="ck-task-ops">' +
         (running
-          ? '<button class="ck-btn ck-task-stop" data-id="' + escapeAttr(t.id) + '">停止</button>'
+          ? '<button class="ck-btn ck-task-stop" data-id="' + escapeAttr(t.id) + '"' + (stopping ? ' disabled' : '') + '>' + (stopping ? '停止中…' : '停止') + '</button>'
           : '<button class="ck-icon-btn ck-task-remove" data-id="' + escapeAttr(t.id) + '" title="移除">✕</button>') +
       '</div>' +
     '</div>' +
@@ -69,6 +70,7 @@ function renderScripts(scripts: Array<{ name: string; command: string }>): void 
         // 新任务自动展开输出
         if (r && r.task && r.task.id) { expanded.set(r.task.id, 0); lastListSig = ''; }
         await loadTasks();
+        scrollToTaskList();
       } catch (err: any) {
         alert('启动失败：' + (err.message || String(err)));
       }
@@ -89,7 +91,7 @@ function renderTasks(tasks: any[]): void {
     el.innerHTML = '<div class="ck-list-empty">暂无任务</div>';
     return;
   }
-  const sig = tasks.map((t) => t.id + '|' + t.status + '|' + (t.exitCode ?? '') + '|' + t.command).join('\n');
+  const sig = tasks.map((t) => t.id + '|' + t.status + '|' + (t.exitCode ?? '') + '|' + (t.stopping ? 'stopping' : '') + '|' + t.command).join('\n');
   if (sig === lastListSig) {
     // 结构未变：只刷新已展开任务的输出
     el.querySelectorAll('.ck-task-item').forEach((item: any) => {
@@ -138,8 +140,8 @@ function renderTasks(tasks: any[]): void {
     btn.addEventListener('click', async (e: any) => {
       e.stopPropagation();
       const id = btn.dataset.id;
-      btn.textContent = '停止中…';
-      btn.style.pointerEvents = 'none';
+      // 不手改按钮：主进程 stop() 会置 stopping=true 并推送变更，
+      // 渲染层据 TaskInfo.stopping 显示"停止中…"，进程退出后自动恢复。
       try { await api.taskStop?.(id); } catch (_) { /* ignore */ }
       loadTasks();
     });
@@ -173,6 +175,12 @@ async function refreshOutput(id: string, pre: any): Promise<void> {
       expanded.set(id, r.totalBytes || from);
     }
   } catch (_) { /* ignore */ }
+}
+
+/** 平滑滚动任务页容器到底部（露出任务列表，看到运行状态） */
+function scrollToTaskList(): void {
+  const body = document.querySelector('.ck-panel-body');
+  if (body) body.scrollTo({ top: body.scrollHeight, behavior: 'smooth' });
 }
 
 /** 更新活动栏 badge（运行中任务数） */
@@ -218,7 +226,8 @@ const doRun = async () => {
     if (cmdInput) cmdInput.value = '';
     // 新任务自动展开输出
     if (r && r.task && r.task.id) { expanded.set(r.task.id, 0); lastListSig = ''; }
-    loadTasks();
+    await loadTasks();
+    scrollToTaskList();
   } catch (err: any) {
     alert('启动失败：' + (err.message || String(err)));
   }
