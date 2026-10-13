@@ -2,7 +2,17 @@
 
 ## 核心进展
 
-**v0.8.61**：harness 流式渲染节流（需求 048）。已提交、打 tag、推送 origin。最新 tag **v0.8.61**。
+**v0.8.62**：修复 installer 测试间歇性失败（测试隔离）。已提交、打 tag、推送 origin。最新 tag **v0.8.62**。
+
+### v0.8.62 改动
+test/plugins/installer.test.js 的 `不残留临时目录` 断言扫描整个 os.tmpdir()，被历史中断遗留的 `cuckoo-plugin-stage-*` 目录误伤。改为基线对比，只断言本次安装不新增残留（installer.ts 的 finally 本就正常清理）。
+
+### 仍未修的性能项（评估后暂缓）
+- 文件树构建全同步 IO（session.ts buildFileTree）：有 5000 节点/12 层上限，低频调用，异步化改造风险>收益，暂缓
+- 全窗口广播：token 上报每轮一次（低频），窗口数少，影响可忽略
+
+### v0.8.61（同轮）
+harness 流式渲染节流（rAF 合并，消除 O(n²)，需求 048）。
 
 ### v0.8.61 改动（性能）
 harness 流式渲染 O(n²)（src/ui/harness.html）：onStream 每帧对全量正文跑 renderMarkdown（marked+KaTeX 全解析）+ innerHTML 重建。改为非 finished 帧用 rAF 合并（同帧多次只渲最后一次），finished 帧立即渲染。

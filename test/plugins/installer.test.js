@@ -372,10 +372,14 @@ test('uninstallPlugin: 拒绝非法 id', () => {
 });
 
 test('installPlugin: 不残留临时目录', async () => {
+  // 只断言"本次安装"不新增残留：扫描整个 os.tmpdir() 会被历史中断运行留下的
+  // 同名目录误伤（曾导致间歇性失败）。先记录基线，再对比新增项。
+  const before = new Set(fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('cuckoo-plugin-stage-')));
   const body = await makeTarball({ 'plugin.json': GOOD_MANIFEST });
   await installPlugin({ httpGet: httpWith(body), repo: 'alice/demo', branch: 'master' });
-  const leftovers = fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('cuckoo-plugin-stage-'));
-  assert.deepStrictEqual(leftovers, [], '临时目录应被清理: ' + leftovers.join(', '));
+  const leaked = fs.readdirSync(os.tmpdir())
+    .filter((n) => n.startsWith('cuckoo-plugin-stage-') && !before.has(n));
+  assert.deepStrictEqual(leaked, [], '本次安装不应残留临时目录: ' + leaked.join(', '));
 });
 
 test('installPlugin: plugins 根目录被正确创建', async () => {

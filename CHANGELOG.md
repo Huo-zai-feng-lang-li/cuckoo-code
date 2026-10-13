@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.8.62] - 2026-10-14
+
+### Fixed
+- **installer 测试间歇性失败**：`installPlugin: 不残留临时目录` 断言扫描整个 `os.tmpdir()`，被历史中断运行留下的同名目录误伤（`installer.ts` 的 `finally` 本身会正常清理）。改为基线对比，只断言"本次安装"不新增残留。
+
 ## [0.8.61] - 2026-10-14
 
 ### Performance
