@@ -124,6 +124,15 @@ export interface ShellAPI {
   gitWatchStart?: () => Promise<any>;
   gitWatchStop?: () => Promise<any>;
   onGitChanged?: (cb: () => void) => void;
+  // ===== 后台任务 =====
+  taskStart?: (command: string, label?: string, source?: string) => Promise<any>;
+  taskStop?: (id: string) => Promise<any>;
+  taskList?: () => Promise<any>;
+  taskOutput?: (id: string, from?: number) => Promise<any>;
+  taskRemove?: (id: string) => Promise<any>;
+  taskClearExited?: () => Promise<any>;
+  taskReadScripts?: () => Promise<any>;
+  onTasksChanged?: (cb: () => void) => void;
   setProjectArchived?: (dir: string, archived: boolean) => Promise<any>;
   deleteProjectWorkspace?: (dir: string) => Promise<any>;
   setSessionTitle?: (sessionId: string, title: string) => Promise<any>;

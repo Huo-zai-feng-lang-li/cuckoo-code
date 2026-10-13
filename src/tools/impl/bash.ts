@@ -5,6 +5,7 @@ import { exec } from 'node:child_process';
 import path from 'node:path';
 import { decodeOutput, normalizeCommand } from '../../infra/decode-output.js';
 import { isDangerous, DANGEROUS_CMDS } from '../../infra/dangerous-commands.js';
+import { start as startBackgroundTask } from '../../infra/task-manager.js';
 
 // ========== D12：API 契约元数据（构建期生成 api.d.ts）==========
 export const apiMetas: ToolApiMeta[] = [
@@ -21,6 +22,8 @@ export const apiMetas: ToolApiMeta[] = [
       '  workdir?: string;',
       '  /** 超时毫秒数，默认 30000 */',
       '  timeoutMs?: number;',
+      '  /** 后台运行（长驻命令如 dev server/watch）：立即返回任务 ID，不阻塞，可在「任务」页查看/停止 */',
+      '  background?: boolean;',
       '}',
     ].join('\n'),
     doc: [
@@ -29,12 +32,13 @@ export const apiMetas: ToolApiMeta[] = [
       '必须用 log() 方法打印才能看到返回内容。',
       '非零退出不抛异常，通过 [exit code] 标记报告。',
       '危险命令会被安全策略拒绝并抛异常。',
+      'background=true 时立即返回任务 ID（适合 dev server 等长驻命令），输出与停止见壳页面「任务」页。',
     ].join('\n'),
     params: 'command: string, options?: BashOptions',
     returns: 'Promise<string>',
     paramDocs: {
       command: '要执行的 shell 命令',
-      options: '可选，{ description?: string, workdir?: string, timeoutMs?: number }',
+      options: '可选，{ description?: string, workdir?: string, timeoutMs?: number, background?: boolean }',
     },
     returnsDoc: '纯文本：stdout + [stderr] 分节 + 状态标记（[exit code]、[timed out]）',
     throws: '危险命令被安全策略拒绝时抛出异常',
@@ -54,6 +58,7 @@ export function bootstrap(__call: any): void {
       description: options.description,
       workdir: options.workdir || options.cwd,
       timeoutMs: options.timeoutMs || options.timeout,
+      background: options.background === true,
     });
   };
 }
@@ -85,6 +90,10 @@ class BashTool extends Tool {
             type: 'number',
             description: '超时毫秒数，默认 30000',
             default: 30000
+          },
+          background: {
+            type: 'boolean',
+            description: '后台运行（长驻命令）：立即返回任务 ID，不阻塞，可在「任务」页查看/停止'
           }
         },
         required: ['command'],
@@ -98,12 +107,12 @@ class BashTool extends Tool {
     return {
       name: 'tool:bash',
       order: 105,
-      text: '执行 bash 命令并返回 stdout/stderr。每次调用在全新 shell 中运行：状态（cwd、变量、函数）不会跨调用保留——请用 workdir 参数而非 cd。非零退出以 [exit code: N] 标记报告。长输出会截断为尾部。'
+      text: '执行 bash 命令并返回 stdout/stderr。每次调用在全新 shell 中运行：状态（cwd、变量、函数）不会跨调用保留——请用 workdir 参数而非 cd。非零退出以 [exit code: N] 标记报告。长输出会截断为尾部。跑 dev server / watch 等长驻命令时，传 background:true——立即返回任务 ID，不阻塞对话，用户可在「任务」页查看输出并停止。'
     };
   }
 
   async execute(params: any): Promise<ToolResult> {
-    const { command, description, workdir, timeoutMs, projectDir } = params;
+    const { command, description, workdir, timeoutMs, background, projectDir } = params;
 
     try {
       if (!command || typeof command !== 'string') {
@@ -131,6 +140,27 @@ class BashTool extends Tool {
         workDir = projectDir;
       } else {
         workDir = process.env.USERPROFILE || process.env.HOME || 'C:\\';
+      }
+
+      // ===== 后台模式：长驻命令（dev server/watch 等），立即返回任务 ID，不阻塞 =====
+      if (background === true) {
+        try {
+          const info = startBackgroundTask({
+            command: trimmed,
+            cwd: workDir,
+            source: 'ai',
+            label: description || undefined,
+          });
+          return ToolResult.success(
+            '已在后台启动任务（' + info.id + '）\n' +
+            '命令: ' + trimmed + '\n' +
+            '工作目录: ' + workDir + '\n' +
+            (info.pid ? 'PID: ' + info.pid + '\n' : '') +
+            '可在壳页面「任务」页查看输出并停止。'
+          );
+        } catch (err: any) {
+          return ToolResult.error('后台任务启动失败: ' + err.message);
+        }
       }
 
       const timeout = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : 30000;

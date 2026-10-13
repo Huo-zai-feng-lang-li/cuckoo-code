@@ -25,6 +25,7 @@ import { loadPlugins } from './pages/plugins.js';
 import { loadRules } from './pages/rules.js';
 import { loadMemories } from './pages/memories.js';
 import { loadGit } from './pages/git.js';
+import { loadTasks } from './pages/tasks.js';
 import { initPluginShell } from './plugin-shell.js';
 import { initModalGuard } from './modal-guard.js';
 import { initThemePresenter } from './theme-presenter.js';
@@ -67,6 +68,7 @@ registerTab('plugins', loadPlugins);
 registerTab('rules', loadRules);
 registerTab('memories', loadMemories);
 registerTab('git', loadGit);
+registerTab('tasks', loadTasks);
 
 // 预加载：工作区（默认页）+ 提示词 + 自动压缩配置
 try { loadWorkspaces(); } catch (_) { /* ignore */ }
