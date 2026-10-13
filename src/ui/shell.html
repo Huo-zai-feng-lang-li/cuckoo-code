@@ -1659,6 +1659,23 @@
     padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--ck-border-soft);
   }
   .ck-git-commit-row:hover { background: var(--ck-surface-hover); }
+  .ck-git-diff-modal { max-width: min(900px, 90vw); width: min(900px, 90vw); }
+  .ck-git-diff-body {
+    flex: 1; min-height: 0; overflow: auto;
+    margin: 6px 0 4px; padding: 10px 12px;
+    background: var(--ck-bg-sub); border: 1px solid var(--ck-border);
+    border-radius: 8px;
+    font-family: "SF Mono", "Consolas", monospace;
+    font-size: 12px; line-height: 1.55;
+    white-space: pre; tab-size: 4;
+  }
+  .ck-git-diff-body .ck-diff-file { font-weight: 700; color: var(--ck-text); }
+  .ck-git-diff-body .ck-diff-filehead { color: var(--ck-text-2); font-weight: 600; }
+  .ck-git-diff-body .ck-diff-meta { color: var(--ck-text-dim); }
+  .ck-git-diff-body .ck-diff-hunk { color: #4a9ee0; }
+  .ck-git-diff-body .ck-diff-add { color: #4caf7d; }
+  .ck-git-diff-body .ck-diff-del { color: #e05a5a; }
+  .ck-git-diff-body .ck-diff-truncated { color: var(--ck-text-dim); font-style: italic; }
   .ck-git-commit-subject {
     display: block; font-size: 12px; color: var(--ck-text);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1946,6 +1963,17 @@ body[data-ck-dark] .ck-stat-item-hl .ck-stat-val { color: #fbbf24; }
                 <button class="ck-btn ck-btn-secondary cuckoo-hidden" id="ck-dialog-alt">查看差异</button>
                 <button class="ck-btn ck-btn-secondary cuckoo-hidden" id="ck-dialog-cancel">取消</button>
                 <button class="ck-btn ck-btn-primary" id="ck-dialog-ok">确定</button>
+              </div>
+            </div>
+          </div>
+          <!-- 提交详情（diff）弹框 -->
+          <div class="ck-modal-mask cuckoo-hidden" id="git-diff-modal">
+            <div class="ck-modal ck-git-diff-modal">
+              <span class="ck-modal-title" id="git-diff-title">提交详情</span>
+              <div class="ck-git-diff-body" id="git-diff-body"></div>
+              <div class="ck-modal-foot">
+                <button class="ck-btn ck-btn-secondary" id="git-diff-copy">复制 diff</button>
+                <button class="ck-btn ck-btn-primary" id="git-diff-close">关闭</button>
               </div>
             </div>
           </div>
@@ -7354,15 +7382,49 @@ paths:            # 可选；省略 = 始终生效
       if (caret) caret.classList.add("ck-git-caret-c");
     }
   }
+  function diffLineHtml(line) {
+    const esc = escapeHtml(line);
+    if (/^diff --git /.test(line)) return '<span class="ck-diff-file">' + esc + "</span>";
+    if (/^(index |new file|deleted file|similarity index|rename |old mode|new mode|\\ No newline)/.test(line)) {
+      return '<span class="ck-diff-meta">' + esc + "</span>";
+    }
+    if (/^(\+\+\+|---) /.test(line)) return '<span class="ck-diff-filehead">' + esc + "</span>";
+    if (/^@@/.test(line)) return '<span class="ck-diff-hunk">' + esc + "</span>";
+    if (line.charAt(0) === "+") return '<span class="ck-diff-add">' + esc + "</span>";
+    if (line.charAt(0) === "-") return '<span class="ck-diff-del">' + esc + "</span>";
+    return esc;
+  }
+  var gitDiffRaw = "";
+  function openCommitDiff(title, text, truncated) {
+    gitDiffRaw = text || "";
+    const mask = document.getElementById("git-diff-modal");
+    const titleEl = document.getElementById("git-diff-title");
+    const bodyEl = document.getElementById("git-diff-body");
+    if (!mask || !bodyEl) return;
+    if (titleEl) titleEl.textContent = title || "\u63D0\u4EA4\u8BE6\u60C5";
+    const lines = gitDiffRaw.split("\n");
+    let html = lines.map(diffLineHtml).join("\n");
+    if (truncated) html += '\n<span class="ck-diff-truncated">\u2026\uFF08\u8F93\u51FA\u8FC7\u5927\u5DF2\u622A\u65AD\uFF09</span>';
+    bodyEl.innerHTML = html;
+    bodyEl.scrollTop = 0;
+    mask.classList.remove("cuckoo-hidden");
+  }
+  function closeCommitDiff() {
+    document.getElementById("git-diff-modal")?.classList.add("cuckoo-hidden");
+  }
   async function showCommit(hash) {
-    if (!api.gitShowCommit) return;
+    if (!api.gitShowCommitDiff) {
+      await ckAlert("\u5F53\u524D\u7248\u672C\u4E0D\u652F\u6301\u67E5\u770B diff", "Git");
+      return;
+    }
     try {
-      const r = await api.gitShowCommit(hash);
+      const r = await api.gitShowCommitDiff(hash);
       if (!r || !r.success) {
         await ckAlert("\u8BFB\u53D6\u63D0\u4EA4\u5931\u8D25\uFF1A" + (r && r.error || "\u672A\u77E5\u9519\u8BEF"), "Git");
         return;
       }
-      await ckAlert(r.text || "(\u65E0\u5185\u5BB9)", "\u63D0\u4EA4\u8BE6\u60C5");
+      const firstLine = (r.text || "").split("\n").find((l) => l.startsWith("    ")) || "";
+      openCommitDiff(firstLine.trim() || "\u63D0\u4EA4 " + hash.slice(0, 8), r.text || "(\u65E0\u5185\u5BB9)", !!r.truncated);
     } catch (err) {
       await ckAlert("\u8BFB\u53D6\u63D0\u4EA4\u5931\u8D25\uFF1A" + (err && err.message), "Git");
     }
@@ -7379,6 +7441,20 @@ paths:            # 可选；省略 = 始终生效
         if (row && row.dataset.hash) showCommit(row.dataset.hash);
       });
     }
+  }
+  {
+    document.getElementById("git-diff-close")?.addEventListener("click", closeCommitDiff);
+    document.getElementById("git-diff-modal")?.addEventListener("click", (e) => {
+      if (e.target && e.target.id === "git-diff-modal") closeCommitDiff();
+    });
+    document.getElementById("git-diff-copy")?.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(gitDiffRaw);
+        await ckAlert("\u5DF2\u590D\u5236 diff");
+      } catch (_) {
+        await ckAlert("\u590D\u5236\u5931\u8D25");
+      }
+    });
   }
   var gitWatcherStarted = false;
   function isGitPanelActive() {

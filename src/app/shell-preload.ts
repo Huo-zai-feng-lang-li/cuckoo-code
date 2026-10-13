@@ -152,6 +152,7 @@ const shellAPI = {
   gitCheckout: (branch: string, force?: boolean) => ipcRenderer.invoke('git-checkout', { branch, force }),
   gitLog: (limit?: number) => ipcRenderer.invoke('git-log', { limit }),
   gitShowCommit: (hash: string) => ipcRenderer.invoke('git-show-commit', { hash }),
+  gitShowCommitDiff: (hash: string) => ipcRenderer.invoke('git-show-commit-diff', { hash }),
   gitWatchStart: () => ipcRenderer.invoke('git-watch-start'),
   gitWatchStop: () => ipcRenderer.invoke('git-watch-stop'),
   /** 项目文件变化 → 壳页面自动刷新 Git 状态 */

@@ -301,6 +301,27 @@ function registerGitIpc(): void {
     return { success: true, text: r.stdout };
   });
 
+  // 某次提交的完整 diff（diffstat + patch 文本），供详情弹框着色展示。
+  // 大提交可能很大：超过 DIFF_MAX_BYTES 截断并附提示，避免 IPC/渲染压力。
+  const DIFF_MAX_BYTES = 512 * 1024;
+  ipcMain.handle('git-show-commit-diff', async (event: any, { hash }: any) => {
+    const root = getProjectRoot(event);
+    if (!root) return { success: false, error: '未选择项目目录' };
+    if (!hash || typeof hash !== 'string' || !/^[0-9a-f]{4,40}$/i.test(hash)) {
+      return { success: false, error: '非法提交 hash' };
+    }
+    // --no-color：避免 ANSI 控制码；--patch 输出完整改动
+    const r = await runGit(root, ['-c', 'core.quotepath=false', 'show', '--no-color', '--patch', '--stat', hash]);
+    if (!r.success) return { success: false, error: r.stderr.trim() || '读取提交失败' };
+    let text = r.stdout;
+    let truncated = false;
+    if (text.length > DIFF_MAX_BYTES) {
+      text = text.slice(0, DIFF_MAX_BYTES);
+      truncated = true;
+    }
+    return { success: true, text, truncated };
+  });
+
   // 切换分支（先检测脏工作区）
   ipcMain.handle('git-checkout', async (event: any, { branch, force }: any) => {
     const root = getProjectRoot(event);

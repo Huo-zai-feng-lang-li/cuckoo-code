@@ -352,13 +352,51 @@ async function toggleHistory(): Promise<void> {
   }
 }
 
-/** 查看某次提交的改动（弹框展示 --stat 文本） */
+/** 把一行 diff 文本转成带着色类的 HTML */
+function diffLineHtml(line: string): string {
+  const esc = escapeHtml(line);
+  if (/^diff --git /.test(line)) return '<span class="ck-diff-file">' + esc + '</span>';
+  if (/^(index |new file|deleted file|similarity index|rename |old mode|new mode|\\ No newline)/.test(line)) {
+    return '<span class="ck-diff-meta">' + esc + '</span>';
+  }
+  if (/^(\+\+\+|---) /.test(line)) return '<span class="ck-diff-filehead">' + esc + '</span>';
+  if (/^@@/.test(line)) return '<span class="ck-diff-hunk">' + esc + '</span>';
+  if (line.charAt(0) === '+') return '<span class="ck-diff-add">' + esc + '</span>';
+  if (line.charAt(0) === '-') return '<span class="ck-diff-del">' + esc + '</span>';
+  return esc;
+}
+
+/** 当前提交详情弹框对应的原始文本（供复制） */
+let gitDiffRaw = '';
+
+function openCommitDiff(title: string, text: string, truncated: boolean): void {
+  gitDiffRaw = text || '';
+  const mask = document.getElementById('git-diff-modal');
+  const titleEl = document.getElementById('git-diff-title');
+  const bodyEl = document.getElementById('git-diff-body');
+  if (!mask || !bodyEl) return;
+  if (titleEl) titleEl.textContent = title || '提交详情';
+  const lines = gitDiffRaw.split('\n');
+  let html = lines.map(diffLineHtml).join('\n');
+  if (truncated) html += '\n<span class="ck-diff-truncated">…（输出过大已截断）</span>';
+  bodyEl.innerHTML = html;
+  bodyEl.scrollTop = 0;
+  mask.classList.remove('cuckoo-hidden');
+}
+
+function closeCommitDiff(): void {
+  document.getElementById('git-diff-modal')?.classList.add('cuckoo-hidden');
+}
+
+/** 查看某次提交的完整 diff（弹框着色展示） */
 async function showCommit(hash: string): Promise<void> {
-  if (!api.gitShowCommit) return;
+  if (!api.gitShowCommitDiff) { await ckAlert('当前版本不支持查看 diff', 'Git'); return; }
   try {
-    const r = await api.gitShowCommit(hash);
+    const r = await api.gitShowCommitDiff(hash);
     if (!r || !r.success) { await ckAlert('读取提交失败：' + ((r && r.error) || '未知错误'), 'Git'); return; }
-    await ckAlert(r.text || '(无内容)', '提交详情');
+    // 标题取 patch 首行 subject（git show 输出首行前是 commit/Author/Date/空行，再是缩进的 subject）
+    const firstLine = (r.text || '').split('\n').find((l: string) => l.startsWith('    ')) || '';
+    openCommitDiff(firstLine.trim() || ('提交 ' + hash.slice(0, 8)), r.text || '(无内容)', !!r.truncated);
   } catch (err: any) {
     await ckAlert('读取提交失败：' + (err && err.message), 'Git');
   }
@@ -375,6 +413,19 @@ async function showCommit(hash: string): Promise<void> {
       if (row && row.dataset.hash) showCommit(row.dataset.hash);
     });
   }
+}
+
+// 提交详情（diff）弹框事件
+{
+  document.getElementById('git-diff-close')?.addEventListener('click', closeCommitDiff);
+  document.getElementById('git-diff-modal')?.addEventListener('click', (e: any) => {
+    // 点遮罩空白处关闭
+    if (e.target && e.target.id === 'git-diff-modal') closeCommitDiff();
+  });
+  document.getElementById('git-diff-copy')?.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(gitDiffRaw); await ckAlert('已复制 diff'); }
+    catch (_) { await ckAlert('复制失败'); }
+  });
 }
 
 // ===== 自动刷新（fs.watch 推送 → 仅 Git 面板激活时刷新）=====
