@@ -83,6 +83,13 @@ async function save(): Promise<void> {
     const result = creating ? await api.createRule?.(name, content) : await api.saveRule?.(name, content, selected?.hash || '');
     if (!result?.success || !result.rule) { setError(result?.error || '保存失败'); return; }
     selected = result.rule; creating = false; await loadRulesData(); openRecord(result.rule.fileName);
+    // 规则在「初始化 / 新对话」时注入，当前对话不重发——提示用户新对话生效
+    const saveBtn = byId('rule-save');
+    if (saveBtn) {
+      const orig = saveBtn.textContent;
+      saveBtn.textContent = '已保存 · 新对话生效';
+      setTimeout(() => { saveBtn.textContent = orig; }, 2000);
+    }
   } catch (error: any) { setError(error?.message || '保存失败'); }
   finally { setBusy(false); }
 }

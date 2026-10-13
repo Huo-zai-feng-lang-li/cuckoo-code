@@ -153,7 +153,8 @@ async function checkForUpdates(): Promise<void> {
       ? await dialog.showMessageBox(parent, options)
       : await dialog.showMessageBox(options);
     if (result.response === 0) {
-      autoUpdater.quitAndInstall();
+      // 静默安装（/S 跳过 NSIS 向导）+ 装完自动重启
+      autoUpdater.quitAndInstall(true, true);
     }
     return;
   }
@@ -238,7 +239,10 @@ autoUpdater.on('update-downloaded', (info: any) => {
   if (autoInstallAfterDownload) {
     autoInstallAfterDownload = false;
     console.log('[Updater] 自动安装并重启');
-    setTimeout(() => { try { autoUpdater.quitAndInstall(); } catch (_) { /* ignore */ } }, 800);
+    setTimeout(() => {
+      // 静默安装（isSilent=true 传 /S 给 NSIS，跳过安装向导）+ 装完自动重启
+      try { autoUpdater.quitAndInstall(true, true); } catch (_) { /* ignore */ }
+    }, 800);
     return;
   }
 
@@ -261,7 +265,8 @@ autoUpdater.on('update-downloaded', (info: any) => {
   dialogPromise.then((result: any) => {
     isManualCheck = false;
     if (result.response === 0) {
-      autoUpdater.quitAndInstall();
+      // 静默安装（/S 跳过 NSIS 向导）+ 装完自动重启
+      autoUpdater.quitAndInstall(true, true);
     }
   });
 });
