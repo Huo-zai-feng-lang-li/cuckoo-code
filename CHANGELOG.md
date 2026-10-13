@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.8.51] - 2026-10-13
+
+### Fixed
+- **任务列表状态不自动刷新**（停止后一直显示「停止中…」，需手点刷新）：`src/app/ipc/task.ts` 的 `broadcastChange()` 里 `!ctx.win.isDestroyed` **漏了括号**（`isDestroyed` 是方法，未调用恒为 falsy）→ 条件永远为 false → 任务变更通知 `shell-tasks-changed` **从未推送**。影响**所有状态**（启动/输出/停止/退出/stopping），不止"停止中"。补括号 + 加 webContents 销毁检查。此 bug 自 v0.8.42 任务页上线即存在。
+
 ## [0.8.50] - 2026-10-13
 
 ### Fixed
