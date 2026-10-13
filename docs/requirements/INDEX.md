@@ -45,5 +45,6 @@
 | 038 | feature | [Token 统计按窗口展示今日用量](./038-token-by-window.md) | done | feat/038-token-by-window | 2026-10-13 |
 | 039 | fix | [任务停止态修复 + 运行后滚动 + 更新并发保护](./039-task-stop-and-update-guard.md) | done | fix/039-task-stop-and-update-guard | 2026-10-13 |
 | 043 | fix | [规则页保存提示撑坏布局（icon-only 按钮被改 textContent）](./043-rule-save-tip.md) | done | fix/043-rule-save-tip | 2026-10-13 |
+| 044 | fix | [任务状态变更不自动刷新（isDestroyed 漏括号致通知永不推送）](./044-task-notify-missing-parens.md) | done | fix/044-task-notify-missing-parens | 2026-10-13 |
 
-共 40 个需求。
+共 41 个需求。

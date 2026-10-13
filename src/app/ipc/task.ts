@@ -40,7 +40,8 @@ function getShellSender(event: any): any {
 function broadcastChange(): void {
   for (const ctx of windowState.getAllContexts()) {
     try {
-      if (ctx.win && !ctx.win.isDestroyed && ctx.win.webContents) {
+      // ⚠️ isDestroyed 是方法，必须调用 !ctx.win.isDestroyed()。漏括号→条件恒 false→通知永不推送。
+      if (ctx.win && !ctx.win.isDestroyed() && ctx.win.webContents && !ctx.win.webContents.isDestroyed()) {
         ctx.win.webContents.send('shell-tasks-changed');
       }
     } catch (_) { /* ignore */ }
