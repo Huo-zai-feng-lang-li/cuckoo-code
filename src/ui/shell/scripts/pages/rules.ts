@@ -83,12 +83,18 @@ async function save(): Promise<void> {
     const result = creating ? await api.createRule?.(name, content) : await api.saveRule?.(name, content, selected?.hash || '');
     if (!result?.success || !result.rule) { setError(result?.error || '保存失败'); return; }
     selected = result.rule; creating = false; await loadRulesData(); openRecord(result.rule.fileName);
-    // 规则在「初始化 / 新对话」时注入，当前对话不重发——提示用户新对话生效
+    // 规则在「初始化 / 新对话」时注入，当前对话不重发——提示用户新对话生效。
+    // 注意：save 按钮是 icon-only（固定 30px 宽，仅含 SVG）。不能改其 textContent：
+    // 会摧毁 SVG 图标，且长文本在 30px 内竖排换行、撑坏布局。
+    // 改为在按钮所在行末尾临时插入一个横向提示 span，2 秒后移除。
     const saveBtn = byId('rule-save');
-    if (saveBtn) {
-      const orig = saveBtn.textContent;
-      saveBtn.textContent = '已保存 · 新对话生效';
-      setTimeout(() => { saveBtn.textContent = orig; }, 2000);
+    const actions = saveBtn ? saveBtn.parentElement : null;
+    if (actions) {
+      const tip = document.createElement('span');
+      tip.className = 'ck-rule-saved-tip';
+      tip.textContent = '已保存 · 新对话生效';
+      actions.appendChild(tip);
+      setTimeout(() => tip.remove(), 2000);
     }
   } catch (error: any) { setError(error?.message || '保存失败'); }
   finally { setBusy(false); }
