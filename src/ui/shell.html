@@ -7429,7 +7429,7 @@ paths:            # 可选；省略 = 始终生效
             lastListSig = "";
           }
           await loadTasks();
-          scrollToTaskList();
+          scrollToTask(r && r.task && r.task.id);
         } catch (err) {
           alert("\u542F\u52A8\u5931\u8D25\uFF1A" + (err.message || String(err)));
         }
@@ -7523,9 +7523,10 @@ paths:            # 可选；省略 = 始终生效
     } catch (_) {
     }
   }
-  function scrollToTaskList() {
-    const body = document.querySelector(".ck-panel-body");
-    if (body) body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
+  function scrollToTask(id) {
+    if (!id) return;
+    const item = document.querySelector('.ck-task-item[data-id="' + id + '"]');
+    if (item) item.scrollIntoView({ behavior: "smooth", block: "start" });
   }
   function updateBadge(tasks) {
     const badge = document.getElementById("task-badge");
@@ -7577,7 +7578,7 @@ paths:            # 可选；省略 = 始终生效
         lastListSig = "";
       }
       await loadTasks();
-      scrollToTaskList();
+      scrollToTask(r && r.task && r.task.id);
     } catch (err) {
       alert("\u542F\u52A8\u5931\u8D25\uFF1A" + (err.message || String(err)));
     }
