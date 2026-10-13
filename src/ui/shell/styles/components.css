@@ -125,44 +125,52 @@
   .ck-rule-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; }
   .ck-rule-item-action { flex: none; color: var(--ck-primary); font-size: 12px; opacity: .75; }
   .ck-rule-item:hover .ck-rule-item-action { opacity: 1; }
-  /* 快速提示词/技�?MCP/窗口：详情默认隐藏，鼠标悬停才显示（逐渐变高动画�?*/
+  /* 快速提示词/技能/MCP/窗口：详情默认折叠，鼠标悬停平滑展开。
+     用 max-height/opacity/margin 对称过渡（进出都平滑），避免 display 瞬跳造成的抖动。
+     margin-top 负值抵消父容器 gap，折叠时零占位。 */
   .ck-snip-item .ck-snip-preview,
-  .ck-skill-item .ck-skill-desc,
-  .ck-mcp-item .ck-mcp-bottom,
-  .ck-win-item .ck-win-bottom { display: none; }
-  @keyframes ck-detail-in {
-    from { opacity: 0; max-height: 0; transform: translateY(-3px); }
-    to   { opacity: 1; max-height: 140px; transform: translateY(0); }
+  .ck-skill-item .ck-skill-desc {
+    display: -webkit-box;
+    max-height: 0; opacity: 0; overflow: hidden; margin-top: -6px;
+    transition: max-height .4s cubic-bezier(.22,.61,.36,1), opacity .4s ease, margin-top .4s cubic-bezier(.22,.61,.36,1);
+  }
+  .ck-mcp-item .ck-mcp-bottom {
+    display: flex; align-items: center; gap: 6px; padding-left: 16px;
+    max-height: 0; opacity: 0; overflow: hidden; margin-top: -8px;
+    transition: max-height .4s cubic-bezier(.22,.61,.36,1), opacity .4s ease, margin-top .4s cubic-bezier(.22,.61,.36,1);
+  }
+  .ck-win-item .ck-win-bottom {
+    display: flex; align-items: center; gap: 8px;
+    max-height: 0; opacity: 0; overflow: hidden; margin-top: -9px;
+    transition: max-height .4s cubic-bezier(.22,.61,.36,1), opacity .4s ease, margin-top .4s cubic-bezier(.22,.61,.36,1);
   }
   .ck-snip-item:hover .ck-snip-preview,
   .ck-skill-item:hover .ck-skill-desc {
-    display: -webkit-box;
-    animation: ck-detail-in .38s cubic-bezier(.22,.61,.36,1);
-    overflow: hidden;
+    max-height: 160px; opacity: 1; margin-top: 0;
   }
   .ck-mcp-item:hover .ck-mcp-bottom,
   .ck-win-item:hover .ck-win-bottom {
-    display: flex;
-    animation: ck-detail-in .38s cubic-bezier(.22,.61,.36,1);
-    overflow: hidden;
+    max-height: 160px; opacity: 1; margin-top: 0;
   }
   /* 窗口「默认打开」已勾�?�?底部常驻显示 */
-  .ck-win-item:has(.ck-win-check-on) .ck-win-bottom { display: flex; }
+  .ck-win-item:has(.ck-win-check-on) .ck-win-bottom { display: flex; max-height: 160px; opacity: 1; margin-top: 0; }
   /* 子代理卡片操作按钮（悬停显示，复用提示词卡样式） */
   .ck-agent-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; opacity: 0; pointer-events: none; transition: opacity .15s; }
   .ck-skill-item:hover .ck-agent-actions { opacity: 1; pointer-events: auto; }
   .ck-skill-top { display: flex; align-items: center; gap: 8px; min-height: 26px; }
   /* 子代理卡片：描述默认隐藏，悬停才显示（逐渐变高动画�?*/
-  .ck-agent-item .ck-skill-desc { display: none; }
-  .ck-agent-item:hover .ck-skill-desc {
+  .ck-agent-item .ck-skill-desc {
     display: block;
-    animation: ck-detail-in .38s cubic-bezier(.22,.61,.36,1);
-    overflow: hidden;
+    max-height: 0; opacity: 0; overflow: hidden; margin-top: -6px;
+    transition: max-height .4s cubic-bezier(.22,.61,.36,1), opacity .4s ease, margin-top .4s cubic-bezier(.22,.61,.36,1);
+  }
+  .ck-agent-item:hover .ck-skill-desc {
+    max-height: 160px; opacity: 1; margin-top: 0;
   }
   /* 技能卡片（无边�?+ 分割�?+ 悬停浅底�?*/
   /* 运行中子代理卡片 */
   .ck-agent-running { border-left: 2px solid var(--ck-accent, #4c8dff); }
-  .ck-agent-running .ck-skill-desc { display: block; }
+  .ck-agent-running .ck-skill-desc { display: block; max-height: 160px; opacity: 1; margin-top: 0; }
   .ck-agent-running-status { margin-left: auto; font-size: 11px; color: var(--ck-text-dim); flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .ck-agent-running-preview {
     margin-top: 4px; padding: 6px 8px;
