@@ -1,11 +1,14 @@
 /**
- * IPC：源代码管理（Git 暂存 / 提交 / 撤销）
+ * IPC：源代码管理（Git 暂存 / 提交 / 撤销 / 历史）
  * 壳页面通过 window.shellAPI 调用：
- *  - git-status  ：列出改动（git status --porcelain）
- *  - git-stage   ：暂存单个文件（git add）
- *  - git-unstage ：取消暂存（git restore --staged）
- *  - git-restore ：撤销工作区改动（git restore，危险）
- *  - git-commit  ：提交已暂存改动（git commit）
+ *  - git-status       ：列出改动（git status --porcelain）
+ *  - git-stage        ：暂存单个文件（git add）
+ *  - git-unstage      ：取消暂存（git restore --staged）
+ *  - git-restore      ：撤销工作区改动（git restore，危险）
+ *  - git-commit       ：提交已暂存改动（git commit）
+ *  - git-log          ：提交历史列表（git log）
+ *  - git-show-commit  ：某次提交的改动摘要（git show --stat）
+ *  - git-watch-start  ：监听项目目录变化（自动刷新用，递归 fs.watch）
  *
  * 安全：execFile('git', [参数数组])，绝不拼 shell 字符串（防注入）；
  *       路径过 resolveProjectPath 校验（防目录穿越）。
@@ -18,6 +21,30 @@ import * as windowState from '../window.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
+
+// ===== 项目目录 watcher（Git 面板自动刷新用） =====
+/** 按 webContents id 管理 watcher */
+const gitWatchers = new Map<number, { watcher: any; root: string; timer: any }>();
+const gitWatcherBound = new Set<number>();
+
+/** 清理指定 webContents 的 watcher */
+function clearGitWatcher(wcId: number): void {
+  const w = gitWatchers.get(wcId);
+  if (!w) return;
+  try { if (w.timer) clearTimeout(w.timer); } catch (_) { /* ignore */ }
+  try { w.watcher.close(); } catch (_) { /* ignore */ }
+  gitWatchers.delete(wcId);
+}
+
+/**
+ * 噪声路径过滤：这些目录的高频变动与 git 状态无关，忽略以免频繁刷新。
+ * 注意保留 .git/index、.git/refs、.git/HEAD——它们变化正是"暂存/提交"的体现。
+ */
+function isNoisePath(p: any): boolean {
+  if (!p) return false;
+  const s = String(p).replace(/\\/g, '/');
+  return /(^|\/)(node_modules|\.git\/objects|\.git\/logs|dist|out|build|\.cache|\.next|coverage)(\/|$)/.test(s);
+}
 
 /** 解析并校验项目内相对路径（防目录穿越），返回绝对路径或 null */
 function resolveProjectPath(store: any, relPath: string): string | null {
@@ -198,6 +225,79 @@ function registerGitIpc(): void {
     if (!r.success) return { success: false, error: r.stderr.trim() };
     const branches = r.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
     return { success: true, branches, current };
+  });
+
+  // 开始监听项目目录变化（Git 面板自动刷新用）；recursive 不支持时返回 fallback 提示壳页面轮询
+  ipcMain.handle('git-watch-start', async (event: any) => {
+    const root = getProjectRoot(event);
+    const wcId = event.sender.id;
+    clearGitWatcher(wcId);
+    if (!root) return { success: false, error: '未选择项目目录' };
+    try {
+      const watcher = fs.watch(root, { recursive: true, persistent: false }, (_evt: string, changed: any) => {
+        if (changed && isNoisePath(changed)) return;
+        const w = gitWatchers.get(wcId);
+        if (!w) return;
+        if (w.timer) clearTimeout(w.timer);
+        w.timer = setTimeout(() => {
+          try { if (!event.sender.isDestroyed()) event.sender.send('shell-git-changed'); } catch (_) { /* ignore */ }
+        }, 400); // 防抖
+      });
+      gitWatchers.set(wcId, { watcher, root, timer: null });
+      if (!gitWatcherBound.has(wcId)) {
+        gitWatcherBound.add(wcId);
+        try {
+          event.sender.once('destroyed', () => { clearGitWatcher(wcId); gitWatcherBound.delete(wcId); });
+        } catch (_) { gitWatcherBound.delete(wcId); }
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message, fallback: 'poll' };
+    }
+  });
+
+  // 停止监听
+  ipcMain.handle('git-watch-stop', async (event: any) => {
+    clearGitWatcher(event.sender.id);
+    return { success: true };
+  });
+
+  // 提交历史列表（默认最近 60 条）
+  ipcMain.handle('git-log', async (event: any, { limit }: any = {}) => {
+    const root = getProjectRoot(event);
+    if (!root) return { success: false, error: '未选择项目目录' };
+    const n = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 60;
+    // 字段用 \x1f（单元分隔符）拼接，避免提交信息含空格/竖线导致解析歧义
+    const fmt = '%H%x1f%h%x1f%s%x1f%an%x1f%ar';
+    const r = await runGit(root, ['log', '-n', String(n), '--pretty=format:' + fmt]);
+    if (!r.success) {
+      // 无提交（空仓库）时 git log 报错 → 返回空列表而非错误
+      if (/does not have any commits|unknown revision|bad default revision/i.test(r.stderr)) {
+        return { success: true, commits: [] };
+      }
+      const msg = (r.stderr || '').toLowerCase().includes('not a git repository')
+        ? '当前目录不是 Git 仓库' : (r.stderr || 'git log 失败');
+      return { success: false, error: msg.trim() };
+    }
+    const commits = r.stdout.split('\n').filter(Boolean).map((line) => {
+      const parts = line.split('\x1f');
+      return { hash: parts[0] || '', short: parts[1] || '', subject: parts[2] || '', author: parts[3] || '', date: parts[4] || '' };
+    });
+    return { success: true, commits };
+  });
+
+  // 某次提交的改动摘要（文件列表 + 增删行数）
+  ipcMain.handle('git-show-commit', async (event: any, { hash }: any) => {
+    const root = getProjectRoot(event);
+    if (!root) return { success: false, error: '未选择项目目录' };
+    if (!hash || typeof hash !== 'string' || !/^[0-9a-f]{4,40}$/i.test(hash)) {
+      return { success: false, error: '非法提交 hash' };
+    }
+    // 用 git log -1 --stat：log 默认不输出 patch（--stat 只给文件与增删统计），
+    // 而 git show --stat 会附带完整 diff（大提交易超 maxBuffer）。
+    const r = await runGit(root, ['-c', 'core.quotepath=false', 'log', '-1', '--stat', '--format=%H%x1f%s%x1f%an%x1f%ar', hash]);
+    if (!r.success) return { success: false, error: r.stderr.trim() || '读取提交失败' };
+    return { success: true, text: r.stdout };
   });
 
   // 切换分支（先检测脏工作区）

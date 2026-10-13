@@ -39,5 +39,6 @@
 | 032 | fix | [修复窗口偶发空白（缩放/拖宽才恢复）](./032-window-blank-fix.md) | done | (直接主分支，用户要求) | 2026-10-12 |
 | 033 | feature | [窗口组切换提示（原因 + 来源→目标 + 结果）](./033-window-switch-notify.md) | done | (直接主分支) | 2026-10-12 |
 | 034 | fix | [修复窗口组「转移对话」报错「IndexedDB 无该会话消息」](./034-switch-share-idb.md) | done | (直接主分支) | 2026-10-12 |
+| 035 | feature | [Git 面板增强——提交历史 + 自动刷新](./035-git-history-refresh.md) | done | feat/035-git-history-refresh | 2026-10-13 |
 
-共 34 个需求。
+共 35 个需求。

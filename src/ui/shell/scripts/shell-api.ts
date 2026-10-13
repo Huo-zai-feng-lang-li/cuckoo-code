@@ -119,6 +119,11 @@ export interface ShellAPI {
   gitCurrentBranch?: () => Promise<any>;
   gitListBranches?: () => Promise<any>;
   gitCheckout?: (branch: string, force?: boolean) => Promise<any>;
+  gitLog?: (limit?: number) => Promise<any>;
+  gitShowCommit?: (hash: string) => Promise<any>;
+  gitWatchStart?: () => Promise<any>;
+  gitWatchStop?: () => Promise<any>;
+  onGitChanged?: (cb: () => void) => void;
   setProjectArchived?: (dir: string, archived: boolean) => Promise<any>;
   deleteProjectWorkspace?: (dir: string) => Promise<any>;
   setSessionTitle?: (sessionId: string, title: string) => Promise<any>;

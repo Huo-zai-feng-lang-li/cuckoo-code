@@ -297,3 +297,24 @@
     font-size: 12px; font-weight: 700; color: var(--ck-text-dim); cursor: pointer;
   }
   .ck-git-act:hover { background: var(--ck-primary-soft); color: var(--ck-primary); }
+  /* ===== 提交历史 ===== */
+  .ck-git-history { border-top: 1px solid var(--ck-border-soft); flex-shrink: 0; }
+  .ck-git-history-head {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 10px; cursor: pointer; user-select: none;
+  }
+  .ck-git-history-head:hover { background: var(--ck-surface-hover); }
+  .ck-git-history-title { flex: 1; font-size: 12px; font-weight: 600; color: var(--ck-text-2); }
+  .ck-git-history-count { font-size: 11px; color: var(--ck-text-dim); }
+  .ck-git-history-list { max-height: 320px; overflow-y: auto; }
+  .ck-git-history-list.ck-hidden { display: none; }
+  .ck-git-history-empty { padding: 10px; font-size: 12px; color: var(--ck-text-dim); text-align: center; }
+  .ck-git-commit-row {
+    padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--ck-border-soft);
+  }
+  .ck-git-commit-row:hover { background: var(--ck-surface-hover); }
+  .ck-git-commit-subject {
+    display: block; font-size: 12px; color: var(--ck-text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ck-git-commit-meta { display: block; font-size: 10.5px; color: var(--ck-text-dim); margin-top: 2px; }

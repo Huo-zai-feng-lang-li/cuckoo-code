@@ -98,6 +98,13 @@ function updateCommitBtn(): void {
 
 /** 读取并渲染状态 */
 export async function loadGit(): Promise<void> {
+  // 首次加载时启动项目目录 watcher（自动刷新用）。
+  // 注意：只在成功后才置 flag——未选目录等失败情况保持 false，下次 loadGit 可重试。
+  if (!gitWatcherStarted && api.gitWatchStart) {
+    api.gitWatchStart().then((r: any) => {
+      gitWatcherStarted = !!(r && r.success);
+    }).catch(() => { gitWatcherStarted = false; });
+  }
   loadBranch(); // 分支显示独立于文件状态，失败也不阻断
   const listEl = document.getElementById('git-list');
   if (!listEl) return;
@@ -169,7 +176,9 @@ async function doCheckout(branch: string): Promise<void> {
     }
     if (r && !r.success) { await ckAlert('切换失败：' + (r.error || '未知错误'), 'Git'); return; }
     if (listEl) listEl.classList.add('ck-hidden');
+    historyLoaded = false; // 切分支后提交历史不同，需重拉
     await loadGit();
+    if (historyOpen) await loadHistory();
   } catch (err: any) {
     await ckAlert('切换失败：' + (err && err.message), 'Git');
   }
@@ -218,7 +227,9 @@ async function doCommit(): Promise<void> {
   if (!r || !r.success) { await ckAlert('提交失败：' + ((r && r.error) || '未知错误'), '提交'); return; }
   if (msgEl) msgEl.value = '';
   await ckAlert('提交成功', 'Git');
+  historyLoaded = false; // 新提交出现，历史需重拉
   await loadGit();
+  if (historyOpen) await loadHistory();
 }
 
 // ===== 事件绑定 =====
@@ -276,7 +287,110 @@ async function doCommit(): Promise<void> {
   }
 }
 
+// ===== 提交历史 =====
+let historyLoaded = false;
+let historyOpen = false;
+
+/** 渲染提交历史列表 */
+function renderHistory(commits: any[]): void {
+  const listEl = document.getElementById('git-history-list');
+  const countEl = document.getElementById('git-history-count');
+  if (!listEl) return;
+  if (countEl) countEl.textContent = commits.length ? String(commits.length) : '';
+  if (!commits.length) {
+    listEl.innerHTML = '<div class="ck-git-history-empty">暂无提交</div>';
+    return;
+  }
+  listEl.innerHTML = commits.map((c: any) => {
+    const h = escapeAttr(c.hash || '');
+    return '<div class="ck-git-commit-row" data-hash="' + h + '" title="' + escapeAttr(c.subject || '') + '">' +
+      '<span class="ck-git-commit-subject">' + escapeHtml(c.subject || '(无提交信息)') + '</span>' +
+      '<span class="ck-git-commit-meta">' + escapeHtml(c.short || '') + ' · ' + escapeHtml(c.author || '') + ' · ' + escapeHtml(c.date || '') + '</span>' +
+    '</div>';
+  }).join('');
+}
+
+/** 拉取提交历史 */
+async function loadHistory(): Promise<void> {
+  const listEl = document.getElementById('git-history-list');
+  if (!listEl || !api.gitLog) return;
+  listEl.innerHTML = '<div class="ck-git-history-empty">加载中…</div>';
+  try {
+    const r = await api.gitLog(60);
+    if (!r || !r.success) {
+      listEl.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml((r && r.error) || '读取失败') + '</div>';
+      return;
+    }
+    renderHistory(r.commits || []);
+    historyLoaded = true;
+  } catch (err: any) {
+    listEl.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml(err.message || '读取失败') + '</div>';
+  }
+}
+
+/** 展开/收起历史 */
+async function toggleHistory(): Promise<void> {
+  const listEl = document.getElementById('git-history-list');
+  const caret = document.getElementById('git-history-caret');
+  if (!listEl) return;
+  historyOpen = !historyOpen;
+  if (historyOpen) {
+    listEl.classList.remove('ck-hidden');
+    if (caret) caret.classList.remove('ck-git-caret-c');
+    if (!historyLoaded) await loadHistory();
+  } else {
+    listEl.classList.add('ck-hidden');
+    if (caret) caret.classList.add('ck-git-caret-c');
+  }
+}
+
+/** 查看某次提交的改动（弹框展示 --stat 文本） */
+async function showCommit(hash: string): Promise<void> {
+  if (!api.gitShowCommit) return;
+  try {
+    const r = await api.gitShowCommit(hash);
+    if (!r || !r.success) { await ckAlert('读取提交失败：' + ((r && r.error) || '未知错误'), 'Git'); return; }
+    await ckAlert(r.text || '(无内容)', '提交详情');
+  } catch (err: any) {
+    await ckAlert('读取提交失败：' + (err && err.message), 'Git');
+  }
+}
+
+// 历史区事件绑定
+{
+  const toggle = document.getElementById('git-history-toggle');
+  if (toggle) toggle.addEventListener('click', () => { toggleHistory(); });
+  const histList = document.getElementById('git-history-list');
+  if (histList) {
+    histList.addEventListener('click', (e: any) => {
+      const row = e.target && e.target.closest ? e.target.closest('.ck-git-commit-row') : null;
+      if (row && row.dataset.hash) showCommit(row.dataset.hash);
+    });
+  }
+}
+
+// ===== 自动刷新（fs.watch 推送 → 仅 Git 面板激活时刷新）=====
+let gitWatcherStarted = false;
+/** Git 面板当前是否激活 */
+function isGitPanelActive(): boolean {
+  const p = document.querySelector('.ck-tab[data-panel="git"]');
+  return !!(p && p.classList.contains('ck-tab-active'));
+}
+if (api.onGitChanged) {
+  api.onGitChanged(() => {
+    // 非激活不刷新（省 git status 开销）
+    if (!isGitPanelActive()) return;
+    loadGit();
+    if (historyOpen) loadHistory(); // 历史展开时一并刷新
+  });
+}
+
 // 项目目录变化 → 刷新
 if (api.onProjectDir) {
-  api.onProjectDir(() => { loadGit(); });
+  api.onProjectDir(() => {
+    historyLoaded = false;   // 目录变了，历史需重拉
+    gitWatcherStarted = false; // 目录变了，watcher 需重新启动监听新目录（start 会清理旧 watcher）
+    loadGit();
+    if (historyOpen) loadHistory();
+  });
 }
