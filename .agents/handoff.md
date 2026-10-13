@@ -81,6 +81,7 @@
 - **数据目录**：`C:\Users\Administrator\AppData\Roaming\cuckoo-dev-verify`（独立，不碰打包版）
 - **CDP 端口**：9444（`http://127.0.0.1:9444/json/list` 列页面；Node 内置 WebSocket 直连 `webSocketDebuggerUrl` 注入 JS）
 - **登录态**：已登录 DeepSeek（2026-10-13），会话持久化在 userData，重启开发版仍有效
+- **测试专用会话**：`941b49ac-ab35-47d3-80d1-5b083b4d7946`（标题「打招呼」）已绑定 cuckoo-code。测试前把 AI 页面导航到 `https://chat.deepseek.com/a/chat/s/941b49ac-ab35-47d3-80d1-5b083b4d7946`，任务页 cwd/脚本列表即正常（免每次初始化）。不污染任何真实对话。
 - **用途**：真机验证 UI/交互/运行时逻辑（CDP 注入 JS 读 DOM、模拟操作）
 - **注意**：开发版 ≠ 打包版；`app.isPackaged` 才生效的逻辑（autoUpdater 自动更新/静默安装）开发版测不了，需真机打包版
 - **与打包版隔离**：打包版（`D:\cuckoo-code\Cuckoo-Code.exe`，用户在用）占单实例锁；开发版靠独立 userData 绕开，互不影响
