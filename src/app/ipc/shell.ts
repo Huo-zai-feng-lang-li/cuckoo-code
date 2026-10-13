@@ -421,6 +421,17 @@ function registerShellIpc(): void {
     try { if (!win.webContents.isDestroyed()) win.webContents.send('shell-sidebar-drag', win.__ckSidebarWidth); } catch (_) {}
   });
 
+  // 壳页面全窗口浮层（如提交 diff）开/关时，临时移出/恢复原生视图（AI/harness/overlay）。
+  // 原生 WebContentsView 永远盖在壳页面之上，不移出则壳页面 position:fixed 浮层右侧被遮挡。
+  ipcMain.handle('shell-set-webview-hidden', async (event: any, { hidden }: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    if (!ctx || !ctx.win || ctx.win.isDestroyed()) return { success: false };
+    const win = ctx.win;
+    win.__ckWebviewHidden = !!hidden;
+    try { if (typeof win.__ckLayout === 'function') win.__ckLayout(); } catch (_) {}
+    return { success: true };
+  });
+
   // 取当前窗口名（底部状态栏显示）
   ipcMain.handle('shell-get-window-name', async (event: any) => {
     const ctx = windowState.getContextByWebContents(event.sender);

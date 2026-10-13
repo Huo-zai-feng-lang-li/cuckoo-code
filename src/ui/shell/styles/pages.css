@@ -313,7 +313,9 @@
     padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--ck-border-soft);
   }
   .ck-git-commit-row:hover { background: var(--ck-surface-hover); }
-  .ck-git-diff-modal { max-width: min(900px, 90vw); width: min(900px, 90vw); }
+  /* 提交 diff 弹框：全窗口浮层（打开时主进程会临时移出原生视图，否则右侧被 AI 页遮挡） */
+  #git-diff-modal { position: fixed; z-index: 9999; }
+  .ck-git-diff-modal { max-width: min(1100px, 92vw); width: min(1100px, 92vw); height: min(85vh, 900px); }
   .ck-git-diff-body {
     flex: 1; min-height: 0; overflow: auto;
     margin: 6px 0 4px; padding: 10px 12px;

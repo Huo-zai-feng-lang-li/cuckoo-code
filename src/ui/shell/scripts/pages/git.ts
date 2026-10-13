@@ -119,6 +119,8 @@ export async function loadGit(): Promise<void> {
     const items: GitItem[] = (r.items || []) as GitItem[];
     refreshBadge(items.length);
     renderList(items);
+    // 提交历史默认展开：首次进入且未加载时拉取
+    if (historyOpen && !historyLoaded) { try { await loadHistory(); } catch (_) { /* ignore */ } }
   } catch (err: any) {
     listEl.innerHTML = '<div class="ck-list-empty">' + escapeHtml(err.message || '读取失败') + '</div>';
     refreshBadge(0);
@@ -289,7 +291,7 @@ async function doCommit(): Promise<void> {
 
 // ===== 提交历史 =====
 let historyLoaded = false;
-let historyOpen = false;
+let historyOpen = true;
 /** 最近一次渲染的历史签名（hash 列表），用于跳过无变化的重绘（防闪） */
 let lastHistorySig = '';
 
@@ -382,10 +384,13 @@ function openCommitDiff(title: string, text: string, truncated: boolean): void {
   bodyEl.innerHTML = html;
   bodyEl.scrollTop = 0;
   mask.classList.remove('cuckoo-hidden');
+  // 移出原生视图（AI/harness），否则全窗口浮层右侧被它们盖住
+  try { api.setWebviewHidden?.(true); } catch (_) { /* ignore */ }
 }
 
 function closeCommitDiff(): void {
   document.getElementById('git-diff-modal')?.classList.add('cuckoo-hidden');
+  try { api.setWebviewHidden?.(false); } catch (_) { /* ignore */ }
 }
 
 /** 查看某次提交的完整 diff（弹框着色展示） */
@@ -423,8 +428,14 @@ async function showCommit(hash: string): Promise<void> {
     if (e.target && e.target.id === 'git-diff-modal') closeCommitDiff();
   });
   document.getElementById('git-diff-copy')?.addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(gitDiffRaw); await ckAlert('已复制 diff'); }
-    catch (_) { await ckAlert('复制失败'); }
+    const btn = document.getElementById('git-diff-copy') as any;
+    const flash = (text: string) => {
+      if (!btn) return;
+      btn.textContent = text;
+      setTimeout(() => { if (btn) btn.textContent = '复制 diff'; }, 1500);
+    };
+    try { await navigator.clipboard.writeText(gitDiffRaw); flash('已复制'); }
+    catch (_) { flash('复制失败'); }
   });
 }
 

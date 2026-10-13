@@ -2,7 +2,15 @@
 
 ## 核心进展
 
-**v0.8.58**：修复提交详情对 merge commit 不显示 diff（改用 `git show -m --first-parent`）。已提交、打 tag、推送 origin。最新 tag **v0.8.58**。
+**v0.8.59**：提交详情 UI 三项改进（提交历史默认展开 / 弹框放大为全窗口浮层 + 打开时隐藏原生视图 / 复制不弹二次框）。已提交、打 tag、推送 origin。最新 tag **v0.8.59**。
+
+### v0.8.59 改动
+- 提交历史默认展开（进入 git 页即加载展示）
+- 提交详情弹框改全窗口浮层（max 1100px×85vh）；打开时临时隐藏 AI/harness 原生视图（setVisible+setBounds 双保险）——原生 WebContentsView 永远盖在壳页面之上，不隐藏则浮层右侧被遮挡
+- 复制 diff 改按钮文字短暂反馈，不弹二次框
+
+### v0.8.58（同轮）
+修复提交详情对 merge commit 不显示 diff（`git show -m --first-parent`）。
 
 ### v0.8.58 改动
 - `git-show-commit-diff` 命令加 `-m --first-parent`：merge commit 也能显示完整 diff（原默认只给 stat）。普通 commit 行为不变。

@@ -67,6 +67,7 @@ export interface ShellAPI {
   openRulesDir?: () => Promise<any>;
   /** 切换纯净对话模式（Harness） */
   toggleHarness?: () => Promise<any>;
+  setWebviewHidden?: (hidden: boolean) => Promise<any>;
   /** 纯净模式状态变化（harness=true 表示已进入纯净模式） */
   onHarnessMode?: (cb: (data: { harness: boolean }) => void) => void;
   reportShellSize?: (w: number, h: number) => void;

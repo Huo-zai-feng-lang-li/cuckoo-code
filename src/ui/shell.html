@@ -1659,7 +1659,9 @@
     padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--ck-border-soft);
   }
   .ck-git-commit-row:hover { background: var(--ck-surface-hover); }
-  .ck-git-diff-modal { max-width: min(900px, 90vw); width: min(900px, 90vw); }
+  /* 提交 diff 弹框：全窗口浮层（打开时主进程会临时移出原生视图，否则右侧被 AI 页遮挡） */
+  #git-diff-modal { position: fixed; z-index: 9999; }
+  .ck-git-diff-modal { max-width: min(1100px, 92vw); width: min(1100px, 92vw); height: min(85vh, 900px); }
   .ck-git-diff-body {
     flex: 1; min-height: 0; overflow: auto;
     margin: 6px 0 4px; padding: 10px 12px;
@@ -2101,7 +2103,7 @@ body[data-ck-dark] .ck-stat-item-hl .ck-stat-val { color: #fbbf24; }
                   <span class="ck-git-history-title">提交历史</span>
                   <span class="ck-git-history-count" id="git-history-count"></span>
                 </div>
-                <div class="ck-git-history-list ck-hidden" id="git-history-list"></div>
+                <div class="ck-git-history-list" id="git-history-list"></div>
               </div>
             </div>
 
@@ -7146,6 +7148,12 @@ paths:            # 可选；省略 = 始终生效
       const items = r.items || [];
       refreshBadge(items.length);
       renderList4(items);
+      if (historyOpen && !historyLoaded) {
+        try {
+          await loadHistory();
+        } catch (_) {
+        }
+      }
     } catch (err) {
       listEl2.innerHTML = '<div class="ck-list-empty">' + escapeHtml(err.message || "\u8BFB\u53D6\u5931\u8D25") + "</div>";
       refreshBadge(0);
@@ -7329,7 +7337,7 @@ paths:            # 可选；省略 = 始终生效
     }
   }
   var historyLoaded = false;
-  var historyOpen = false;
+  var historyOpen = true;
   var lastHistorySig = "";
   function renderHistory(commits) {
     const listEl2 = document.getElementById("git-history-list");
@@ -7408,9 +7416,17 @@ paths:            # 可选；省略 = 始终生效
     bodyEl.innerHTML = html;
     bodyEl.scrollTop = 0;
     mask.classList.remove("cuckoo-hidden");
+    try {
+      api.setWebviewHidden?.(true);
+    } catch (_) {
+    }
   }
   function closeCommitDiff() {
     document.getElementById("git-diff-modal")?.classList.add("cuckoo-hidden");
+    try {
+      api.setWebviewHidden?.(false);
+    } catch (_) {
+    }
   }
   async function showCommit(hash) {
     if (!api.gitShowCommitDiff) {
@@ -7448,11 +7464,19 @@ paths:            # 可选；省略 = 始终生效
       if (e.target && e.target.id === "git-diff-modal") closeCommitDiff();
     });
     document.getElementById("git-diff-copy")?.addEventListener("click", async () => {
+      const btn = document.getElementById("git-diff-copy");
+      const flash = (text) => {
+        if (!btn) return;
+        btn.textContent = text;
+        setTimeout(() => {
+          if (btn) btn.textContent = "\u590D\u5236 diff";
+        }, 1500);
+      };
       try {
         await navigator.clipboard.writeText(gitDiffRaw);
-        await ckAlert("\u5DF2\u590D\u5236 diff");
+        flash("\u5DF2\u590D\u5236");
       } catch (_) {
-        await ckAlert("\u590D\u5236\u5931\u8D25");
+        flash("\u590D\u5236\u5931\u8D25");
       }
     });
   }

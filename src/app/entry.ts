@@ -327,33 +327,42 @@ function createWindow(profile: any) {
     const [cw, ch] = mainWindow.getContentSize();
     const w = cw;
     const h = (mainWindow as any).__ckShellHeight || ch;
-    view.setBounds({
-      x: sbw, y: tbh,
-      width: Math.max(0, w - sbw),
-      height: Math.max(0, h - tbh - STATUS_HEIGHT),
-    });
+    // 壳页面全窗口浮层（如提交 diff）打开时：临时隐藏所有原生视图
+    // （原生 WebContentsView 永远盖在壳页面之上，不隐藏则浮层右侧被遮挡）。
+    // 用 setVisible（setBounds 到 0 不会改变 webContents 视口尺寸，浮层仍被盖）。
+    const webviewHidden = !!(mainWindow as any).__ckWebviewHidden;
+    const harnessVisible = !!(mainWindow as any).__ckHarnessVisible;
+    const vx = sbw, vy = tbh;
+    const vw = Math.max(0, w - sbw), vh = Math.max(0, h - tbh - STATUS_HEIGHT);
+    // AI 视图可见性：浮层打开 → 隐藏；harness 可见 → 隐藏（harness 覆盖它）；否则显示。
+    // setVisible + setBounds 双保险（某些平台 setVisible 偶发不生效，见下方 harness 切换处）。
+    const aiVisible = !webviewHidden && !harnessVisible;
+    try {
+      if (view && !view.webContents.isDestroyed()) {
+        view.setBounds(aiVisible ? { x: vx, y: vy, width: vw, height: vh } : { x: 0, y: 0, width: 0, height: 0 });
+        view.setVisible(aiVisible);
+      }
+    } catch (_) { /* ignore */ }
     // overlay（独立 BrowserWindow）覆盖整个"网页区域" —— 用屏幕坐标
     const ov = (mainWindow as any).__ckOverlayView;
     if (ov && !ov.isDestroyed()) {
-      const cb = mainWindow.getContentBounds();  // 窗口内容区在屏幕上的位置
-      ov.setBounds({
-        x: cb.x + sbw, y: cb.y + tbh,
-        width: Math.max(0, w - sbw),
-        height: Math.max(0, h - tbh - STATUS_HEIGHT),
-      });
+      if (webviewHidden) {
+        try { ov.hide(); } catch (_) {}
+      } else {
+        const cb = mainWindow.getContentBounds();  // 窗口内容区在屏幕上的位置
+        ov.setBounds({
+          x: cb.x + sbw, y: cb.y + tbh,
+          width: vw, height: vh,
+        });
+        try { if (typeof ov.showInactive === 'function') ov.showInactive(); } catch (_) {}
+      }
     }
     // harness 覆盖整个"网页区域"（与 AI view 同位置）
     const hv = (mainWindow as any).__ckHarnessView;
     if (hv && !hv.webContents.isDestroyed()) {
-      if ((mainWindow as any).__ckHarnessVisible) {
-        hv.setBounds({
-          x: sbw, y: tbh,
-          width: Math.max(0, w - sbw),
-          height: Math.max(0, h - tbh - STATUS_HEIGHT),
-        });
-      } else {
-        hv.setBounds({ x: 0, y: 0, width: 0, height: 0 });
-      }
+      const hvVisible = !webviewHidden && !!(mainWindow as any).__ckHarnessVisible;
+      hv.setBounds(hvVisible ? { x: vx, y: vy, width: vw, height: vh } : { x: 0, y: 0, width: 0, height: 0 });
+      try { hv.setVisible(hvVisible); } catch (_) {}
     }
   };
   (mainWindow as any).__ckLayout = layoutView;

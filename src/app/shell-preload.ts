@@ -69,6 +69,7 @@ const shellAPI = {
   onHarnessBusy: (cb: (busy: boolean) => void) => { ipcRenderer.on('shell-harness-busy', (_e: any, d: any) => cb(!!(d && d.busy))); },
   // 纯净对话模式（Harness）切换 + 状态订阅
   toggleHarness: () => ipcRenderer.invoke('shell-toggle-harness'),
+  setWebviewHidden: (hidden: boolean) => ipcRenderer.invoke('shell-set-webview-hidden', { hidden }),
   onHarnessMode: (cb: (data: any) => void) => {
     ipcRenderer.on('shell-harness-mode', (_e: any, data: any) => cb(data));
   },
