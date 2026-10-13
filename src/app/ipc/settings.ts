@@ -10,6 +10,7 @@
 import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { readPrefs, writePrefs } from '../ui-prefs.js';
+import { applyHarnessZoom } from '../harness-zoom.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -100,12 +101,12 @@ function registerSettingsIpc(): void {
   });
   ipcMain.handle('set-ui-prefs', async (event: any, { data }: any) => {
     const next = writePrefs(data || {});
-    // 立即应用到当前窗口的 harness 视图（若已创建）
+    // 立即应用到当前窗口的 harness 视图（若已创建）。用 CSS zoom，避免视图缩放模糊。
     try {
       const ctx: any = windowState.getContextByWebContents(event.sender);
       const hv = ctx && ctx.harnessView;
       if (hv && hv.webContents && !hv.webContents.isDestroyed()) {
-        hv.webContents.setZoomFactor(next.harnessZoom);
+        applyHarnessZoom(hv.webContents, next.harnessZoom);
       }
     } catch (_) { /* ignore */ }
     return { success: true, data: next };

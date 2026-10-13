@@ -13,6 +13,7 @@ import * as updater from '../updater/index.js';
 import * as mcpConfig from '../mcp/config.js';
 import * as mcpClient from '../mcp/client.js';
 import { resolveAsset, resolveSrc } from '../infra/paths.js';
+import { applyHarnessZoom } from './harness-zoom.js';
 
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, nativeTheme, ipcMain: ipcMainForProfile, Notification } = require('electron');
@@ -274,15 +275,15 @@ function createWindow(profile: any) {
       const ctx: any = windowState.getWindowContext(mainWindow.id);
       if (ctx) ctx.harnessView = hv;
     }
-    // 应用纯净模式缩放（用户偏好）
-    try {
-      const { readPrefs: readUiPrefs } = require('./ui-prefs.js');
-      hv.webContents.setZoomFactor(readUiPrefs().harnessZoom);
-    } catch (_) { /* ignore */ }
     // 加载 harness 页面
     hv.webContents.loadFile(resolveSrc('ui/harness.html'));
     hv.webContents.on('did-finish-load', () => {
       console.log('[Cuckoo Harness] 页面加载完成');
+      // 应用纯净模式字号（用户偏好）。CSS zoom 在页面加载后才生效，故放在此。
+      try {
+        const { readPrefs: readUiPrefs } = require('./ui-prefs.js');
+        applyHarnessZoom(hv.webContents, readUiPrefs().harnessZoom);
+      } catch (_) { /* ignore */ }
       try { notifyHarnessSession(view.webContents.getURL()); } catch (_) {}
     });
     hv.webContents.on('did-fail-load', (_e: any, code: any, desc: any) => {
