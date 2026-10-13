@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.8.49] - 2026-10-13
+
+### Fixed
+- **更新门禁可能锁死新版本（子代理审查发现，严重）**：`checkForUpdates` 在"已下载完成"分支调用 `installAndRestart()` **未传版本号** → 标记 `targetVersion` 为空 → 更新成功、新版本首次启动时判定"未完成"被拦截，最长锁死 10 分钟。修法：
+  - `update-downloaded` 记录 `downloadedVersion`，`installAndRestart` 统一带上目标版本；
+  - 标记新增 `fromVersion`（安装前版本），`isUpdatePending` 判定改为「版本已变/已达目标/数据不完整」都放行——即使 target 缺失也不会锁死；
+  - 标记改原子写（临时文件 + rename），避免崩溃残留半截 JSON。
+- **任务停止兜底路径显示「退出码 undefined」**：`stop()` 的兜底超时与 `!pid` 分支只置 `exited`，未设 `exitCode`、未清 `stopping` → UI 显示「退出码 undefined」。补 `exitCode ?? null` + 清 `stopping`；渲染层 `exitCode == null` 也归为「已结束」。
+- **任务页 expanded 无界累积**：「清空已结束」后未裁剪 `expanded` Map，长会话下累积。清空后按当前任务 id 裁剪。
+
+### Changed
+- **update-pending 判定语义升级**：从"当前版本 === 目标版本"改为"当前版本 != 安装前版本 或 已达目标 或 数据不完整"即放行，更稳（防 target 缺失锁死）。
+
 ## [0.8.48] - 2026-10-13
 
 ### Changed

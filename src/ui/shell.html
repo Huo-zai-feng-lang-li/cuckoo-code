@@ -7397,7 +7397,7 @@ paths:            # 可选；省略 = 始终生效
     const running = t.status === "running";
     const stopping = running && !!t.stopping;
     const dot = running ? "ck-task-dot-run" : "ck-task-dot-exit";
-    const statusText = stopping ? "\u505C\u6B62\u4E2D\u2026" : running ? "\u8FD0\u884C\u4E2D" : t.exitCode === 0 || t.exitCode === null ? "\u5DF2\u7ED3\u675F" : "\u9000\u51FA\u7801 " + t.exitCode;
+    const statusText = stopping ? "\u505C\u6B62\u4E2D\u2026" : running ? "\u8FD0\u884C\u4E2D" : t.exitCode == null || t.exitCode === 0 ? "\u5DF2\u7ED3\u675F" : "\u9000\u51FA\u7801 " + t.exitCode;
     const sourceLabel = t.source === "script" ? "\u811A\u672C" : t.source === "ai" ? "AI" : "\u624B\u52A8";
     const title = t.label ? escapeHtml(t.label) + " \xB7 " : "";
     return '<div class="ck-task-item" data-id="' + escapeAttr(t.id) + '"><div class="ck-task-row" data-id="' + escapeAttr(t.id) + '"><span class="ck-task-dot ' + dot + '"></span><div class="ck-task-main"><div class="ck-task-name">' + title + escapeHtml(t.command) + '</div><div class="ck-task-meta">' + escapeHtml(sourceLabel) + " \xB7 " + statusText + (t.pid ? " \xB7 PID " + t.pid : "") + " \xB7 " + fmtTime2(t.startedAt) + '</div></div><div class="ck-task-ops">' + (running ? '<button class="ck-btn ck-task-stop" data-id="' + escapeAttr(t.id) + '"' + (stopping ? " disabled" : "") + ">" + (stopping ? "\u505C\u6B62\u4E2D\u2026" : "\u505C\u6B62") + "</button>" : '<button class="ck-icon-btn ck-task-remove" data-id="' + escapeAttr(t.id) + '" title="\u79FB\u9664">\u2715</button>') + '</div></div><pre class="ck-task-output cuckoo-hidden" data-id="' + escapeAttr(t.id) + '"></pre></div>';
@@ -7559,6 +7559,9 @@ paths:            # 可选；省略 = 始终生效
       await api.taskClearExited?.();
     } catch (_) {
     }
+    const listRes = await api.taskList?.();
+    const ids = new Set((listRes && listRes.tasks || []).map((t) => t.id));
+    for (const k of [...expanded2.keys()]) if (!ids.has(k)) expanded2.delete(k);
     loadTasks();
   });
   var runBtn = document.getElementById("task-run-btn");

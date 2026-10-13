@@ -50,8 +50,6 @@ interface TaskRecord extends TaskInfo {
   /** 输出环形缓冲（已解码文本） */
   output: string;
   outputBytes: number;
-  /** 停止中标记，避免重复触发 */
-  stopping?: boolean;
 }
 
 /** 变更通知回调（主进程注入 → 推给壳页面） */
@@ -230,7 +228,14 @@ export function stop(id: string): boolean {
   rec.stopping = true;
 
   const pid = rec.pid;
-  if (!pid) { rec.status = 'exited'; rec.endedAt = Date.now(); notifyChange(); return true; }
+  if (!pid) {
+    rec.status = 'exited';
+    rec.endedAt = Date.now();
+    rec.exitCode = rec.exitCode ?? null;
+    rec.stopping = false;
+    notifyChange();
+    return true;
+  }
 
   const isWin = process.platform === 'win32';
   if (isWin) {
@@ -257,6 +262,8 @@ export function stop(id: string): boolean {
     if (rec.status === 'running') {
       rec.status = 'exited';
       rec.endedAt = Date.now();
+      rec.exitCode = rec.exitCode ?? null; // 兜底：避免渲染层显示"退出码 undefined"
+      rec.stopping = false;
       notifyChange();
     }
   }, STOP_GRACE_MS + 500);
