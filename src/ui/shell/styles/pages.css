@@ -374,3 +374,20 @@
 
 .ck-task-script-run { color: var(--ck-green, #22c55e); font-size: 10px; flex-shrink: 0; opacity: .7; }
 .ck-task-script:hover .ck-task-script-run { opacity: 1; }
+
+/* 高亮统计行（今日全窗口 / 预估费用）：斜体放大 + 琥珀色，区别于普通蓝色强调 */
+.ck-stat-item-hl {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.10), transparent 70%);
+}
+.ck-stat-item-hl .ck-stat-key { color: var(--ck-text); font-weight: 600; }
+.ck-stat-item-hl .ck-stat-val {
+  font-style: italic;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: #f59e0b;
+  transform: scale(1.02);
+  transform-origin: right center;
+}
+body[data-ck-dark] .ck-stat-item-hl { background: linear-gradient(90deg, rgba(251, 191, 36, 0.14), transparent 70%); }
+body[data-ck-dark] .ck-stat-item-hl .ck-stat-val { color: #fbbf24; }

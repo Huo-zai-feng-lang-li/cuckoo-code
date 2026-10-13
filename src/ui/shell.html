@@ -1703,6 +1703,23 @@
 .ck-task-script-run { color: var(--ck-green, #22c55e); font-size: 10px; flex-shrink: 0; opacity: .7; }
 .ck-task-script:hover .ck-task-script-run { opacity: 1; }
 
+/* 高亮统计行（今日全窗口 / 预估费用）：斜体放大 + 琥珀色，区别于普通蓝色强调 */
+.ck-stat-item-hl {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.10), transparent 70%);
+}
+.ck-stat-item-hl .ck-stat-key { color: var(--ck-text); font-weight: 600; }
+.ck-stat-item-hl .ck-stat-val {
+  font-style: italic;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: #f59e0b;
+  transform: scale(1.02);
+  transform-origin: right center;
+}
+body[data-ck-dark] .ck-stat-item-hl { background: linear-gradient(90deg, rgba(251, 191, 36, 0.14), transparent 70%); }
+body[data-ck-dark] .ck-stat-item-hl .ck-stat-val { color: #fbbf24; }
+
 </style>
 </head>
 <body>
@@ -2182,11 +2199,11 @@
 合计 3000（不是新增的 1500）">!</span></span>
                   <span class="ck-stat-val" id="tk-today">0</span>
                 </div>
-                <div class="ck-stat-item">
+                <div class="ck-stat-item ck-stat-item-hl">
                   <span class="ck-stat-key">今日全窗口<span class="ck-hint" data-tooltip="【所有窗口】今天各轮完整上下文之和（全局今日消耗）">!</span></span>
                   <span class="ck-stat-val" id="tk-today-total">0</span>
                 </div>
-                <div class="ck-stat-item">
+                <div class="ck-stat-item ck-stat-item-hl">
                   <span class="ck-stat-key">预估费用<span class="ck-hint" id="tk-cost-hint" data-tooltip="基于「今日全窗口」粗略估算，非精确账单
 假设：输出占 15%，输入缓存命中 70%
 单价(元/百万)：命中 0.02 / 未命中 1 / 输出 4
