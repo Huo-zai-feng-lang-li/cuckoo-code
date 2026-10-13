@@ -1,8 +1,23 @@
-# 最新接续状态 (2026-10-13 20:27)
+# 最新接续状态 (2026-10-13 21:30)
 
 ## 核心进展
 
-本轮连续推进 **v0.8.46 → v0.8.55**（10 个版本），已全部提交、打 tag、推送 origin。最新 tag **v0.8.55**。工作区干净，master 与 origin 同步。
+**v0.8.56**：内存/性能深度修复（3 处确凿问题）。已提交、打 tag、推送 origin。最新 tag **v0.8.56**。
+
+### v0.8.56 改动（内存/性能）
+
+1. **任务表无界增长**（src/infra/task-manager.ts）：tasks Map 退出后不自动清理 → 新增 pruneExited()（保留最近 50 条已退出），在 finish / stop 兜底 / dispose 三处自动修剪。
+2. **规则注入 Map 无界增长**（src/rules/injection.ts）：injected Map 按会话累积、clearSession 从未调用 → 加会话数上限 100，超限淘汰最早条目（语义无损，最坏重注入一次）。
+3. **输出裁剪 O(n²) → O(n)**（task-manager.appendOutput）：逐字符 slice+byteLength 改单次遍历累加，按 UTF-16 码点边界前进（不切坏代理对）；修正截断前缀未计入 outputBytes。
+
+### v0.8.56 验证
+- typecheck ✅ / test 98 文件 980 用例全绿（新增 test/infra/task-manager.test.js 4 用例）✅ / lint 0 errors ✅ / compile ✅
+- code-reviewer 审查：无必须修复项；采纳其建议（截断前缀同步 outputBytes + 补裁剪测试）
+- ⚠️ 未做真机验证：改动为纯内存管理逻辑（无 UI/IPC 行为变化），静态 + 单测已充分覆盖；如需可在「任务」页观察历史任务上限
+
+### 上一轮（v0.8.46 → v0.8.55，10 个版本）
+
+任务页系列修复 + 更新机制加固 + UI 交互打磨。已全部提交、打 tag、推送 origin。
 
 三大块：**任务页系列修复**（停止态/通知刷新/滚动定位）+ **更新机制加固**（并发保护/ANSI 输出/子代理审查修复）+ **UI 交互打磨**（规则页保存提示/hover 抖动与参数）。
 

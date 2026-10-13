@@ -22,6 +22,8 @@ import { decodeOutput } from './decode-output.js';
 const MAX_OUTPUT_BYTES = 256 * 1024;
 /** 同时运行的最大后台任务数 */
 const MAX_TASKS = 20;
+/** 已退出任务的历史保留上限（防止 tasks Map 无界增长） */
+const MAX_EXITED_HISTORY = 50;
 /** 停止时的宽限：先温和终止，超时未退再强杀 */
 const STOP_GRACE_MS = 3000;
 
@@ -88,6 +90,21 @@ function runningCount(): number {
   return n;
 }
 
+/**
+ * 修剪已退出的历史任务，防止 tasks Map 随命令数无界增长。
+ * 仅保留最近 MAX_EXITED_HISTORY 个已退出任务（按结束时间），运行中的一律不动。
+ */
+function pruneExited(): void {
+  const exited: TaskRecord[] = [];
+  for (const rec of tasks.values()) {
+    if (rec.status === 'exited') exited.push(rec);
+  }
+  if (exited.length <= MAX_EXITED_HISTORY) return;
+  exited.sort((a, b) => (a.endedAt || 0) - (b.endedAt || 0)); // 最旧在前
+  const removeCount = exited.length - MAX_EXITED_HISTORY;
+  for (let i = 0; i < removeCount; i++) tasks.delete(exited[i].id);
+}
+
 /** 追加输出到环形缓冲（超出上限丢头部，尽量按行丢弃） */
 function appendOutput(rec: TaskRecord, text: string): void {
   if (!text) return;
@@ -95,12 +112,28 @@ function appendOutput(rec: TaskRecord, text: string): void {
   rec.outputBytes += Buffer.byteLength(text, 'utf-8');
   if (rec.outputBytes > MAX_OUTPUT_BYTES) {
     // 超限：从头部裁掉，保留尾部；按换行对齐，避免半个字
-    let drop = rec.outputBytes - MAX_OUTPUT_BYTES;
+    const drop = rec.outputBytes - MAX_OUTPUT_BYTES;
+    // 单次遍历累加 UTF-8 字节数，找到应丢弃的字符数（O(n)，避免逐字符 slice+byteLength 的 O(n²)）。
+    // 按码点边界前进：高位代理与随后的低位代理合为一个 4 字节码点，避免切出半个字符。
     let cut = 0;
-    // 粗略估算：按字符裁，直到估算字节数 <= drop
-    for (let i = 0; i < rec.output.length; i++) {
-      cut = i + 1;
-      if (Buffer.byteLength(rec.output.slice(0, cut), 'utf-8') >= drop) break;
+    let droppedBytes = 0;
+    while (cut < rec.output.length && droppedBytes < drop) {
+      const code = rec.output.charCodeAt(cut);
+      let step = 1;
+      let bytes: number;
+      if (code < 0x80) {
+        bytes = 1;
+      } else if (code < 0x800) {
+        bytes = 2;
+      } else if (code >= 0xd800 && code <= 0xdbff) {
+        const next = rec.output.charCodeAt(cut + 1);
+        if (next >= 0xdc00 && next <= 0xdfff) { step = 2; bytes = 4; } // 完整代理对
+        else bytes = 3; // 孤立高位代理（异常输入，按 3 字节兜底）
+      } else {
+        bytes = 3;
+      }
+      droppedBytes += bytes;
+      cut += step;
     }
     // 对齐到下一个换行（丢头更干净）
     const nl = rec.output.indexOf('\n', cut);
@@ -109,9 +142,11 @@ function appendOutput(rec: TaskRecord, text: string): void {
     rec.output = rec.output.slice(cut);
     rec.outputBytes -= Buffer.byteLength(removed, 'utf-8');
     if (rec.outputBytes < 0) rec.outputBytes = 0;
-    // 头部加截断提示（只加一次）
+    // 头部加截断提示（只加一次）。前缀也计入 outputBytes，维持"字节数=实际内容"的不变量。
     if (!rec.output.startsWith('[输出已截断]')) {
-      rec.output = '[输出已截断]\n' + rec.output;
+      const prefix = '[输出已截断]\n';
+      rec.output = prefix + rec.output;
+      rec.outputBytes += Buffer.byteLength(prefix, 'utf-8');
     }
   }
 }
@@ -168,6 +203,7 @@ export function start(opts: StartOptions): TaskInfo {
     rec.exitCode = code;
     rec.endedAt = Date.now();
     rec.stopping = false; // 已退出：清"停止中"标记，避免语义残留
+    pruneExited(); // 修剪历史，防 tasks Map 无界增长
     notifyChange();
   };
   child.on('error', (err: any) => {
@@ -264,6 +300,7 @@ export function stop(id: string): boolean {
       rec.endedAt = Date.now();
       rec.exitCode = rec.exitCode ?? null; // 兜底：避免渲染层显示"退出码 undefined"
       rec.stopping = false;
+      pruneExited();
       notifyChange();
     }
   }, STOP_GRACE_MS + 500);
@@ -311,6 +348,7 @@ export function dispose(): void {
     rec.status = 'exited';
     rec.endedAt = Date.now();
   }
+  pruneExited();
   notifyChange();
 }
 

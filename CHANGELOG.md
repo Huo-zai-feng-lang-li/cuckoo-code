@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.8.56] - 2026-10-13
+
+### Fixed
+- **后台任务表无界增长（内存泄漏）**：task-manager 的 tasks Map 在任务退出后不自动清理，仅靠用户手动「清除已退出」，长期运行 + 高频命令会累积数 MB~数十 MB。新增 pruneExited()（保留最近 50 条已退出历史，运行中不动），在进程退出 / 停止兜底 / dispose 三处自动修剪。
+- **规则注入缓存无界增长（内存泄漏）**：rules/injection 的 injected Map 按会话累积且 clearSession 从未被调用，随对话数无限增长。新增会话数上限（100），超限淘汰最早条目（最坏仅导致规则全文重注入一次，语义无损）。
+
+### Performance
+- **后台任务输出裁剪 O(n²) → O(n)**：appendOutput 原实现逐字符对前缀调用 Buffer.byteLength，大块输出超限时累计 O(drop²)，可卡主线程数百 ms。改为单次遍历累加 UTF-8 字节数，并按 UTF-16 码点边界前进（不切坏代理对）。顺带修正截断前缀未计入 outputBytes 的不变量偏差。
+
+### Added
+- 新增 test/infra/task-manager.test.js：覆盖超长输出环形裁剪、多字节/代理对裁剪边界（不切出孤立代理）、未知任务、运行中任务不可移除。
+
 ## [0.8.55] - 2026-10-13
 
 ### Changed

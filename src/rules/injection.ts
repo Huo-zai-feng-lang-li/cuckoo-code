@@ -8,12 +8,21 @@
 // sessionId -> Set<rulePath>
 const injected = new Map<string, Set<string>>();
 
+// 保留的最大会话数：超出后淘汰最早的会话条目，防止 Map 随对话数无界增长。
+// 被淘汰会话若后续再注入，最坏只是规则全文重发一次，语义无损。
+const MAX_SESSIONS = 100;
+
 /** 取某会话"已注入规则路径"集合 */
 export function getInjectedSet(sessionId: string): Set<string> {
   let s = injected.get(sessionId);
   if (!s) {
     s = new Set<string>();
     injected.set(sessionId, s);
+    if (injected.size > MAX_SESSIONS) {
+      // Map 迭代顺序 = 插入顺序，取最早插入的键淘汰
+      const oldest = injected.keys().next().value;
+      if (oldest !== undefined && oldest !== sessionId) injected.delete(oldest);
+    }
   }
   return s;
 }
