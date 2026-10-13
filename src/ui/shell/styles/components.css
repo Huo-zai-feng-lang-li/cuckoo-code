@@ -93,6 +93,18 @@
   .ck-rule-icon-only svg { width: 15px; height: 15px; display: inline-block; vertical-align: middle; }
   .ck-rule-toolbar .ck-rule-icon-only + .ck-icon-btn { margin-left: -4px; }
   .ck-rule-compact span { font-size: 15px; line-height: 0; vertical-align: -1px; margin-right: 2px; }
+  .ck-rule-scope-hint {
+    margin: 0 10px 8px; padding: 8px 10px; border-radius: 8px;
+    background: var(--ck-surface); border: 1px solid var(--ck-border-soft);
+    font-size: 11.5px; line-height: 1.5; color: var(--ck-text-2);
+  }
+  .ck-rule-scope-title { display: block; font-weight: 600; color: var(--ck-text); margin-bottom: 2px; }
+  .ck-rule-scope-desc { display: block; }
+  .ck-rule-scope-desc code {
+    background: var(--ck-surface-hover); padding: 0 4px; border-radius: 4px;
+    font-family: var(--mono, monospace); font-size: 11px; color: var(--ck-primary);
+  }
+  .ck-rule-scope-desc b { color: var(--ck-text); }
   .ck-rule-editor { padding: 4px 0 10px; }
   .ck-rule-editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
   .ck-rule-editor-title { font-size: 15px; font-weight: 650; color: var(--ck-text); }

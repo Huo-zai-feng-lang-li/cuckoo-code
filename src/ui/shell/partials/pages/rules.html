@@ -4,6 +4,10 @@
                 <button class="ck-btn ck-btn-secondary ck-rule-compact ck-rule-icon-only" id="rule-open-dir" title="打开规则目录" aria-label="打开规则目录" aria-hidden="false">↗</button>
                 <button class="ck-icon-btn" id="rule-refresh" title="刷新规则列表" aria-label="刷新规则列表">↻</button>
               </div>
+              <div class="ck-rule-scope-hint">
+                <span class="ck-rule-scope-title">本页 = 用户级全局规则</span>
+                <span class="ck-rule-scope-desc">保存于 ~/.cuckoo/rules/，<b>所有项目通用</b>。项目专属规则请在项目根建 <code>.agents/rules/README.md</code>（随仓库走，多 AI 工具共用）。</span>
+              </div>
               <div class="ck-list" id="rule-list"><div class="ck-list-empty">加载中…</div></div>
               <div id="rule-editor" class="ck-rule-editor cuckoo-hidden">
                 <div class="ck-rule-editor-head">

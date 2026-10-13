@@ -1,8 +1,9 @@
 /**
  * 规则扫描：项目级 + 用户级目录 → RuleMeta[]
  *
- * 目录约定（对齐 Claude Code）：
- *  - 项目级：`<projectDir>/.cuckoo/rules/*.md`
+ * 目录约定：
+ *  - 项目级：`<projectDir>/.agents/rules/*.md`（新，优先；对齐多 AI 工具统一入口）
+ *            回退 `<projectDir>/.cuckoo/rules/*.md`（旧，兼容未迁移项目）
  *  - 用户级：`~/.cuckoo/rules/*.md`
  *
  * 规则：
@@ -47,6 +48,17 @@ function scanDir(rulesDir: string, source: RuleSource): RuleMeta[] {
 }
 
 /**
+ * 扫描项目级规则目录。
+ * 优先 `.agents/rules/`（多 AI 工具统一入口）；不存在则回退 `.cuckoo/rules/`（兼容旧项目）。
+ * 二选一，避免两目录并存时重复注入。
+ */
+function scanProjectRules(projectDir: string): RuleMeta[] {
+  const agentsDir = path.join(projectDir, '.agents', 'rules');
+  if (fs.existsSync(agentsDir)) return scanDir(agentsDir, 'project');
+  return scanDir(path.join(projectDir, '.cuckoo', 'rules'), 'project');
+}
+
+/**
  * 扫描并合并规则（项目级 + 用户级 + 插件级都保留，同名不覆盖）。
  * @param projectDir 项目根（可为 null）
  * @param extraRulesDirs 额外的 rules 目录（绝对路径）。由上层（session）计算后传入，
@@ -54,7 +66,7 @@ function scanDir(rulesDir: string, source: RuleSource): RuleMeta[] {
  */
 export function scanRules(projectDir: string | null, extraRulesDirs: string[] = []): RuleMeta[] {
   const user = scanDir(getUserRulesDir(), 'user');
-  const project = projectDir ? scanDir(path.join(projectDir, '.cuckoo', 'rules'), 'project') : [];
+  const project = projectDir ? scanProjectRules(projectDir) : [];
   const plugin: RuleMeta[] = [];
   for (const dir of extraRulesDirs) {
     if (!dir) continue;

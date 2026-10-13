@@ -62,6 +62,7 @@ import { createSnapshot, listSnapshots, restoreSnapshot } from './snapshots.js';
 import { pushUrlState } from './ipc/shell.js';
 import { pushHarnessState, stopGeneration } from './ipc/harness.js';
 import { injectWindowGroupDeps, requestShareFromWindow } from './ipc/window-groups.js';
+import { seedDefaultRules } from '../rules/index.js';
 import { initProject } from '../session/project-context.js';
 import * as windowGroups from './window-groups.js';
 
@@ -1405,6 +1406,8 @@ if (!gotSingleInstanceLock) {
 
   app.whenReady().then(() => {
     setupAppMenu();
+    // 首次启动写入默认全局规则（用户已有规则则不覆盖）
+    try { seedDefaultRules(); } catch (_) { /* ignore */ }
     // MCP 配置首次迁移（旧 userData/mcp.json → ~/.cuckoo/mcp.json，旧文件保留）
     try { mcpConfig.migrateLegacy(); } catch (_) { /* ignore */ }
     // 加载已启用的 Cuckoo 插件（DSH 兼容；注册其工具到全局工具表）
