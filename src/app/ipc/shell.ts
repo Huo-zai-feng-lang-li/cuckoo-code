@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import * as windowState from '../window.js';
 import * as profileManager from '../profile.js';
 import { getProvider } from '../../providers/registry.js';
-import { setWindowUsage, getTotal, getTodayTotal, getWindowUsageList, cleanupSubagentKeys } from '../token-stats.js';
+import { setWindowUsage, getTotal, getTodayTotal, getRecentDailyTotal, getWindowUsageList, cleanupSubagentKeys } from '../token-stats.js';
 import { resolveAsset, resolveSrc } from '../../infra/paths.js';
 import * as updater from '../../updater/index.js';
 // 新对话要让 harness 视图一起重置 —— 两个入口共用同一段逻辑，避免行为分叉
@@ -77,7 +77,7 @@ function broadcastSystemTotal(): void {
 
 /** 把各窗口今日用量广播给所有窗口的壳页面（供柱图展示） */
 function broadcastWindowUsage(): void {
-  const payload = { todayTotal: getTodayTotal(), windows: getWindowUsageList() };
+  const payload = { todayTotal: getTodayTotal(), windows: getWindowUsageList(), daily: getRecentDailyTotal(10) };
   for (const ctx of windowState.getAllContexts()) {
     try {
       if (ctx && ctx.win && !ctx.win.isDestroyed()) {
@@ -101,6 +101,7 @@ function pushTokenUsage(view: any, context: number, cumulative: number, windowCu
   ctx.win.webContents.send('shell-token-updated', {
     context, cumulative, windowCumulative, todayCumulative, daily,
     todayTotal: getTodayTotal(),
+    dailyTotal: getRecentDailyTotal(10),
     windows: getWindowUsageList(),
   });
 }
@@ -179,7 +180,7 @@ function registerShellIpc(): void {
 
   // 查询各窗口今日用量（壳页面加载时拉取一次）
   ipcMain.handle('get-window-usage', async () => {
-    return { success: true, todayTotal: getTodayTotal(), windows: getWindowUsageList() };
+    return { success: true, todayTotal: getTodayTotal(), windows: getWindowUsageList(), daily: getRecentDailyTotal(10) };
   });
 
 

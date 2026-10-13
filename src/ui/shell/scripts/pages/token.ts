@@ -1,7 +1,7 @@
 /**
  * Token 显示（状态条 + Token 页）+ 近 10 日柱状图 + 自动压缩。
  */
-import { api, ckAlert, ckConfirm, formatTokenCount, formatTokenCountHTML, formatShort, escapeHtml, escapeAttr } from '../shared.js';
+import { api, ckAlert, ckConfirm, formatTokenCount, formatTokenCountHTML, formatShort } from '../shared.js';
 
 const contextEl = document.getElementById('sb-context');
 const cumulativeEl = document.getElementById('sb-cumulative');
@@ -46,38 +46,42 @@ function formatCost(cost: number): string {
 }
 
 function costTooltip(peak: boolean): string {
-  return '基于「今日窗口」粗略估算，非精确账单\n' +
+  return '基于「今日全窗口」粗略估算，非精确账单\n' +
     '⚠ 假设输出占 15%、输入缓存命中 70%（实际未知）\n' +
     '当前按【' + (peak ? '高峰' : '闲时') + '】价\n' +
     '单价(元/百万)：命中 0.02 / 未命中 1 / 输出 4\n' +
     '高峰时段(工作日 9-12、14-18)翻倍';
 }
 
-/** 渲染「今日各窗口用量」柱图（按今日降序） */
-function renderChart(windows: any[]): void {
+/** 渲染「近 10 日全窗口用量」柱图（按天，全窗口总量） */
+function renderChart(daily: any[]): void {
   const chart = document.getElementById('tk-chart');
   if (!chart) return;
-  if (!Array.isArray(windows) || windows.length === 0) {
+  if (!Array.isArray(daily) || daily.length === 0) {
     chart.innerHTML = '<div class="ck-list-empty" style="width:100%;">暂无数据</div>';
     return;
   }
-  const sorted = windows.slice().sort((a: any, b: any) => (b.today || 0) - (a.today || 0));
-  const values = sorted.map((w: any) => w.today || 0);
+  const sorted = daily.slice().sort((a: any, b: any) => String(b.date || '').localeCompare(String(a.date || '')));
+  const values = sorted.map((d: any) => d.value || 0);
   const max = Math.max(1, Math.max.apply(null, values));
   const total = values.reduce((s: number, v: number) => s + v, 0);
-  const activeCount = values.filter((v: number) => v > 0).length;
+  const daysWithData = values.filter((v: number) => v > 0).length;
+  const avg = daysWithData > 0 ? total / daysWithData : 0;
+  const peakVal = Math.max.apply(null, values);
+  const peakDate = (sorted[values.indexOf(peakVal)] || {}).date || '';
+  const dayFmt = (s: string) => (s || '').slice(5).replace('-', '/');
 
   const summary = '<div class="ck-chart-summary">' +
-    '<span>今日全窗口 <b>' + formatShort(total) + '</b></span>' +
-    '<span>活跃窗口 <b>' + activeCount + '</b> / ' + sorted.length + '</span>' +
+    '<span>近 10 日合计 <b>' + formatShort(total) + '</b></span>' +
+    '<span>日均 <b>' + formatShort(avg) + '</b></span>' +
+    '<span>峰值 <b>' + formatShort(peakVal) + '</b>（' + (peakDate ? dayFmt(peakDate) : '--') + '）</span>' +
     '</div>';
 
-  const rows = sorted.map((w: any) => {
-    const v = w.today || 0;
+  const rows = sorted.map((d: any) => {
+    const v = d.value || 0;
     const pct = Math.max(1, Math.round((v / max) * 100));
-    const name = String(w.name || w.profileId || '--');
-    return '<div class="ck-bar-row" data-name="' + escapeAttr(name) + '">' +
-      '<span class="ck-bar-label" title="' + escapeAttr(name) + '">' + escapeHtml(name) + '</span>' +
+    return '<div class="ck-bar-row" data-date="' + d.date + '">' +
+      '<span class="ck-bar-label">' + dayFmt(d.date) + '</span>' +
       '<div class="ck-bar-track"><div class="ck-bar" style="width:' + pct + '%;"></div></div>' +
       '<span class="ck-bar-val">' + formatShort(v) + '</span>' +
     '</div>';
@@ -85,17 +89,18 @@ function renderChart(windows: any[]): void {
 
   chart.innerHTML = summary + rows;
 
-  // 点击某窗口 → 详情（今日 + 历史累计）
+  // 点击某天 → 详情
   chart.querySelectorAll('.ck-bar-row').forEach((row: any) => {
     row.addEventListener('click', () => {
-      const name = row.getAttribute('data-name') || '';
-      const found = sorted.find((x: any) => String(x.name || x.profileId) === name);
-      const todayV = found ? (found.today || 0) : 0;
-      const cumV = found ? (found.cumulative || 0) : 0;
-      const share = total > 0 ? (todayV / total) * 100 : 0;
+      const date = row.getAttribute('data-date') || '';
+      const found = sorted.find((x: any) => x.date === date);
+      const v = found ? (found.value || 0) : 0;
+      const share = total > 0 ? (v / total) * 100 : 0;
+      const diff = avg > 0 ? ((v - avg) / avg) * 100 : 0;
+      const diffStr = (diff >= 0 ? '+' : '') + diff.toFixed(0) + '%';
       ckAlert(
-        '今日 ' + formatShort(todayV) + ' tokens ｜ 占今日全窗口 ' + share.toFixed(1) + '%\n历史累计 ' + formatShort(cumV),
-        name || '详情'
+        '全窗口消耗 ' + formatShort(v) + ' tokens ｜ 占近10日 ' + share.toFixed(1) + '% ｜ 较日均 ' + diffStr,
+        date || '详情'
       );
     });
   });
@@ -123,26 +128,38 @@ if ((api as any).onTokenUpdated) {
     if (tkTodayTotal && typeof data.todayTotal === 'number') tkTodayTotal.textContent = formatTokenCount(data.todayTotal);
     if (tkWindow) tkWindow.textContent = formatTokenCount(data.windowCumulative);
     if (tkCost) {
-      const est = estimateCost(data.todayCumulative);
+      // 预估费用：按「今日全窗口」估算（跨窗口总消耗）
+      const costBase = typeof data.todayTotal === 'number' ? data.todayTotal : data.todayCumulative;
+      const est = estimateCost(costBase);
       tkCost.textContent = formatCost(est.cost);
       if (tkCostHint) tkCostHint.setAttribute('data-tooltip', costTooltip(est.peak));
     }
-    if (data.windows) renderChart(data.windows);
+    if (data.dailyTotal) renderChart(data.dailyTotal);
   });
 }
-// 各窗口今日用量（柱图 + 今日全窗口）
+// 今日全窗口 + 近 10 日全窗口（柱图 + 费用）
 if ((api as any).onWindowUsage) {
   (api as any).onWindowUsage((data: any) => {
     if (!data) return;
     if (tkTodayTotal && typeof data.todayTotal === 'number') tkTodayTotal.textContent = formatTokenCount(data.todayTotal);
-    if (data.windows) renderChart(data.windows);
+    if (tkCost && typeof data.todayTotal === 'number') {
+      const est = estimateCost(data.todayTotal);
+      tkCost.textContent = formatCost(est.cost);
+      if (tkCostHint) tkCostHint.setAttribute('data-tooltip', costTooltip(est.peak));
+    }
+    if (data.daily) renderChart(data.daily);
   });
 }
 if ((api as any).getWindowUsage) {
   (api as any).getWindowUsage().then((r: any) => {
     if (r && r.success) {
       if (tkTodayTotal && typeof r.todayTotal === 'number') tkTodayTotal.textContent = formatTokenCount(r.todayTotal);
-      if (r.windows) renderChart(r.windows);
+      if (tkCost && typeof r.todayTotal === 'number') {
+        const est = estimateCost(r.todayTotal);
+        tkCost.textContent = formatCost(est.cost);
+        if (tkCostHint) tkCostHint.setAttribute('data-tooltip', costTooltip(est.peak));
+      }
+      if (r.daily) renderChart(r.daily);
     }
   }).catch(() => {});
 }

@@ -27,6 +27,7 @@ autoUpdater.autoInstallOnAppQuit = true; // 退出时自动安装（支持 NSIS�
 let updateChecked = false;       // 是否已执行过检查
 let updateDownloaded = false;    // 是否已下载完成
 let isManualCheck = false;       // 是否是用户手动触发的检查
+let autoInstallAfterDownload = false; // 下载完成后是否自动重启安装（用户选了"立即更新"）
 let mainWindowRef: any = null;   // 主窗口引用（用于弹出对话框）
 
 /** 设置主窗口引用，用于对话框定位 */
@@ -182,8 +183,8 @@ autoUpdater.on('update-available', async (info: any) => {
     type: 'info',
     title: '发现新版本',
     message: '发现新版本 v' + info.version,
-    detail: '是否现在下载更新？下载完成后可在退出时自动安装。',
-    buttons: ['立即下载', '暂不下载'],
+    detail: '是否立即更新？将自动下载并重启安装。',
+    buttons: ['立即更新', '稍后'],
     defaultId: 0,
     cancelId: 1,
   };
@@ -192,12 +193,16 @@ autoUpdater.on('update-available', async (info: any) => {
     ? await dialog.showMessageBox(parent, options)
     : await dialog.showMessageBox(options);
   if (result.response === 0) {
-    showNotification('开始下载', '正在下载 v' + info.version + '...');
+    // 用户选「立即更新」→ 自动下载，下载完自动重启安装（见 update-downloaded）
+    autoInstallAfterDownload = true;
+    showNotification('开始更新', '正在下载 v' + info.version + '…');
     sendProgress({ state: 'downloading', percent: 0, version: info.version });
     autoUpdater.downloadUpdate().catch((err) => {
       console.error('[Updater] 下载失败:', err);
+      autoInstallAfterDownload = false;
     });
   } else {
+    // 用户选「稍后」→ 不下载
     isManualCheck = false;
   }
 });
@@ -229,7 +234,15 @@ autoUpdater.on('update-downloaded', (info: any) => {
   console.log('[Updater] 新版本已下载:', info.version);
   sendProgress({ state: 'done', percent: 100, version: info.version });
 
-  // 弹窗询问是否立即安装
+  // 用户在"发现新版本"时选了"立即更新" → 自动重启安装，不再二次询问
+  if (autoInstallAfterDownload) {
+    autoInstallAfterDownload = false;
+    console.log('[Updater] 自动安装并重启');
+    setTimeout(() => { try { autoUpdater.quitAndInstall(); } catch (_) { /* ignore */ } }, 800);
+    return;
+  }
+
+  // 否则（后台自动检查下载完成）弹窗询问是否立即安装
   const options = {
     type: 'info',
     title: '更新已就绪',
