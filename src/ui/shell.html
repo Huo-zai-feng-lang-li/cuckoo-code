@@ -344,7 +344,7 @@
   .ck-label { font-size: 10.5px; font-weight: 600; color: var(--ck-text-dim); letter-spacing: .6px; text-transform: uppercase; }
   .ck-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .ck-divider { border-top: 1px solid var(--ck-border); margin: 1px 0; }
-  .ck-actions { display: flex; align-items: center; gap: 8px; }
+  .ck-actions { display: flex; align-items: center; gap: 4px; }
 
   /* ===== 按钮 ===== */
   .ck-btn {
@@ -406,9 +406,6 @@
   .ck-icon-btn:hover { background: var(--ck-surface); color: var(--ck-text); }
   .ck-icon-btn:active { transform: scale(0.96); }
   .ck-icon-btn svg { width: 16px; height: 16px; }
-  /* 刷新按钮：悬停正向转一圈，移开反向转回�?*/
-  .ck-icon-btn svg { transition: transform .6s ease; }
-  .ck-icon-btn:hover svg { transform: rotate(360deg); }
 
   /* ===== 列表 ===== */
   .ck-list { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
@@ -1901,6 +1898,9 @@
                 </button>
                 <button class="ck-icon-btn" id="ft-new-folder" title="新建文件夹">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v5M9.5 12.5h5"/></svg>
+                </button>
+                <button class="ck-icon-btn" id="ft-collapse-all" title="全部折叠">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9l8-6 8 6"/><path d="M4 15l8 6 8-6"/></svg>
                 </button>
                 <button class="ck-icon-btn" id="ft-refresh" title="刷新">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
@@ -4437,6 +4437,11 @@ paths:            # 可选；省略 = 始终生效
     bindRowEvents(listEl2);
   }
   document.getElementById("ft-refresh")?.addEventListener("click", loadFiles);
+  document.getElementById("ft-collapse-all")?.addEventListener("click", () => {
+    expanded.clear();
+    const listEl2 = document.getElementById("ft-list");
+    if (listEl2) renderList(listEl2);
+  });
   document.getElementById("ft-new-file")?.addEventListener("click", () => doCreate("", false));
   document.getElementById("ft-new-folder")?.addEventListener("click", () => doCreate("", true));
   {
@@ -6999,6 +7004,7 @@ paths:            # 可选；省略 = 始终生效
       }
       if (listEl2) listEl2.classList.add("ck-hidden");
       historyLoaded = false;
+      lastHistorySig = "";
       await loadGit();
       if (historyOpen) await loadHistory();
     } catch (err) {
@@ -7051,6 +7057,7 @@ paths:            # 可选；省略 = 始终生效
     if (msgEl) msgEl.value = "";
     await ckAlert("\u63D0\u4EA4\u6210\u529F", "Git");
     historyLoaded = false;
+    lastHistorySig = "";
     await loadGit();
     if (historyOpen) await loadHistory();
   }
@@ -7124,6 +7131,7 @@ paths:            # 可选；省略 = 始终生效
   }
   var historyLoaded = false;
   var historyOpen = false;
+  var lastHistorySig = "";
   function renderHistory(commits) {
     const listEl2 = document.getElementById("git-history-list");
     const countEl = document.getElementById("git-history-count");
@@ -7141,14 +7149,21 @@ paths:            # 可选；省略 = 始终生效
   async function loadHistory() {
     const listEl2 = document.getElementById("git-history-list");
     if (!listEl2 || !api.gitLog) return;
-    listEl2.innerHTML = '<div class="ck-git-history-empty">\u52A0\u8F7D\u4E2D\u2026</div>';
+    if (!historyLoaded) listEl2.innerHTML = '<div class="ck-git-history-empty">\u52A0\u8F7D\u4E2D\u2026</div>';
     try {
       const r = await api.gitLog(60);
       if (!r || !r.success) {
-        listEl2.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml(r && r.error || "\u8BFB\u53D6\u5931\u8D25") + "</div>";
+        if (!historyLoaded) listEl2.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml(r && r.error || "\u8BFB\u53D6\u5931\u8D25") + "</div>";
         return;
       }
-      renderHistory(r.commits || []);
+      const commits = r.commits || [];
+      const sig = commits.map((c) => c.hash).join(",");
+      if (sig === lastHistorySig) {
+        historyLoaded = true;
+        return;
+      }
+      lastHistorySig = sig;
+      renderHistory(commits);
       historyLoaded = true;
     } catch (err) {
       listEl2.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml(err.message || "\u8BFB\u53D6\u5931\u8D25") + "</div>";
@@ -7209,6 +7224,7 @@ paths:            # 可选；省略 = 始终生效
   if (api.onProjectDir) {
     api.onProjectDir(() => {
       historyLoaded = false;
+      lastHistorySig = "";
       gitWatcherStarted = false;
       loadGit();
       if (historyOpen) loadHistory();

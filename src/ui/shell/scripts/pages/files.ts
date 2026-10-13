@@ -315,6 +315,12 @@ function renderList(listEl: HTMLElement): void {
 }
 
 document.getElementById('ft-refresh')?.addEventListener('click', loadFiles);
+// 全部折叠：清空展开状态后重渲染
+document.getElementById('ft-collapse-all')?.addEventListener('click', () => {
+  expanded.clear();
+  const listEl = document.getElementById('ft-list');
+  if (listEl) renderList(listEl);
+});
 document.getElementById('ft-new-file')?.addEventListener('click', () => doCreate('', false));
 document.getElementById('ft-new-folder')?.addEventListener('click', () => doCreate('', true));
 

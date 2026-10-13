@@ -10,7 +10,7 @@
   .ck-label { font-size: 10.5px; font-weight: 600; color: var(--ck-text-dim); letter-spacing: .6px; text-transform: uppercase; }
   .ck-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .ck-divider { border-top: 1px solid var(--ck-border); margin: 1px 0; }
-  .ck-actions { display: flex; align-items: center; gap: 8px; }
+  .ck-actions { display: flex; align-items: center; gap: 4px; }
 
   /* ===== 按钮 ===== */
   .ck-btn {
@@ -72,9 +72,6 @@
   .ck-icon-btn:hover { background: var(--ck-surface); color: var(--ck-text); }
   .ck-icon-btn:active { transform: scale(0.96); }
   .ck-icon-btn svg { width: 16px; height: 16px; }
-  /* 刷新按钮：悬停正向转一圈，移开反向转回�?*/
-  .ck-icon-btn svg { transition: transform .6s ease; }
-  .ck-icon-btn:hover svg { transform: rotate(360deg); }
 
   /* ===== 列表 ===== */
   .ck-list { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }

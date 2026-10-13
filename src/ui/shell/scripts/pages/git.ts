@@ -176,7 +176,7 @@ async function doCheckout(branch: string): Promise<void> {
     }
     if (r && !r.success) { await ckAlert('切换失败：' + (r.error || '未知错误'), 'Git'); return; }
     if (listEl) listEl.classList.add('ck-hidden');
-    historyLoaded = false; // 切分支后提交历史不同，需重拉
+    historyLoaded = false; lastHistorySig = ''; // 切分支后提交历史不同，需重拉
     await loadGit();
     if (historyOpen) await loadHistory();
   } catch (err: any) {
@@ -227,7 +227,7 @@ async function doCommit(): Promise<void> {
   if (!r || !r.success) { await ckAlert('提交失败：' + ((r && r.error) || '未知错误'), '提交'); return; }
   if (msgEl) msgEl.value = '';
   await ckAlert('提交成功', 'Git');
-  historyLoaded = false; // 新提交出现，历史需重拉
+  historyLoaded = false; lastHistorySig = ''; // 新提交出现，历史需重拉
   await loadGit();
   if (historyOpen) await loadHistory();
 }
@@ -290,6 +290,8 @@ async function doCommit(): Promise<void> {
 // ===== 提交历史 =====
 let historyLoaded = false;
 let historyOpen = false;
+/** 最近一次渲染的历史签名（hash 列表），用于跳过无变化的重绘（防闪） */
+let lastHistorySig = '';
 
 /** 渲染提交历史列表 */
 function renderHistory(commits: any[]): void {
@@ -314,14 +316,20 @@ function renderHistory(commits: any[]): void {
 async function loadHistory(): Promise<void> {
   const listEl = document.getElementById('git-history-list');
   if (!listEl || !api.gitLog) return;
-  listEl.innerHTML = '<div class="ck-git-history-empty">加载中…</div>';
+  // 仅在首次加载时显示"加载中"；自动刷新时不闪（避免反复清空重绘）
+  if (!historyLoaded) listEl.innerHTML = '<div class="ck-git-history-empty">加载中…</div>';
   try {
     const r = await api.gitLog(60);
     if (!r || !r.success) {
-      listEl.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml((r && r.error) || '读取失败') + '</div>';
+      if (!historyLoaded) listEl.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml((r && r.error) || '读取失败') + '</div>';
       return;
     }
-    renderHistory(r.commits || []);
+    const commits = r.commits || [];
+    // 内容签名未变 → 跳过重绘（防自动刷新时闪烁）
+    const sig = commits.map((c: any) => c.hash).join(',');
+    if (sig === lastHistorySig) { historyLoaded = true; return; }
+    lastHistorySig = sig;
+    renderHistory(commits);
     historyLoaded = true;
   } catch (err: any) {
     listEl.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml(err.message || '读取失败') + '</div>';
@@ -388,7 +396,7 @@ if (api.onGitChanged) {
 // 项目目录变化 → 刷新
 if (api.onProjectDir) {
   api.onProjectDir(() => {
-    historyLoaded = false;   // 目录变了，历史需重拉
+    historyLoaded = false; lastHistorySig = ''; // 目录变了，历史需重拉
     gitWatcherStarted = false; // 目录变了，watcher 需重新启动监听新目录（start 会清理旧 watcher）
     loadGit();
     if (historyOpen) loadHistory();
