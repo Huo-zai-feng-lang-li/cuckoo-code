@@ -2,9 +2,10 @@
 
 ## 核心进展
 
-本轮连续推进 **v0.8.46 → v0.8.49**（4 个版本），已全部提交、打 tag、推送 origin。最新 tag **v0.8.49**。
+本轮连续推进 **v0.8.46 → v0.8.50**（5 个版本），已全部提交、打 tag、推送 origin。最新 tag **v0.8.50**。
 
 **v0.8.49 是子代理审查（code-reviewer）发现问题的修复**——见下方「子代理审查结论」。
+**v0.8.50 修复规则页保存提示撑坏布局**（另一条功能线，icon-only 按钮被改 textContent 摧毁 SVG）。
 
 前序 v0.8.40 → v0.8.45（任务页 + Token 统计 + 自动更新）已全部真机验证通过。
 
@@ -14,6 +15,7 @@
 - **v0.8.47**：任务输出剥离 ANSI 控制码（decode-output 新增 stripAnsi，处理 CSI/OSC/单字符；UTF-8 与 GBK 分支都走）
 - **v0.8.48**：运行任务后滚动定位到「刚运行的任务卡片」（原滚到面板底部，任务多时看到最旧的，看不到刚运行的）
 - **v0.8.49**：子代理审查修复——更新门禁锁死（installAndRestart 无参→target 空→新版被拦 10 分钟）+ 任务停止兜底 exitCode + expanded 裁剪
+- **v0.8.50**：规则页保存提示撑坏布局（改 textContent 摧毁 icon-only 按钮 SVG）→ 改为按钮行末尾插临时 span
 
 ## 本轮修复详情（v0.8.46）
 
@@ -60,10 +62,10 @@
 
 **全局规则第 4 条未注入**：`~/.cuckoo/rules/global-override.md` 有「4. 复杂代码修改后使用子代理检查，主代理审计」及第 46 行「> 也可派出子代理检查，你在审计」，但系统提示词注入的 global-override 里这两行丢失。疑似规则注入被截断/旧缓存。**待排查**。
 
-## ⚠️ 工作区遗留（勿动）
+## ⚠️ 遗留事项
 
-- `src/ui/shell/scripts/pages/rules.ts` + `src/ui/shell/styles/components.css` 有**另一条功能线**的未提交改动（规则页保存提示改插 span，避免改 icon-only 按钮）。**不属于本轮，勿顺手提交**。
-- **预存在测试失败**：`test/plugins/installer.test.js > installPlugin: 不残留临时目录`——clean master 上同样失败（已 stash 验证），与 v0.8.46~49 无关，待排查。
+- **预存在测试失败**：`test/plugins/installer.test.js > installPlugin: 不残留临时目录`——clean master 上同样失败（已 stash 验证），与 v0.8.46~50 无关，待排查。
+- （原"另一条功能线：规则页保存提示"改动已于 v0.8.50 修复并合入，见 043）
 
 ## 待办事项 (Next Steps)
 
