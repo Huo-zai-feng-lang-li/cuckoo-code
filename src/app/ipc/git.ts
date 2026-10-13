@@ -295,7 +295,8 @@ function registerGitIpc(): void {
     }
     // 用 git log -1 --stat：log 默认不输出 patch（--stat 只给文件与增删统计），
     // 而 git show --stat 会附带完整 diff（大提交易超 maxBuffer）。
-    const r = await runGit(root, ['-c', 'core.quotepath=false', 'log', '-1', '--stat', '--format=%H%x1f%s%x1f%an%x1f%ar', hash]);
+    // format 用 %n 换行（不要用 %x1f——控制字符会显示成 □）。
+    const r = await runGit(root, ['-c', 'core.quotepath=false', 'log', '-1', '--stat', '--format=%H%n%s%n%an · %ar%n', hash]);
     if (!r.success) return { success: false, error: r.stderr.trim() || '读取提交失败' };
     return { success: true, text: r.stdout };
   });
