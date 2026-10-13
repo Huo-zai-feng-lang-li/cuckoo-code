@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.8.47] - 2026-10-13
+
+### Fixed
+- **任务输出残留 ANSI 彩色控制码**：跑 `npm test`、`vitest` 等彩色输出的命令时，任务输出里会显示 `[90m`、`[2m`、`[22m` 等乱码（实为 `\x1b[90m` 等 ANSI 转义序列，ESC 字符不可见后被吞）。根源：`decodeOutput` 只做 GBK/UTF-8 解码，不剥控制码。新增 `stripAnsi()`：剥离 CSI/OSC/单字符三类转义序列，在 `decodeOutput` 统一调用（UTF-8 与 GBK 分支都走）。任务页输出、bash/pwsh 工具、命令 IPC 全部受益。
+
 ## [0.8.46] - 2026-10-13
 
 ### Fixed

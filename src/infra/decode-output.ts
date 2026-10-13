@@ -6,10 +6,29 @@
  * 回退按 GBK 解码。
  */
 
+// ANSI 转义序列（彩色/光标控制）。命令输出常带这些控制码，
+// 在纯文本预览里会显示为 "[90m"、"esc[0m" 等乱码。分三类剥离：
+//   CSI：\x1b[ + 参数字节 + 终止字母（如 \x1b[31m、\x1b[2K）
+//   OSC：\x1b] + 内容 + BEL(\x07) 或 ST(\x1b\\)（如设置窗口标题）
+//   单字符转义：\x1b + 单个字符（如 \x1bM）
+const ANSI_OSC = /\x1b\][\s\S]*?(?:\x07|\x1b\\)/g;
+const ANSI_CSI = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+const ANSI_SINGLE = /\x1b[@-Z\\-_]/g;
+
 /**
- * 解码 exec 输出的原始字节。
+ * 剥离文本中的 ANSI 转义序列（彩色/光标控制码）。
+ * @param text - 可能含 ANSI 控制码的文本
+ * @returns 剥离后的纯文本
+ */
+function stripAnsi(text: string): string {
+  if (!text || text.indexOf('\x1b') === -1) return text;
+  return text.replace(ANSI_OSC, '').replace(ANSI_CSI, '').replace(ANSI_SINGLE, '');
+}
+
+/**
+ * 解码 exec 输出的原始字节，并剥离 ANSI 控制码。
  * @param buf - exec 输出的原始字节（可能为空/null）
- * @returns 解码后的文本
+ * @returns 解码后的纯文本
  */
 function decodeOutput(buf: Buffer | null | undefined): string {
   if (!buf || buf.length === 0) return '';
@@ -17,12 +36,12 @@ function decodeOutput(buf: Buffer | null | undefined): string {
   if (utf8.includes('\uFFFD')) {
     try {
       const gbk = new TextDecoder('gbk').decode(buf);
-      if (!gbk.includes('\uFFFD')) return gbk;
+      if (!gbk.includes('\uFFFD')) return stripAnsi(gbk);
     } catch (e) {
       // TextDecoder 不支持 gbk 的环境，退回 UTF-8 结果
     }
   }
-  return utf8;
+  return stripAnsi(utf8);
 }
 
 /**
@@ -44,4 +63,4 @@ function normalizeCommand(command: string): string {
   return command.replace(/Get-Content\b/g, 'Get-Content -Encoding UTF8');
 }
 
-export { decodeOutput, normalizeCommand };
+export { decodeOutput, normalizeCommand, stripAnsi };
