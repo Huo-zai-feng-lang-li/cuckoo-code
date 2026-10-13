@@ -310,8 +310,11 @@ function registerGitIpc(): void {
     if (!hash || typeof hash !== 'string' || !/^[0-9a-f]{4,40}$/i.test(hash)) {
       return { success: false, error: '非法提交 hash' };
     }
-    // --no-color：避免 ANSI 控制码；--patch 输出完整改动
-    const r = await runGit(root, ['-c', 'core.quotepath=false', 'show', '--no-color', '--patch', '--stat', hash]);
+    // --no-color：避免 ANSI 控制码；--patch 输出完整改动。
+    // -m --first-parent：merge commit 默认不输出 patch（只给 stat），加 -m 才对每个父输出；
+    //   --first-parent 限定只对比第一父，避免 merge 显示重复的多份 diff。
+    //   对普通 commit 无副作用（实测与不加等价）。
+    const r = await runGit(root, ['-c', 'core.quotepath=false', 'show', '--no-color', '--patch', '--stat', '-m', '--first-parent', hash]);
     if (!r.success) return { success: false, error: r.stderr.trim() || '读取提交失败' };
     let text = r.stdout;
     let truncated = false;

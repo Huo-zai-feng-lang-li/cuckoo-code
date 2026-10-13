@@ -2,7 +2,13 @@
 
 ## 核心进展
 
-**v0.8.57**：源代码管理页「提交详情」支持查看完整 diff（需求 046）。已提交、打 tag、推送 origin。最新 tag **v0.8.57**。
+**v0.8.58**：修复提交详情对 merge commit 不显示 diff（改用 `git show -m --first-parent`）。已提交、打 tag、推送 origin。最新 tag **v0.8.58**。
+
+### v0.8.58 改动
+- `git-show-commit-diff` 命令加 `-m --first-parent`：merge commit 也能显示完整 diff（原默认只给 stat）。普通 commit 行为不变。
+
+### v0.8.57（同轮）
+源代码管理页「提交详情」支持查看完整 diff（需求 046）：新增 IPC `git-show-commit-diff`、专用弹框、diff 着色渲染、复制 diff。
 
 ### v0.8.57 改动
 - 新增 IPC `git-show-commit-diff`（`git show --patch`，超 512KB 截断）

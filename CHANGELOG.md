@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.8.58] - 2026-10-13
+
+### Fixed
+- **提交详情对 merge commit 不显示 diff**：`git show --patch` 对 merge commit 默认只输出文件列表、不含 patch，点开 merge 提交看不到具体改动。改用 `git show -m --first-parent`——merge 显示（相对第一父的）完整 diff，普通 commit 行为不变（实测等价），且不产生重复的多份 diff。
+
 ## [0.8.57] - 2026-10-13
 
 ### Added
