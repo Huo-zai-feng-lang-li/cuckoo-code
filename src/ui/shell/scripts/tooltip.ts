@@ -161,7 +161,8 @@ function handlePointerOver(e: PointerEvent): void {
 
   // 连贯滑动体验（warm mode）：300ms 内滑过多个目标时极速响应
   const isWarm = Date.now() - lastHideTime < 300;
-  const delay = isWarm ? 20 : 120;
+  // 首次悬停稍作延迟（避免划过误弹），连贯巡视时快速响应
+  const delay = isWarm ? 120 : 300;
 
   showTimer = window.setTimeout(() => {
     if (activeTarget === el && el.isConnected) {
