@@ -210,11 +210,11 @@ autoUpdater.on('update-not-available', () => {
   isManualCheck = false;
 });
 
-let lastNotifyAt = 0;
 autoUpdater.on('download-progress', (progressObj: any) => {
   const percent = Math.round(progressObj.percent);
   console.log('[Updater] 下载进度:', percent + '%');
-  // 推送给壳页面状态栏（实时进度条）
+  // 只推给壳页面状态栏（实时进度条），不弹系统通知——
+  // 进度每几秒变化一次，频繁弹通知会打扰用户；状态栏已实时展示，足够。
   sendProgress({
     state: 'downloading',
     percent,
@@ -222,12 +222,6 @@ autoUpdater.on('download-progress', (progressObj: any) => {
     total: progressObj.total || 0,
     bytesPerSecond: progressObj.bytesPerSecond || 0,
   });
-  // 系统通知：时间节流（每 3 秒一次），不再依赖 %10（会跳变漏掉）
-  const now = Date.now();
-  if (isManualCheck && now - lastNotifyAt > 3000) {
-    lastNotifyAt = now;
-    showNotification('下载更新中', '已下载 ' + percent + '%');
-  }
 });
 
 autoUpdater.on('update-downloaded', (info: any) => {

@@ -83,7 +83,13 @@ if (stSaveBtn) stSaveBtn.addEventListener('click', async () => {
   } catch (e: any) { await ckAlert('保存失败: ' + (e.message || e)); }
   stSaveBtn.disabled = false;
 });
-document.getElementById('st-refresh')?.addEventListener('click', loadSettings);
+// 刷新：重新读取全部设置（失败重试 + 纯净模式字号 + 主题）
+// 注意：只调用"取值"函数，不调用 initThemeListener，避免重复注册监听器。
+document.getElementById('st-refresh')?.addEventListener('click', () => {
+  loadSettings();
+  loadUiPrefs();
+  refreshThemeValue();
+});
 document.getElementById('st-reset')?.addEventListener('click', async () => {
   if (!api.resetSettings) return;
   if (!(await ckConfirm('确定恢复默认设置？'))) return;
@@ -112,7 +118,8 @@ function fillThemeOptions(registered: any[]): void {
     '<option value="' + v + '">' + label + '</option>').join('');
   if (cur) themeSelect.value = cur;
 }
-function renderThemeSelect(): void {
+/** 刷新当前主题值（只取值，可重复调用；不注册监听） */
+function refreshThemeValue(): void {
   const anyApi = api as any;
   if (!themeSelect || typeof anyApi.themeGet !== 'function') return;
   anyApi.themeGet().then((r: any) => {
@@ -121,13 +128,16 @@ function renderThemeSelect(): void {
       themeSelect.value = r.snapshot.preference || 'system';
     }
   }).catch(() => {});
-  if (typeof anyApi.onThemeChanged === 'function') {
-    anyApi.onThemeChanged((snap: any) => {
-      if (!snap) return;
-      fillThemeOptions(snap.themes);
-      if (themeSelect) themeSelect.value = snap.preference || 'system';
-    });
-  }
+}
+/** 注册主题变化监听（仅启动时调用一次，避免重复注册泄漏） */
+function initThemeListener(): void {
+  const anyApi = api as any;
+  if (typeof anyApi.onThemeChanged !== 'function') return;
+  anyApi.onThemeChanged((snap: any) => {
+    if (!snap) return;
+    fillThemeOptions(snap.themes);
+    if (themeSelect) themeSelect.value = snap.preference || 'system';
+  });
 }
 if (themeSelect) {
   themeSelect.addEventListener('change', () => {
@@ -136,14 +146,16 @@ if (themeSelect) {
       anyApi.themeSet(themeSelect.value).catch(() => {});
     }
   });
-  renderThemeSelect();
+  refreshThemeValue();
+  initThemeListener();
 }
 
 // ===== 外观：纯净模式字号（缩放，走主进程 ui-prefs，独立于 settings 存取）=====
 const zoomSelect = document.getElementById('st-harness-zoom') as any;
-if (zoomSelect) {
+/** 重新读取字号设置（刷新按钮也会调用） */
+export function loadUiPrefs(): void {
+  if (!zoomSelect) return;
   const anyApi = api as any;
-  // 载入当前值
   if (typeof anyApi.getUiPrefs === 'function') {
     anyApi.getUiPrefs().then((r: any) => {
       if (r && r.success && r.data && typeof r.data.harnessZoom === 'number') {
@@ -151,6 +163,11 @@ if (zoomSelect) {
       }
     }).catch(() => {});
   }
+}
+if (zoomSelect) {
+  const anyApi = api as any;
+  // 载入当前值
+  loadUiPrefs();
   // 切换即保存 + 立即应用
   zoomSelect.addEventListener('change', () => {
     const z = parseFloat(zoomSelect.value);

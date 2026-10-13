@@ -5650,7 +5650,11 @@
     }
     stSaveBtn.disabled = false;
   });
-  document.getElementById("st-refresh")?.addEventListener("click", loadSettings);
+  document.getElementById("st-refresh")?.addEventListener("click", () => {
+    loadSettings();
+    loadUiPrefs();
+    refreshThemeValue();
+  });
   document.getElementById("st-reset")?.addEventListener("click", async () => {
     if (!api.resetSettings) return;
     if (!await ckConfirm("\u786E\u5B9A\u6062\u590D\u9ED8\u8BA4\u8BBE\u7F6E\uFF1F")) return;
@@ -5676,7 +5680,7 @@
     themeSelect.innerHTML = opts.map(([v, label]) => '<option value="' + v + '">' + label + "</option>").join("");
     if (cur) themeSelect.value = cur;
   }
-  function renderThemeSelect() {
+  function refreshThemeValue() {
     const anyApi = api;
     if (!themeSelect || typeof anyApi.themeGet !== "function") return;
     anyApi.themeGet().then((r) => {
@@ -5686,13 +5690,15 @@
       }
     }).catch(() => {
     });
-    if (typeof anyApi.onThemeChanged === "function") {
-      anyApi.onThemeChanged((snap) => {
-        if (!snap) return;
-        fillThemeOptions(snap.themes);
-        if (themeSelect) themeSelect.value = snap.preference || "system";
-      });
-    }
+  }
+  function initThemeListener() {
+    const anyApi = api;
+    if (typeof anyApi.onThemeChanged !== "function") return;
+    anyApi.onThemeChanged((snap) => {
+      if (!snap) return;
+      fillThemeOptions(snap.themes);
+      if (themeSelect) themeSelect.value = snap.preference || "system";
+    });
   }
   if (themeSelect) {
     themeSelect.addEventListener("change", () => {
@@ -5702,10 +5708,12 @@
         });
       }
     });
-    renderThemeSelect();
+    refreshThemeValue();
+    initThemeListener();
   }
   var zoomSelect = document.getElementById("st-harness-zoom");
-  if (zoomSelect) {
+  function loadUiPrefs() {
+    if (!zoomSelect) return;
     const anyApi = api;
     if (typeof anyApi.getUiPrefs === "function") {
       anyApi.getUiPrefs().then((r) => {
@@ -5715,6 +5723,10 @@
       }).catch(() => {
       });
     }
+  }
+  if (zoomSelect) {
+    const anyApi = api;
+    loadUiPrefs();
     zoomSelect.addEventListener("change", () => {
       const z = parseFloat(zoomSelect.value);
       if (!Number.isFinite(z)) return;

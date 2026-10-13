@@ -11,7 +11,11 @@ export function applyHarnessZoom(webContents: any, zoom: number): void {
   if (!webContents || webContents.isDestroyed()) return;
   const z = Math.max(0.5, Math.min(2, Number(zoom) || 1));
   try {
-    // documentElement 上设 zoom，整页跟随；失败静默（页面可能尚未就绪）
-    webContents.executeJavaScript('document.documentElement.style.zoom = ' + z + ';').catch(() => {});
+    // zoom 只作用在 .app（主内容容器）上，不作用 documentElement：
+    //  - .app 用 calc(100vw/zoom) / calc(100vh/zoom) 反向补偿尺寸，缩放后正好填满视口
+    //  - tooltip / conv-nav 等 .app 外的 fixed 元素不受 zoom 影响，JS 定位坐标不错位
+    const js = 'var app=document.querySelector(".app");'
+      + 'if(app){app.style.zoom=' + z + ';app.style.setProperty("--ck-harness-zoom",' + z + ');}';
+    webContents.executeJavaScript(js).catch(() => {});
   } catch (_) { /* ignore */ }
 }

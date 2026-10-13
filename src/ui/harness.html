@@ -78,7 +78,14 @@
     overflow: hidden; font-size: 14px;
     -webkit-font-smoothing: antialiased;
   }
-  .app { display: flex; flex-direction: column; height: 100vh; }
+  /* 宽高用 CSS zoom 反向补偿：zoom 会放大 100vw/100vh，除回 zoom 后正好等于视口。
+     zoom 只作用在 .app 上（不作用 documentElement）→ tooltip/conv-nav 等 .app 外的
+     position:fixed 元素不受影响，JS 定位坐标不会错位。 */
+  .app {
+    display: flex; flex-direction: column;
+    width: calc(100vw / var(--ck-harness-zoom, 1));
+    height: calc(100vh / var(--ck-harness-zoom, 1));
+  }
 
   /* ===== 顶栏 ===== */
   .topbar {
