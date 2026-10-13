@@ -1,8 +1,10 @@
-# 最新接续状态 (2026-10-13 19:30)
+# 最新接续状态 (2026-10-13 20:00)
 
 ## 核心进展
 
-本轮连续推进 **v0.8.46 → v0.8.48**（3 个版本），已全部提交、打 tag、推送 origin。最新 tag **v0.8.48**。
+本轮连续推进 **v0.8.46 → v0.8.49**（4 个版本），已全部提交、打 tag、推送 origin。最新 tag **v0.8.49**。
+
+**v0.8.49 是子代理审查（code-reviewer）发现问题的修复**——见下方「子代理审查结论」。
 
 前序 v0.8.40 → v0.8.45（任务页 + Token 统计 + 自动更新）已全部真机验证通过。
 
@@ -11,6 +13,7 @@
 - **v0.8.46**：任务页停止态修复（stopping 纳入 TaskInfo + 渲染签名）+ 运行后滚动 + 更新安装并发保护（标记文件 + 版本拦截）
 - **v0.8.47**：任务输出剥离 ANSI 控制码（decode-output 新增 stripAnsi，处理 CSI/OSC/单字符；UTF-8 与 GBK 分支都走）
 - **v0.8.48**：运行任务后滚动定位到「刚运行的任务卡片」（原滚到面板底部，任务多时看到最旧的，看不到刚运行的）
+- **v0.8.49**：子代理审查修复——更新门禁锁死（installAndRestart 无参→target 空→新版被拦 10 分钟）+ 任务停止兜底 exitCode + expanded 裁剪
 
 ## 本轮修复详情（v0.8.46）
 
@@ -34,6 +37,19 @@
   - `entry.ts`：`whenReady` 开头检查，命中则 `showMessageBoxSync` 提示 + `app.quit()`。
 - 未真机验证（需跨版本，下次发版验证）。
 
+## 子代理审查结论（v0.8.49）
+
+用 code-reviewer 审查 v0.8.46~48 改动，发现 1 必须修复 + 4 建议 + 4 参考。已处理：
+
+- 🔴 **必须修复 #1**：`checkForUpdates` 的"已下载完成"分支 `installAndRestart()` 无参 → `targetVersion` 空 → 更新成功后新版启动被 `isUpdatePending` 判"未完成"拦截，**锁死最长 10 分钟**（本次引入的真实回归）。
+  - 修：`update-downloaded` 记 `downloadedVersion`；`installAndRestart` 带目标版本；标记增 `fromVersion`；`isUpdatePending` 判定改「版本已变/达目标/数据不完整」都放行；标记原子写。
+  - 验证：抽取判定逻辑跑 7 个分支用例（含"更新成功→版本已变→放行"）全过 ✓
+- 🟡 #2：`stop()` 兜底超时/!pid 分支未设 exitCode、未清 stopping → UI「退出码 undefined」。已补 `exitCode ?? null` + 清 stopping；渲染层 `exitCode == null` 归「已结束」。真机冒烟 ✓
+- 🟡 #3/#4：注释修正 + 标记原子写（已随 #1 处理）
+- 🟡 #5：`expanded` 清空后裁剪（防无界累积）+ 修正陈旧注释
+- 🔵 #6 stripAnsi 边界测试 / #7 冗余声明（已删）/ #9 entry 兜底（已有 try/catch）
+- ⏭️ **#8 未做**：`isUpdatePending` 测试——`src/updater/**` 被 vitest 排除（需 Electron 运行时），写测试必须深 mock electron，违反「只写真实集成测试」规则，故不做，靠真机验证。
+
 ## 关键设计（沿用）
 
 - 任务管理器 `src/infra/task-manager.ts`：进程表 + 进程树杀（Win `taskkill /T /F`，**stop 里不能同时 child.kill()**）。输出 `decodeOutput`（GBK 兼容）。
@@ -44,12 +60,18 @@
 
 **全局规则第 4 条未注入**：`~/.cuckoo/rules/global-override.md` 有「4. 复杂代码修改后使用子代理检查，主代理审计」及第 46 行「> 也可派出子代理检查，你在审计」，但系统提示词注入的 global-override 里这两行丢失。疑似规则注入被截断/旧缓存。**待排查**。
 
+## ⚠️ 工作区遗留（勿动）
+
+- `src/ui/shell/scripts/pages/rules.ts` + `src/ui/shell/styles/components.css` 有**另一条功能线**的未提交改动（规则页保存提示改插 span，避免改 icon-only 按钮）。**不属于本轮，勿顺手提交**。
+- **预存在测试失败**：`test/plugins/installer.test.js > installPlugin: 不残留临时目录`——clean master 上同样失败（已 stash 验证），与 v0.8.46~49 无关，待排查。
+
 ## 待办事项 (Next Steps)
 
 - [ ] **排查规则注入丢失 bug**
-- [ ] 真机验证 v0.8.46 更新并发保护（跨版本：装 v0.8.48 后等下个版本发布验证）
-- [ ] 确认 CI（tag v0.8.40~v0.8.48）Win+Mac 构建成功
+- [ ] 真机验证 v0.8.46~49 更新并发保护（跨版本：装 v0.8.49 后等下个版本发布验证）
+- [ ] 确认 CI（tag v0.8.40~v0.8.49）Win+Mac 构建成功
 - [ ] 真机复核 v0.8.47（任务输出无 ANSI 乱码）、v0.8.48（运行后定位到新任务）——需装打包版验证
+- [ ] 排查预存在失败 `test/plugins/installer.test.js`
 
 ## 关键上下文
 
