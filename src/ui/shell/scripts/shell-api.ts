@@ -167,6 +167,9 @@ export interface ShellAPI {
   getWindowName?: () => Promise<any>;
   onWindowNameUpdated?: (cb: (name: string) => void) => void;
   // Token / 自动压缩
+  onTokenUpdated?: (cb: (data: any) => void) => void;
+  getWindowUsage?: () => Promise<any>;
+  onWindowUsage?: (cb: (data: any) => void) => void;
   getAutoCompact?: () => Promise<any>;
   saveAutoCompact?: (data: any) => Promise<any>;
   triggerCompact?: () => Promise<any>;

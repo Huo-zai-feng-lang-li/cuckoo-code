@@ -2173,11 +2173,15 @@
                   <span class="ck-stat-val" id="tk-cumulative">0</span>
                 </div>
                 <div class="ck-stat-item">
-                  <span class="ck-stat-key">今日窗口<span class="ck-hint" data-tooltip="今天各轮「完整上下文」之和（含重复历史），非新增内容
+                  <span class="ck-stat-key">今日本窗口<span class="ck-hint" data-tooltip="【本窗口】今天各轮「完整上下文」之和（含重复历史），非新增内容
 例：3 轮，每轮新增 500
 第1轮 500 → 第2轮 1000 → 第3轮 1500
 合计 3000（不是新增的 1500）">!</span></span>
                   <span class="ck-stat-val" id="tk-today">0</span>
+                </div>
+                <div class="ck-stat-item">
+                  <span class="ck-stat-key">今日全窗口<span class="ck-hint" data-tooltip="【所有窗口】今天各轮完整上下文之和（全局今日消耗）">!</span></span>
+                  <span class="ck-stat-val" id="tk-today-total">0</span>
                 </div>
                 <div class="ck-stat-item">
                   <span class="ck-stat-key">预估费用<span class="ck-hint" id="tk-cost-hint" data-tooltip="基于「今日窗口」粗略估算，非精确账单
@@ -2187,7 +2191,7 @@
                   <span class="ck-stat-val" id="tk-cost">—</span>
                 </div>
                 <div class="ck-stat-item">
-                  <span class="ck-stat-key">窗口累计<span class="ck-hint" data-tooltip="本窗口所有会话的各轮累计之和">!</span></span>
+                  <span class="ck-stat-key">本窗口历史累计<span class="ck-hint" data-tooltip="本窗口所有会话（含历史）的各轮累计之和">!</span></span>
                   <span class="ck-stat-val" id="tk-window">0</span>
                 </div>
                 <div class="ck-stat-item">
@@ -5135,12 +5139,6 @@ paths:            # 可选；省略 = 始终生效
   var windowEl = document.getElementById("sb-window");
   var todayEl = document.getElementById("sb-today");
   var systemEl = document.getElementById("sb-system");
-  function localDateKey() {
-    const d = /* @__PURE__ */ new Date();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return d.getFullYear() + "-" + m + "-" + day;
-  }
   function isDeepSeekPeak() {
     const d = new Date(Date.now() + 8 * 3600 * 1e3);
     const day = d.getUTCDay();
@@ -5170,42 +5168,36 @@ paths:            # 可选；省略 = 始终生效
   function costTooltip(peak) {
     return "\u57FA\u4E8E\u300C\u4ECA\u65E5\u7A97\u53E3\u300D\u7C97\u7565\u4F30\u7B97\uFF0C\u975E\u7CBE\u786E\u8D26\u5355\n\u26A0 \u5047\u8BBE\u8F93\u51FA\u5360 15%\u3001\u8F93\u5165\u7F13\u5B58\u547D\u4E2D 70%\uFF08\u5B9E\u9645\u672A\u77E5\uFF09\n\u5F53\u524D\u6309\u3010" + (peak ? "\u9AD8\u5CF0" : "\u95F2\u65F6") + "\u3011\u4EF7\n\u5355\u4EF7(\u5143/\u767E\u4E07)\uFF1A\u547D\u4E2D 0.02 / \u672A\u547D\u4E2D 1 / \u8F93\u51FA 4\n\u9AD8\u5CF0\u65F6\u6BB5(\u5DE5\u4F5C\u65E5 9-12\u300114-18)\u7FFB\u500D";
   }
-  function renderChart(daily) {
+  function renderChart(windows) {
     const chart = document.getElementById("tk-chart");
     if (!chart) return;
-    if (!Array.isArray(daily) || daily.length === 0) {
+    if (!Array.isArray(windows) || windows.length === 0) {
       chart.innerHTML = '<div class="ck-list-empty" style="width:100%;">\u6682\u65E0\u6570\u636E</div>';
       return;
     }
-    const sorted = daily.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
-    const values = sorted.map((d) => d.value || 0);
+    const sorted = windows.slice().sort((a, b) => (b.today || 0) - (a.today || 0));
+    const values = sorted.map((w) => w.today || 0);
     const max = Math.max(1, Math.max.apply(null, values));
     const total = values.reduce((s, v) => s + v, 0);
-    const daysWithData = values.filter((v) => v > 0).length;
-    const avg = daysWithData > 0 ? total / daysWithData : 0;
-    const peakVal = Math.max.apply(null, values);
-    const peakDate = (sorted[values.indexOf(peakVal)] || {}).date || "";
-    const today = localDateKey();
-    const dayFmt = (s) => (s || "").slice(5).replace("-", "/");
-    const summary = '<div class="ck-chart-summary"><span>\u8FD1 10 \u65E5\u5408\u8BA1 <b>' + formatShort(total) + "</b></span><span>\u65E5\u5747 <b>" + formatShort(avg) + "</b></span><span>\u5CF0\u503C <b>" + formatShort(peakVal) + "</b>\uFF08" + (peakDate ? dayFmt(peakDate) : "--") + "\uFF09</span></div>";
-    const rows = sorted.map((d) => {
-      const v = d.value || 0;
+    const activeCount = values.filter((v) => v > 0).length;
+    const summary = '<div class="ck-chart-summary"><span>\u4ECA\u65E5\u5168\u7A97\u53E3 <b>' + formatShort(total) + "</b></span><span>\u6D3B\u8DC3\u7A97\u53E3 <b>" + activeCount + "</b> / " + sorted.length + "</span></div>";
+    const rows = sorted.map((w) => {
+      const v = w.today || 0;
       const pct = Math.max(1, Math.round(v / max * 100));
-      const isToday = d.date === today;
-      return '<div class="ck-bar-row' + (isToday ? " today" : "") + '" data-date="' + d.date + '"><span class="ck-bar-label">' + dayFmt(d.date) + '</span><div class="ck-bar-track"><div class="ck-bar" style="width:' + pct + '%;"></div></div><span class="ck-bar-val">' + formatShort(v) + "</span></div>";
+      const name = String(w.name || w.profileId || "--");
+      return '<div class="ck-bar-row" data-name="' + escapeAttr(name) + '"><span class="ck-bar-label" title="' + escapeAttr(name) + '">' + escapeHtml(name) + '</span><div class="ck-bar-track"><div class="ck-bar" style="width:' + pct + '%;"></div></div><span class="ck-bar-val">' + formatShort(v) + "</span></div>";
     }).join("");
     chart.innerHTML = summary + rows;
     chart.querySelectorAll(".ck-bar-row").forEach((row) => {
       row.addEventListener("click", () => {
-        const date = row.getAttribute("data-date") || "";
-        const found = sorted.find((x) => x.date === date);
-        const v = found ? found.value || 0 : 0;
-        const share = total > 0 ? v / total * 100 : 0;
-        const diff = avg > 0 ? (v - avg) / avg * 100 : 0;
-        const diffStr = (diff >= 0 ? "+" : "") + diff.toFixed(0) + "%";
+        const name = row.getAttribute("data-name") || "";
+        const found = sorted.find((x) => String(x.name || x.profileId) === name);
+        const todayV = found ? found.today || 0 : 0;
+        const cumV = found ? found.cumulative || 0 : 0;
+        const share = total > 0 ? todayV / total * 100 : 0;
         ckAlert(
-          "\u6D88\u8017 " + formatShort(v) + " tokens \uFF5C \u5360\u8FD110\u65E5 " + share.toFixed(1) + "% \uFF5C \u8F83\u65E5\u5747 " + diffStr,
-          date || "\u8BE6\u60C5"
+          "\u4ECA\u65E5 " + formatShort(todayV) + " tokens \uFF5C \u5360\u4ECA\u65E5\u5168\u7A97\u53E3 " + share.toFixed(1) + "%\n\u5386\u53F2\u7D2F\u8BA1 " + formatShort(cumV),
+          name || "\u8BE6\u60C5"
         );
       });
     });
@@ -5215,6 +5207,7 @@ paths:            # 可选；省略 = 始终生效
   var tkToday = document.getElementById("tk-today");
   var tkWindow = document.getElementById("tk-window");
   var tkSystem = document.getElementById("tk-system");
+  var tkTodayTotal = document.getElementById("tk-today-total");
   var tkCost = document.getElementById("tk-cost");
   var tkCostHint = document.getElementById("tk-cost-hint");
   if (api.onTokenUpdated) {
@@ -5227,13 +5220,30 @@ paths:            # 可选；省略 = 始终生效
       if (tkContext) tkContext.innerHTML = formatTokenCountHTML(data.context);
       if (tkCumulative) tkCumulative.textContent = formatTokenCount(data.cumulative);
       if (tkToday) tkToday.textContent = formatTokenCount(data.todayCumulative);
+      if (tkTodayTotal && typeof data.todayTotal === "number") tkTodayTotal.textContent = formatTokenCount(data.todayTotal);
       if (tkWindow) tkWindow.textContent = formatTokenCount(data.windowCumulative);
       if (tkCost) {
         const est = estimateCost(data.todayCumulative);
         tkCost.textContent = formatCost(est.cost);
         if (tkCostHint) tkCostHint.setAttribute("data-tooltip", costTooltip(est.peak));
       }
-      if (data.daily) renderChart(data.daily);
+      if (data.windows) renderChart(data.windows);
+    });
+  }
+  if (api.onWindowUsage) {
+    api.onWindowUsage((data) => {
+      if (!data) return;
+      if (tkTodayTotal && typeof data.todayTotal === "number") tkTodayTotal.textContent = formatTokenCount(data.todayTotal);
+      if (data.windows) renderChart(data.windows);
+    });
+  }
+  if (api.getWindowUsage) {
+    api.getWindowUsage().then((r) => {
+      if (r && r.success) {
+        if (tkTodayTotal && typeof r.todayTotal === "number") tkTodayTotal.textContent = formatTokenCount(r.todayTotal);
+        if (r.windows) renderChart(r.windows);
+      }
+    }).catch(() => {
     });
   }
   var tpsEl = document.getElementById("sb-tps");
