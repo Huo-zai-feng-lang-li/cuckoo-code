@@ -50,5 +50,6 @@
 | 043 | fix | [规则页保存提示撑坏布局（icon-only 按钮被改 textContent）](./043-rule-save-tip.md) | done | fix/043-rule-save-tip | 2026-10-13 |
 | 044 | fix | [任务状态变更不自动刷新（isDestroyed 漏括号致通知永不推送）](./044-task-notify-missing-parens.md) | done | fix/044-task-notify-missing-parens | 2026-10-13 |
 | 045 | fix | [列表卡片 hover 抖动 + 过渡过快的平滑修复](./045-hover-smooth.md) | done | fix/045-hover-smooth | 2026-10-13 |
+| 046 | feature | [提交详情查看 diff（源代码管理）](./046-commit-diff.md) | doing | feat/046-commit-diff | 2026-10-13 |
 
-共 45 个需求。
+共 46 个需求。

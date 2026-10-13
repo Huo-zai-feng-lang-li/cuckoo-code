@@ -121,6 +121,7 @@ export interface ShellAPI {
   gitCheckout?: (branch: string, force?: boolean) => Promise<any>;
   gitLog?: (limit?: number) => Promise<any>;
   gitShowCommit?: (hash: string) => Promise<any>;
+  gitShowCommitDiff?: (hash: string) => Promise<any>;
   gitWatchStart?: () => Promise<any>;
   gitWatchStop?: () => Promise<any>;
   onGitChanged?: (cb: () => void) => void;

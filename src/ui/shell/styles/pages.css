@@ -313,6 +313,23 @@
     padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--ck-border-soft);
   }
   .ck-git-commit-row:hover { background: var(--ck-surface-hover); }
+  .ck-git-diff-modal { max-width: min(900px, 90vw); width: min(900px, 90vw); }
+  .ck-git-diff-body {
+    flex: 1; min-height: 0; overflow: auto;
+    margin: 6px 0 4px; padding: 10px 12px;
+    background: var(--ck-bg-sub); border: 1px solid var(--ck-border);
+    border-radius: 8px;
+    font-family: "SF Mono", "Consolas", monospace;
+    font-size: 12px; line-height: 1.55;
+    white-space: pre; tab-size: 4;
+  }
+  .ck-git-diff-body .ck-diff-file { font-weight: 700; color: var(--ck-text); }
+  .ck-git-diff-body .ck-diff-filehead { color: var(--ck-text-2); font-weight: 600; }
+  .ck-git-diff-body .ck-diff-meta { color: var(--ck-text-dim); }
+  .ck-git-diff-body .ck-diff-hunk { color: #4a9ee0; }
+  .ck-git-diff-body .ck-diff-add { color: #4caf7d; }
+  .ck-git-diff-body .ck-diff-del { color: #e05a5a; }
+  .ck-git-diff-body .ck-diff-truncated { color: var(--ck-text-dim); font-style: italic; }
   .ck-git-commit-subject {
     display: block; font-size: 12px; color: var(--ck-text);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
