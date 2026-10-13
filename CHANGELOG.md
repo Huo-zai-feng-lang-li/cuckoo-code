@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.8.33] - 2026-10-13
+
+### Changed
+- **项目规则目录统一到 `.agents/rules/`**（需求 036）：项目级规则扫描改为**优先 `.agents/rules/`，回退 `.cuckoo/rules/`**（兼容旧项目）。一份规则可同时供 Cuckoo Code 与 Codex/Cursor 等工具使用。
+- **兼容 Cursor 规则格式**：无 `paths` 时自动回退解析 `trigger`/`globs`（`globs` 逗号分隔转多路径；`trigger: always_on` 视为始终注入）。实测某 Cursor 项目：始终注入 17→4，按需注入 0→14。
+- **内置默认全局规则**：首次启动时若用户级规则目录为空，写入 `~/.cuckoo/rules/global-default.md`（通用开发协议）；用户已有规则则不覆盖；带 seed 标记防"删除后复活"。
+- **规则页说明**：新增"本页 = 用户级全局规则；项目专属规则放 `.agents/rules/`"提示。
+
 ## [0.8.32] - 2026-10-13
 
 ### Added
