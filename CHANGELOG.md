@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.8.42] - 2026-10-13
+
+### Fixed
+- **任务页 scripts 折叠失效**：折叠/展开用了未定义的 `ck-hidden` 类（项目全局隐藏类是 `cuckoo-hidden`）→ 点击无反应。改用 `cuckoo-hidden`；折叠箭头改用 CSS 三角类（原来往里写文字无效）。
+- **scripts 按钮跑不起来**：原先直接执行 script 的 `command` 值（如 `vite`），依赖 `node_modules/.bin` 的命令会找不到可执行文件。改为执行 `npm run <name>`。
+- **任务输出默认收起、需手动点开**：现在运行任务后**自动展开输出**（scripts 与手动命令均如此）。
+
 ## [0.8.41] - 2026-10-13
 
 ### Changed

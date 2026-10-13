@@ -371,3 +371,6 @@
   font-family: "SF Mono", "Consolas", monospace; font-size: 11px; line-height: 1.5;
   white-space: pre-wrap; word-break: break-all; color: var(--ck-text-2);
 }
+
+.ck-task-script-run { color: var(--ck-green, #22c55e); font-size: 10px; flex-shrink: 0; opacity: .7; }
+.ck-task-script:hover .ck-task-script-run { opacity: 1; }

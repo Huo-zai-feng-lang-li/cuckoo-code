@@ -38,7 +38,7 @@ function renderTaskItem(t: any): string {
           : '<button class="ck-icon-btn ck-task-remove" data-id="' + escapeAttr(t.id) + '" title="移除">✕</button>') +
       '</div>' +
     '</div>' +
-    '<pre class="ck-task-output ck-hidden" data-id="' + escapeAttr(t.id) + '"></pre>' +
+    '<pre class="ck-task-output cuckoo-hidden" data-id="' + escapeAttr(t.id) + '"></pre>' +
   '</div>';
 }
 
@@ -53,7 +53,8 @@ function renderScripts(scripts: Array<{ name: string; command: string }>): void 
     return;
   }
   el.innerHTML = scripts.map((s) =>
-    '<button class="ck-task-script" data-name="' + escapeAttr(s.name) + '" data-cmd="' + escapeAttr(s.command) + '" title="' + escapeAttr(s.command) + '">' +
+    '<button class="ck-task-script" data-name="' + escapeAttr(s.name) + '" data-cmd="' + escapeAttr('npm run ' + s.name) + '" title="运行 npm run ' + escapeAttr(s.name) + '（' + escapeAttr(s.command) + '）">' +
+      '<span class="ck-task-script-run">▶</span>' +
       '<span class="ck-task-script-name">' + escapeHtml(s.name) + '</span>' +
       '<span class="ck-task-script-cmd">' + escapeHtml(s.command) + '</span>' +
     '</button>'
@@ -61,10 +62,13 @@ function renderScripts(scripts: Array<{ name: string; command: string }>): void 
   el.querySelectorAll('.ck-task-script').forEach((btn: any) => {
     btn.addEventListener('click', async () => {
       const name = btn.dataset.name;
-      const cmd = btn.dataset.cmd;
+      const cmd = btn.dataset.cmd;  // 已组装为 npm run <name>
       try {
         const r = await api.taskStart?.(cmd, name, 'script');
-        if (r && !r.success) alert('启动失败：' + (r.error || '未知错误'));
+        if (r && !r.success) { alert('启动失败：' + (r.error || '未知错误')); return; }
+        // 新任务自动展开输出
+        if (r && r.task && r.task.id) { expanded.set(r.task.id, 0); lastListSig = ''; }
+        await loadTasks();
       } catch (err: any) {
         alert('启动失败：' + (err.message || String(err)));
       }
@@ -105,7 +109,7 @@ function renderTasks(tasks: any[]): void {
     const id = item.dataset.id;
     const pre = item.querySelector('.ck-task-output');
     if (expanded.has(id) && pre) {
-      pre.classList.remove('ck-hidden');
+      pre.classList.remove('cuckoo-hidden');
       refreshOutput(id, pre);
     }
   });
@@ -120,10 +124,10 @@ function renderTasks(tasks: any[]): void {
       if (!pre) return;
       if (expanded.has(id)) {
         expanded.delete(id);
-        pre.classList.add('ck-hidden');
+        pre.classList.add('cuckoo-hidden');
       } else {
         expanded.set(id, 0);
-        pre.classList.remove('ck-hidden');
+        pre.classList.remove('cuckoo-hidden');
         refreshOutput(id, pre);
       }
     });
@@ -212,6 +216,8 @@ const doRun = async () => {
     const r = await api.taskStart?.(cmd, undefined, 'manual');
     if (r && !r.success) { alert('启动失败：' + (r.error || '未知错误')); return; }
     if (cmdInput) cmdInput.value = '';
+    // 新任务自动展开输出
+    if (r && r.task && r.task.id) { expanded.set(r.task.id, 0); lastListSig = ''; }
     loadTasks();
   } catch (err: any) {
     alert('启动失败：' + (err.message || String(err)));
@@ -220,13 +226,13 @@ const doRun = async () => {
 runBtn?.addEventListener('click', doRun);
 cmdInput?.addEventListener('keydown', (e: any) => { if (e.key === 'Enter') { e.preventDefault(); doRun(); } });
 
-// scripts 折叠
+// scripts 折叠（caret 用 CSS 三角类：展开朝下、折叠朝右）
 document.getElementById('task-scripts-head')?.addEventListener('click', () => {
   const el = document.getElementById('task-scripts');
   const caret = document.getElementById('task-scripts-caret');
   if (!el) return;
-  const hidden = el.classList.toggle('ck-hidden');
-  if (caret) caret.textContent = hidden ? '▸' : '▾';
+  const hidden = el.classList.toggle('cuckoo-hidden');
+  if (caret) caret.classList.toggle('ck-git-caret-c', hidden);
 });
 
 // 订阅任务变更（自动刷新列表；renderTasks 内部按签名决定是否重绘 + 刷输出）
