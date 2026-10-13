@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.8.43] - 2026-10-13
+
+### Fixed
+- **任务输出中文乱码**：任务管理器用 `buf.toString('utf-8')` 解码，但中文 Windows 的 cmd 输出是 GBK → 中文变「�」。改用项目既有的 `decodeOutput`（UTF-8 优先、乱码则回退 GBK），与 bash 工具一致。
+
 ## [0.8.42] - 2026-10-13
 
 ### Fixed

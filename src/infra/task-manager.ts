@@ -16,6 +16,7 @@
 import { spawn, execFile } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
+import { decodeOutput } from './decode-output.js';
 
 /** 单任务输出缓冲上限（字节，按 UTF-8 估算） */
 const MAX_OUTPUT_BYTES = 256 * 1024;
@@ -154,7 +155,8 @@ export function start(opts: StartOptions): TaskInfo {
   tasks.set(info.id, rec);
 
   const onData = (buf: any) => {
-    appendOutput(rec, buf.toString('utf-8'));
+    // 中文 Windows 的 cmd 输出是 GBK，需智能解码（否则乱码）
+    appendOutput(rec, decodeOutput(buf));
     notifyChange();
   };
   if (child.stdout) child.stdout.on('data', onData);
