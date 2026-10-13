@@ -70,7 +70,7 @@ function renderScripts(scripts: Array<{ name: string; command: string }>): void 
         // 新任务自动展开输出
         if (r && r.task && r.task.id) { expanded.set(r.task.id, 0); lastListSig = ''; }
         await loadTasks();
-        scrollToTaskList();
+        scrollToTask(r && r.task && r.task.id);
       } catch (err: any) {
         alert('启动失败：' + (err.message || String(err)));
       }
@@ -177,10 +177,12 @@ async function refreshOutput(id: string, pre: any): Promise<void> {
   } catch (_) { /* ignore */ }
 }
 
-/** 平滑滚动任务页容器到底部（露出任务列表，看到运行状态） */
-function scrollToTaskList(): void {
-  const body = document.querySelector('.ck-panel-body');
-  if (body) body.scrollTo({ top: body.scrollHeight, behavior: 'smooth' });
+/** 平滑滚动到指定任务卡片（露出刚运行的任务，看执行过程）。
+ *  注意：任务列表新任务在顶部，不能滚到容器底部——否则任务多时看到的是最旧的。 */
+function scrollToTask(id?: string): void {
+  if (!id) return;
+  const item = document.querySelector('.ck-task-item[data-id="' + id + '"]');
+  if (item) item.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /** 更新活动栏 badge（运行中任务数） */
@@ -227,7 +229,7 @@ const doRun = async () => {
     // 新任务自动展开输出
     if (r && r.task && r.task.id) { expanded.set(r.task.id, 0); lastListSig = ''; }
     await loadTasks();
-    scrollToTaskList();
+    scrollToTask(r && r.task && r.task.id);
   } catch (err: any) {
     alert('启动失败：' + (err.message || String(err)));
   }
