@@ -17,24 +17,32 @@ const TREE_IGNORE_DIRS = new Set(['node_modules', '.git', 'dist', 'out', 'build'
 const TREE_MAX_NODES = 5000;
 const TREE_MAX_DEPTH = 12;
 
-/** 递归构建文件树（目录在前、各自按名排序） */
-function buildFileTree(root: string, rel: string, depth: number, counter: { n: number }): any[] {
+/** 递归构建文件树（目录在前、各自按名排序）。
+ *  异步：用 fs.promises.readdir（原来 readdirSync 会阻塞主进程事件循环）。
+ *  同层目录用 Promise.all 并发（libuv 线程池自然限流），避免串行 await 的往返开销。 */
+async function buildFileTree(root: string, rel: string, depth: number, counter: { n: number }): Promise<any[]> {
   if (depth > TREE_MAX_DEPTH || counter.n > TREE_MAX_NODES) return [];
   let entries: any[];
-  try { entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true }); } catch (_) { return []; }
+  try { entries = await fs.promises.readdir(path.join(root, rel), { withFileTypes: true }); } catch (_) { return []; }
   const dirs: any[] = [];
   const files: any[] = [];
+  const dirTasks: Promise<void>[] = [];
   for (const e of entries) {
     if (counter.n > TREE_MAX_NODES) break;
     if (e.isDirectory() && TREE_IGNORE_DIRS.has(e.name)) continue;
     const childRel = rel ? rel + '/' + e.name : e.name;
     counter.n++;
     if (e.isDirectory()) {
-      dirs.push({ name: e.name, path: childRel, type: 'dir', children: buildFileTree(root, childRel, depth + 1, counter) });
+      dirTasks.push(
+        buildFileTree(root, childRel, depth + 1, counter).then((children) => {
+          dirs.push({ name: e.name, path: childRel, type: 'dir', children });
+        }),
+      );
     } else {
       files.push({ name: e.name, path: childRel, type: 'file' });
     }
   }
+  await Promise.all(dirTasks);
   // 自然排序：让 v0.8.10 排在 v0.8.9 之后（而非按字符串排在 v0.8.1 后）
   dirs.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
@@ -74,7 +82,7 @@ function registerSessionIpc(): void {
     if (!dir) return { success: false, error: '未选择项目目录' };
     try {
       const counter = { n: 0 };
-      const tree = buildFileTree(dir, '', 0, counter);
+      const tree = await buildFileTree(dir, '', 0, counter);
       return { success: true, root: dir, tree, truncated: counter.n > TREE_MAX_NODES };
     } catch (err: any) {
       return { success: false, error: err.message };

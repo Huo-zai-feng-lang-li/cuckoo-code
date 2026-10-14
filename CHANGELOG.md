@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.8.74] - 2026-10-14
+
+### Performance
+- **全部暂存/取消暂存改批量 IPC**：原来 `doBulk` 逐个文件 `await gitStage`（几百文件 = 几百次 IPC + git 进程）。改为 `git-stage-all`（`git add -A`）/ `git-unstage-all`（`git reset`）各一条命令。
+- **Git 面板刷新加在途合并**：watcher 高频事件（批量保存/构建）原来直接 `loadGit`，会叠加多个并发 git 进程。新增 `loadGitCoalesced`（in-flight 守卫 + 队列）。
+- **文件树事件委托**：`bindRowEvents` 原来逐行 `addEventListener`（上限 5000 节点 → 单次渲染上万监听器，折叠/搜索每次重建）。改为容器上绑一次委托。
+- **文件树构建异步化**：`buildFileTree` 由 `fs.readdirSync` 同步递归改为 `fs.promises.readdir` + 同层 `Promise.all` 并发，不再阻塞主进程事件循环。
+- **git watcher 噪声目录补全**：`isNoisePath` 增加 `wyp`/`release`/`dist-verify`/`.playwright-mcp`/`.turbo`/`target`/`__pycache__`/`.venv`，避免这些目录高频写盘触发无意义的 git status。
+
+### Changed
+- **限流自动切换倒计时 3s → 6s**（给用户更充裕的取消时间）。
+
 ## [0.8.73] - 2026-10-14
 
 ### Fixed

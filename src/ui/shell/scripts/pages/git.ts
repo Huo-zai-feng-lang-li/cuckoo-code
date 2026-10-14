@@ -208,15 +208,12 @@ async function doAct(act: string, relPath: string): Promise<void> {
   await loadGit();
 }
 
-/** 全部暂存 / 全部取消暂存 */
-async function doBulk(act: string, items: GitItem[]): Promise<void> {
-  const targets = act === 'stage-all' ? items.filter((i) => i.unstaged) : items.filter((i) => i.staged);
-  for (const it of targets) {
-    try {
-      if (act === 'stage-all') await api.gitStage!(it.path);
-      else await api.gitUnstage!(it.path);
-    } catch (_) { /* 跳过单个失败，继续 */ }
-  }
+/** 全部暂存 / 全部取消暂存（走批量 IPC：一条 git 命令，避免几百文件时逐个进程） */
+async function doBulk(act: string): Promise<void> {
+  try {
+    if (act === 'stage-all') await api.gitStageAll?.();
+    else await api.gitUnstageAll?.();
+  } catch (_) { /* ignore */ }
   await loadGit();
 }
 
@@ -245,9 +242,7 @@ async function doCommit(): Promise<void> {
         const p = actEl.dataset.path;
         if (act === 'stage' || act === 'unstage' || act === 'restore' || act === 'discard') { await doAct(act, p); return; }
         if (act === 'stage-all' || act === 'unstage-all') {
-          // 重新读状态后批量操作
-          const r = await api.gitStatus!();
-          if (r && r.success) await doBulk(act, r.items || []);
+          await doBulk(act);
           return;
         }
       }
@@ -578,12 +573,27 @@ function isGitPanelActive(): boolean {
   const p = document.querySelector('.ck-tab[data-panel="git"]');
   return !!(p && p.classList.contains('ck-tab-active'));
 }
+// 刷新合并：watcher 高频事件（批量保存/构建）若直接 loadGit，会叠加多个并发 git 进程。
+// in-flight 守卫 + 队列：同时只跑一次，期间来的事件合并成一次补跑。
+let gitLoadInFlight = false;
+let gitLoadQueued = false;
+async function loadGitCoalesced(): Promise<void> {
+  if (gitLoadInFlight) { gitLoadQueued = true; return; }
+  gitLoadInFlight = true;
+  try {
+    await loadGit();
+    if (historyOpen) await loadHistory();
+  } catch (_) { /* ignore */ }
+  finally {
+    gitLoadInFlight = false;
+    if (gitLoadQueued) { gitLoadQueued = false; loadGitCoalesced(); }
+  }
+}
 if (api.onGitChanged) {
   api.onGitChanged(() => {
     if (isGitPanelActive()) {
-      // 面板激活：完整重绘（loadGit 内含 refreshBadge + 列表）
-      loadGit();
-      if (historyOpen) loadHistory();
+      // 面板激活：合并刷新（loadGit 内含 refreshBadge + 列表）
+      loadGitCoalesced();
     } else {
       // 面板未激活：也要更新活动栏徽标数字（此前被门控挡住 → 在其他页面时数字不刷新）
       Promise.resolve(api.gitStatus?.()).then((r: any) => {

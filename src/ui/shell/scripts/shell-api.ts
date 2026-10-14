@@ -114,6 +114,8 @@ export interface ShellAPI {
   gitStatus?: () => Promise<any>;
   gitStage?: (relPath: string) => Promise<any>;
   gitUnstage?: (relPath: string) => Promise<any>;
+  gitStageAll?: () => Promise<any>;
+  gitUnstageAll?: () => Promise<any>;
   gitRestore?: (relPath: string) => Promise<any>;
   gitDiscardUntracked?: (relPath: string) => Promise<any>;
   gitCommit?: (message: string) => Promise<any>;

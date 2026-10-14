@@ -43,7 +43,7 @@ function clearGitWatcher(wcId: number): void {
 function isNoisePath(p: any): boolean {
   if (!p) return false;
   const s = String(p).replace(/\\/g, '/');
-  return /(^|\/)(node_modules|\.git\/objects|\.git\/logs|dist|out|build|\.cache|\.next|coverage)(\/|$)/.test(s);
+  return /(^|\/)(node_modules|\.git\/objects|\.git\/logs|dist|out|build|\.cache|\.next|coverage|wyp|release|dist-verify|\.playwright-mcp|\.turbo|target|__pycache__|\.venv)(\/|$)/.test(s);
 }
 
 /** 解析并校验项目内相对路径（防目录穿越），返回绝对路径或 null */
@@ -131,6 +131,26 @@ function registerGitIpc(): void {
       return { success: false, error: msg.trim() };
     }
     return { success: true, items: parseStatus(r.stdout), root };
+  });
+
+  // 全部暂存：一条 `git add -A` 取代逐个文件（几百文件时避免几百次 git 进程）
+  ipcMain.handle('git-stage-all', async (event: any) => {
+    const root = getProjectRoot(event);
+    if (!root) return { success: false, error: '未选择项目目录' };
+    const r = await runGit(root, ['add', '-A']);
+    return r.success ? { success: true } : { success: false, error: r.stderr.trim() };
+  });
+
+  // 全部取消暂存：一条 `git reset` 取代逐个文件
+  ipcMain.handle('git-unstage-all', async (event: any) => {
+    const root = getProjectRoot(event);
+    if (!root) return { success: false, error: '未选择项目目录' };
+    let r = await runGit(root, ['reset', '-q']);
+    // 首次提交前无 HEAD：reset 会失败，回退 git rm --cached -r
+    if (!r.success && /could not resolve HEAD|unknown revision|no such ref|ambiguous argument/i.test(r.stderr)) {
+      r = await runGit(root, ['rm', '--cached', '-r', '--force', '-q', '.']);
+    }
+    return r.success ? { success: true } : { success: false, error: r.stderr.trim() };
   });
 
   // 暂存单个文件

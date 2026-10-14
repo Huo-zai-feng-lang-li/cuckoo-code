@@ -4540,39 +4540,49 @@ paths:            # 可选；省略 = 始终生效
     else if (act === "delete") doDelete(p, name, isDir);
   }
   function bindRowEvents(listEl2) {
-    listEl2.querySelectorAll(".ck-ft-at").forEach((el2) => {
-      el2.addEventListener("click", async (e) => {
+    if (listEl2.__ckDelegated) return;
+    listEl2.__ckDelegated = true;
+    listEl2.addEventListener("click", async (e) => {
+      const t = e.target;
+      if (!t || !t.closest) return;
+      const atEl = t.closest(".ck-ft-at");
+      if (atEl) {
         e.stopPropagation();
-        const p = el2.dataset.at;
-        if (!p || !api.appendSnippet) return;
-        try {
-          await api.appendSnippet("@" + p);
-        } catch (_) {
+        const p = atEl.dataset.at;
+        if (p && api.appendSnippet) {
+          try {
+            await api.appendSnippet("@" + p);
+          } catch (_) {
+          }
         }
-      });
-    });
-    listEl2.querySelectorAll(".ck-ft-act").forEach((el2) => {
-      el2.addEventListener("click", (e) => onActClick(el2, e));
-    });
-    listEl2.querySelectorAll(".ck-ft-dir").forEach((el2) => {
-      el2.addEventListener("click", () => {
-        const p = el2.dataset.path;
-        if (expanded.has(p)) expanded.delete(p);
-        else expanded.add(p);
-        loadFiles();
-      });
-    });
-    listEl2.querySelectorAll(".ck-ft-file").forEach((el2) => {
-      el2.addEventListener("click", async (e) => {
-        if (e.target.closest(".ck-ft-at") || e.target.closest(".ck-ft-act")) return;
-        const p = el2.dataset.path;
-        if (!p) return;
-        try {
-          const { openPreview: openPreview2 } = await Promise.resolve().then(() => (init_preview(), preview_exports));
-          await openPreview2(p);
-        } catch (_) {
+        return;
+      }
+      const actEl = t.closest(".ck-ft-act");
+      if (actEl) {
+        onActClick(actEl, e);
+        return;
+      }
+      const dirEl = t.closest(".ck-ft-dir");
+      if (dirEl) {
+        const p = dirEl.dataset.path;
+        if (p) {
+          if (expanded.has(p)) expanded.delete(p);
+          else expanded.add(p);
+          await loadFiles();
         }
-      });
+        return;
+      }
+      const fileEl = t.closest(".ck-ft-file");
+      if (fileEl) {
+        const p = fileEl.dataset.path;
+        if (p) {
+          try {
+            const { openPreview: openPreview2 } = await Promise.resolve().then(() => (init_preview(), preview_exports));
+            await openPreview2(p);
+          } catch (_) {
+          }
+        }
+      }
     });
   }
   function currentKeyword() {
@@ -7283,14 +7293,11 @@ paths:            # 可选；省略 = 始终生效
     }
     await loadGit();
   }
-  async function doBulk(act, items) {
-    const targets = act === "stage-all" ? items.filter((i) => i.unstaged) : items.filter((i) => i.staged);
-    for (const it of targets) {
-      try {
-        if (act === "stage-all") await api.gitStage(it.path);
-        else await api.gitUnstage(it.path);
-      } catch (_) {
-      }
+  async function doBulk(act) {
+    try {
+      if (act === "stage-all") await api.gitStageAll?.();
+      else await api.gitUnstageAll?.();
+    } catch (_) {
     }
     await loadGit();
   }
@@ -7326,8 +7333,7 @@ paths:            # 可选；省略 = 始终生效
             return;
           }
           if (act === "stage-all" || act === "unstage-all") {
-            const r = await api.gitStatus();
-            if (r && r.success) await doBulk(act, r.items || []);
+            await doBulk(act);
             return;
           }
         }
@@ -7636,11 +7642,30 @@ paths:            # 可选；省略 = 始终生效
     const p = document.querySelector('.ck-tab[data-panel="git"]');
     return !!(p && p.classList.contains("ck-tab-active"));
   }
+  var gitLoadInFlight = false;
+  var gitLoadQueued = false;
+  async function loadGitCoalesced() {
+    if (gitLoadInFlight) {
+      gitLoadQueued = true;
+      return;
+    }
+    gitLoadInFlight = true;
+    try {
+      await loadGit();
+      if (historyOpen) await loadHistory();
+    } catch (_) {
+    } finally {
+      gitLoadInFlight = false;
+      if (gitLoadQueued) {
+        gitLoadQueued = false;
+        loadGitCoalesced();
+      }
+    }
+  }
   if (api.onGitChanged) {
     api.onGitChanged(() => {
       if (isGitPanelActive()) {
-        loadGit();
-        if (historyOpen) loadHistory();
+        loadGitCoalesced();
       } else {
         Promise.resolve(api.gitStatus?.()).then((r) => {
           if (r && r.success) refreshBadge((r.items || []).length);

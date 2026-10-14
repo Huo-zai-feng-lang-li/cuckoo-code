@@ -211,34 +211,37 @@ function onActClick(el: any, e: any): void {
   else if (act === 'delete') doDelete(p, name, isDir);
 }
 
-/** 绑定行事件（@ 追加；操作图标；目录展开/收起） */
+/** 绑定行事件：**事件委托**（只绑一次）。
+ *  原来每行逐个 addEventListener，大项目（上限 5000 节点）展开后单次渲染上万监听器，
+ *  折叠/搜索每次都重建 → GC 压力。改为在容器上绑一次，按 closest 分派。 */
 function bindRowEvents(listEl: HTMLElement): void {
-  listEl.querySelectorAll('.ck-ft-at').forEach((el: any) => {
-    el.addEventListener('click', async (e: any) => {
+  if ((listEl as any).__ckDelegated) return;
+  (listEl as any).__ckDelegated = true;
+  listEl.addEventListener('click', async (e: any) => {
+    const t = e.target;
+    if (!t || !t.closest) return;
+    // 优先级：@ 追加 → 操作图标 → 目录 → 文件（前者是后者的子元素，先命中先返回）
+    const atEl = t.closest('.ck-ft-at');
+    if (atEl) {
       e.stopPropagation();
-      const p = el.dataset.at;
-      if (!p || !api.appendSnippet) return;
-      try { await api.appendSnippet('@' + p); } catch (_) { /* ignore */ }
-    });
-  });
-  listEl.querySelectorAll('.ck-ft-act').forEach((el: any) => {
-    el.addEventListener('click', (e: any) => onActClick(el, e));
-  });
-  listEl.querySelectorAll('.ck-ft-dir').forEach((el: any) => {
-    el.addEventListener('click', () => {
-      const p = el.dataset.path;
-      if (expanded.has(p)) expanded.delete(p); else expanded.add(p);
-      loadFiles();
-    });
-  });
-  // 点击文件行 → 打开文件预览（主区域覆盖视图）
-  listEl.querySelectorAll('.ck-ft-file').forEach((el: any) => {
-    el.addEventListener('click', async (e: any) => {
-      if (e.target.closest('.ck-ft-at') || e.target.closest('.ck-ft-act')) return;
-      const p = el.dataset.path;
-      if (!p) return;
-      try { const { openPreview } = await import('../preview.js'); await openPreview(p); } catch (_) { /* ignore */ }
-    });
+      const p = atEl.dataset.at;
+      if (p && api.appendSnippet) { try { await api.appendSnippet('@' + p); } catch (_) { /* ignore */ } }
+      return;
+    }
+    const actEl = t.closest('.ck-ft-act');
+    if (actEl) { onActClick(actEl, e); return; }
+    const dirEl = t.closest('.ck-ft-dir');
+    if (dirEl) {
+      const p = dirEl.dataset.path;
+      if (p) { if (expanded.has(p)) expanded.delete(p); else expanded.add(p); await loadFiles(); }
+      return;
+    }
+    // 点击文件行 → 打开文件预览（主区域覆盖视图）
+    const fileEl = t.closest('.ck-ft-file');
+    if (fileEl) {
+      const p = fileEl.dataset.path;
+      if (p) { try { const { openPreview } = await import('../preview.js'); await openPreview(p); } catch (_) { /* ignore */ } }
+    }
   });
 }
 
