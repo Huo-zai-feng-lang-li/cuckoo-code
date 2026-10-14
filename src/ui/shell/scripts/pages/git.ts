@@ -501,6 +501,15 @@ function openCommitDiff(title: string, text: string, truncated: boolean): void {
       if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
+  // 回到顶部按钮：滚动超过一屏才显示。用 onscroll 赋值（幂等，避免多次 open 累积监听）
+  const toTop = document.getElementById('git-diff-totop');
+  if (toTop) {
+    toTop.classList.add('cuckoo-hidden');
+    bodyEl.onscroll = () => {
+      if (bodyEl.scrollTop > 120) toTop.classList.remove('cuckoo-hidden');
+      else toTop.classList.add('cuckoo-hidden');
+    };
+  }
   mask.classList.remove('cuckoo-hidden');
   // 移出原生视图（AI/harness），否则全窗口浮层右侧被它们盖住
   try { api.setWebviewHidden?.(true); } catch (_) { /* ignore */ }
@@ -541,6 +550,11 @@ async function showCommit(hash: string): Promise<void> {
 // 提交详情（diff）弹框事件
 {
   document.getElementById('git-diff-close')?.addEventListener('click', closeCommitDiff);
+  // 回到顶部
+  document.getElementById('git-diff-totop')?.addEventListener('click', () => {
+    const bodyEl = document.getElementById('git-diff-body');
+    if (bodyEl) bodyEl.scrollTo({ top: 0, behavior: 'smooth' });
+  });
   document.getElementById('git-diff-modal')?.addEventListener('click', (e: any) => {
     // 点遮罩空白处关闭
     if (e.target && e.target.id === 'git-diff-modal') closeCommitDiff();
