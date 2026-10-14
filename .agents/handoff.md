@@ -2,7 +2,26 @@
 
 ## 核心进展
 
-**v0.8.70**：窗口组切换状态迁移（无缝接续）+ 限流自动切换 3s 倒计时 + diff 配色微调。已提交、打 tag、推送 origin。最新 tag **v0.8.70**。
+**v0.8.71**：窗口组限流冷却缓存（方案 A）+ 关源窗口前置校验。已提交、打 tag、推送 origin。最新 tag **v0.8.71**。
+
+### v0.8.71 改动（方案 A：低成本改良）
+1. **限流冷却缓存**（window-groups.ts）：文件结构改为 { groups, rateLimits }，新增 markRateLimit/getRateLimitAt/isRateLimited/clearRateLimit（冷却 5 分钟）
+2. **探测前查缓存**（entry.ts 第 6 步）：isRateLimited 跳过冷却窗口；探测「真限流」写缓存（超时/错误不写）
+3. **关源窗口前置校验**（entry.ts 第 11 步）：等目标 initProject 成功（60s 超时）才关，失败保留源窗口
+4. delete-profile 清理限流记录
+
+### v0.8.71 验证
+- typecheck / test 980 / lint 0 error / compile 全绿
+- 真机：旧 groups.json（无 rateLimits）向后兼容读取正常；wg API 正常；日志无错误
+- ⚠️ 真实限流场景未复现（需构造 429），靠代码审查
+
+### 遗留（用户报告，未做：方案 B/C）
+- 并行探测（B）：收益有限且放大垃圾消息，暂不做
+- 账号池调度（C）：架构级，待需要时再做
+- 跨平台分享（Claude/ChatGPT）：shareUrl 硬编码 DeepSeek，切换编排只实现 DS
+
+### v0.8.70（同轮）
+窗口组切换状态迁移 + 限流倒计时 + diff 配色微调。
 
 ### v0.8.70 改动
 1. **窗口组切换状态迁移**：导出源 harness 状态（历史+队列）→ 主进程中转 → 目标窗口重建。修复切换后「导航丢失」「队列丢失」。源在纯净模式→目标也进纯净模式。

@@ -1018,6 +1018,7 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSo
 
     let nextProfileId: string | null = null;
     let skippedBusy = 0;
+    let skippedCooldown = 0;
     for (const pid of probeOrder) {
       // 跳过正在跑任务的窗口（避免探测打断它的并行任务）
       if (windowState.isGenerating(pid)) {
@@ -1025,19 +1026,31 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSo
         skippedBusy++;
         continue;
       }
+      // 跳过仍在限流冷却期的窗口：不必发消息探测（省去垃圾对话 + 大幅缩短退避）
+      if (windowGroups.isRateLimited(pid)) {
+        console.log('[窗口组] 跳过冷却中窗口 ' + pid + '（近期限流，未恢复）');
+        skippedCooldown++;
+        continue;
+      }
       console.log('[窗口组] 探测窗口 ' + pid + ' …');
       const pr = await probeWindow(pid);
       console.log('[窗口组] 探测结果 ' + pid + ' = ' + pr);
       if (pr === 'ok') { nextProfileId = pid; break; }
+      // 仅「真限流」写冷却缓存；超时/错误不写（避免误伤只是加载慢的正常窗口）
+      if (pr === 'limited') {
+        try { windowGroups.markRateLimit(pid); } catch (_) { /* ignore */ }
+      } else {
+        console.log('[窗口组] 探测非限流（' + pr + '），不写冷却缓存 ' + pid);
+      }
     }
     if (!nextProfileId) {
       // 恢复源窗口的重试（切换开始时被取消了）
       try { cur.view.webContents.send('harness-resume-retry'); } catch (_) { /* ignore */ }
-      const msg = skippedBusy > 0
-        ? '组内其他窗口均在忙（已跳过 ' + skippedBusy + ' 个），已退回重试'
+      const msg = (skippedBusy > 0 || skippedCooldown > 0)
+        ? '组内其他窗口均不可用（跳过忙 ' + skippedBusy + ' / 冷却 ' + skippedCooldown + ' 个），已退回重试'
         : '组内窗口均不可用（限流/超时），已退回重试';
       notifyWindowSwitch(reason, fromName, '', false, msg);
-      return { success: false, error: msg, fallback: true, skippedBusy };
+      return { success: false, error: msg, fallback: true, skippedBusy, skippedCooldown };
     }
 
     // 7) 打开目标窗口（探测时已开/已建）
@@ -1058,13 +1071,19 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSo
 
     // 8) 导航到分享链接；加载完成后初始化项目
     const shareUrl = 'https://chat.deepseek.com/share/' + share.shareId;
+    // 目标就绪信号：initProject 成功 → true；失败/超时 → false（供"关源窗口"前置校验）
+    let targetReadyResolve: (v: boolean) => void = () => {};
+    const targetReady = new Promise<boolean>((res) => { targetReadyResolve = res; });
     const onLoad = () => {
       try { twc.off('did-finish-load', onLoad); } catch (_) { /* ignore */ }
       setTimeout(async () => {
+        let ready = false;
         try {
           // 指定项目目录；不追加"请继续"（isCompaction=false, extraPrompt=''）
           await initProject(false, tctx, projectDir, false, '', false);
+          ready = true;
         } catch (_) { /* ignore */ }
+        try { targetReadyResolve(ready); } catch (_) { /* ignore */ }
         // 源窗口若在纯净模式 → 目标窗口也进入（无缝接续的必要条件）
         try {
           if (srcWasHarness && tctx.win && !tctx.win.isDestroyed()) {
@@ -1099,20 +1118,32 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSo
 
     // 11) 关闭限流的源窗口（避免窗口累积）。
     //     仅在"限流自动切换"时关闭；手动转移对话保留源窗口。
+    //     前置校验：等目标窗口 initProject 成功后才关；失败/超时（60s）则保留源窗口，
+    //     避免"目标没接上、源已关"导致对话真丢。
     if (closeSource) {
-      setTimeout(() => {
-        try {
-          if (cur && cur.win && !cur.win.isDestroyed()) {
-            cur.win.close();
-            console.log('[窗口组] 已关闭限流的源窗口 ' + curProfileId);
-          }
-        } catch (err: any) {
-          console.warn('[窗口组] 关闭源窗口失败:', err.message);
+      // 不阻塞 switch 主流程返回：后台等目标就绪后再关
+      Promise.race([
+        targetReady,
+        new Promise<boolean>((res) => setTimeout(() => res(false), 60000)),
+      ]).then((ready) => {
+        if (!ready) {
+          console.warn('[窗口组] 目标窗口未就绪，保留源窗口（不关闭） ' + curProfileId);
+          return;
         }
-      }, 1500); // 等焦点切到新窗口后再关，避免闪烁
+        setTimeout(() => {
+          try {
+            if (cur && cur.win && !cur.win.isDestroyed()) {
+              cur.win.close();
+              console.log('[窗口组] 已关闭限流的源窗口 ' + curProfileId);
+            }
+          } catch (err: any) {
+            console.warn('[窗口组] 关闭源窗口失败:', err.message);
+          }
+        }, 1500); // 等焦点切到新窗口后再关，避免闪烁
+      });
     }
 
-    notifyWindowSwitch(reason, fromName, profileDisplayName(nextProfileId), true, closeSource ? '源窗口已关闭' : '');
+    notifyWindowSwitch(reason, fromName, profileDisplayName(nextProfileId), true, closeSource ? '源窗口待目标就绪后关闭' : '');
     return { success: true, toProfileId: nextProfileId };
 }
 
@@ -1214,6 +1245,8 @@ ipcMainForProfile.handle('delete-profile', async (_event: any, { profileId }: an
     }
   }
   const ok = profileManager.deleteProfile(profileId);
+  // 清理限流缓存记录（窗口已删，缓存无意义）
+  try { windowGroups.clearRateLimit(profileId); } catch (_) { /* ignore */ }
   return { success: ok, error: ok ? null : '窗口不存在' };
 });
 

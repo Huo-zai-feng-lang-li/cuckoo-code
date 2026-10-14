@@ -26,24 +26,35 @@ function getGroupsFile(): string {
   return GROUPS_FILE;
 }
 
-function readGroups(): any[] {
+function readData(): any {
   try {
     const file = getGroupsFile();
-    if (!fs.existsSync(file)) return [];
+    if (!fs.existsSync(file)) return { groups: [], rateLimits: {} };
     const data = JSON.parse(fs.readFileSync(file, "utf-8"));
-    return (data && Array.isArray(data.groups)) ? data.groups : [];
+    return data && typeof data === "object" ? data : { groups: [], rateLimits: {} };
   } catch (_) {
-    return [];
+    return { groups: [], rateLimits: {} };
+  }
+}
+
+function readGroups(): any[] {
+  const data = readData();
+  return Array.isArray(data.groups) ? data.groups : [];
+}
+
+function writeData(data: any): void {
+  try {
+    fs.mkdirSync(path.dirname(getGroupsFile()), { recursive: true });
+    fs.writeFileSync(getGroupsFile(), JSON.stringify(data, null, 2), "utf-8");
+  } catch (err: any) {
+    console.error("[WindowGroups] 写入失败:", err.message);
   }
 }
 
 function writeGroups(groups: any[]): void {
-  try {
-    fs.mkdirSync(path.dirname(getGroupsFile()), { recursive: true });
-    fs.writeFileSync(getGroupsFile(), JSON.stringify({ groups }, null, 2), "utf-8");
-  } catch (err: any) {
-    console.error("[WindowGroups] 写入失败:", err.message);
-  }
+  const data = readData();
+  data.groups = groups;
+  writeData(data);
 }
 
 function genId(): string {
@@ -147,6 +158,46 @@ function getNextWindow(groupId: string, currentWindowId: string): string | null 
   return ids[(idx + 1) % ids.length];
 }
 
+// ===== 限流冷却缓存 =====
+// 记录每个窗口最近一次限流的时间戳，用于：
+//  1) 选目标窗口时跳过仍在冷却期的窗口（不必发消息探测）
+//  2) 探测到限流立即写缓存，避免一轮内重复探测同一窗口
+// 冷却期默认 5 分钟（可传参覆盖）。
+const RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000;
+
+/** 记录窗口限流（时间戳 = 现在） */
+function markRateLimit(windowId: string): void {
+  if (!windowId) return;
+  const data = readData();
+  if (!data.rateLimits || typeof data.rateLimits !== "object") data.rateLimits = {};
+  data.rateLimits[windowId] = Date.now();
+  writeData(data);
+}
+
+/** 取窗口最近限流时间戳（毫秒），无记录返回 0 */
+function getRateLimitAt(windowId: string): number {
+  if (!windowId) return 0;
+  const data = readData();
+  const t = data.rateLimits && data.rateLimits[windowId];
+  return typeof t === "number" ? t : 0;
+}
+
+/** 窗口是否仍在限流冷却期 */
+function isRateLimited(windowId: string, cooldownMs: number = RATE_LIMIT_COOLDOWN_MS): boolean {
+  const t = getRateLimitAt(windowId);
+  return t > 0 && (Date.now() - t) < cooldownMs;
+}
+
+/** 清理窗口的限流记录（删除窗口时调用） */
+function clearRateLimit(windowId: string): void {
+  if (!windowId) return;
+  const data = readData();
+  if (data.rateLimits && data.rateLimits[windowId] != null) {
+    delete data.rateLimits[windowId];
+    writeData(data);
+  }
+}
+
 /** 记录"最后一次继续"的窗口与对话 */
 function setLastContinue(groupId: string, windowId: string, sessionId: string | null): void {
   if (!groupId) return;
@@ -172,6 +223,8 @@ function pruneWindow(windowId: string): void {
   }
   groups = groups.filter(g => Array.isArray(g.windowIds) && g.windowIds.length > 0);
   if (changed) writeGroups(groups);
+  // 同时清理限流记录
+  clearRateLimit(windowId);
 }
 
 export {
@@ -185,4 +238,9 @@ export {
   setLastContinue,
   pruneWindow,
   getNextWindow,
+  markRateLimit,
+  getRateLimitAt,
+  isRateLimited,
+  clearRateLimit,
+  RATE_LIMIT_COOLDOWN_MS,
 };
