@@ -11,6 +11,8 @@ const BAR_SEL = '.ck-activitybar';
 const ORDER_KEY = 'cuckoo-activitybar-order';
 const DRAG_THRESHOLD = 6; // 移动超过 6px 才算拖拽
 const SPACER_KEY = '_spacer';
+// 底部固定区：这些项应始终沉底（靠 _spacer 的 flex:1 撑开）
+const BOTTOM_KEYS = ['about', 'feishu', 'settings'];
 
 let dragEl: HTMLElement | null = null;
 let startY = 0;
@@ -27,6 +29,18 @@ function keyOf(el: any): string {
   if (el.classList.contains('ck-ab-spacer')) return SPACER_KEY;
   if (el.classList.contains('ck-ab-item')) return el.dataset.tab || el.dataset.pluginTab || '';
   return '';
+}
+
+/**
+ * 规整 order 中 _spacer 的位置：
+ * 旧版 bug 会把 _spacer 存到末尾（其后无元素 → 关于/飞书/设置不再沉底）。
+ * 这里把 _spacer 归位到第一个「底部固定项」之前。
+ */
+function normalizeSpacer(order: string[]): string[] {
+  const without = order.filter((k) => k !== SPACER_KEY);
+  const bottomIdx = without.findIndex((k) => BOTTOM_KEYS.includes(k));
+  without.splice(bottomIdx >= 0 ? bottomIdx : without.length, 0, SPACER_KEY);
+  return without;
 }
 
 /** 保存当前 DOM 顺序 */
@@ -51,6 +65,8 @@ export function applyActivitybarOrder(): void {
     if (raw) { const p = JSON.parse(raw); if (Array.isArray(p)) order = p; }
   } catch (_) { return; }
   if (!order.length) return;
+  // 归位 _spacer：修旧数据（末尾的 _spacer）+ 保证本次恢复正确
+  order = normalizeSpacer(order);
 
   // 改 DOM 前断开 observer，改完再挂（否则自己触发自己 → 死循环）
   if (observer) observer.disconnect();
@@ -61,24 +77,20 @@ export function applyActivitybarOrder(): void {
     const k = keyOf(el);
     if (k) byKey.set(k, el);
   });
-  const spacerEl = b.querySelector('.ck-ab-spacer') as HTMLElement | null;
-
   // 算"期望顺序"：
-  //   ① 按持久化 order 命中的元素
-  //   ② spacer 固定在末尾（其前插入所有未命中的新元素）
+  //   ① 按持久化 order 命中的元素（_spacer 也按其在 order 中的位置，不再强制末尾）
+  //   ② 未命中的新元素（插件动态图标等）追加到末尾
   const desired: HTMLElement[] = [];
   const used = new Set<HTMLElement>();
   for (const key of order) {
     const el = byKey.get(key);
-    if (el && el !== spacerEl && !used.has(el)) { desired.push(el); used.add(el); }
+    if (el && !used.has(el)) { desired.push(el); used.add(el); }
   }
-  // 未命中的新元素（插件动态图标等）插到末尾（spacer 之后位置视作末尾）
   byKey.forEach((el) => {
-    if (el === spacerEl || used.has(el)) return;
+    if (used.has(el)) return;
     desired.push(el);
     used.add(el);
   });
-  if (spacerEl) desired.push(spacerEl);
 
   // 与当前顺序一致 → 不碰 DOM（避免无谓重排 / observer 抖动）
   const cur: HTMLElement[] = Array.from(b.children).filter((el: any) => keyOf(el)) as HTMLElement[];

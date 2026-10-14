@@ -8428,6 +8428,7 @@ paths:            # 可选；省略 = 始终生效
   var ORDER_KEY = "cuckoo-activitybar-order";
   var DRAG_THRESHOLD = 6;
   var SPACER_KEY = "_spacer";
+  var BOTTOM_KEYS = ["about", "feishu", "settings"];
   var dragEl = null;
   var startY = 0;
   var dragging = false;
@@ -8440,6 +8441,12 @@ paths:            # 可选；省略 = 始终生效
     if (el2.classList.contains("ck-ab-spacer")) return SPACER_KEY;
     if (el2.classList.contains("ck-ab-item")) return el2.dataset.tab || el2.dataset.pluginTab || "";
     return "";
+  }
+  function normalizeSpacer(order) {
+    const without = order.filter((k) => k !== SPACER_KEY);
+    const bottomIdx = without.findIndex((k) => BOTTOM_KEYS.includes(k));
+    without.splice(bottomIdx >= 0 ? bottomIdx : without.length, 0, SPACER_KEY);
+    return without;
   }
   function saveOrder() {
     const b = bar();
@@ -8468,28 +8475,27 @@ paths:            # 可选；省略 = 始终生效
       return;
     }
     if (!order.length) return;
+    order = normalizeSpacer(order);
     if (observer) observer.disconnect();
     const byKey = /* @__PURE__ */ new Map();
     Array.from(b.children).forEach((el2) => {
       const k = keyOf(el2);
       if (k) byKey.set(k, el2);
     });
-    const spacerEl = b.querySelector(".ck-ab-spacer");
     const desired = [];
     const used = /* @__PURE__ */ new Set();
     for (const key of order) {
       const el2 = byKey.get(key);
-      if (el2 && el2 !== spacerEl && !used.has(el2)) {
+      if (el2 && !used.has(el2)) {
         desired.push(el2);
         used.add(el2);
       }
     }
     byKey.forEach((el2) => {
-      if (el2 === spacerEl || used.has(el2)) return;
+      if (used.has(el2)) return;
       desired.push(el2);
       used.add(el2);
     });
-    if (spacerEl) desired.push(spacerEl);
     const cur = Array.from(b.children).filter((el2) => keyOf(el2));
     if (cur.length === desired.length && cur.every((el2, i) => el2 === desired[i])) {
       if (observer) observer.observe(b, { childList: true });
