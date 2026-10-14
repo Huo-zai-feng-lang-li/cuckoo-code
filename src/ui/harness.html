@@ -574,6 +574,23 @@
     100% { left: 100%; width: 0; }
   }
 
+  /* ===== 自动切换倒计时（限流触发，3s 提示，可取消）===== */
+  .switch-countdown {
+    max-width: 100%; margin: 0 auto 8px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; border-radius: 9px;
+    background: var(--amber-soft); border: 1px solid var(--border);
+    font-size: 12.5px; color: var(--text);
+  }
+  .switch-countdown.cuckoo-hidden { display: none; }
+  .switch-countdown .sc-text { flex: 1; min-width: 0; }
+  .switch-countdown .sc-cancel {
+    flex-shrink: 0; padding: 4px 12px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border-strong); background: var(--bg-elev);
+    color: var(--text-2); font-size: 11.5px; font-family: inherit;
+  }
+  .switch-countdown .sc-cancel:hover { background: var(--surface-hover); color: var(--text); }
+
   /* ===== 发送队列（运行中排队待发消息）===== */
   .send-queue { max-width: 100%; margin: 0 auto 8px; display: none; flex-direction: column; gap: 5px; }
   .send-queue.show { display: flex; }
@@ -763,6 +780,10 @@
     <div class="hint-row" id="hint-row"></div>
     <div class="attach-row" id="attach-row"></div>
     <div class="send-queue" id="send-queue"></div>
+    <div class="switch-countdown cuckoo-hidden" id="switch-countdown">
+      <span class="sc-text" id="switch-countdown-text"></span>
+      <button class="sc-cancel" id="switch-countdown-cancel">取消切换</button>
+    </div>
     <button class="init-project-btn" id="init-project-btn" style="display:none">首次对话需选择项目目录</button>
     <div class="composer-inner">
       <button class="scroll-bottom" id="scroll-bottom" title="回到底部"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M8 13l-4-4M8 13l4-4"/></svg></button>
@@ -1365,7 +1386,16 @@
     try { localStorage.setItem(goalKeyOf(currentSessionId), goal ? JSON.stringify(goal) : 'null'); } catch (e) { /* ignore */ }
     try { localStorage.setItem(planKeyOf(currentSessionId), planState ? JSON.stringify(planState) : 'null'); } catch (e) { /* ignore */ }
     currentSessionId = sid;
-    if (pendingTruncate && sid && sid === pendingTruncate.oldSid) {
+    // 窗口组切换迁移：若目标窗口是「新分享会话」（本地无历史），用源窗口历史覆盖。
+    // 必须在 currentSessionId 确定后应用——否则历史会存到空 key 被随后 loadHist 覆盖。
+    var _impState = _pendingImportState;
+    _pendingImportState = null;
+    var _impQueue = null;
+    if (_impState && sid) {
+      history = (_impState.history || []).slice();
+      saveHist();  // 写入新 sid 的 key（覆盖可能的空历史）
+      _impQueue = _impState.sendQueue || null;
+    } else if (pendingTruncate && sid && sid === pendingTruncate.oldSid) {
       // 回到原会话 = 截断失败回退（分享页激活失败自动退回）：清掉待迁移状态，
       // 按原会话正常载入历史。若不拦住，截断后历史会覆盖原会话本地历史，造成视图与网页不一致。
       clearPendingTruncate();
@@ -1391,6 +1421,8 @@
     stream.innerHTML = '';
     sendQueue = [];
     renderSendQueue();
+    // 迁移的待发队列：在清空后恢复（否则被上面的 sendQueue=[] 清掉）
+    if (_impQueue && _impQueue.length) { sendQueue = _impQueue; renderSendQueue(); }
     if (!history.length) { showEmptyState(); return; }
     restoreHist();
     scrollBottom(true);
@@ -2717,6 +2749,32 @@
     api.onAppendInput(function (text, autoSend) { appendToInput(text, autoSend); });
   }
 
+  // ===== 自动切换倒计时（限流触发，3s 可取消）=====
+  if (api.onSwitchCountdown) {
+    api.onSwitchCountdown(function (data) {
+      var box = document.getElementById('switch-countdown');
+      var txt = document.getElementById('switch-countdown-text');
+      if (!box) return;
+      var secs = (data && data.seconds) || 3;
+      var remain = secs;
+      if (txt) txt.textContent = '账号限流，' + remain + ' 秒后自动切换到组内其他窗口…';
+      box.classList.remove('cuckoo-hidden');
+      var timer = setInterval(function () {
+        remain -= 1;
+        if (remain <= 0) { clearInterval(timer); box.classList.add('cuckoo-hidden'); return; }
+        if (txt) txt.textContent = '账号限流，' + remain + ' 秒后自动切换到组内其他窗口…';
+      }, 1000);
+    });
+  }
+  var switchCancelBtn = document.getElementById('switch-countdown-cancel');
+  if (switchCancelBtn) {
+    switchCancelBtn.addEventListener('click', function () {
+      try { if (api.cancelSwitch) api.cancelSwitch(); } catch (e) { /* ignore */ }
+      var box = document.getElementById('switch-countdown');
+      if (box) box.classList.add('cuckoo-hidden');
+    });
+  }
+
   // ===== 发送队列（运行中排队待发消息，任务空闲自动发下一条）=====
   var sendQueue = []; // { text, files, hints }
   var sendQueueEl = document.getElementById('send-queue');
@@ -3551,8 +3609,56 @@
     asksForUserInput: asksForUserInput,
     planState: function () { return planState; },
     sendQueue: function () { return sendQueue; },
-    enqueue: function (text) { sendQueue.push({ text: text, files: [], hints: [] }); renderSendQueue(); }
+    enqueue: function (text) { sendQueue.push({ text: text, files: [], hints: [] }); renderSendQueue(); },
+    exportState: exportHarnessState,
+    importState: importHarnessState
   };
+
+  // ===== 窗口组切换状态迁移（历史 + 待发队列）=====
+  /** 导出当前 harness 状态（主进程切换时调用，供目标窗口重建） */
+  function exportHarnessState() {
+    var histSnapshot = [];
+    try { histSnapshot = JSON.parse(JSON.stringify(history)); } catch (e) { histSnapshot = []; }
+    var queueSnapshot = [];
+    try { queueSnapshot = JSON.parse(JSON.stringify(sendQueue)); } catch (e) { queueSnapshot = []; }
+    return { history: histSnapshot, sendQueue: queueSnapshot };
+  }
+  if (api.onExportStateReq) {
+    api.onExportStateReq(function (data) {
+      try { api.exportStateReply((data && data.reqId) || '', exportHarnessState()); } catch (e) { /* ignore */ }
+    });
+  }
+
+  // 切换迁移：源状态暂存（目标窗口 session 可能尚未确定，等 onSessionChanged 稳定后再应用）
+  var _pendingImportState = null;
+  function applyImportState(data) {
+    if (!data) return;
+    // 1) 历史：覆盖本页并渲染（目标窗口是新会话，通常为空）
+    if (Array.isArray(data.history) && data.history.length) {
+      history = data.history;
+      saveHist();
+      stream.innerHTML = '';
+      cur = null;
+      restoreHist();
+      scrollBottom(true);
+    }
+    // 2) 待发队列：恢复到输入区
+    if (Array.isArray(data.sendQueue) && data.sendQueue.length) {
+      sendQueue = data.sendQueue;
+      renderSendQueue();
+    }
+  }
+  /** 导入源窗口状态（切换后目标窗口调用）。
+   *  若当前 session 未确定（空 sid），暂存到 onSessionChanged 再应用——
+   *  否则历史会存到空 key，被随后的 loadHist 覆盖丢失。 */
+  function importHarnessState(data) {
+    if (!data) return;
+    if (!currentSessionId) { _pendingImportState = data; return; }
+    applyImportState(data);
+  }
+  if (api.onImportState) {
+    api.onImportState(function (data) { try { importHarnessState(data); } catch (e) { /* ignore */ } });
+  }
 
   // ===== 首次对话需选择项目目录 =====
   var initBtn = document.getElementById('init-project-btn');

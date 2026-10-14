@@ -16,7 +16,7 @@ import { registerFeishuIpc } from './feishu.js';
 import { registerPluginIpc } from './plugin.js';
 import { registerWebServerIpc } from './webserver.js';
 import { registerThemeIpc } from './theme.js';
-import { registerWindowGroupsIpc, onSwitchShareResult } from './window-groups.js';
+import { registerWindowGroupsIpc, onSwitchShareResult, onHarnessExportResult } from './window-groups.js';
 import { registerMemoryIpc } from './memory.js';
 import { registerSnapshotIpc } from './snapshot.js';
 import { registerRulesIpc } from './rules.js';
@@ -30,6 +30,8 @@ const { ipcMain } = require('electron');
 function registerIpcHandlers(): void {
   // 窗口组切换：AI 页面分享回执
   ipcMain.on('cuckoo-switch-share-result', onSwitchShareResult);
+  // 窗口组切换：harness 状态导出回执
+  ipcMain.on('harness-export-state-reply', onHarnessExportResult);
   registerProjectIpc();
   registerSessionIpc();
   registerCommandIpc();

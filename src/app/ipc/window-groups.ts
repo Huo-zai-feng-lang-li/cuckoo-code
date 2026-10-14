@@ -12,6 +12,73 @@ const { ipcMain } = require("electron");
 let reqSeq = 0;
 const pendingShare = new Map<string, any>();
 
+// 请求源窗口的 harness 导出状态（历史 + 队列），等回执
+const pendingExport = new Map<string, any>();
+
+/** harness 状态导出回执入口（由 index 注册） */
+function onHarnessExportResult(_event: any, payload: any): void {
+  const { reqId, state } = payload || {};
+  if (!reqId || !pendingExport.has(reqId)) return;
+  const p = pendingExport.get(reqId);
+  pendingExport.delete(reqId);
+  if (p.timer) clearTimeout(p.timer);
+  p.resolve(state || null);
+}
+
+/**
+ * 导出指定窗口的 harness 状态（历史 + 待发队列）。
+ * harness 可能未创建（懒加载）→ 返回 null，调用方降级。
+ */
+function requestHarnessExport(windowId: number, timeoutMs = 5000): Promise<any> {
+  return new Promise((resolve) => {
+    const ctx = windowState.getWindowContext(windowId);
+    const hv = ctx && (ctx as any).harnessView;
+    if (!hv || hv.webContents.isDestroyed()) { resolve(null); return; }
+    const reqId = 'hx-' + (++reqSeq) + '-' + Date.now();
+    const timer = setTimeout(() => {
+      if (pendingExport.has(reqId)) { pendingExport.delete(reqId); resolve(null); }
+    }, timeoutMs);
+    pendingExport.set(reqId, { resolve, timer });
+    try { hv.webContents.send('harness-export-state-req', { reqId }); }
+    catch (_) { pendingExport.delete(reqId); clearTimeout(timer); resolve(null); }
+  });
+}
+
+/** 向目标窗口的 harness 推送源状态（切换后重建） */
+function pushHarnessImport(windowId: number, state: any): void {
+  if (!state) return;
+  try {
+    const ctx = windowState.getWindowContext(windowId);
+    const hv = ctx && (ctx as any).harnessView;
+    if (hv && !hv.webContents.isDestroyed()) hv.webContents.send('harness-import-state', state);
+  } catch (_) { /* ignore */ }
+}
+
+// 切换状态暂存：harness 页面可能尚未加载完（监听器未注册），直接 push 会丢。
+// 暂存后由 harness-ready 信号触发 push（harness.ts 调用）。
+const stagedImport = new Map<number, any>();
+const harnessReadyWindows = new Set<number>();
+
+/** 暂存待导入状态；若 harness 已就绪则立即推送 */
+function stageHarnessImport(windowId: number, state: any): void {
+  if (!state) return;
+  if (harnessReadyWindows.has(windowId)) { pushHarnessImport(windowId, state); return; }
+  stagedImport.set(windowId, state);
+}
+
+/** harness 页面就绪时调用：若该窗口有暂存状态则推送 */
+function onHarnessReady(windowId: number): void {
+  harnessReadyWindows.add(windowId);
+  const st = stagedImport.get(windowId);
+  if (st) { stagedImport.delete(windowId); pushHarnessImport(windowId, st); }
+}
+
+/** 窗口关闭时清理 */
+function clearHarnessReady(windowId: number): void {
+  harnessReadyWindows.delete(windowId);
+  stagedImport.delete(windowId);
+}
+
 /** AI 页面回执入口（由 index 注册） */
 function onSwitchShareResult(_event: any, payload: any): void {
   const { reqId } = payload || {};
@@ -94,4 +161,4 @@ function registerWindowGroupsIpc(): void {
   });
 }
 
-export { registerWindowGroupsIpc, injectWindowGroupDeps, onSwitchShareResult, requestShareFromWindow };
+export { registerWindowGroupsIpc, injectWindowGroupDeps, onSwitchShareResult, requestShareFromWindow, onHarnessExportResult, requestHarnessExport, pushHarnessImport, stageHarnessImport, onHarnessReady, clearHarnessReady };

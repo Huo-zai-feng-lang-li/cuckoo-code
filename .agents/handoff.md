@@ -2,7 +2,22 @@
 
 ## 核心进展
 
-**v0.8.69**：提交详情 diff 清晰度提升（左侧实心色条 + 背景微提 + 行号分割线，对齐 Codex 风格）。已提交、打 tag、推送 origin。最新 tag **v0.8.69**。
+**v0.8.70**：窗口组切换状态迁移（无缝接续）+ 限流自动切换 3s 倒计时 + diff 配色微调。已提交、打 tag、推送 origin。最新 tag **v0.8.70**。
+
+### v0.8.70 改动
+1. **窗口组切换状态迁移**：导出源 harness 状态（历史+队列）→ 主进程中转 → 目标窗口重建。修复切换后「导航丢失」「队列丢失」。源在纯净模式→目标也进纯净模式。
+   - entry.ts 3.5 步 requestHarnessExport、目标加载后 stageHarnessImport；window-groups.ts 新增 requestHarnessExport/stageHarnessImport/onHarnessReady；harness.html 新增 export/importHarnessState + onExportStateReq/onImportState
+   - 关键修复：harness-ready 信号驱动 push（避免页面未加载完 push 丢失）；importHarnessState 在 session 未稳定时暂存到 onSessionChanged 应用（避免历史存空 key 被覆盖）
+2. **限流自动切换 3s 倒计时**：entry.ts pendingAutoSwitch + countdownBeforeAutoSwitch(3s) + harness-cancel-switch；harness.html .switch-countdown DOM/CSS/JS。手动切换不加。
+3. **diff 配色微调**：深色底 #0a0c0f→#050608，新增 --ck-diff-code（浅 #0b0e14/深 #f8fafc）
+
+### v0.8.70 验证
+- typecheck / test 980 / lint 0 error / compile 全绿
+- 真机：exportState/importState 可用；import 后 userMsgs=1、queueLen=1、迁移文本可见；倒计时 DOM 就位；diff 底色 rgb(5,6,8)、代码色 rgb(248,250,252) ✅
+- ⚠️ 真实「限流自动切换」跨窗口流程未真机复现（需构造限流），靠代码审查 + 单元级验证
+
+### v0.8.69（同轮）
+diff 清晰度提升（左色条+背景微提+行号分割线）。
 
 ### v0.8.69 改动
 1. 增删行加左侧 3px 实心色条（增 #3fb950 / 删 #f85149），背景 0.12→0.16

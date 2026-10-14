@@ -45,6 +45,23 @@ const harnessAPI = {
   setBusy: (busy: boolean) => ipcRenderer.send('harness-set-busy', { busy: !!busy }),
   /** 页面就绪通知（可选，用于同步初始状态） */
   ready: () => ipcRenderer.send('harness-ready'),
+  // ========== 窗口组切换 ==========
+  /** 自动切换倒计时（限流触发前 3s 提示，用户可取消） */
+  onSwitchCountdown: (cb: (data: any) => void) => {
+    ipcRenderer.on('harness-switch-countdown', (_e: any, data: any) => cb(data));
+  },
+  /** 取消本次自动切换 */
+  cancelSwitch: () => ipcRenderer.invoke('harness-cancel-switch'),
+  /** 收到「导出状态」请求（主进程切换前拉取）——页面回传后调 exportStateReply */
+  onExportStateReq: (cb: (data: any) => void) => {
+    ipcRenderer.on('harness-export-state-req', (_e: any, data: any) => cb(data));
+  },
+  /** 回传导出的状态 */
+  exportStateReply: (reqId: string, state: any) => ipcRenderer.send('harness-export-state-reply', { reqId, state }),
+  /** 导入源窗口状态（切换后目标窗口重建界面） */
+  onImportState: (cb: (data: any) => void) => {
+    ipcRenderer.on('harness-import-state', (_e: any, data: any) => cb(data));
+  },
   // ========== 主题（跟随 Cuckoo 主题系统）==========
   themeGet: () => ipcRenderer.invoke('theme-get'),
   themeSubscribe: () => ipcRenderer.invoke('theme-subscribe'),

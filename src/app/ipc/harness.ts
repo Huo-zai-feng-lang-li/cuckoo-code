@@ -20,6 +20,7 @@ import { getProvider } from '../../providers/registry.js';
 import { resetTodosCache } from './tool.js';
 import { cdpAttach } from './cdp-attach.js';
 import { initProject } from '../../session/project-context.js';
+import { onHarnessReady } from './window-groups.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -483,8 +484,14 @@ function registerHarnessIpc(): void {
   });
 
   // harness 页面就绪
-  ipcMain.on('harness-ready', () => {
+  ipcMain.on('harness-ready', (event: any) => {
     console.log('[Cuckoo Harness] 页面已就绪');
+    // 窗口组切换：harness 页面就绪 → 若有暂存状态则推送（避免页面未加载完时 push 丢失）
+    try {
+      const ctx = findContext(event.sender);
+      const winId = ctx && ctx.win ? ctx.win.id : null;
+      if (winId != null) onHarnessReady(winId);
+    } catch (_) { /* ignore */ }
   });
 }
 

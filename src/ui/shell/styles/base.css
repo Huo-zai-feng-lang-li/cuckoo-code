@@ -31,6 +31,8 @@
     --ck-green: #30a46c;
     /* diff 正文专用底色（比 --ck-bg-sub 更深，突出代码对比） */
     --ck-diff-bg: #f0f1f4;
+    /* diff 代码文字色（比正文更醒目） */
+    --ck-diff-code: #0b0e14;
   }
   /* ===== 深色（由主题 presenter 设 body[data-ck-dark]）===== */
   body[data-ck-dark] {
@@ -56,7 +58,9 @@
     --ck-danger: #ff6369;
     --ck-green: #46b47e;
     /* diff 正文专用底色（比 --ck-bg-sub 更暗，突出代码对比） */
-    --ck-diff-bg: #0d0f13;
+    --ck-diff-bg: #050608;
+    /* diff 代码文字色（比正文更醒目） */
+    --ck-diff-code: #f8fafc;
   }
   * { box-sizing: border-box; }
   html, body {

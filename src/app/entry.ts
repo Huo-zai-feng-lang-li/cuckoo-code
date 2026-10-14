@@ -62,7 +62,7 @@ import { addMemory, removeMemory, listMemories } from '../infra/memories.js';
 import { createSnapshot, listSnapshots, restoreSnapshot } from './snapshots.js';
 import { pushUrlState } from './ipc/shell.js';
 import { pushHarnessState, stopGeneration } from './ipc/harness.js';
-import { injectWindowGroupDeps, requestShareFromWindow } from './ipc/window-groups.js';
+import { injectWindowGroupDeps, requestShareFromWindow, requestHarnessExport, stageHarnessImport } from './ipc/window-groups.js';
 import { seedDefaultRules } from '../rules/index.js';
 import { initProject } from '../session/project-context.js';
 import * as windowGroups from './window-groups.js';
@@ -988,6 +988,12 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSo
 
     // 3) 停掉当前窗口的生成 + 工具调用
     try { await stopGeneration(cur); } catch (_) { /* ignore */ }
+    // 3.5) 导出源窗口 harness 状态（历史 + 待发队列），供目标窗口无缝接续
+    //      harness 未创建时返回 null，不影响主流程
+    let harnessState: any = null;
+    try { harnessState = await requestHarnessExport(curWindowId); } catch (_) { /* ignore */ }
+    // 源窗口是否处于纯净模式：切换后目标窗口也进入（否则用户从纯净模式被切走，只看到网页，不算无缝）
+    const srcWasHarness = !!(cur.win && (cur.win as any).__ckHarnessVisible);
 
     // 4) 请求源窗口分享当前对话（全量）
     const share = await requestShareFromWindow(curWindowId);
@@ -1059,6 +1065,19 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSo
           // 指定项目目录；不追加"请继续"（isCompaction=false, extraPrompt=''）
           await initProject(false, tctx, projectDir, false, '', false);
         } catch (_) { /* ignore */ }
+        // 源窗口若在纯净模式 → 目标窗口也进入（无缝接续的必要条件）
+        try {
+          if (srcWasHarness && tctx.win && !tctx.win.isDestroyed()) {
+            (tctx.win as any).__ckToggleHarness?.(true);
+          }
+        } catch (_) { /* ignore */ }
+        // 迁移源窗口 harness 状态（历史 + 队列）到目标窗口，实现无缝接续。
+        // 放在 initProject 之后：等目标 harness 就绪（若懒加载则等其创建）。
+        try {
+          // 暂存状态：目标 harness 可能尚未加载完（监听器未注册），
+          // 由 harness-ready 信号触发推送（window-groups.ts 的 onHarnessReady）。
+          if (harnessState) stageHarnessImport(targetWindowId, harnessState);
+        } catch (_) { /* ignore */ }
       }, 2500);
     };
     try { twc.on('did-finish-load', onLoad); } catch (_) { /* ignore */ }
@@ -1108,6 +1127,39 @@ injectWindowGroupDeps({
 });
 
 // ========== 限流触发自动切换 ==========
+// 待确认的自动切换（倒计时期间可被用户取消）
+const pendingAutoSwitch = new Map<number, { cancel: () => void }>();
+
+ipcMainForProfile.handle('harness-cancel-switch', async (event: any) => {
+  const ctx = windowState.getContextByWebContents(event.sender);
+  const winId = ctx && ctx.win ? ctx.win.id : null;
+  if (winId != null && pendingAutoSwitch.has(winId)) {
+    const p = pendingAutoSwitch.get(winId)!;
+    pendingAutoSwitch.delete(winId);
+    p.cancel();
+    console.log('[窗口组] 用户取消自动切换');
+    return { success: true, cancelled: true };
+  }
+  return { success: true, cancelled: false };
+});
+
+/** 自动切换前给源窗口 3s 倒计时（用户可取消）。返回是否被取消。 */
+function countdownBeforeAutoSwitch(ctx: any, seconds: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const hv = ctx && ctx.harnessView;
+    const wc = hv && !hv.webContents.isDestroyed() ? hv.webContents : null;
+    if (!wc || !ctx.win || ctx.win.isDestroyed()) { resolve(false); return; }
+    let cancelled = false;
+    const winId = ctx.win.id;
+    pendingAutoSwitch.set(winId, { cancel: () => { cancelled = true; } });
+    try { wc.send('harness-switch-countdown', { seconds }); } catch (_) { /* ignore */ }
+    setTimeout(() => {
+      if (pendingAutoSwitch.has(winId)) pendingAutoSwitch.delete(winId);
+      resolve(cancelled);
+    }, seconds * 1000);
+  });
+}
+
 // bridge 检测到限流（429 / rate_limit）→ 上报 → 若该窗口属于某组，则触发自动切换
 ipcMainForProfile.handle('rate-limit-hit', async (event: any) => {
   const ctx = windowState.getContextByWebContents(event.sender);
@@ -1119,6 +1171,9 @@ ipcMainForProfile.handle('rate-limit-hit', async (event: any) => {
     return { success: true, switched: false, reason: 'not-in-group' };
   }
   console.log('[窗口组] 限流触发自动切换，组=' + group.name);
+  // 自动切换：先给源窗口 3s 倒计时（突兀切换改为可见倒计时，可取消）
+  const cancelled = await countdownBeforeAutoSwitch(ctx, 3);
+  if (cancelled) return { success: true, switched: false, reason: 'cancelled' };
   // 触发切换（复用 P2 的编排）
   try {
     const res = await runSwitchForGroup(group.id, profileId, true);

@@ -40,6 +40,8 @@
     --ck-green: #30a46c;
     /* diff 正文专用底色（比 --ck-bg-sub 更深，突出代码对比） */
     --ck-diff-bg: #f0f1f4;
+    /* diff 代码文字色（比正文更醒目） */
+    --ck-diff-code: #0b0e14;
   }
   /* ===== 深色（由主题 presenter 设 body[data-ck-dark]）===== */
   body[data-ck-dark] {
@@ -65,7 +67,9 @@
     --ck-danger: #ff6369;
     --ck-green: #46b47e;
     /* diff 正文专用底色（比 --ck-bg-sub 更暗，突出代码对比） */
-    --ck-diff-bg: #0d0f13;
+    --ck-diff-bg: #050608;
+    /* diff 代码文字色（比正文更醒目） */
+    --ck-diff-code: #f8fafc;
   }
   * { box-sizing: border-box; }
   html, body {
@@ -1708,16 +1712,16 @@
   /* 增删行：左侧实心色条 + 可辨背景。
      纯透明背景叠在极暗底色上几乎看不出色相、没有边界 → 观感模糊；
      左色条给出明确边界（对齐 GitHub/Codex 风格）。 */
-  .ck-diff-row.ck-diff-add { background: rgba(63,185,80,0.16); box-shadow: inset 3px 0 0 #3fb950; }
-  .ck-diff-row.ck-diff-del { background: rgba(240,101,106,0.16); box-shadow: inset 3px 0 0 #f85149; }
+  .ck-diff-row.ck-diff-add { background: rgba(63,185,80,0.13); box-shadow: inset 3px 0 0 #3fb950; }
+  .ck-diff-row.ck-diff-del { background: rgba(240,101,106,0.13); box-shadow: inset 3px 0 0 #f85149; }
   /* 行号：去掉叠加的 opacity（曾叠 opacity:.55 + 灰色 → 双重变淡，观感发虚） */
   .ck-diff-ln { flex-shrink: 0; width: 44px; text-align: right; padding-right: 10px; color: var(--ck-text-2); user-select: none; font-size: 11px; opacity: .75; }
   .ck-diff-ln + .ck-diff-ln { border-right: 1px solid var(--ck-border); margin-right: 6px; }
   .ck-diff-sign { flex-shrink: 0; width: 12px; text-align: center; user-select: none; font-weight: 700; }
-  .ck-diff-row.ck-diff-add .ck-diff-sign, .ck-diff-row.ck-diff-add .ck-diff-code { color: #7ee787; font-weight: 600; }
-  .ck-diff-row.ck-diff-del .ck-diff-sign, .ck-diff-row.ck-diff-del .ck-diff-code { color: #ffa198; font-weight: 600; }
+  .ck-diff-row.ck-diff-add .ck-diff-sign, .ck-diff-row.ck-diff-add .ck-diff-code { color: #8ff0a4; font-weight: 600; }
+  .ck-diff-row.ck-diff-del .ck-diff-sign, .ck-diff-row.ck-diff-del .ck-diff-code { color: #ffb3ba; font-weight: 600; }
   /* 正文：上下文行用主文字色（原用 --ck-text-2 偏灰，暗色下观感发虚） */
-  .ck-diff-code { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-all; color: var(--ck-text); }
+  .ck-diff-code { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-all; color: var(--ck-diff-code, var(--ck-text)); }
   .ck-git-commit-subject {
     display: block; font-size: 12px; color: var(--ck-text);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
