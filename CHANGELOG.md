@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.8.75] - 2026-10-14
+
+### Fixed
+- 复查修正（v0.8.74 性能改动）：`git-unstage-all` 的回退正则补全 `Failed to resolve`/`bad revision`（真机实测空仓库 `git reset` 可用，此回退为防御性兜底）；`entry.ts` 注释的倒计时从「3s」更正为「6s」。
+
 ## [0.8.74] - 2026-10-14
 
 ### Performance

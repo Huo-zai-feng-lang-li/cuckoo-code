@@ -1212,7 +1212,7 @@ ipcMainForProfile.handle('rate-limit-hit', async (event: any) => {
   }
   switchingProfiles.add(profileId);
   console.log('[窗口组] 限流触发自动切换，组=' + group.name);
-  // 自动切换：先给源窗口 3s 倒计时（突兀切换改为可见倒计时，可取消）
+  // 自动切换：先给源窗口 6s 倒计时（突兀切换改为可见倒计时，可取消）
   const cancelled = await countdownBeforeAutoSwitch(ctx, 6);
   if (cancelled) { switchingProfiles.delete(profileId); return { success: true, switched: false, reason: 'cancelled' }; }
   // 触发切换（复用 P2 的编排）

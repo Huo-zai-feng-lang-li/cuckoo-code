@@ -146,8 +146,8 @@ function registerGitIpc(): void {
     const root = getProjectRoot(event);
     if (!root) return { success: false, error: '未选择项目目录' };
     let r = await runGit(root, ['reset', '-q']);
-    // 首次提交前无 HEAD：reset 会失败，回退 git rm --cached -r
-    if (!r.success && /could not resolve HEAD|unknown revision|no such ref|ambiguous argument/i.test(r.stderr)) {
+    // 首次提交前无 HEAD：实测 git reset 可正常 unstage（exit=0），此回退为防御性兜底
+    if (!r.success && /could not resolve HEAD|Failed to resolve|bad revision|unknown revision|no such ref|ambiguous argument/i.test(r.stderr)) {
       r = await runGit(root, ['rm', '--cached', '-r', '--force', '-q', '.']);
     }
     return r.success ? { success: true } : { success: false, error: r.stderr.trim() };
