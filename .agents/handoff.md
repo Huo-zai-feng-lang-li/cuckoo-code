@@ -1,9 +1,22 @@
-# 最新接续状态 (2026-10-14 16:45)
+# 最新接续状态 (2026-10-14 18:55)
 
 ## 核心进展
-- **最新 tag v0.8.77**（已提交、打 tag、推送 origin；CI 自动构建 Release）。
-- 本会话从 v0.8.65 一路做到 v0.8.77，共 13 个版本，全部 `typecheck / test 980 / lint 0 error / compile` 全绿 + 真机验证。
-- 主题：**UI 体验打磨 + 性能优化 + 窗口组切换闭环**。
+- **最新 tag v0.8.78**（待提交/打 tag）。
+- v0.8.78 主题：**修复工具窗口无法登录 Google/Gemini**（需求 050）。
+- 上一批 v0.8.65~77 主题：UI 体验打磨 + 性能优化 + 窗口组切换闭环（全部 `typecheck / test 980 / lint 0 error / compile` 全绿 + 真机验证）。
+
+## v0.8.78 详细（需求 050）
+- **问题**：`openBrowserWindow` 工具窗口打开 Gemini/Google 登录页报「此浏览器或应用可能不安全」。
+- **根因**：工具窗口只调 `setUserAgent`（去 Electron 标识），缺两项 Google OAuth 必需修正：
+  1. `navigator.userAgentData.brands` 缺 "Google Chrome" 品牌
+  2. `sec-ch-ua*` 请求头未改写
+  主窗口 AI 视图（`entry.ts` + `bridge/entry.ts`）三样齐全，所以能过。
+- **修复**：
+  - 新增 `src/app/browser-preload.ts`（工具窗口专用 preload，主世界注入 `buildUserAgentDataFix()`）
+  - `src/tools/impl/browser-window-manager.ts`：`openWindow` 指定该 preload（`sandbox:false` 必须，否则 ESM preload 加载失败）+ `ensureClientHints()` 补齐 `sec-ch-ua*` 请求头
+- **验证**：真机独立 Electron 窗口打开 gemini.google.com —— 修复前 brands 缺 Google Chrome 且跳登录页；修复后 brands 含 "Google Chrome"、正常进入 Gemini 应用页。`typecheck / test 980 / lint 0 error / compile` 全绿。
+- **踩坑**：ESM preload 在 Electron 默认 sandbox=true 下无法加载（报 `Cannot use import statement outside a module`），必须显式 `sandbox:false`。
+- **后续（Gemini provider）**：工具窗口登录问题已解决；但要让 Cuckoo 真正支持 Gemini 对话（Agent 循环），仍需新增 `src/providers/gemini.ts` + `src/providers/hooks/gemini.ts`（P0）。当前验证仅到"能登录、能打开 Gemini 页面"。
 
 ## 核心动机与背景 (Motivation & Background)
 

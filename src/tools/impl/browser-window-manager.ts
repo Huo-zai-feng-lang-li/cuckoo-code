@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
-import { buildChromeUserAgent } from '../../infra/user-agent.js';
+import path from 'node:path';
+import { buildChromeUserAgent, ensureClientHints } from '../../infra/user-agent.js';
 const require = createRequire(import.meta.url);
 const { BrowserWindow } = require('electron');
 
@@ -31,14 +32,35 @@ class BrowserWindowManager {
       } while (this.windows.has(id));
     }
 
+    // 剥离用户传入的 width/height/webPreferences，由本模块统一接管
+    const { webPreferences: optWebPrefs, width: _w, height: _h, ...restOptions } = options;
     const win = new BrowserWindow({
       width: options.width || 1200,
       height: options.height || 800,
-      ...options
+      ...restOptions,
+      webPreferences: {
+        ...(optWebPrefs || {}),
+        // 以下安全基线由本模块强制接管，用户 webPreferences 不可覆盖（保证 preload 一定生效）
+        contextIsolation: true,
+        nodeIntegration: false,
+        // sandbox 必须为 false：ESM preload（含 import）在 sandbox 模式下无法加载。
+        // 与主窗口 AI 视图（entry.ts）一致。
+        sandbox: false,
+        // 工具窗口专用 preload：注入 navigator.userAgentData 指纹修正（Google 系站点登录必需）。
+        // 放在 tools 层根目录（非 impl/）：impl/ 是 D12 契约扫描目录，会被 build-tool-api 当工具模块 import。
+        preload: path.join(import.meta.dirname, '..', 'browser-preload.js'),
+      },
+    });
+
+    // preload 加载失败会让指纹修正静默失效（Google 登录又变"不安全"），主进程显式记录
+    win.webContents.on('preload-error', (_e: any, preloadPath: string, error: any) => {
+      console.error('[Cuckoo Browser] preload 加载失败:', preloadPath, error && error.message);
     });
 
     // 设置与主窗口一致的普通 Chrome UA（动态取真实内核版本），避免暴露 Electron 标识
     win.webContents.setUserAgent(buildChromeUserAgent());
+    // 补齐 sec-ch-ua* 请求头（Google OAuth 登录必需）
+    ensureClientHints(win.webContents.session);
 
     // F12 打开本窗口 DevTools（方便调试页面）。
     // 判断 keyDown：before-input-event 对 keyDown/keyUp 都触发，不判断会"按下开、抬起关"。

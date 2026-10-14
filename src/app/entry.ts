@@ -49,7 +49,7 @@ if (RENDERER_LOG_DIR) {
 
 import { registerIpcHandlers } from './ipc/index.js';
 import * as taskManager from '../infra/task-manager.js';
-import { buildChromeUserAgent, buildClientHintsHeaders } from '../infra/user-agent.js';
+import { buildChromeUserAgent, ensureClientHints } from '../infra/user-agent.js';
 import { initFeishu } from './ipc/feishu.js';
 import { injectSubagentDeps, runAgent as runAgentImpl, runGatewayQuery as runGatewayQueryImpl } from './subagent.js';
 import { injectAgentRunner, injectSubagentChecker } from '../tools/impl/run-agent.js';
@@ -540,30 +540,9 @@ function createWindow(profile: any) {
 
   // 补齐 Chrome 客户端提示请求头（Sec-CH-UA*）：
   // Electron 默认的 sec-ch-ua 缺少 "Google Chrome" 品牌，Google 据此判定
-  // "浏览器或应用不安全"而拒绝 OAuth 登录。本会话所有请求统一改写，
-  // 只在本窗口 session 上注册（不影响其他窗口）。
-  try {
-    const hints = buildClientHintsHeaders();
-    const ses = view.webContents.session;
-    ses.webRequest.onBeforeSendHeaders((details: any, callback: any) => {
-      try {
-        const h = details.requestHeaders || {};
-        for (const k of Object.keys(h)) {
-          const lk = k.toLowerCase();
-          if (lk === 'sec-ch-ua' || lk === 'sec-ch-ua-mobile' || lk === 'sec-ch-ua-platform' ||
-              lk === 'sec-ch-ua-full-version' || lk === 'sec-ch-ua-full-version-list') {
-            delete h[k];
-          }
-        }
-        Object.assign(h, hints);
-        callback({ requestHeaders: h });
-      } catch (_) {
-        callback({ requestHeaders: details.requestHeaders });
-      }
-    });
-  } catch (err: any) {
-    console.error('[Cuckoo Code] 注册客户端提示请求头失败:', err && err.message);
-  }
+  // "浏览器或应用不安全"而拒绝 OAuth 登录。只在本窗口 session 上注册（不影响其他窗口）。
+  // 用 infra 的共享实现（WeakSet 去重）：同 partition 多窗口共享 session，避免重复注册互相覆盖。
+  ensureClientHints(view.webContents.session);
 
   // 优先恢复上次关闭时的 URL（仅 http/https，且平台已确定）
   const lastUrl = profileData.lastUrl;

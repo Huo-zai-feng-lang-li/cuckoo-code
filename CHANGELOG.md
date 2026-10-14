@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.8.78] - 2026-10-14
+
+### Fixed
+- **工具窗口（openBrowserWindow）无法登录 Google/Gemini**：工具窗口只设了 UA，缺 Google OAuth 必需的两项修正 → `navigator.userAgentData.brands` 不含 "Google Chrome" 品牌、`sec-ch-ua*` 请求头未改写，Google 判定"浏览器或应用不安全"拒绝登录。修复：新增工具窗口专用 preload（`src/app/browser-preload.ts`）向主世界注入 `buildUserAgentDataFix()`，并在 `browser-window-manager.ts` 的 session 层补齐 `sec-ch-ua*` 请求头，与主窗口 AI 视图行为对齐。
+
 ## [0.8.77] - 2026-10-14
 
 ### Added
