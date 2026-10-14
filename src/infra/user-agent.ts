@@ -63,4 +63,41 @@ function buildUserAgentDataFix(): string {
     '}catch(e){}})();';
 }
 
-export { buildChromeUserAgent, chromeMajor, buildClientHintsHeaders, buildUserAgentDataFix };
+/**
+ * 为指定 session 补齐 Chrome 客户端提示请求头（Sec-CH-UA*）。
+ * Electron 默认的 sec-ch-ua 缺 "Google Chrome" 品牌，Google OAuth 据此判定
+ * "浏览器或应用不安全"而拒绝登录。与 UA 修正配套使用。
+ *
+ * 注：ses 由调用方传入（electron session 对象），本函数不 import electron，
+ * 保持 infra 层"只依赖 node 内置"的约束。同一 session 只注册一次（WeakSet 去重），
+ * 避免 onBeforeSendHeaders（替换式单监听器）被重复注册互相覆盖。
+ */
+const clientHintsSessions = new WeakSet<object>();
+
+function ensureClientHints(ses: any): void {
+  if (!ses || clientHintsSessions.has(ses)) return;
+  clientHintsSessions.add(ses);
+  try {
+    const hints = buildClientHintsHeaders();
+    ses.webRequest.onBeforeSendHeaders((details: any, callback: any) => {
+      try {
+        const h = details.requestHeaders || {};
+        for (const k of Object.keys(h)) {
+          const lk = k.toLowerCase();
+          if (lk === 'sec-ch-ua' || lk === 'sec-ch-ua-mobile' || lk === 'sec-ch-ua-platform' ||
+              lk === 'sec-ch-ua-full-version' || lk === 'sec-ch-ua-full-version-list') {
+            delete h[k];
+          }
+        }
+        Object.assign(h, hints);
+        callback({ requestHeaders: h });
+      } catch (_) {
+        callback({ requestHeaders: details.requestHeaders });
+      }
+    });
+  } catch (err: any) {
+    console.error('[Cuckoo] 注册客户端提示请求头失败:', err && err.message);
+  }
+}
+
+export { buildChromeUserAgent, chromeMajor, buildClientHintsHeaders, buildUserAgentDataFix, ensureClientHints };
