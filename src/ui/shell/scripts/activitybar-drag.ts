@@ -32,15 +32,19 @@ function keyOf(el: any): string {
 }
 
 /**
- * 规整 order 中 _spacer 的位置：
- * 旧版 bug 会把 _spacer 存到末尾（其后无元素 → 关于/飞书/设置不再沉底）。
- * 这里把 _spacer 归位到第一个「底部固定项」之前。
+ * 规整 order 为「主区项 + _spacer + 底部固定项」。
+ * 修两类旧数据：① _spacer 被存到末尾（底部三项不沉底）；
+ * ② 主区图标被拖到 _spacer 之后（跑进底部固定区，表现为"跑到底部"）。
  */
 function normalizeSpacer(order: string[]): string[] {
-  const without = order.filter((k) => k !== SPACER_KEY);
-  const bottomIdx = without.findIndex((k) => BOTTOM_KEYS.includes(k));
-  without.splice(bottomIdx >= 0 ? bottomIdx : without.length, 0, SPACER_KEY);
-  return without;
+  const top: string[] = [];
+  const bottom: string[] = [];
+  for (const k of order) {
+    if (k === SPACER_KEY) continue;
+    if (BOTTOM_KEYS.includes(k)) bottom.push(k);
+    else top.push(k);
+  }
+  return top.concat([SPACER_KEY], bottom);
 }
 
 /** 保存当前 DOM 顺序 */
@@ -103,13 +107,19 @@ export function applyActivitybarOrder(): void {
   if (observer) observer.observe(b, { childList: true });
 }
 
-/** 实时把拖拽元素移到鼠标位置 */
+/** 实时把拖拽元素移到鼠标位置（仅限主区：_spacer 之前的图标之间排序）*/
 function moveDrag(y: number): void {
   const b = bar();
   if (!b || !dragEl) return;
-  const others = Array.from(b.querySelectorAll('.ck-ab-item:not(.ck-ab-dragging)')) as HTMLElement[];
+  const spacer = b.querySelector('.ck-ab-spacer');
+  // _spacer 是硬边界：主区图标不得越过它进入底部固定区（否则会"跑到底部"）。
+  const sortable: HTMLElement[] = [];
+  for (const el of Array.from(b.children)) {
+    if (el === spacer) break;
+    if ((el as HTMLElement).classList.contains('ck-ab-item') && el !== dragEl) sortable.push(el as HTMLElement);
+  }
   let placed = false;
-  for (const it of others) {
+  for (const it of sortable) {
     const r = it.getBoundingClientRect();
     if (y < r.top + r.height / 2) {
       if (dragEl.nextSibling !== it) b.insertBefore(dragEl, it);
@@ -117,9 +127,13 @@ function moveDrag(y: number): void {
       break;
     }
   }
-  if (!placed && others.length) {
-    const last = others[others.length - 1];
-    if (last.nextSibling !== dragEl) b.insertBefore(dragEl, last.nextSibling);
+  if (!placed) {
+    // 拖到主区末尾 → 插到 _spacer 之前（不越过它）
+    if (spacer) { if (dragEl.nextSibling !== spacer) b.insertBefore(dragEl, spacer); }
+    else if (sortable.length) {
+      const last = sortable[sortable.length - 1];
+      if (last.nextSibling !== dragEl) b.insertBefore(dragEl, last.nextSibling);
+    }
   }
 }
 
@@ -130,6 +144,9 @@ export function initActivitybarDrag(): void {
   b.addEventListener('mousedown', (e: any) => {
     const item = e.target && e.target.closest ? e.target.closest('.ck-ab-item') : null;
     if (!item || !b.contains(item)) return;
+    // 底部固定区（_spacer 之后）不可拖拽：保持"关于/飞书/设置"沉底
+    const spacer = b.querySelector('.ck-ab-spacer');
+    if (spacer && (spacer.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING)) return;
     dragEl = item;
     startY = e.clientY;
     dragging = false;

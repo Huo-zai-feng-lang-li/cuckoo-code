@@ -8468,10 +8468,14 @@ paths:            # 可选；省略 = 始终生效
     return "";
   }
   function normalizeSpacer(order) {
-    const without = order.filter((k) => k !== SPACER_KEY);
-    const bottomIdx = without.findIndex((k) => BOTTOM_KEYS.includes(k));
-    without.splice(bottomIdx >= 0 ? bottomIdx : without.length, 0, SPACER_KEY);
-    return without;
+    const top = [];
+    const bottom = [];
+    for (const k of order) {
+      if (k === SPACER_KEY) continue;
+      if (BOTTOM_KEYS.includes(k)) bottom.push(k);
+      else top.push(k);
+    }
+    return top.concat([SPACER_KEY], bottom);
   }
   function saveOrder() {
     const b = bar();
@@ -8532,9 +8536,14 @@ paths:            # 可选；省略 = 始终生效
   function moveDrag(y) {
     const b = bar();
     if (!b || !dragEl) return;
-    const others = Array.from(b.querySelectorAll(".ck-ab-item:not(.ck-ab-dragging)"));
+    const spacer = b.querySelector(".ck-ab-spacer");
+    const sortable = [];
+    for (const el2 of Array.from(b.children)) {
+      if (el2 === spacer) break;
+      if (el2.classList.contains("ck-ab-item") && el2 !== dragEl) sortable.push(el2);
+    }
     let placed = false;
-    for (const it of others) {
+    for (const it of sortable) {
       const r = it.getBoundingClientRect();
       if (y < r.top + r.height / 2) {
         if (dragEl.nextSibling !== it) b.insertBefore(dragEl, it);
@@ -8542,9 +8551,13 @@ paths:            # 可选；省略 = 始终生效
         break;
       }
     }
-    if (!placed && others.length) {
-      const last = others[others.length - 1];
-      if (last.nextSibling !== dragEl) b.insertBefore(dragEl, last.nextSibling);
+    if (!placed) {
+      if (spacer) {
+        if (dragEl.nextSibling !== spacer) b.insertBefore(dragEl, spacer);
+      } else if (sortable.length) {
+        const last = sortable[sortable.length - 1];
+        if (last.nextSibling !== dragEl) b.insertBefore(dragEl, last.nextSibling);
+      }
     }
   }
   function initActivitybarDrag() {
@@ -8553,6 +8566,8 @@ paths:            # 可选；省略 = 始终生效
     b.addEventListener("mousedown", (e) => {
       const item = e.target && e.target.closest ? e.target.closest(".ck-ab-item") : null;
       if (!item || !b.contains(item)) return;
+      const spacer = b.querySelector(".ck-ab-spacer");
+      if (spacer && spacer.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING) return;
       dragEl = item;
       startY = e.clientY;
       dragging = false;
