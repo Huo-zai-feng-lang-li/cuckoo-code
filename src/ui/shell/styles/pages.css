@@ -323,15 +323,37 @@
     border-radius: 8px;
     font-family: "SF Mono", "Consolas", monospace;
     font-size: 12px; line-height: 1.55;
-    white-space: pre; tab-size: 4;
+    tab-size: 4;
   }
-  .ck-git-diff-body .ck-diff-file { font-weight: 700; color: var(--ck-text); }
-  .ck-git-diff-body .ck-diff-filehead { color: var(--ck-text-2); font-weight: 600; }
   .ck-git-diff-body .ck-diff-meta { color: var(--ck-text-dim); }
-  .ck-git-diff-body .ck-diff-hunk { color: #4a9ee0; }
-  .ck-git-diff-body .ck-diff-add { color: #4caf7d; }
-  .ck-git-diff-body .ck-diff-del { color: #e05a5a; }
-  .ck-git-diff-body .ck-diff-truncated { color: var(--ck-text-dim); font-style: italic; }
+  .ck-git-diff-body .ck-diff-truncated { display: block; color: var(--ck-text-dim); font-style: italic; padding: 8px 0; }
+  /* 摘要卡 */
+  .ck-diff-summary { margin-bottom: 12px; padding: 10px 12px; background: var(--ck-surface); border-radius: 8px; white-space: normal; }
+  .ck-diff-subject { font-size: 13px; font-weight: 600; color: var(--ck-text); line-height: 1.5; word-break: break-word; }
+  .ck-diff-summary-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; font-size: 11px; color: var(--ck-text-dim); }
+  .ck-diff-hash { font-family: var(--mono, monospace); background: var(--ck-bg-sub); padding: 1px 6px; border-radius: 5px; }
+  .ck-diff-add-t { color: #4caf7d; font-weight: 600; }
+  .ck-diff-del-t { color: #e05a5a; font-weight: 600; }
+  /* 文件列表 */
+  .ck-diff-files { margin-bottom: 12px; white-space: normal; }
+  .ck-diff-file-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .ck-diff-file-row:hover { background: var(--ck-surface-hover); }
+  .ck-diff-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ck-text-2); }
+  .ck-diff-file-stat { flex-shrink: 0; font-size: 11px; }
+  /* 正文：逐文件块 */
+  .ck-diff-file-block { margin-bottom: 10px; }
+  .ck-diff-file-head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; margin: 0 -12px 2px; background: var(--ck-bg-sub); font-weight: 600; font-size: 12px; color: var(--ck-text); border-top: 1px solid var(--ck-border); border-bottom: 1px solid var(--ck-border); }
+  /* diff 行：行号列 + 符号 + 代码（去掉 white-space:pre 的逐行 span，改块级） */
+  .ck-diff-row { display: flex; align-items: flex-start; line-height: 1.6; }
+  .ck-diff-row.ck-diff-add { background: rgba(76,175,125,0.16); }
+  .ck-diff-row.ck-diff-del { background: rgba(224,90,90,0.16); }
+  /* 行号：去掉叠加的 opacity（曾叠 opacity:.55 + 灰色 → 双重变淡，观感发虚） */
+  .ck-diff-ln { flex-shrink: 0; width: 44px; text-align: right; padding-right: 10px; color: var(--ck-text-dim); user-select: none; font-size: 11px; }
+  .ck-diff-sign { flex-shrink: 0; width: 14px; text-align: center; user-select: none; font-weight: 700; }
+  .ck-diff-row.ck-diff-add .ck-diff-sign, .ck-diff-row.ck-diff-add .ck-diff-code { color: #3fb950; }
+  .ck-diff-row.ck-diff-del .ck-diff-sign, .ck-diff-row.ck-diff-del .ck-diff-code { color: #f0656a; }
+  /* 正文：上下文行用主文字色（原用 --ck-text-2 偏灰，暗色下观感发虚） */
+  .ck-diff-code { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-all; color: var(--ck-text); }
   .ck-git-commit-subject {
     display: block; font-size: 12px; color: var(--ck-text);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

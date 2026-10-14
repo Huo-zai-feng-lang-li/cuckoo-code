@@ -53,5 +53,6 @@
 | 046 | feature | [提交详情查看 diff（源代码管理）](./046-commit-diff.md) | doing | feat/046-commit-diff | 2026-10-13 |
 | 047 | performance | [性能修复：token 统计同步 IO 放大 + 流式 stripToolBlocks O(n²)](./047-perf-token-stream.md) | doing | (直接主分支) | 2026-10-13 |
 | 048 | performance | [harness 流式渲染节流（rAF 合并，消除 O(n²)）](./048-harness-stream-throttle.md) | doing | (直接主分支) | 2026-10-14 |
+| 049 | feature | [提交详情 diff 结构化渲染（摘要卡 + 文件列表 + 行号 + 降噪）](./049-diff-structured.md) | doing | (直接主分支) | 2026-10-14 |
 
-共 48 个需求。
+共 49 个需求。

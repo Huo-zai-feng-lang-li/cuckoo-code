@@ -2,7 +2,17 @@
 
 ## 核心进展
 
-**v0.8.62**：修复 installer 测试间歇性失败（测试隔离）。已提交、打 tag、推送 origin。最新 tag **v0.8.62**。
+**v0.8.63**：提交详情 diff 结构化渲染（需求 049）。已提交、打 tag、推送 origin。最新 tag **v0.8.63**。
+
+### v0.8.63 改动
+提交详情由 `git show` 原始输出着色 → 结构化渲染：摘要卡 + 文件列表（可跳转）+ 双列行号正文，丢弃 commit/index/---/+++ 噪音；修正对比度（正文用主文字色、行号去 opacity、增删背景加深）。
+
+### v0.8.63 验证
+- typecheck / test 980 / lint 0 error / compile 全绿
+- 真机：摘要卡/文件列表/行号正常，codeColor=主文字色、lnOpacity=1
+
+### v0.8.62（同轮）
+修复 installer 测试间歇性失败（断言只查本次残留，不受历史残留影响）。
 
 ### v0.8.62 改动
 test/plugins/installer.test.js 的 `不残留临时目录` 断言扫描整个 os.tmpdir()，被历史中断遗留的 `cuckoo-plugin-stage-*` 目录误伤。改为基线对比，只断言本次安装不新增残留（installer.ts 的 finally 本就正常清理）。

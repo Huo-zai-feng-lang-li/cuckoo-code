@@ -354,18 +354,127 @@ async function toggleHistory(): Promise<void> {
   }
 }
 
-/** 把一行 diff 文本转成带着色类的 HTML */
-function diffLineHtml(line: string): string {
-  const esc = escapeHtml(line);
-  if (/^diff --git /.test(line)) return '<span class="ck-diff-file">' + esc + '</span>';
-  if (/^(index |new file|deleted file|similarity index|rename |old mode|new mode|\\ No newline)/.test(line)) {
-    return '<span class="ck-diff-meta">' + esc + '</span>';
+/** 从 `diff --git a/<p1> b/<p2>` 尾部取新路径（支持带引号） */
+function extractGitPath(rest: string): string {
+  const idx = rest.lastIndexOf(' b/');
+  let p = idx > 0 ? rest.slice(idx + 3) : rest;
+  if (p.startsWith('"') && p.endsWith('"')) p = p.slice(1, -1);
+  return p;
+}
+
+interface DiffLine { t: 'ctx' | 'add' | 'del'; o: number | null; n: number | null; text: string }
+interface DiffHunk { lines: DiffLine[] }
+interface DiffFile { path: string; hunks: DiffHunk[]; adds: number; dels: number; binary: boolean }
+interface ParsedDiff { subject: string; author: string; date: string; short: string; files: DiffFile[]; adds: number; dels: number }
+
+/** 把 `git show` 原始输出解析成结构化 diff（降噪：去掉 commit/index/---/+++ 等内部标记） */
+function parseDiff(raw: string): ParsedDiff {
+  const lines = raw.split('\n');
+  if (lines.length && lines[lines.length - 1] === '') lines.pop();
+  const out: ParsedDiff = { subject: '', author: '', date: '', short: '', files: [], adds: 0, dels: 0 };
+  let i = 0;
+  for (; i < lines.length; i++) {
+    const l = lines[i];
+    if (l.startsWith('diff --git ')) break;
+    if (l.startsWith('commit ')) out.short = l.slice(7).trim().slice(0, 8);
+    else if (l.startsWith('Author:')) out.author = l.slice(7).trim();
+    else if (l.startsWith('Date:')) out.date = l.slice(5).trim();
+    else if (/^ {4}\S/.test(l) && !out.subject) out.subject = l.trim();
   }
-  if (/^(\+\+\+|---) /.test(line)) return '<span class="ck-diff-filehead">' + esc + '</span>';
-  if (/^@@/.test(line)) return '<span class="ck-diff-hunk">' + esc + '</span>';
-  if (line.charAt(0) === '+') return '<span class="ck-diff-add">' + esc + '</span>';
-  if (line.charAt(0) === '-') return '<span class="ck-diff-del">' + esc + '</span>';
-  return esc;
+  let cur: DiffFile | null = null;
+  let hunk: DiffHunk | null = null;
+  let oNo = 0, nNo = 0;
+  for (; i < lines.length; i++) {
+    const l = lines[i];
+    if (l.startsWith('diff --git ')) {
+      cur = { path: extractGitPath(l.slice('diff --git '.length)), hunks: [], adds: 0, dels: 0, binary: false };
+      out.files.push(cur);
+      hunk = null;
+      continue;
+    }
+    if (!cur) continue;
+    if (l.startsWith('Binary files') || l.startsWith('GIT binary patch')) { cur.binary = true; continue; }
+    if (l.startsWith('+++ ')) {
+      const p = l.slice(4).trim();
+      if (p !== '/dev/null') {
+        let q = p.startsWith('b/') ? p.slice(2) : p;
+        if (q.startsWith('"') && q.endsWith('"')) q = q.slice(1, -1);
+        cur.path = q;
+      }
+      continue;
+    }
+    if (l.startsWith('@@')) {
+      const m = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(l);
+      if (m) {
+        oNo = parseInt(m[1], 10);
+        nNo = parseInt(m[3], 10);
+        hunk = { lines: [] };
+        cur.hunks.push(hunk);
+      }
+      continue;
+    }
+    if (l.startsWith('index ') || l.startsWith('new file') || l.startsWith('deleted file') ||
+        l.startsWith('similarity index') || l.startsWith('rename ') || l.startsWith('old mode') ||
+        l.startsWith('new mode') || l.startsWith('--- ') || l.startsWith('\\ No newline')) continue;
+    if (!hunk) continue;
+    const c0 = l.charAt(0);
+    if (c0 === '+') { hunk.lines.push({ t: 'add', o: null, n: nNo++, text: l.slice(1) }); cur.adds++; }
+    else if (c0 === '-') { hunk.lines.push({ t: 'del', o: oNo++, n: null, text: l.slice(1) }); cur.dels++; }
+    else if (c0 === ' ') { hunk.lines.push({ t: 'ctx', o: oNo++, n: nNo++, text: l.slice(1) }); }
+    else { hunk.lines.push({ t: 'ctx', o: oNo++, n: nNo++, text: l }); }
+  }
+  out.adds = out.files.reduce((s, f) => s + f.adds, 0);
+  out.dels = out.files.reduce((s, f) => s + f.dels, 0);
+  return out;
+}
+
+/** 渲染单行（含行号列） */
+function diffLineRow(ln: DiffLine): string {
+  const cls = ln.t === 'add' ? 'ck-diff-add' : ln.t === 'del' ? 'ck-diff-del' : 'ck-diff-ctx';
+  const sign = ln.t === 'add' ? '+' : ln.t === 'del' ? '-' : ' ';
+  const o = ln.o === null ? '' : String(ln.o);
+  const n = ln.n === null ? '' : String(ln.n);
+  return '<div class="ck-diff-row ' + cls + '">' +
+    '<span class="ck-diff-ln">' + o + '</span>' +
+    '<span class="ck-diff-ln">' + n + '</span>' +
+    '<span class="ck-diff-sign">' + sign + '</span>' +
+    '<span class="ck-diff-code">' + escapeHtml(ln.text) + '</span>' +
+  '</div>';
+}
+
+/** 渲染整个结构化 diff（摘要卡 + 文件列表 + 降噪正文） */
+function renderDiffHtml(d: ParsedDiff): string {
+  let html = '';
+  // 摘要卡
+  html += '<div class="ck-diff-summary">' +
+    '<div class="ck-diff-subject">' + escapeHtml(d.subject || '(无提交信息)') + '</div>' +
+    '<div class="ck-diff-summary-meta">' +
+      (d.short ? '<span class="ck-diff-hash">' + escapeHtml(d.short) + '</span>' : '') +
+      '<span>' + escapeHtml(d.author || '') + '</span>' +
+      '<span class="ck-diff-stat"><b class="ck-diff-add-t">+' + d.adds + '</b> <b class="ck-diff-del-t">−' + d.dels + '</b> · ' + d.files.length + ' 个文件</span>' +
+    '</div>' +
+  '</div>';
+  // 文件列表
+  if (d.files.length) {
+    html += '<div class="ck-diff-files">';
+    d.files.forEach((f, idx) => {
+      html += '<div class="ck-diff-file-row" data-jump="' + idx + '">' +
+        '<span class="ck-diff-file-name">' + escapeHtml(f.path) + '</span>' +
+        '<span class="ck-diff-file-stat">' + (f.binary ? '二进制' : '<b class="ck-diff-add-t">+' + f.adds + '</b> <b class="ck-diff-del-t">−' + f.dels + '</b>') + '</span>' +
+      '</div>';
+    });
+    html += '</div>';
+  }
+  // 正文：逐文件
+  d.files.forEach((f, idx) => {
+    html += '<div class="ck-diff-file-block" id="ck-diff-file-' + idx + '">';
+    html += '<div class="ck-diff-file-head">' + escapeHtml(f.path) +
+      (f.binary ? ' <span class="ck-diff-meta">（二进制文件）</span>' : '') + '</div>';
+    for (const h of f.hunks) { for (const ln of h.lines) html += diffLineRow(ln); }
+    html += '</div>';
+  });
+  if (!d.files.length) html += '<div class="ck-diff-meta">（无文件改动）</div>';
+  return html;
 }
 
 /** 当前提交详情弹框对应的原始文本（供复制） */
@@ -378,11 +487,17 @@ function openCommitDiff(title: string, text: string, truncated: boolean): void {
   const bodyEl = document.getElementById('git-diff-body');
   if (!mask || !bodyEl) return;
   if (titleEl) titleEl.textContent = title || '提交详情';
-  const lines = gitDiffRaw.split('\n');
-  let html = lines.map(diffLineHtml).join('\n');
-  if (truncated) html += '\n<span class="ck-diff-truncated">…（输出过大已截断）</span>';
+  let html = renderDiffHtml(parseDiff(gitDiffRaw));
+  if (truncated) html += '<div class="ck-diff-truncated">…（输出过大已截断）</div>';
   bodyEl.innerHTML = html;
   bodyEl.scrollTop = 0;
+  // 文件列表点一下 → 跳到该文件正文
+  bodyEl.querySelectorAll('[data-jump]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const t = document.getElementById('ck-diff-file-' + (el as any).dataset.jump);
+      if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
   mask.classList.remove('cuckoo-hidden');
   // 移出原生视图（AI/harness），否则全窗口浮层右侧被它们盖住
   try { api.setWebviewHidden?.(true); } catch (_) { /* ignore */ }

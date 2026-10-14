@@ -1669,15 +1669,37 @@
     border-radius: 8px;
     font-family: "SF Mono", "Consolas", monospace;
     font-size: 12px; line-height: 1.55;
-    white-space: pre; tab-size: 4;
+    tab-size: 4;
   }
-  .ck-git-diff-body .ck-diff-file { font-weight: 700; color: var(--ck-text); }
-  .ck-git-diff-body .ck-diff-filehead { color: var(--ck-text-2); font-weight: 600; }
   .ck-git-diff-body .ck-diff-meta { color: var(--ck-text-dim); }
-  .ck-git-diff-body .ck-diff-hunk { color: #4a9ee0; }
-  .ck-git-diff-body .ck-diff-add { color: #4caf7d; }
-  .ck-git-diff-body .ck-diff-del { color: #e05a5a; }
-  .ck-git-diff-body .ck-diff-truncated { color: var(--ck-text-dim); font-style: italic; }
+  .ck-git-diff-body .ck-diff-truncated { display: block; color: var(--ck-text-dim); font-style: italic; padding: 8px 0; }
+  /* 摘要卡 */
+  .ck-diff-summary { margin-bottom: 12px; padding: 10px 12px; background: var(--ck-surface); border-radius: 8px; white-space: normal; }
+  .ck-diff-subject { font-size: 13px; font-weight: 600; color: var(--ck-text); line-height: 1.5; word-break: break-word; }
+  .ck-diff-summary-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; font-size: 11px; color: var(--ck-text-dim); }
+  .ck-diff-hash { font-family: var(--mono, monospace); background: var(--ck-bg-sub); padding: 1px 6px; border-radius: 5px; }
+  .ck-diff-add-t { color: #4caf7d; font-weight: 600; }
+  .ck-diff-del-t { color: #e05a5a; font-weight: 600; }
+  /* 文件列表 */
+  .ck-diff-files { margin-bottom: 12px; white-space: normal; }
+  .ck-diff-file-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .ck-diff-file-row:hover { background: var(--ck-surface-hover); }
+  .ck-diff-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ck-text-2); }
+  .ck-diff-file-stat { flex-shrink: 0; font-size: 11px; }
+  /* 正文：逐文件块 */
+  .ck-diff-file-block { margin-bottom: 10px; }
+  .ck-diff-file-head { position: sticky; top: 0; z-index: 1; padding: 6px 8px; margin: 0 -12px 2px; background: var(--ck-bg-sub); font-weight: 600; font-size: 12px; color: var(--ck-text); border-top: 1px solid var(--ck-border); border-bottom: 1px solid var(--ck-border); }
+  /* diff 行：行号列 + 符号 + 代码（去掉 white-space:pre 的逐行 span，改块级） */
+  .ck-diff-row { display: flex; align-items: flex-start; line-height: 1.6; }
+  .ck-diff-row.ck-diff-add { background: rgba(76,175,125,0.16); }
+  .ck-diff-row.ck-diff-del { background: rgba(224,90,90,0.16); }
+  /* 行号：去掉叠加的 opacity（曾叠 opacity:.55 + 灰色 → 双重变淡，观感发虚） */
+  .ck-diff-ln { flex-shrink: 0; width: 44px; text-align: right; padding-right: 10px; color: var(--ck-text-dim); user-select: none; font-size: 11px; }
+  .ck-diff-sign { flex-shrink: 0; width: 14px; text-align: center; user-select: none; font-weight: 700; }
+  .ck-diff-row.ck-diff-add .ck-diff-sign, .ck-diff-row.ck-diff-add .ck-diff-code { color: #3fb950; }
+  .ck-diff-row.ck-diff-del .ck-diff-sign, .ck-diff-row.ck-diff-del .ck-diff-code { color: #f0656a; }
+  /* 正文：上下文行用主文字色（原用 --ck-text-2 偏灰，暗色下观感发虚） */
+  .ck-diff-code { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-all; color: var(--ck-text); }
   .ck-git-commit-subject {
     display: block; font-size: 12px; color: var(--ck-text);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -7390,17 +7412,106 @@ paths:            # 可选；省略 = 始终生效
       if (caret) caret.classList.add("ck-git-caret-c");
     }
   }
-  function diffLineHtml(line) {
-    const esc = escapeHtml(line);
-    if (/^diff --git /.test(line)) return '<span class="ck-diff-file">' + esc + "</span>";
-    if (/^(index |new file|deleted file|similarity index|rename |old mode|new mode|\\ No newline)/.test(line)) {
-      return '<span class="ck-diff-meta">' + esc + "</span>";
+  function extractGitPath(rest) {
+    const idx = rest.lastIndexOf(" b/");
+    let p = idx > 0 ? rest.slice(idx + 3) : rest;
+    if (p.startsWith('"') && p.endsWith('"')) p = p.slice(1, -1);
+    return p;
+  }
+  function parseDiff(raw) {
+    const lines = raw.split("\n");
+    if (lines.length && lines[lines.length - 1] === "") lines.pop();
+    const out = { subject: "", author: "", date: "", short: "", files: [], adds: 0, dels: 0 };
+    let i = 0;
+    for (; i < lines.length; i++) {
+      const l = lines[i];
+      if (l.startsWith("diff --git ")) break;
+      if (l.startsWith("commit ")) out.short = l.slice(7).trim().slice(0, 8);
+      else if (l.startsWith("Author:")) out.author = l.slice(7).trim();
+      else if (l.startsWith("Date:")) out.date = l.slice(5).trim();
+      else if (/^ {4}\S/.test(l) && !out.subject) out.subject = l.trim();
     }
-    if (/^(\+\+\+|---) /.test(line)) return '<span class="ck-diff-filehead">' + esc + "</span>";
-    if (/^@@/.test(line)) return '<span class="ck-diff-hunk">' + esc + "</span>";
-    if (line.charAt(0) === "+") return '<span class="ck-diff-add">' + esc + "</span>";
-    if (line.charAt(0) === "-") return '<span class="ck-diff-del">' + esc + "</span>";
-    return esc;
+    let cur = null;
+    let hunk = null;
+    let oNo = 0, nNo = 0;
+    for (; i < lines.length; i++) {
+      const l = lines[i];
+      if (l.startsWith("diff --git ")) {
+        cur = { path: extractGitPath(l.slice("diff --git ".length)), hunks: [], adds: 0, dels: 0, binary: false };
+        out.files.push(cur);
+        hunk = null;
+        continue;
+      }
+      if (!cur) continue;
+      if (l.startsWith("Binary files") || l.startsWith("GIT binary patch")) {
+        cur.binary = true;
+        continue;
+      }
+      if (l.startsWith("+++ ")) {
+        const p = l.slice(4).trim();
+        if (p !== "/dev/null") {
+          let q = p.startsWith("b/") ? p.slice(2) : p;
+          if (q.startsWith('"') && q.endsWith('"')) q = q.slice(1, -1);
+          cur.path = q;
+        }
+        continue;
+      }
+      if (l.startsWith("@@")) {
+        const m = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(l);
+        if (m) {
+          oNo = parseInt(m[1], 10);
+          nNo = parseInt(m[3], 10);
+          hunk = { lines: [] };
+          cur.hunks.push(hunk);
+        }
+        continue;
+      }
+      if (l.startsWith("index ") || l.startsWith("new file") || l.startsWith("deleted file") || l.startsWith("similarity index") || l.startsWith("rename ") || l.startsWith("old mode") || l.startsWith("new mode") || l.startsWith("--- ") || l.startsWith("\\ No newline")) continue;
+      if (!hunk) continue;
+      const c0 = l.charAt(0);
+      if (c0 === "+") {
+        hunk.lines.push({ t: "add", o: null, n: nNo++, text: l.slice(1) });
+        cur.adds++;
+      } else if (c0 === "-") {
+        hunk.lines.push({ t: "del", o: oNo++, n: null, text: l.slice(1) });
+        cur.dels++;
+      } else if (c0 === " ") {
+        hunk.lines.push({ t: "ctx", o: oNo++, n: nNo++, text: l.slice(1) });
+      } else {
+        hunk.lines.push({ t: "ctx", o: oNo++, n: nNo++, text: l });
+      }
+    }
+    out.adds = out.files.reduce((s, f) => s + f.adds, 0);
+    out.dels = out.files.reduce((s, f) => s + f.dels, 0);
+    return out;
+  }
+  function diffLineRow(ln) {
+    const cls = ln.t === "add" ? "ck-diff-add" : ln.t === "del" ? "ck-diff-del" : "ck-diff-ctx";
+    const sign = ln.t === "add" ? "+" : ln.t === "del" ? "-" : " ";
+    const o = ln.o === null ? "" : String(ln.o);
+    const n = ln.n === null ? "" : String(ln.n);
+    return '<div class="ck-diff-row ' + cls + '"><span class="ck-diff-ln">' + o + '</span><span class="ck-diff-ln">' + n + '</span><span class="ck-diff-sign">' + sign + '</span><span class="ck-diff-code">' + escapeHtml(ln.text) + "</span></div>";
+  }
+  function renderDiffHtml(d) {
+    let html = "";
+    html += '<div class="ck-diff-summary"><div class="ck-diff-subject">' + escapeHtml(d.subject || "(\u65E0\u63D0\u4EA4\u4FE1\u606F)") + '</div><div class="ck-diff-summary-meta">' + (d.short ? '<span class="ck-diff-hash">' + escapeHtml(d.short) + "</span>" : "") + "<span>" + escapeHtml(d.author || "") + '</span><span class="ck-diff-stat"><b class="ck-diff-add-t">+' + d.adds + '</b> <b class="ck-diff-del-t">\u2212' + d.dels + "</b> \xB7 " + d.files.length + " \u4E2A\u6587\u4EF6</span></div></div>";
+    if (d.files.length) {
+      html += '<div class="ck-diff-files">';
+      d.files.forEach((f, idx) => {
+        html += '<div class="ck-diff-file-row" data-jump="' + idx + '"><span class="ck-diff-file-name">' + escapeHtml(f.path) + '</span><span class="ck-diff-file-stat">' + (f.binary ? "\u4E8C\u8FDB\u5236" : '<b class="ck-diff-add-t">+' + f.adds + '</b> <b class="ck-diff-del-t">\u2212' + f.dels + "</b>") + "</span></div>";
+      });
+      html += "</div>";
+    }
+    d.files.forEach((f, idx) => {
+      html += '<div class="ck-diff-file-block" id="ck-diff-file-' + idx + '">';
+      html += '<div class="ck-diff-file-head">' + escapeHtml(f.path) + (f.binary ? ' <span class="ck-diff-meta">\uFF08\u4E8C\u8FDB\u5236\u6587\u4EF6\uFF09</span>' : "") + "</div>";
+      for (const h of f.hunks) {
+        for (const ln of h.lines) html += diffLineRow(ln);
+      }
+      html += "</div>";
+    });
+    if (!d.files.length) html += '<div class="ck-diff-meta">\uFF08\u65E0\u6587\u4EF6\u6539\u52A8\uFF09</div>';
+    return html;
   }
   var gitDiffRaw = "";
   function openCommitDiff(title, text, truncated) {
@@ -7410,11 +7521,16 @@ paths:            # 可选；省略 = 始终生效
     const bodyEl = document.getElementById("git-diff-body");
     if (!mask || !bodyEl) return;
     if (titleEl) titleEl.textContent = title || "\u63D0\u4EA4\u8BE6\u60C5";
-    const lines = gitDiffRaw.split("\n");
-    let html = lines.map(diffLineHtml).join("\n");
-    if (truncated) html += '\n<span class="ck-diff-truncated">\u2026\uFF08\u8F93\u51FA\u8FC7\u5927\u5DF2\u622A\u65AD\uFF09</span>';
+    let html = renderDiffHtml(parseDiff(gitDiffRaw));
+    if (truncated) html += '<div class="ck-diff-truncated">\u2026\uFF08\u8F93\u51FA\u8FC7\u5927\u5DF2\u622A\u65AD\uFF09</div>';
     bodyEl.innerHTML = html;
     bodyEl.scrollTop = 0;
+    bodyEl.querySelectorAll("[data-jump]").forEach((el2) => {
+      el2.addEventListener("click", () => {
+        const t = document.getElementById("ck-diff-file-" + el2.dataset.jump);
+        if (t) t.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
     mask.classList.remove("cuckoo-hidden");
     try {
       api.setWebviewHidden?.(true);
