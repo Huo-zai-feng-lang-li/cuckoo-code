@@ -7451,15 +7451,6 @@ paths:            # 可选；省略 = 始终生效
         cur.binary = true;
         continue;
       }
-      if (l.startsWith("+++ ")) {
-        const p = l.slice(4).trim();
-        if (p !== "/dev/null") {
-          let q = p.startsWith("b/") ? p.slice(2) : p;
-          if (q.startsWith('"') && q.endsWith('"')) q = q.slice(1, -1);
-          cur.path = q;
-        }
-        continue;
-      }
       if (l.startsWith("@@")) {
         const m = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(l);
         if (m) {
@@ -7470,8 +7461,17 @@ paths:            # 可选；省略 = 始终生效
         }
         continue;
       }
-      if (l.startsWith("index ") || l.startsWith("new file") || l.startsWith("deleted file") || l.startsWith("similarity index") || l.startsWith("rename ") || l.startsWith("old mode") || l.startsWith("new mode") || l.startsWith("--- ") || l.startsWith("\\ No newline")) continue;
-      if (!hunk) continue;
+      if (!hunk) {
+        if (l.startsWith("+++ ")) {
+          const p = l.slice(4).trim();
+          if (p !== "/dev/null") {
+            let q = p.startsWith("b/") ? p.slice(2) : p;
+            if (q.startsWith('"') && q.endsWith('"')) q = q.slice(1, -1);
+            cur.path = q;
+          }
+        }
+        continue;
+      }
       const c0 = l.charAt(0);
       if (c0 === "+") {
         hunk.lines.push({ t: "add", o: null, n: nNo++, text: l.slice(1) });
@@ -8160,7 +8160,11 @@ paths:            # 可选；省略 = 始终生效
   function anyOverlayVisible() {
     for (const sel of OVERLAY_SELECTORS) {
       try {
-        if (document.querySelector(sel)) return true;
+        const els = document.querySelectorAll(sel);
+        for (const el2 of Array.from(els)) {
+          if (el2.id === "git-diff-modal") continue;
+          return true;
+        }
       } catch (_) {
       }
     }

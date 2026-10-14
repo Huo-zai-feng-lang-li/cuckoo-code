@@ -909,7 +909,18 @@ function registerPluginIpc(): void {
     try {
       const view = windowState.getViewByWebContents(event.sender);
       if (!view || !view.webContents || view.webContents.isDestroyed()) return { success: false, error: '视图不可用' };
-      try { view.setVisible(!!visible); } catch (_) {}
+      // 记到窗口标志上（供 layoutView 感知 modal-guard 的隐藏状态）。
+      // 否则 resize/move 触发 layoutView 时会把 modal-guard 隐藏的 AI 视图抢显。
+      // event.sender 是调用方（壳页面）的 webContents，用它反查 ctx 最直接可靠。
+      const ctx = windowState.getContextByWebContents(event.sender);
+      const win: any = (ctx && ctx.win) || windowState.getMainWindow();
+      if (win && !win.isDestroyed()) {
+        win.__ckAiHidden = !visible;
+        // 重新布局（统一的可见性真相源在 layoutView）
+        try { if (typeof win.__ckLayout === 'function') win.__ckLayout(); } catch (_) {}
+      } else {
+        try { view.setVisible(!!visible); } catch (_) {}
+      }
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err && err.message ? err.message : String(err) };

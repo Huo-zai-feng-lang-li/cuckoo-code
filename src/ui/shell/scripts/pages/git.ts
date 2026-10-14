@@ -394,15 +394,6 @@ function parseDiff(raw: string): ParsedDiff {
     }
     if (!cur) continue;
     if (l.startsWith('Binary files') || l.startsWith('GIT binary patch')) { cur.binary = true; continue; }
-    if (l.startsWith('+++ ')) {
-      const p = l.slice(4).trim();
-      if (p !== '/dev/null') {
-        let q = p.startsWith('b/') ? p.slice(2) : p;
-        if (q.startsWith('"') && q.endsWith('"')) q = q.slice(1, -1);
-        cur.path = q;
-      }
-      continue;
-    }
     if (l.startsWith('@@')) {
       const m = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(l);
       if (m) {
@@ -413,10 +404,22 @@ function parseDiff(raw: string): ParsedDiff {
       }
       continue;
     }
-    if (l.startsWith('index ') || l.startsWith('new file') || l.startsWith('deleted file') ||
-        l.startsWith('similarity index') || l.startsWith('rename ') || l.startsWith('old mode') ||
-        l.startsWith('new mode') || l.startsWith('--- ') || l.startsWith('\\ No newline')) continue;
-    if (!hunk) continue;
+    // 文件头区（尚未进入任何 hunk）：处理 +++/---/index/new file 等内部标记。
+    // 注意：这些判定必须限定在 hunk 之前——否则内容里 '-- foo'（实为 '--- foo'）
+    // 或 '++ foo'（实为 '+++ foo'）会被误判成文件头（丢行 / 污染路径）。
+    if (!hunk) {
+      if (l.startsWith('+++ ')) {
+        const p = l.slice(4).trim();
+        if (p !== '/dev/null') {
+          let q = p.startsWith('b/') ? p.slice(2) : p;
+          if (q.startsWith('"') && q.endsWith('"')) q = q.slice(1, -1);
+          cur.path = q;
+        }
+      }
+      // 其余（index/new file/deleted file/rename/---/\\ No newline 等）一律忽略
+      continue;
+    }
+    // hunk 内：只按首字符解析（+/-/空格），避免与文件头标记混淆
     const c0 = l.charAt(0);
     if (c0 === '+') { hunk.lines.push({ t: 'add', o: null, n: nNo++, text: l.slice(1) }); cur.adds++; }
     else if (c0 === '-') { hunk.lines.push({ t: 'del', o: oNo++, n: null, text: l.slice(1) }); cur.dels++; }

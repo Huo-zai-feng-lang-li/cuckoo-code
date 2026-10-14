@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.8.66] - 2026-10-14
+
+### Fixed
+- **回归修复（v0.8.59 引入）**：`layoutView` 里新增的 `view.setVisible(aiVisible)` 只认 `__ckWebviewHidden`/harness 两个标志，会**覆盖 modal-guard 对 AI 视图的隐藏**——普通模态框（确认框/各页弹窗/看图）打开期间任意 resize/move 会把 AI 原生视图抢显、盖住模态框。新增独立标志 `__ckAiHidden`（由 modal-guard 的 `plugin-set-webview-visible` 维护），`layoutView` 的可见性统一考虑三方来源（浮层/modal/harness）。
+- **回归修复**：`#git-diff-modal` 带 `ck-modal-mask` 类，命中了 modal-guard → 在纯净模式下关闭 diff 弹框时，modal-guard 会把 AI 视图抢显、盖住 harness。modal-guard 排除 `#git-diff-modal`（该弹框由 git.ts 的 `setWebviewHidden` 单独处理，能同时隐藏 AI/harness/overlay）。
+- **`parseDiff` 误判内容行**：hunk 内的 `--- `/`+++ ` 判定未限定在文件头区，导致内容行 `-- foo`（实为 `--- foo`）被当噪音丢弃、`++ foo`（实为 `+++ foo`）被当文件路径污染。改为仅在 `!hunk` 时按文件头处理，hunk 内只按首字符解析。
+- **harness 流式节流切会话滚动副作用**：`cancelStreamRender` 未复位 `_streamRenderPending`，且 `_doStreamRender` 末尾无条件 `scrollBottom`——挂起的 rAF 在切会话后仍触发多余滚动。改为 pending 一并复位、滚动仅在实际渲染时执行。
+- **`__ckWebviewHidden` 残留**：弹框打开期间壳页面重载会导致 AI 区永久隐藏。壳页面 `did-finish-load` 时复位 `__ckWebviewHidden`/`__ckAiHidden`。
+
 ## [0.8.65] - 2026-10-14
 
 ### Fixed

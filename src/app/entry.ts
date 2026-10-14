@@ -332,11 +332,14 @@ function createWindow(profile: any) {
     // 用 setVisible（setBounds 到 0 不会改变 webContents 视口尺寸，浮层仍被盖）。
     const webviewHidden = !!(mainWindow as any).__ckWebviewHidden;
     const harnessVisible = !!(mainWindow as any).__ckHarnessVisible;
+    // modal-guard（壳页面模态框/看图）单独隐藏 AI 视图的标记。
+    // 必须纳入 aiVisible：否则 layoutView 在 resize/move 时会抢显 modal-guard 隐藏的 AI 视图。
+    const aiHiddenByModal = !!(mainWindow as any).__ckAiHidden;
     const vx = sbw, vy = tbh;
     const vw = Math.max(0, w - sbw), vh = Math.max(0, h - tbh - STATUS_HEIGHT);
-    // AI 视图可见性：浮层打开 → 隐藏；harness 可见 → 隐藏（harness 覆盖它）；否则显示。
+    // AI 视图可见性：浮层打开 / modal 隐藏 / harness 可见 → 隐藏；否则显示。
     // setVisible + setBounds 双保险（某些平台 setVisible 偶发不生效，见下方 harness 切换处）。
-    const aiVisible = !webviewHidden && !harnessVisible;
+    const aiVisible = !webviewHidden && !harnessVisible && !aiHiddenByModal;
     try {
       if (view && !view.webContents.isDestroyed()) {
         view.setBounds(aiVisible ? { x: vx, y: vy, width: vw, height: vh } : { x: 0, y: 0, width: 0, height: 0 });
@@ -360,7 +363,7 @@ function createWindow(profile: any) {
     // harness 覆盖整个"网页区域"（与 AI view 同位置）
     const hv = (mainWindow as any).__ckHarnessView;
     if (hv && !hv.webContents.isDestroyed()) {
-      const hvVisible = !webviewHidden && !!(mainWindow as any).__ckHarnessVisible;
+      const hvVisible = !webviewHidden && !aiHiddenByModal && !!(mainWindow as any).__ckHarnessVisible;
       hv.setBounds(hvVisible ? { x: vx, y: vy, width: vw, height: vh } : { x: 0, y: 0, width: 0, height: 0 });
       try { hv.setVisible(hvVisible); } catch (_) {}
     }
@@ -413,6 +416,9 @@ function createWindow(profile: any) {
   // 加载地址栏壳页面；壳就绪后主动推一次当前 URL 状态（避免与 view 加载竞态）
   mainWindow.loadFile(resolveSrc('ui/shell.html'));
   mainWindow.webContents.on('did-finish-load', () => {
+    // 壳页面重载：复位隐藏标记（防弹框打开期间重载 → AI 区永久隐藏）
+    (mainWindow as any).__ckWebviewHidden = false;
+    (mainWindow as any).__ckAiHidden = false;
     pushUrlState(view);
     // 平台未选择：通知壳页面隐藏侧边栏 + 项目选择器
     try { mainWindow.webContents.send('shell-platform-mode', { selecting: !providerChosen }); } catch (_) {}

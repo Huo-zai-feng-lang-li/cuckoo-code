@@ -22,7 +22,15 @@ let pending = false;
 
 function anyOverlayVisible(): boolean {
   for (const sel of OVERLAY_SELECTORS) {
-    try { if (document.querySelector(sel)) return true; } catch (_) { /* ignore */ }
+    try {
+      const els = document.querySelectorAll(sel);
+      for (const el of Array.from(els)) {
+        // #git-diff-modal 由 git.ts 的 setWebviewHidden 单独处理（能同时隐藏 AI/harness/overlay），
+        // 此处排除，避免两套机制并存：关闭时 modal-guard 会把 git 弹框隐藏的视图抢显。
+        if ((el as any).id === 'git-diff-modal') continue;
+        return true;
+      }
+    } catch (_) { /* ignore */ }
   }
   return false;
 }

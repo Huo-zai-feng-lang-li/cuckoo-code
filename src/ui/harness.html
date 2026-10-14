@@ -2423,10 +2423,12 @@
     _streamRenderPending = false;
     var body = _streamRenderBody, text = _streamRenderText;
     _streamRenderBody = null;
+    // 仅当目标气泡仍有效时才渲染 + 滚动（会话切换/收尾后 body 失效 → 整体 no-op，
+    // 不再无条件 scrollBottom，避免切会话后被挂起的 rAF 触发多余滚动）
     if (body && body.isConnected && cur && cur.body === body) {
       body.innerHTML = renderMarkdown(text) + '<span class="streaming-cursor"></span>';
+      scrollBottom(false);
     }
-    scrollBottom(false);
   }
   function scheduleStreamRender(body, text) {
     _streamRenderBody = body;
@@ -2435,7 +2437,8 @@
     _streamRenderPending = true;
     (window.requestAnimationFrame || function (cb) { return setTimeout(cb, 16); })(_doStreamRender);
   }
-  function cancelStreamRender() { _streamRenderBody = null; _streamRenderText = ''; }
+  // 取消挂起：清目标 + 复位 pending（否则切换后首个 schedule 会因 pending 残留走早返回）
+  function cancelStreamRender() { _streamRenderBody = null; _streamRenderText = ''; _streamRenderPending = false; }
 
   // 流式更新：think/text 均为全量快照
   function onStream(think, text, finished) {

@@ -2,7 +2,22 @@
 
 ## 核心进展
 
-**v0.8.65**：修 git 徽标不及时更新 + 深色主题对比度提升。已提交、打 tag、推送 origin。最新 tag **v0.8.65**。
+**v0.8.66**：回归审查修复（子代理发现 v0.8.59 引入的 2 个 🔴 + 3 个 🟡）。已提交、打 tag、推送 origin。最新 tag **v0.8.66**。
+
+### v0.8.66 改动（回归修复）
+🔴1. layoutView 的 setVisible 覆盖 modal-guard 隐藏 → 新增 __ckAiHidden 标志统一三方来源
+🔴2. git-diff-modal 带 ck-modal-mask 命中 modal-guard → 纯净模式关弹框会抢显盖 harness。modal-guard 排除该弹框
+🟡3. parseDiff hunk 内误判 ---/+++ → 限定 !hunk 才按文件头处理
+🟡4. harness cancelStreamRender 未复位 pending + 无条件 scrollBottom → 切会话多余滚动
+🟡5. __ckWebviewHidden 残留 → did-finish-load 复位
+
+### v0.8.66 验证
+- typecheck / test 980 / lint 0 error / compile 全绿
+- 真机冒烟：diff 弹框正常打开、结构化渲染正常；R2 排除逻辑确认
+- ⚠️ 视图显隐仍无法 CDP 像素级验证（setVisible 不改 visibilityState），建议用户手动验普通模态框+resize
+
+### v0.8.65（同轮）
+修 git 徽标不及时更新 + 深色主题对比度提升。
 
 ### v0.8.65 改动
 1. **git 徽标不及时**（src/ui/shell/scripts/pages/git.ts）：`onGitChanged` 原 `if (!isGitPanelActive()) return` 把徽标也门控了 → 非 git 页时数字不刷新。改为未激活时也拉 gitStatus 只更新徽标。
