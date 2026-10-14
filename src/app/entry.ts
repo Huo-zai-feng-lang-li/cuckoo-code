@@ -300,7 +300,11 @@ function createWindow(profile: any) {
         hv.webContents.reloadIgnoringCache();
       }
       if (input.type === 'keyDown' && input.key === 'F12') {
-        hv.webContents.toggleDevTools();
+        // 独立窗口打开：本应用是叠层 WebContentsView 架构，docked DevTools 会被
+        // 上层原生视图覆盖，并与 layoutView 的 setBounds 冲突，必须 detach。
+        const wc = hv.webContents;
+        if (wc.isDevToolsOpened()) wc.closeDevTools();
+        else wc.openDevTools({ mode: 'detach' });
       }
     });
     return hv;
@@ -410,7 +414,10 @@ function createWindow(profile: any) {
   // 不判断会"按下开、抬起关"，看起来像没打开。
   mainWindow.webContents.on('before-input-event', (_event: any, input: any) => {
     if (input.type === 'keyDown' && input.key === 'F12') {
-      mainWindow.webContents.toggleDevTools();
+      // 独立窗口：壳页面 docked DevTools 会被 AI/harness 原生视图覆盖，必须 detach。
+      const wc = mainWindow.webContents;
+      if (wc.isDevToolsOpened()) wc.closeDevTools();
+      else wc.openDevTools({ mode: 'detach' });
     }
   });
   // 加载地址栏壳页面；壳就绪后主动推一次当前 URL 状态（避免与 view 加载竞态）
@@ -604,7 +611,10 @@ function createWindow(profile: any) {
 
   view.webContents.on('before-input-event', (_event: any, input: any) => {
     if (input.type === 'keyDown' && input.key === 'F12') {
-      view.webContents.toggleDevTools();
+      // 独立窗口：docked DevTools 与 layoutView 的 setBounds 冲突，必须 detach。
+      const wc = view.webContents;
+      if (wc.isDevToolsOpened()) wc.closeDevTools();
+      else wc.openDevTools({ mode: 'detach' });
     }
   });
 
@@ -767,7 +777,16 @@ function setupAppMenu() {
         { type: 'separator' },
         { role: 'togglefullscreen', label: '切换全屏' },
         { type: 'separator' },
-        { role: 'toggleDevTools', label: '开发者工具' }
+        {
+          label: '开发者工具',
+          // 用 detach 独立窗口（默认 role 是 docked，会被上层原生视图覆盖）。
+          click: (_item: any, focusedWindow: any) => {
+            const wc = focusedWindow?.webContents;
+            if (!wc || wc.isDestroyed()) return;
+            if (wc.isDevToolsOpened()) wc.closeDevTools();
+            else wc.openDevTools({ mode: 'detach' });
+          }
+        }
       ]
     },
     {

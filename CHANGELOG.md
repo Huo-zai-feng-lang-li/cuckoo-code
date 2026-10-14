@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.8.79] - 2026-10-14
+
+### Fixed
+- **F12 开发者工具被原生视图覆盖/布局错乱**：全部 4 处 F12 快捷键（壳页面、AI 页面、harness 视图、工具窗口）此前用 `toggleDevTools()`（默认 docked 嵌入窗口内）。本应用是「壳页面 + 多个原生 WebContentsView 叠加」架构，docked DevTools 渲染在壳页面区域内会被上层原生视图盖住，且与 `layoutView()` 的 `setBounds` 强制重排冲突。改为 `openDevTools({ mode: 'detach' })` 独立窗口打开（再按 F12 关闭）。"查看"菜单的"开发者工具"项同样从 `role: 'toggleDevTools'` 改为自定义 detach 逻辑。
+
 ## [0.8.78] - 2026-10-14
 
 ### Fixed

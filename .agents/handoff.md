@@ -1,9 +1,18 @@
-# 最新接续状态 (2026-10-14 18:55)
+# 最新接续状态 (2026-10-14 19:30)
 
 ## 核心进展
-- **最新 tag v0.8.78**（待提交/打 tag）。
+- **最新 tag v0.8.79**（待提交/打 tag）。
+- v0.8.79 主题：**F12 开发者工具改为独立窗口（detach）**。
+- 上一批 v0.8.78 主题：**修复工具窗口无法登录 Google/Gemini**（需求 050）。
 - v0.8.78 主题：**修复工具窗口无法登录 Google/Gemini**（需求 050）。
 - 上一批 v0.8.65~77 主题：UI 体验打磨 + 性能优化 + 窗口组切换闭环（全部 `typecheck / test 980 / lint 0 error / compile` 全绿 + 真机验证）。
+
+## v0.8.79 详细
+- **问题**：F12 开发者工具被原生视图覆盖 / 布局错乱。
+- **根因**：4 处 F12（壳页面 entry.ts:411、AI 页面 entry.ts:605、harness 视图 entry.ts:298、工具窗口 browser-window-manager.ts:67）全用 `toggleDevTools()`（默认 docked）。本应用是「壳页面 + 多个原生 WebContentsView 叠加」架构：docked DevTools 渲染在壳页面区域内会被上层原生视图盖住，且与 `layoutView()` 的 setBounds 强制重排冲突。
+- **修复**：统一改为 `openDevTools({ mode: 'detach' })`（判断 `isDevToolsOpened()` → 已开则 close，未开则 detach 打开，保留"再按一次关闭"手感）。「查看」菜单的 `role: 'toggleDevTools'` 也改为自定义 detach 逻辑。共 5 处。
+- **验证**：真机（开发版 + windows-computer-use 发真实 F12）——AI 页面、壳页面 F12 均弹出独立 DevTools 窗口（`Developer Tools - <url>`）；`typecheck / test 980 / lint 0 error / compile` 全绿。
+- **踩坑**：CDP `Input.dispatchKeyEvent` 注入的合成键盘事件不触发主进程 `before-input-event`，验证 F12 必须用真实按键（windows-computer-use MCP `key`）。
 
 ## v0.8.78 详细（需求 050）
 - **问题**：`openBrowserWindow` 工具窗口打开 Gemini/Google 登录页报「此浏览器或应用可能不安全」。

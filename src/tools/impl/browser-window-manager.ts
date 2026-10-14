@@ -62,11 +62,13 @@ class BrowserWindowManager {
     // 补齐 sec-ch-ua* 请求头（Google OAuth 登录必需）
     ensureClientHints(win.webContents.session);
 
-    // F12 打开本窗口 DevTools（方便调试页面）。
+    // F12 打开本窗口 DevTools（方便调试页面），用独立窗口模式（docked 会与本窗口内容互挤）。
     // 判断 keyDown：before-input-event 对 keyDown/keyUp 都触发，不判断会"按下开、抬起关"。
     win.webContents.on('before-input-event', (_event: any, input: any) => {
       if (input.type === 'keyDown' && input.key === 'F12') {
-        win.webContents.toggleDevTools();
+        const wc = win.webContents;
+        if (wc.isDevToolsOpened()) wc.closeDevTools();
+        else wc.openDevTools({ mode: 'detach' });
       }
     });
 
