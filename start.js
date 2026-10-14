@@ -3,12 +3,23 @@
  * 1) 编译 TS → out/
  * 2) 启动 Electron（读取 package.json main = out/src/main/index.js）
  * 3) 捕获 stdout/stderr 写入日志文件
+ *
+ * `--dev`：用独立 userData（CUCKOO_SESSION_DIR=cuckoo-dev-verify）+ 独立调试端口 9444 启动，
+ * 与正在用的打包版（占单实例锁）隔离，可同时运行。npm run dev。
  */
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const isWin = process.platform === 'win32';
+
+// ========== 0. --dev：开发实例（独立 userData + 调试端口）==========
+// 用户常同时开着打包版（占单实例锁）；独立 userData 可绕开锁，与打包版互不影响。
+if (process.argv.includes('--dev')) {
+  if (!process.env.CUCKOO_SESSION_DIR) process.env.CUCKOO_SESSION_DIR = 'cuckoo-dev-verify';
+  if (!process.env.CUCKOO_DEBUG_PORT) process.env.CUCKOO_DEBUG_PORT = '9444';
+  console.log('[start.js] dev 模式：userData=' + process.env.CUCKOO_SESSION_DIR + '，调试端口=' + process.env.CUCKOO_DEBUG_PORT);
+}
 
 // ========== 1. 编译 ==========
 console.log('[start.js] 编译中（tsc -p tsconfig.build.json）...');

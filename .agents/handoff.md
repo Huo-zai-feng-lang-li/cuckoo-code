@@ -2,7 +2,21 @@
 
 ## 核心进展
 
-**v0.8.66**：回归审查修复（子代理发现 v0.8.59 引入的 2 个 🔴 + 3 个 🟡）。已提交、打 tag、推送 origin。最新 tag **v0.8.66**。
+**v0.8.67**：加 `npm run dev` 开发实例启动 + harness 文字对比度微调。已提交、打 tag、推送 origin。最新 tag **v0.8.67**。
+
+### v0.8.67 改动
+1. `npm run dev`：start.js 支持 --dev（独立 userData cuckoo-dev-verify + 调试端口 9444），与打包版隔离可同时运行。
+2. harness 文字：助手正文改 --text-2（稍暗不刺眼）；工具卡文字提亮（名/参数/输出）。
+
+### v0.8.67 验证
+- typecheck / test 980 / lint 0 error / compile 全绿
+- 真机：npm run dev 成功启动（CDP 9444 正常）；助手正文色 rgb(192,198,210) ✅
+
+### 仍未处理（待用户确认）
+- 窗口组切换后 harness 队列/导航丢失（设计局限，已分析，待用户决定方案 A/B/C）
+
+### v0.8.66（同轮）
+回归审查修复（v0.8.59 引入的视图隐藏与 modal-guard 冲突等）。
 
 ### v0.8.66 改动（回归修复）
 🔴1. layoutView 的 setVisible 覆盖 modal-guard 隐藏 → 新增 __ckAiHidden 标志统一三方来源

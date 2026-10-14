@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.8.67] - 2026-10-14
+
+### Added
+- **`npm run dev` 开发实例启动**：`start.js` 支持 `--dev`（独立 userData `cuckoo-dev-verify` + 调试端口 9444），与正在用的打包版（占单实例锁）隔离、可同时运行，方便本地开发调试。
+
+### Changed
+- **harness 文字对比度微调**：助手正文由主文字色改为次要色（`--text`→`--text-2`，稍暗不刺眼）；工具调用卡片文字提亮（工具名 `--text-2`→`--text`、参数 `--text-dim`→`--text-2`、输出 `--text-2`→`--text`）。
+
 ## [0.8.66] - 2026-10-14
 
 ### Fixed
