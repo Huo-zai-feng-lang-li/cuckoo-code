@@ -223,6 +223,16 @@
   .ck-ab-item.ck-ab-active { background: var(--ck-primary-soft); }
   .ck-ab-item.ck-ab-active .ck-ab-icon, .ck-ab-item.ck-ab-active .ck-ab-text { opacity: 1; color: var(--ck-primary); }
   .ck-ab-spacer { flex: 1; }
+  /* 活动栏溢出：隐藏项 + 「⋯」按钮 + hover 弹框 */
+  .ck-ab-of-hidden { display: none !important; }
+  .ck-ab-more { cursor: default; }
+  .ck-ab-overflow-pop {
+    position: fixed; z-index: 9998; display: none;
+    flex-direction: column; gap: 2px; padding: 6px;
+    background: var(--ck-bg-elev, var(--ck-bg)); border: 1px solid var(--ck-border);
+    border-radius: 10px; box-shadow: var(--ck-shadow-lg);
+  }
+  .ck-ab-overflow-pop.show { display: flex; }
   /* 全局 toast（窗口组切换等） */
   .ck-toast-host {
     position: fixed; top: 52px; right: 16px; z-index: 9999;

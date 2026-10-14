@@ -232,6 +232,16 @@
   .ck-ab-item.ck-ab-active { background: var(--ck-primary-soft); }
   .ck-ab-item.ck-ab-active .ck-ab-icon, .ck-ab-item.ck-ab-active .ck-ab-text { opacity: 1; color: var(--ck-primary); }
   .ck-ab-spacer { flex: 1; }
+  /* 活动栏溢出：隐藏项 + 「⋯」按钮 + hover 弹框 */
+  .ck-ab-of-hidden { display: none !important; }
+  .ck-ab-more { cursor: default; }
+  .ck-ab-overflow-pop {
+    position: fixed; z-index: 9998; display: none;
+    flex-direction: column; gap: 2px; padding: 6px;
+    background: var(--ck-bg-elev, var(--ck-bg)); border: 1px solid var(--ck-border);
+    border-radius: 10px; box-shadow: var(--ck-shadow-lg);
+  }
+  .ck-ab-overflow-pop.show { display: flex; }
   /* 全局 toast（窗口组切换等） */
   .ck-toast-host {
     position: fixed; top: 52px; right: 16px; z-index: 9999;
@@ -3355,13 +3365,13 @@ paths:            # 可选；省略 = 始终生效
     if (!head || !head.parentNode) return;
     const old = document.getElementById("ck-conflict-bar");
     if (old) old.remove();
-    const bar2 = document.createElement("div");
-    bar2.id = "ck-conflict-bar";
-    bar2.className = "ck-conflict-bar";
-    bar2.innerHTML = '<span class="ck-cb-text">\u26A0 \u6587\u4EF6\u5DF2\u88AB\u5916\u90E8\u4FEE\u6539</span><span class="ck-cb-actions"><button class="ck-cb-btn ck-cb-primary" id="ck-cb-take">\u91C7\u7528\u5916\u90E8\u7248</button><button class="ck-cb-btn" id="ck-cb-keep">\u4FDD\u7559\u6211\u7684</button></span>';
-    head.parentNode.insertBefore(bar2, head.nextSibling);
-    const takeBtn = bar2.querySelector("#ck-cb-take");
-    const keepBtn = bar2.querySelector("#ck-cb-keep");
+    const bar3 = document.createElement("div");
+    bar3.id = "ck-conflict-bar";
+    bar3.className = "ck-conflict-bar";
+    bar3.innerHTML = '<span class="ck-cb-text">\u26A0 \u6587\u4EF6\u5DF2\u88AB\u5916\u90E8\u4FEE\u6539</span><span class="ck-cb-actions"><button class="ck-cb-btn ck-cb-primary" id="ck-cb-take">\u91C7\u7528\u5916\u90E8\u7248</button><button class="ck-cb-btn" id="ck-cb-keep">\u4FDD\u7559\u6211\u7684</button></span>';
+    head.parentNode.insertBefore(bar3, head.nextSibling);
+    const takeBtn = bar3.querySelector("#ck-cb-take");
+    const keepBtn = bar3.querySelector("#ck-cb-keep");
     if (takeBtn) takeBtn.addEventListener("click", () => {
       applyExternal(externalContent);
     });
@@ -3371,8 +3381,8 @@ paths:            # 可选；省略 = 始终生效
     });
   }
   function hideConflictBar() {
-    const bar2 = document.getElementById("ck-conflict-bar");
-    if (bar2) bar2.remove();
+    const bar3 = document.getElementById("ck-conflict-bar");
+    if (bar3) bar3.remove();
   }
   function applyExternal(content) {
     hideConflictBar();
@@ -7913,9 +7923,9 @@ paths:            # 可选；省略 = 始终生效
   var mountedToolbar = /* @__PURE__ */ new Set();
   function mountStatusbar(m) {
     const key = m.pluginId + ":" + m.id;
-    const bar2 = document.querySelector(".statusbar");
-    if (!bar2) return;
-    const exist = bar2.querySelector('[data-plugin="' + m.pluginId + '"][data-plugin-id="' + m.id + '"]');
+    const bar3 = document.querySelector(".statusbar");
+    if (!bar3) return;
+    const exist = bar3.querySelector('[data-plugin="' + m.pluginId + '"][data-plugin-id="' + m.id + '"]');
     if (exist) {
       const lbl = exist.querySelector(".sb-label");
       if (lbl) lbl.textContent = m.spec && m.spec.text || "";
@@ -7928,16 +7938,16 @@ paths:            # 可选；省略 = 始终生效
     el2.setAttribute("data-plugin-id", m.id);
     if (m.spec && m.spec.title) el2.title = String(m.spec.title);
     el2.innerHTML = '<span class="sb-label">' + escapeHtml2(m.spec && m.spec.text || "") + "</span>";
-    const spacer = bar2.querySelector(".sb-spacer");
-    if (spacer && spacer.parentNode === bar2) bar2.insertBefore(el2, spacer);
-    else bar2.appendChild(el2);
+    const spacer = bar3.querySelector(".sb-spacer");
+    if (spacer && spacer.parentNode === bar3) bar3.insertBefore(el2, spacer);
+    else bar3.appendChild(el2);
   }
   function mountToolbar(m) {
     const key = m.pluginId + ":" + m.id;
     if (mountedToolbar.has(key)) return;
     mountedToolbar.add(key);
-    const bar2 = document.querySelector(".toolbar");
-    if (!bar2) return;
+    const bar3 = document.querySelector(".toolbar");
+    if (!bar3) return;
     const btn = document.createElement("button");
     btn.className = "nav-btn";
     btn.setAttribute("data-plugin", m.pluginId);
@@ -7959,7 +7969,7 @@ paths:            # 可选；省略 = 始终生效
       } catch (_) {
       }
     });
-    bar2.appendChild(btn);
+    bar3.appendChild(btn);
   }
   function runPanelScript(pluginId, id, script) {
     try {
@@ -8448,8 +8458,141 @@ paths:            # 可选；省略 = 始终生效
     }
   }
 
-  // src/ui/shell/scripts/activitybar-drag.ts
+  // src/ui/shell/scripts/activitybar-overflow.ts
+  var MAX_MAIN = 14;
   var BAR_SEL = ".ck-activitybar";
+  var BTN_ID = "ck-ab-overflow-btn";
+  var POP_ID = "ck-ab-overflow-pop";
+  var HIDDEN_CLS = "ck-ab-of-hidden";
+  function bar() {
+    return document.querySelector(BAR_SEL);
+  }
+  function mainIcons() {
+    const b = bar();
+    if (!b) return [];
+    const spacer = b.querySelector(".ck-ab-spacer");
+    const out = [];
+    for (const el2 of Array.from(b.children)) {
+      if (el2 === spacer) break;
+      if (!el2.classList.contains("ck-ab-item")) continue;
+      if (el2.id === BTN_ID) continue;
+      out.push(el2);
+    }
+    return out;
+  }
+  var hideTimer = null;
+  function popover() {
+    let p = document.getElementById(POP_ID);
+    if (p) return p;
+    p = document.createElement("div");
+    p.id = POP_ID;
+    p.className = "ck-ab-overflow-pop";
+    document.body.appendChild(p);
+    p.addEventListener("mouseenter", () => {
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+        hideTimer = null;
+      }
+    });
+    p.addEventListener("mouseleave", () => {
+      scheduleHide();
+    });
+    return p;
+  }
+  function showPopover() {
+    const btn = document.getElementById(BTN_ID);
+    if (!btn) return;
+    if (hideTimer) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+    const hidden = mainIcons().filter((i) => i.classList.contains(HIDDEN_CLS));
+    const p = popover();
+    p.innerHTML = "";
+    hidden.forEach((ic) => {
+      const clone = ic.cloneNode(true);
+      clone.classList.remove(HIDDEN_CLS);
+      clone.removeAttribute("id");
+      clone.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        try {
+          ic.click();
+        } catch (_) {
+        }
+        hidePopover();
+      });
+      p.appendChild(clone);
+    });
+    const r = btn.getBoundingClientRect();
+    p.style.left = r.right + 6 + "px";
+    p.style.top = Math.max(8, Math.min(r.top, window.innerHeight - 40)) + "px";
+    p.classList.add("show");
+  }
+  function hidePopover() {
+    const p = document.getElementById(POP_ID);
+    if (p) p.classList.remove("show");
+  }
+  function scheduleHide() {
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      hideTimer = null;
+      hidePopover();
+    }, 160);
+  }
+  function ensureBtn() {
+    let btn = document.getElementById(BTN_ID);
+    if (btn) return btn;
+    btn = document.createElement("button");
+    btn.id = BTN_ID;
+    btn.className = "ck-ab-item ck-ab-more";
+    btn.title = "\u66F4\u591A";
+    btn.innerHTML = '<span class="ck-ab-text">\u22EF</span>';
+    btn.addEventListener("mouseenter", () => showPopover());
+    btn.addEventListener("mouseleave", () => scheduleHide());
+    return btn;
+  }
+  var observer = null;
+  function refreshActivitybarOverflow() {
+    const b = bar();
+    if (!b) return;
+    if (observer) observer.disconnect();
+    try {
+      const spacer = b.querySelector(".ck-ab-spacer");
+      const icons = mainIcons();
+      const needBtn = icons.length > MAX_MAIN;
+      const visibleCount = MAX_MAIN - 1;
+      icons.forEach((ic, idx) => {
+        const shouldHide = needBtn && idx >= visibleCount;
+        if (shouldHide !== ic.classList.contains(HIDDEN_CLS)) ic.classList.toggle(HIDDEN_CLS, shouldHide);
+      });
+      const btn = document.getElementById(BTN_ID);
+      if (!needBtn) {
+        if (btn) {
+          btn.remove();
+          hidePopover();
+        }
+        return;
+      }
+      const b2 = ensureBtn();
+      const anchor = icons[visibleCount - 1];
+      if (anchor) {
+        if (anchor.nextSibling !== b2) b.insertBefore(b2, anchor.nextSibling || spacer);
+      } else if (spacer && b2.nextSibling !== spacer) {
+        b.insertBefore(b2, spacer);
+      }
+    } finally {
+      if (observer) observer.observe(b, { childList: true });
+    }
+  }
+  function initActivitybarOverflow() {
+    const b = bar();
+    if (!b) return;
+    refreshActivitybarOverflow();
+    window.addEventListener("resize", () => hidePopover());
+  }
+
+  // src/ui/shell/scripts/activitybar-drag.ts
+  var BAR_SEL2 = ".ck-activitybar";
   var ORDER_KEY = "cuckoo-activitybar-order";
   var DRAG_THRESHOLD = 6;
   var SPACER_KEY = "_spacer";
@@ -8458,9 +8601,9 @@ paths:            # 可选；省略 = 始终生效
   var startY = 0;
   var dragging = false;
   var suppressClick = false;
-  var observer = null;
-  function bar() {
-    return document.querySelector(BAR_SEL);
+  var observer2 = null;
+  function bar2() {
+    return document.querySelector(BAR_SEL2);
   }
   function keyOf(el2) {
     if (el2.classList.contains("ck-ab-spacer")) return SPACER_KEY;
@@ -8478,7 +8621,7 @@ paths:            # 可选；省略 = 始终生效
     return top.concat([SPACER_KEY], bottom);
   }
   function saveOrder() {
-    const b = bar();
+    const b = bar2();
     if (!b) return;
     const keys = [];
     Array.from(b.children).forEach((el2) => {
@@ -8491,7 +8634,7 @@ paths:            # 可选；省略 = 始终生效
     }
   }
   function applyActivitybarOrder() {
-    const b = bar();
+    const b = bar2();
     if (!b) return;
     let order = [];
     try {
@@ -8505,7 +8648,7 @@ paths:            # 可选；省略 = 始终生效
     }
     if (!order.length) return;
     order = normalizeSpacer(order);
-    if (observer) observer.disconnect();
+    if (observer2) observer2.disconnect();
     const byKey = /* @__PURE__ */ new Map();
     Array.from(b.children).forEach((el2) => {
       const k = keyOf(el2);
@@ -8520,21 +8663,27 @@ paths:            # 可选；省略 = 始终生效
         used.add(el2);
       }
     }
+    const newEls = [];
     byKey.forEach((el2) => {
       if (used.has(el2)) return;
-      desired.push(el2);
+      newEls.push(el2);
       used.add(el2);
     });
+    if (newEls.length) {
+      const spacerIdx = desired.findIndex((el2) => el2.classList.contains("ck-ab-spacer"));
+      if (spacerIdx >= 0) desired.splice(spacerIdx, 0, ...newEls);
+      else desired.push(...newEls);
+    }
     const cur = Array.from(b.children).filter((el2) => keyOf(el2));
     if (cur.length === desired.length && cur.every((el2, i) => el2 === desired[i])) {
-      if (observer) observer.observe(b, { childList: true });
+      if (observer2) observer2.observe(b, { childList: true });
       return;
     }
     for (const el2 of desired) b.appendChild(el2);
-    if (observer) observer.observe(b, { childList: true });
+    if (observer2) observer2.observe(b, { childList: true });
   }
   function moveDrag(y) {
-    const b = bar();
+    const b = bar2();
     if (!b || !dragEl) return;
     const spacer = b.querySelector(".ck-ab-spacer");
     const sortable = [];
@@ -8561,7 +8710,7 @@ paths:            # 可选；省略 = 始终生效
     }
   }
   function initActivitybarDrag() {
-    const b = bar();
+    const b = bar2();
     if (!b) return;
     b.addEventListener("mousedown", (e) => {
       const item = e.target && e.target.closest ? e.target.closest(".ck-ab-item") : null;
@@ -8590,6 +8739,10 @@ paths:            # 可选；省略 = 始终生效
         document.body.style.cursor = "";
         saveOrder();
         suppressClick = true;
+        try {
+          refreshActivitybarOverflow();
+        } catch (_) {
+        }
       }
       dragEl = null;
       dragging = false;
@@ -8602,13 +8755,17 @@ paths:            # 可选；省略 = 始终生效
       }
     }, true);
     try {
-      observer = new MutationObserver(() => {
+      observer2 = new MutationObserver(() => {
         if (dragEl) return;
         applyActivitybarOrder();
+        try {
+          refreshActivitybarOverflow();
+        } catch (_) {
+        }
       });
-      observer.observe(b, { childList: true });
+      observer2.observe(b, { childList: true });
     } catch (_) {
-      observer = null;
+      observer2 = null;
     }
   }
 
@@ -8637,21 +8794,21 @@ paths:            # 可选；省略 = 始终生效
     const l = el("sb-update-label");
     if (l) l.textContent = text;
   }
-  var hideTimer = null;
-  function scheduleHide() {
-    if (hideTimer) clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => {
+  var hideTimer2 = null;
+  function scheduleHide2() {
+    if (hideTimer2) clearTimeout(hideTimer2);
+    hideTimer2 = setTimeout(() => {
       hide();
-      hideTimer = null;
+      hideTimer2 = null;
     }, HIDE_DELAY);
   }
   function initUpdateProgress() {
     if (!api.onUpdateProgress) return;
     api.onUpdateProgress((data) => {
       if (!data || !data.state) return;
-      if (hideTimer) {
-        clearTimeout(hideTimer);
-        hideTimer = null;
+      if (hideTimer2) {
+        clearTimeout(hideTimer2);
+        hideTimer2 = null;
       }
       if (data.state === "downloading") {
         show();
@@ -8661,11 +8818,11 @@ paths:            # 可选；省略 = 始终生效
         show();
         setLabel("\u66F4\u65B0\u5DF2\u5C31\u7EEA");
         setBar(100);
-        scheduleHide();
+        scheduleHide2();
       } else if (data.state === "error") {
         show();
         setLabel("\u66F4\u65B0\u5931\u8D25");
-        scheduleHide();
+        scheduleHide2();
       }
     });
   }
@@ -8740,6 +8897,10 @@ paths:            # 可选；省略 = 始终生效
   try {
     initActivitybarDrag();
     applyActivitybarOrder();
+  } catch (_) {
+  }
+  try {
+    initActivitybarOverflow();
   } catch (_) {
   }
   try {

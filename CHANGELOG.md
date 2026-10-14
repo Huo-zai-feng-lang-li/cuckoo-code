@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.8.77] - 2026-10-14
+
+### Added
+- **活动栏溢出菜单**：主区（`_spacer` 之前）图标超过 14 个时，只显示前 13 个 + 一个「⋯」按钮，其余收进 **hover 悬浮弹框**（点弹框内图标可切 tab）。底部固定区（关于/飞书/设置）不受影响。
+
+### Fixed
+- **新挂载图标落到底部区**：`applyActivitybarOrder` 把未在持久化 order 里的新图标追加到**整体末尾**（`_spacer` 之后 = 底部固定区），改为插到 `_spacer` **之前**（主区末尾）。
+- **MutationObserver 自激死循环**：溢出重算改 DOM 会触发自身 observer → 无限递归卡死渲染进程。改为「disconnect → 改 → observe」+ 合并到 drag 的 observer 串行调用。
+
 ## [0.8.76] - 2026-10-14
 
 ### Fixed

@@ -1,3 +1,5 @@
+import { refreshActivitybarOverflow } from './activitybar-overflow.js';
+
 /**
  * 活动栏图标拖拽排序：拖动图标调整顺序，顺序持久化到 localStorage。
  *
@@ -82,19 +84,26 @@ export function applyActivitybarOrder(): void {
     if (k) byKey.set(k, el);
   });
   // 算"期望顺序"：
-  //   ① 按持久化 order 命中的元素（_spacer 也按其在 order 中的位置，不再强制末尾）
-  //   ② 未命中的新元素（插件动态图标等）追加到末尾
+  //   ① 按持久化 order 命中的元素（_spacer 也按其在 order 中的位置）
+  //   ② 未命中的新元素（插件动态图标等）插到 _spacer **之前**（主区末尾）
+  //      —— 不能追加到整体末尾，否则会落进底部固定区（关于/飞书/设置之后）
   const desired: HTMLElement[] = [];
   const used = new Set<HTMLElement>();
   for (const key of order) {
     const el = byKey.get(key);
     if (el && !used.has(el)) { desired.push(el); used.add(el); }
   }
+  const newEls: HTMLElement[] = [];
   byKey.forEach((el) => {
     if (used.has(el)) return;
-    desired.push(el);
+    newEls.push(el);
     used.add(el);
   });
+  if (newEls.length) {
+    const spacerIdx = desired.findIndex((el) => el.classList.contains('ck-ab-spacer'));
+    if (spacerIdx >= 0) desired.splice(spacerIdx, 0, ...newEls);
+    else desired.push(...newEls);
+  }
 
   // 与当前顺序一致 → 不碰 DOM（避免无谓重排 / observer 抖动）
   const cur: HTMLElement[] = Array.from(b.children).filter((el: any) => keyOf(el)) as HTMLElement[];
@@ -171,6 +180,8 @@ export function initActivitybarDrag(): void {
       document.body.style.cursor = '';
       saveOrder();
       suppressClick = true; // 抑制拖拽后的 click，避免误切 tab
+      // 拖拽可能改变图标顺序（数量不变则溢出状态不变，但保险重算一次）
+      try { refreshActivitybarOverflow(); } catch (_) { /* ignore */ }
     }
     dragEl = null;
     dragging = false;
@@ -186,6 +197,7 @@ export function initActivitybarDrag(): void {
     observer = new MutationObserver(() => {
       if (dragEl) return;
       applyActivitybarOrder();
+      try { refreshActivitybarOverflow(); } catch (_) { /* ignore */ }
     });
     observer.observe(b, { childList: true });
   } catch (_) { observer = null; }

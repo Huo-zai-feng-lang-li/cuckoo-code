@@ -31,6 +31,7 @@ import { initModalGuard } from './modal-guard.js';
 import { initThemePresenter } from './theme-presenter.js';
 import { initGlobalTooltip } from './tooltip.js';
 import { initActivitybarDrag, applyActivitybarOrder } from './activitybar-drag.js';
+import { initActivitybarOverflow } from './activitybar-overflow.js';
 import { initUpdateProgress } from './update-progress.js';
 import { initWindowSwitchToast } from './window-switch.js';
 
@@ -42,6 +43,9 @@ try { initWindowSwitchToast(); } catch (_) { /* ignore */ }
 
 // 活动栏图标拖拽排序（顺序持久化）
 try { initActivitybarDrag(); applyActivitybarOrder(); } catch (_) { /* ignore */ }
+
+// 活动栏溢出（主区超 14 个 → 「⋯」hover 弹框）
+try { initActivitybarOverflow(); } catch (_) { /* ignore */ }
 
 // 自动更新进度（状态栏进度条）
 try { initUpdateProgress(); } catch (_) { /* ignore */ }
