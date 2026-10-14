@@ -43,19 +43,19 @@
   }
   /* ===== 深色（由主题 presenter 设 body[data-ck-dark]）===== */
   body[data-ck-dark] {
-    --ck-bg: #16181d;
-    --ck-bg-sub: #191c22;
-    --ck-toolbar: #191c22;
-    --ck-surface: rgba(255, 255, 255, 0.045);
-    --ck-surface-hover: rgba(255, 255, 255, 0.08);
-    --ck-border: rgba(255, 255, 255, 0.08);
-    --ck-border-strong: rgba(255, 255, 255, 0.14);
-    --ck-primary: #6b83ff;
-    --ck-primary-strong: #8b9dff;
-    --ck-primary-soft: rgba(107, 131, 255, 0.16);
-    --ck-text: #e4e6eb;
-    --ck-text-2: #a8adba;
-    --ck-text-dim: #757b8a;
+    --ck-bg: #0e1014;
+    --ck-bg-sub: #14161b;
+    --ck-toolbar: #14161b;
+    --ck-surface: rgba(255, 255, 255, 0.055);
+    --ck-surface-hover: rgba(255, 255, 255, 0.10);
+    --ck-border: rgba(255, 255, 255, 0.10);
+    --ck-border-strong: rgba(255, 255, 255, 0.17);
+    --ck-primary: #7b8fff;
+    --ck-primary-strong: #9aa9ff;
+    --ck-primary-soft: rgba(107, 131, 255, 0.20);
+    --ck-text: #eef1f6;
+    --ck-text-2: #c0c6d2;
+    --ck-text-dim: #8a90a0;
     --ck-hover-bg: rgba(255, 255, 255, 0.13);
     --ck-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
     --ck-shadow: 0 1px 3px rgba(0, 0, 0, 0.24);
@@ -7607,9 +7607,15 @@ paths:            # 可选；省略 = 始终生效
   }
   if (api.onGitChanged) {
     api.onGitChanged(() => {
-      if (!isGitPanelActive()) return;
-      loadGit();
-      if (historyOpen) loadHistory();
+      if (isGitPanelActive()) {
+        loadGit();
+        if (historyOpen) loadHistory();
+      } else {
+        Promise.resolve(api.gitStatus?.()).then((r) => {
+          if (r && r.success) refreshBadge((r.items || []).length);
+        }).catch(() => {
+        });
+      }
     });
   }
   if (api.onProjectDir) {

@@ -2,7 +2,22 @@
 
 ## 核心进展
 
-**v0.8.64**：提交详情 diff 配色调整（文字更醒目 + 背景更暗）。已提交、打 tag、推送 origin。最新 tag **v0.8.64**。
+**v0.8.65**：修 git 徽标不及时更新 + 深色主题对比度提升。已提交、打 tag、推送 origin。最新 tag **v0.8.65**。
+
+### v0.8.65 改动
+1. **git 徽标不及时**（src/ui/shell/scripts/pages/git.ts）：`onGitChanged` 原 `if (!isGitPanelActive()) return` 把徽标也门控了 → 非 git 页时数字不刷新。改为未激活时也拉 gitStatus 只更新徽标。
+2. **深色对比度**（base.css + harness.html）：背景加深（#0e1014/#14161b），文字提亮（#eef1f6/#c0c6d2/#8a90a0），harness 与壳页面同步。
+
+### v0.8.65 验证
+- typecheck / test 980 / lint 0 error / compile 全绿
+- 真机：非 git 页新建文件 → 徽标 5→6 自动更新 ✅；shell/harness 背景 rgb(14,16,20)、文字 rgb(238,241,246) ✅
+
+### ⚠️ 待处理（用户反馈，未修）
+- **窗口组切换后 harness 待发队列丢失**：sendQueue 是窗口内存变量，切会话时清空
+- **窗口组切换后右侧对话导航丢失**：onSessionChanged 里 history 为空时提前 return，未建导航
+
+### v0.8.64（同轮）
+提交详情 diff 配色调整（文字更醒目 + 背景更暗）。
 
 ### v0.8.64 改动
 diff 正文底色改用专用深色 --ck-diff-bg（浅色 #f0f1f4 / 深色 #0d0f13）；增删行背景透明度 16%→22%；增删文字调亮（绿 #56d364 / 红 #ff7b83）。

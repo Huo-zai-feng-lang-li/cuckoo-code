@@ -563,10 +563,16 @@ function isGitPanelActive(): boolean {
 }
 if (api.onGitChanged) {
   api.onGitChanged(() => {
-    // 非激活不刷新（省 git status 开销）
-    if (!isGitPanelActive()) return;
-    loadGit();
-    if (historyOpen) loadHistory(); // 历史展开时一并刷新
+    if (isGitPanelActive()) {
+      // 面板激活：完整重绘（loadGit 内含 refreshBadge + 列表）
+      loadGit();
+      if (historyOpen) loadHistory();
+    } else {
+      // 面板未激活：也要更新活动栏徽标数字（此前被门控挡住 → 在其他页面时数字不刷新）
+      Promise.resolve(api.gitStatus?.()).then((r: any) => {
+        if (r && r.success) refreshBadge((r.items || []).length);
+      }).catch(() => { /* ignore */ });
+    }
   });
 }
 
