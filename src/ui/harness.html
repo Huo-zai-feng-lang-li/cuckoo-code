@@ -3617,11 +3617,8 @@
   // ===== 窗口组切换状态迁移（历史 + 待发队列）=====
   /** 导出当前 harness 状态（主进程切换时调用，供目标窗口重建） */
   function exportHarnessState() {
-    var histSnapshot = [];
-    try { histSnapshot = JSON.parse(JSON.stringify(history)); } catch (e) { histSnapshot = []; }
-    var queueSnapshot = [];
-    try { queueSnapshot = JSON.parse(JSON.stringify(sendQueue)); } catch (e) { queueSnapshot = []; }
-    return { history: histSnapshot, sendQueue: queueSnapshot };
+    // 直接返回引用：exportStateReply 经 ipcRenderer.send 会做结构化克隆，无需预先 JSON 深拷贝（大历史省一次拷贝）
+    return { history: history, sendQueue: sendQueue };
   }
   if (api.onExportStateReq) {
     api.onExportStateReq(function (data) {

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.8.72] - 2026-10-14
+
+### Fixed
+- **窗口组切换状态迁移的时序缺陷（复查发现）**：目标窗口 `session-changed` 事件在 view 导航时发出，但 harness 页面此时可能尚未加载完（监听器未注册）→ 事件丢失 → 导入状态永远卡在 pending。修复：`harness-ready` 时**补发当前会话**（`session-changed`），确保导入能应用到正确 sid。
+- **限流连续触发导致并发/双切换**：429 会连续触发多次 `rate-limit-hit` → 并发倒计时 + 重复切换。新增 `switchingProfiles` 守卫，同一窗口同一时刻只处理一次。
+- **`loadURL` 失败时 onLoad 监听残留**：目标窗口后续再触发 `did-finish-load` 会误跑 `initProject` + 状态迁移。修复：失败分支 `twc.off('did-finish-load', onLoad)`。
+
+### Performance
+- **导出 harness 状态去掉冗余深拷贝**：`exportHarnessState` 直接返回引用（`ipcRenderer.send` 本就会结构化克隆），大历史省一次全量 `JSON.stringify` 深拷贝。
+
 ## [0.8.71] - 2026-10-14
 
 ### Added

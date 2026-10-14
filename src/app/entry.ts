@@ -1101,6 +1101,7 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSo
     };
     try { twc.on('did-finish-load', onLoad); } catch (_) { /* ignore */ }
     try { await twc.loadURL(shareUrl); } catch (err: any) {
+      try { twc.off('did-finish-load', onLoad); } catch (_) { /* ignore */ }
       try { cur.view.webContents.send('harness-resume-retry'); } catch (_) { /* ignore */ }
       return { success: false, error: err.message };
     }
@@ -1160,6 +1161,9 @@ injectWindowGroupDeps({
 // ========== 限流触发自动切换 ==========
 // 待确认的自动切换（倒计时期间可被用户取消）
 const pendingAutoSwitch = new Map<number, { cancel: () => void }>();
+// 正在切换中的 profileId：限流会连续触发多次 rate-limit-hit，
+// 用此守卫避免并发倒计时 / 双切换（同一窗口同一时刻只处理一次）
+const switchingProfiles = new Set<string>();
 
 ipcMainForProfile.handle('harness-cancel-switch', async (event: any) => {
   const ctx = windowState.getContextByWebContents(event.sender);
@@ -1201,15 +1205,23 @@ ipcMainForProfile.handle('rate-limit-hit', async (event: any) => {
     console.log('[窗口组] 限流，但该窗口不在任何组，不切换');
     return { success: true, switched: false, reason: 'not-in-group' };
   }
+  // 去重：同一窗口已在切换流程中（倒计时/切换）→ 忽略后续重复触发
+  if (switchingProfiles.has(profileId)) {
+    console.log('[窗口组] 该窗口已在切换流程中，忽略重复触发 ' + profileId);
+    return { success: true, switched: false, reason: 'in-progress' };
+  }
+  switchingProfiles.add(profileId);
   console.log('[窗口组] 限流触发自动切换，组=' + group.name);
   // 自动切换：先给源窗口 3s 倒计时（突兀切换改为可见倒计时，可取消）
   const cancelled = await countdownBeforeAutoSwitch(ctx, 3);
-  if (cancelled) return { success: true, switched: false, reason: 'cancelled' };
+  if (cancelled) { switchingProfiles.delete(profileId); return { success: true, switched: false, reason: 'cancelled' }; }
   // 触发切换（复用 P2 的编排）
   try {
     const res = await runSwitchForGroup(group.id, profileId, true);
+    switchingProfiles.delete(profileId);
     return { success: true, switched: !!(res && res.success), result: res };
   } catch (err: any) {
+    switchingProfiles.delete(profileId);
     return { success: false, error: err.message };
   }
 });

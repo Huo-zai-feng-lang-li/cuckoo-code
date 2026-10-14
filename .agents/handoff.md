@@ -2,7 +2,23 @@
 
 ## 核心进展
 
-**v0.8.71**：窗口组限流冷却缓存（方案 A）+ 关源窗口前置校验。已提交、打 tag、推送 origin。最新 tag **v0.8.71**。
+**v0.8.72**：窗口组切换复查修复 3 个时序缺陷（session-changed 补发 + 限流去重 + 监听残留）。已提交、打 tag、推送 origin。最新 tag **v0.8.72**。
+
+### v0.8.72 改动（系统复查）
+🔴1. harness-ready 补发 session-changed（view 导航时 harness 未加载完 → 事件丢失 → 导入卡 pending）
+🔴2. switchingProfiles 守卫（429 连续触发 → 并发倒计时/双切换）
+🟡3. loadURL 失败时 twc.off('did-finish-load', onLoad)（防监听残留误跑 initProject）
+⚡4. exportHarnessState 去掉冗余深拷贝（send 本就结构化克隆）
+
+### v0.8.72 验证
+- typecheck / test 980 / lint 0 error / compile 全绿
+- 真机冒烟：harnessLoaded、export/import 可用、倒计时 DOM 就位、日志无错误
+
+### ⚠️ 待用户真机验证
+- 窗口组切换（手动 wg-switch / 限流自动）：历史+队列迁移、纯净模式继承、倒计时可取消、目标未就绪保留源窗口
+
+### v0.8.71（同轮）
+限流冷却缓存（方案 A）+ 关源窗口前置校验。
 
 ### v0.8.71 改动（方案 A：低成本改良）
 1. **限流冷却缓存**（window-groups.ts）：文件结构改为 { groups, rateLimits }，新增 markRateLimit/getRateLimitAt/isRateLimited/clearRateLimit（冷却 5 分钟）

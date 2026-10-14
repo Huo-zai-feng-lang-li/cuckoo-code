@@ -486,10 +486,21 @@ function registerHarnessIpc(): void {
   // harness 页面就绪
   ipcMain.on('harness-ready', (event: any) => {
     console.log('[Cuckoo Harness] 页面已就绪');
-    // 窗口组切换：harness 页面就绪 → 若有暂存状态则推送（避免页面未加载完时 push 丢失）
     try {
       const ctx = findContext(event.sender);
       const winId = ctx && ctx.win ? ctx.win.id : null;
+      // 补发当前会话：页面加载完才注册监听器，view 导航时的 session-changed 可能已错过。
+      // 窗口组切换的导入状态依赖它确定 sid 才能应用（否则永远卡在 pending）。
+      try {
+        if (ctx && ctx.view && !ctx.view.webContents.isDestroyed()) {
+          const url = ctx.view.webContents.getURL();
+          let sid = '';
+          const provider = ctx.providerId ? getProvider(ctx.providerId) : null;
+          if (provider && typeof provider.extractSessionId === 'function') sid = provider.extractSessionId(url) || '';
+          event.sender.send('harness-event', { type: 'session-changed', sessionId: sid });
+        }
+      } catch (_) { /* ignore */ }
+      // 页面就绪 → 若有暂存状态则推送
       if (winId != null) onHarnessReady(winId);
     } catch (_) { /* ignore */ }
   });
