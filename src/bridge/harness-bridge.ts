@@ -76,8 +76,15 @@ export function initHarnessBridge(): void {
   // 流式增量 → 上报
   onStream((ev: any) => {
     if (!ev) return;
-    // 有实际输出 = 正在生成（finished 帧只是收尾快照，不算新一轮）
-    if (!ev.finished && (ev.text || ev.think)) setAiGenerating(true);
+    if (ev.finished) {
+      // 收尾帧 = 流式输出结束（网页本轮生成已完成）。
+      // 这是最可靠的"停止生成"信号：即使最终回复含工具块（onInterceptedResponse
+      // 会因 HAS_TOOL_BLOCK_RE 跳过复位），这里也一定把 aiGenerating 复位，
+      // 否则心跳会持续上报 true，令 harness 的静默兜底永远失效（卡"生成中"）。
+      setAiGenerating(false);
+    } else if (ev.text || ev.think) {
+      setAiGenerating(true);
+    }
     const t = stripToolBlocks(ev.text || '');
     report({ type: 'stream', think: ev.think || '', text: t, finished: !!ev.finished });
   });
