@@ -1019,8 +1019,8 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSo
     let skippedBusy = 0;
     let skippedCooldown = 0;
     for (const pid of probeOrder) {
-      // 跳过正在跑任务的窗口（避免探测打断它的并行任务）
-      if (windowState.isGenerating(pid)) {
+      // 跳过正在跑任务的窗口（含子代理，避免探测打断它的并行任务）
+      if (windowState.isGeneratingAny(pid)) {
         console.log('[窗口组] 跳过忙碌窗口 ' + pid + '（正在生成，不打断）');
         skippedBusy++;
         continue;

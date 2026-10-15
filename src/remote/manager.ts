@@ -24,12 +24,21 @@ const STREAM_FLUSH_MS = 100;
 
 /** 每窗口独立的流式状态（防多窗口串扰）。
  *  text = 最新全量累积文本；sent = 上次已广播出去的文本（用于计算 delta）。 */
-interface StreamState { text: string; sent: string; think: string; thinkSent: string; timer: any; active: boolean; }
+interface StreamState {
+  text: string; sent: string; think: string; thinkSent: string;
+  timer: any; active: boolean;
+  /** 该窗口当前正在跑的工具数（用于 watchdog 判定"不在工具阶段"） */
+  toolCount: number;
+  /** 最近一次流式/工具活动时间戳（用于静默判定） */
+  lastAt: number;
+  /** 最近一次工具活动时间戳（tool-end 丢失时的时间兜底） */
+  toolLastAt: number;
+}
 const streamStates = new Map<string, StreamState>();
 
 function getStreamState(profileId: string): StreamState {
   let s = streamStates.get(profileId);
-  if (!s) { s = { text: '', sent: '', think: '', thinkSent: '', timer: null, active: false }; streamStates.set(profileId, s); }
+  if (!s) { s = { text: '', sent: '', think: '', thinkSent: '', timer: null, active: false, toolCount: 0, lastAt: 0, toolLastAt: 0 }; streamStates.set(profileId, s); }
   return s;
 }
 
@@ -49,6 +58,8 @@ function isLocallyBusy(pid: string): boolean {
 }
 /** 窗口变化监听器的反注册句柄（防重复注册累积） */
 let disposeWindowsChanged: (() => void) | null = null;
+/** 卡"生成中" watchdog 定时器 */
+let busyWatchdogTimer: any = null;
 
 /** 取目标窗口；若选定窗口已不存在 → 回退最近活跃，并广播新列表提醒手机 */
 function getTargetContext(): any {
@@ -179,10 +190,12 @@ function onAiStream(text: string, think: string, profileId: string): void {
     s.sent = ''; // 新一轮流式开始，重置增量基线
     s.think = '';
     s.thinkSent = '';
+    s.toolCount = 0; // 上轮 tool-end 可能丢失，新一轮开始清零防 watchdog 误跳过
     remoteServer.broadcast({ type: 'ai-start', profileId: pid });
   }
   s.text = text || '';
   s.think = think || '';
+  s.lastAt = Date.now();
   if (!s.timer) s.timer = setTimeout(() => flushStream(pid), STREAM_FLUSH_MS);
 }
 
@@ -216,6 +229,7 @@ function onAiReply(text: string, profileId: string): void {
   s.think = '';
   s.thinkSent = '';
   s.active = false;
+  s.toolCount = 0;
   remoteServer.broadcast({ type: 'ai-reply', profileId: pid, text: text || '' });
 }
 
@@ -233,10 +247,38 @@ function onAiStop(profileId: string): void {
   s.think = '';
   s.thinkSent = '';
   s.active = false;
+  s.toolCount = 0;
   remoteServer.broadcast({ type: 'ai-stop', profileId: pid });
 }
 
-/** 收到生成错误 */
+/** 卡"生成中"兜底 watchdog 间隔（ms） */
+const BUSY_WATCHDOG_MS = 3000;
+/** 判定为"已停止但未收尾"所需的静默时长（ms）——给足余量避免误伤刚要开始的生成 */
+const BUSY_STALE_MS = 8000;
+/** 工具阶段无活动的超时（ms）——超过视为 tool-end 丢失，强制收尾（工具可能长跑，给足量） */
+const BUSY_TOOL_STALE_MS = 300000;
+/** 卡"生成中" watchdog：网页已停止生成（windowState.isGenerating=false）、
+ *  不在工具阶段、且静默超过阈值 → 主动收尾，防终态事件丢失导致手机端永久 busy。
+ *  这是 Harness 侧 `ai-state` 心跳兜底的对应机制（手机端独缺）。 */
+function busyWatchdogTick(): void {
+  if (!remoteServer.isRunning()) return;
+  const now = Date.now();
+  for (const [pid, s] of streamStates) {
+    if (!s.active) continue;
+    if (windowState.isGenerating(pid)) continue; // 网页仍在生成：正常，给足耐心
+    if (s.toolCount > 0) {
+      // 有工具账目：若长时间无任何工具活动（tool-end 丢失），且网页已停 → 强制收尾，
+      // 否则 toolCount 卡住会让 watchdog 永久跳过（修复在最需要的 stuck 场景失效）。
+      if (now - s.toolLastAt < BUSY_TOOL_STALE_MS) continue;
+      console.log('[Remote] watchdog：tool-end 疑似丢失，强制收尾 ' + pid);
+    } else {
+      if (now - s.lastAt < BUSY_STALE_MS) continue; // 静默不足：可能是刚起手
+      console.log('[Remote] watchdog：检测到已停止但未收尾，主动收尾 ' + pid);
+    }
+    onAiStop(pid);
+  }
+}
+
 /** 清理某窗口的流式状态（窗口关闭时调用，防 Map 无限增长） */
 function cleanupStreamState(profileId: string): void {
   const s = streamStates.get(profileId);
@@ -258,6 +300,7 @@ function onAiError(profileId: string, error?: string): void {
   s.think = '';
   s.thinkSent = '';
   s.active = false;
+  s.toolCount = 0;
   remoteServer.broadcast({ type: 'ai-error', profileId: pid, error: error || '生成失败' });
 }
 
@@ -280,7 +323,14 @@ async function onPhoneAttach(file: { name: string; data: string; mime: string })
 /** 工具状态 */
 function onTool(phase: string, name: string, profileId: string): void {
   if (!remoteServer.isRunning()) return;
-  remoteServer.broadcast({ type: 'tool', profileId: profileId || '', phase, name: name || '' });
+  const pid = profileId || '';
+  const s = getStreamState(pid);
+  // 维护工具计数（watchdog 据此判断"是否在工具执行阶段"）
+  if (phase === 'start') s.toolCount++;
+  else if (phase === 'end' && s.toolCount > 0) s.toolCount--;
+  s.lastAt = Date.now();
+  s.toolLastAt = Date.now();
+  remoteServer.broadcast({ type: 'tool', profileId: pid, phase, name: name || '' });
 }
 
 /** 广播远程启用状态给所有 AI 页面（bridge 门控开关） */
@@ -332,6 +382,9 @@ async function initRemote(): Promise<void> {
   // 关键：bridge 若在服务启动前查询 remote-is-enabled 得到 false，此后再无事件复位 →
   // onStream 被门控全丢（"连接成功但推送失败"）。故启动成功后必须主动广播一次。
   broadcastRemoteMode(true);
+  // 启动卡"生成中" watchdog（终态事件丢失时兜底收尾）
+  if (busyWatchdogTimer) clearInterval(busyWatchdogTimer);
+  busyWatchdogTimer = setInterval(busyWatchdogTick, BUSY_WATCHDOG_MS);
 
   // 若开启了内置隧道托管，自动拉起 cloudflared
   if (cfg.tunnelEnabled) {
@@ -352,6 +405,7 @@ async function initRemote(): Promise<void> {
 
 /** 停用（同时清理全部流式节流状态，停止隧道子进程，等待底层端口释放） */
 async function stopRemote(): Promise<void> {
+  if (busyWatchdogTimer) { clearInterval(busyWatchdogTimer); busyWatchdogTimer = null; }
   for (const s of streamStates.values()) {
     if (s.timer) { clearTimeout(s.timer); s.timer = null; }
   }
