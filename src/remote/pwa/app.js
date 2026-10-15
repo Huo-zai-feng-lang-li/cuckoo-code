@@ -551,22 +551,28 @@
   // ===== 思考块（正文上方，流式展开 → 正文出现后自动折叠）=====
   function ensureThinkEl() {
     if (thinkEl) return;
-    thinkEl = document.createElement('div');
-    thinkEl.className = 'msg think-block open';
-    thinkEl.innerHTML =
+    // 用局部 el 捕获当前节点：监听器绝不能引用全局 thinkEl（多轮后它已指向新轮次，
+    // 会导致所有历史思考框的点击都操作最新元素 → 表现为"几个框同步、点不动"）
+    const el = document.createElement('div');
+    el.className = 'msg think-block open';
+    el.innerHTML =
       '<button class="think-head" type="button">' +
         '<svg class="think-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2z"/><path d="M10 21h4"/></svg>' +
         '<span class="think-label">思考中…</span>' +
         '<svg class="think-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>' +
       '</button>' +
       '<div class="think-body"></div>';
-    thinkBody = thinkEl.querySelector('.think-body');
-    thinkLabel = thinkEl.querySelector('.think-label');
-    thinkEl.querySelector('.think-head').addEventListener('click', () => {
-      thinkUserToggled = true;
-      thinkEl.classList.toggle('open');
+    el.querySelector('.think-head').addEventListener('click', () => {
+      // 只操作被点击的这个块
+      el.classList.toggle('open');
+      // 只有点击的是"当前活跃"的思考块，才标记用户手动（影响自动折叠策略）；
+      // 点历史思考块不应干扰当前轮
+      if (el === thinkEl) thinkUserToggled = true;
     });
-    messages.appendChild(thinkEl);
+    messages.appendChild(el);
+    thinkEl = el;
+    thinkBody = el.querySelector('.think-body');
+    thinkLabel = el.querySelector('.think-label');
     checkEmptyState();
   }
 
