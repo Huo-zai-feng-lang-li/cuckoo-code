@@ -347,6 +347,10 @@
     font-size: 12.5px; font-family: inherit;
   }
   .ck-input:focus, .ck-textarea:focus { outline: none; border-color: var(--ck-primary); box-shadow: 0 0 0 3px var(--ck-primary-soft); }
+  /* select 弹层跟随 color-scheme（否则深色主题下原生 option 白底浅字看不清） */
+  select.ck-input { color-scheme: light; }
+  body[data-ck-dark] select.ck-input { color-scheme: dark; }
+  select.ck-input option { background: var(--ck-bg); color: var(--ck-text); }
   .ck-textarea { resize: vertical; min-height: 220px; line-height: 1.6; }
   .ck-textarea-sm { min-height: 110px; }
   .ck-modal-foot { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -451,6 +455,17 @@
     flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ck-text);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  .ck-win-name { cursor: text; }
+  .ck-win-edit {
+    width: 24px; height: 24px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 7px; font-size: 12px; color: var(--ck-text-dim);
+    cursor: pointer; transition: opacity .15s, background .15s, color .15s;
+    opacity: 0; pointer-events: none;   /* 默认隐藏，悬停卡片才出现 */
+  }
+  .ck-win-item:hover .ck-win-edit { opacity: 1; pointer-events: auto; }
+  .ck-win-edit:focus-visible { opacity: 1; pointer-events: auto; }
+  .ck-win-edit:hover { background: var(--ck-primary-soft); color: var(--ck-primary); }
   .ck-win-del {
     width: 24px; height: 24px; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
@@ -459,6 +474,7 @@
     opacity: 0; pointer-events: none;   /* 默认隐藏，悬停卡片才出现 */
   }
   .ck-win-item:hover .ck-win-del { opacity: 1; pointer-events: auto; }
+  .ck-win-del:focus-visible { opacity: 1; pointer-events: auto; }
   .ck-win-del:hover { background: var(--ck-danger); color: #fff; }
   .ck-win-bottom { display: flex; align-items: center; gap: 8px; }
   .ck-win-provider {

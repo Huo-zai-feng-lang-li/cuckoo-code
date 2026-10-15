@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.8.83] - 2026-10-15
+
+### Added
+- **窗口列表支持重命名**：窗口卡片悬停/键盘 focus 时显示 ✎ 图标，或点击窗口名进入重命名（复用通用输入弹窗）。主进程新增 `rename-profile` IPC：写入 `profile-list.json`，并同步更新所有活跃窗口的标题与状态栏。名称长度上限 50 字，入口与 `updateProfileName` 双重兜底。
+- **手机端 AI 消息尾部签名**：每条 AI 消息末尾固定显示 `✦ Cuckoo`（对齐电脑端前缀），流式期间四角星走星光动画兼作光标；结束帧保持为静态署名。删除旧的 `.cursor` 独占光标。
+
+### Fixed
+- **窗口组「添加窗口」下拉深色主题下 option 白底浅字看不清**：`select.ck-input` 补 `color-scheme` 跟随 + option 配色（对齐已有 `.ck-set-input` 的处理）。
+- **手机端 AI 消息尾部签名在流式增量时被重复 `querySelectorAll` 扫描**：删除热路径冗余的 `ensureSigNode` 调用（增量只 append 到 streamNode，sig 恒在末位）。
+- **改名失败静默无反馈**：`renameProfile` 返回 `success:false` 或抛错时改弹提示，不再"点了确定没反应"。
+- **`rename-profile` 未校验 `event.sender` 归属**：补 `windowState.getContextByWebContents(event.sender)` 纵深防御，只允许有窗口上下文的壳页面调用。
+
 ## [0.8.82] - 2026-10-15
 
 ### Performance

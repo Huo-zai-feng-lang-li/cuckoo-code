@@ -167,6 +167,7 @@ export interface ShellAPI {
   openProfileWindow?: (id: string) => Promise<any>;
   deleteProfileWindow?: (id: string) => Promise<any>;
   setProfileAutoOpen?: (id: string, on: boolean) => Promise<any>;
+  renameProfile?: (id: string, name: string) => Promise<any>;
   // 窗口名（状态栏显示）
   getWindowName?: () => Promise<any>;
   onWindowNameUpdated?: (cb: (name: string) => void) => void;
