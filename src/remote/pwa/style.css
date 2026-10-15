@@ -963,12 +963,18 @@ svg { flex-shrink: 0; }
   color: var(--fg);
 }
 
-/* Streaming text —— 流式期间为纯文本追加（性能），保留换行 */
+/* Streaming text —— 流式期间低频渲染 markdown（.stream-text--md 切 normal 空白） */
 .stream-text {
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
 }
+/* 渲染 markdown 后：normal 空白（pre-wrap 会让 <p> 之间双重间距） */
+.stream-text--md {
+  white-space: normal;
+}
+.stream-text--md > :first-child { margin-top: 0; }
+.stream-text--md > :last-child { margin-bottom: 0; }
 
 /* ===== 思考块（正文上方，可折叠）=====
    流式期间自动展开；正文出现或收尾后自动折叠；用户手动点过则尊重其选择 */

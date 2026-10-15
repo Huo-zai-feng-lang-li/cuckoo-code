@@ -303,6 +303,7 @@
         // 只重置引用，**不动历史 think DOM**（上一轮的思考块应保留在会话里）
         thinkEl = null; thinkBody = null; thinkLabel = null;
         thinkText = ''; thinkUserToggled = false; sawText = false;
+        cancelStreamMd();
         break;
       case 'ai-stream':
         if (!isMyProfile(msg.profileId)) break;
@@ -313,6 +314,7 @@
           thinkText = ''; thinkUserToggled = false; sawText = false;
           if (streamingEl) { try { streamingEl.remove(); } catch {} }
           streamingEl = null; streamNode = null; streamingText = '';
+          cancelStreamMd();
         }
         if (msg.thinkDelta) appendThink(msg.thinkDelta);
         if (msg.textDelta) appendStreaming(msg.textDelta);
@@ -551,8 +553,9 @@
   function startStreaming() {
     streamingEl = document.createElement('div');
     streamingEl.className = 'msg ai streaming';
-    // 内部结构：纯文本容器（流式期间 appendChild 文本）+ 末尾签名
-    streamNode = document.createElement('span');
+    // 内部结构：正文容器（流式期间低频渲染 markdown）+ 末尾签名。
+    // 用 div 而非 span：流式期间会放入 <p> 等块级 HTML（span 放块级不合法）。
+    streamNode = document.createElement('div');
     streamNode.className = 'stream-text';
     streamingEl.appendChild(streamNode);
     streamingEl.appendChild(createSigNode());
@@ -621,25 +624,50 @@
     thinkText = ''; thinkUserToggled = false; sawText = false;
   }
 
+  // 流式 markdown 渲染节流：每 ~200ms 把累积文本渲染一次 markdown，
+  // 让手机端流式期间也有格式（而非"先出现一大坨 md 再变格式"）。
+  // 用 200ms 低频控制性能（每帧全量 renderMd 会累积 O(n²)；200ms 一次可控）。
+  let streamMdTimer = null;
+  let lastStreamMdAt = 0;
+  const STREAM_MD_INTERVAL = 200;
+  function cancelStreamMd() {
+    if (streamMdTimer) { clearTimeout(streamMdTimer); streamMdTimer = null; }
+  }
+  function flushStreamMd() {
+    if (streamMdTimer) { clearTimeout(streamMdTimer); streamMdTimer = null; }
+    lastStreamMdAt = Date.now();
+    if (!streamNode || !streamingText) return;
+    try {
+      // 渲染 markdown 后切到 normal 空白（pre-wrap 会让 <p> 之间产生双重间距）
+      streamNode.classList.add('stream-text--md');
+      streamNode.innerHTML = renderMd(streamingText);
+    } catch { /* ignore */ }
+  }
+  function scheduleStreamMd() {
+    if (streamMdTimer) return;
+    const delay = Math.max(0, STREAM_MD_INTERVAL - (Date.now() - lastStreamMdAt));
+    streamMdTimer = setTimeout(function () { streamMdTimer = null; flushStreamMd(); }, delay);
+  }
+
   /**
-   * 流式增量追加（性能关键路径）：
-   *  把 delta 作为纯文本 appendChild（不做 markdown 解析、不重建 DOM）。
+   * 流式增量追加：
+   *  累积文本 + 低频（~200ms）渲染 markdown 到 streamNode（流式期间即有格式）。
    *  reset（清空重来）由调用方 handleServerMessage 的 msg.reset 分支处理。
-   *  流式期间为纯文本（快速），结束帧由 finishStreaming 用全量做一次 markdown 渲染。
+   *  收尾由 finishStreaming 用全量做最后一次 markdown 渲染 + 代码块增强/复制按钮。
    */
   function appendStreaming(delta) {
     if (!delta) return;
     if (!streamingEl) startStreaming();
-    // 增量挂文本节点，不重设 textContent（避免每帧 O(n) 覆盖 → 累积 O(n²)）
-    streamNode.appendChild(document.createTextNode(delta));
     streamingText += delta;
     // 正文已出现 → 标记 + 思考块自动折叠（非用户手动）
     sawText = true;
     if (thinkEl && !thinkUserToggled) thinkEl.classList.remove('open');
+    scheduleStreamMd();
     scroll();
   }
 
   function finishStreaming(fullText) {
+    cancelStreamMd(); // 取消流式期间的 pending markdown 渲染（收尾会全量渲染一次）
     const finalText = fullText || streamingText || '';
     finishThink();
     if (!streamingEl) {

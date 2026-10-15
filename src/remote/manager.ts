@@ -19,8 +19,8 @@ import { stopGeneration } from '../app/ipc/harness.js';
 import { cdpAttach } from '../app/ipc/cdp-attach.js';
 import { startTunnel, stopTunnel, getTunnelStatus } from './tunnel.js';
 
-/** 流式节流：100ms 推送一次。注意 onStream 的 text 是「全量累积文本」，故直接覆盖。 */
-const STREAM_FLUSH_MS = 100;
+/** 流式节流：60ms 推送一次。注意 onStream 的 text 是「全量累积文本」，故直接覆盖。 */
+const STREAM_FLUSH_MS = 60;
 
 /** 每窗口独立的流式状态（防多窗口串扰）。
  *  text = 最新全量累积文本；sent = 上次已广播出去的文本（用于计算 delta）。 */

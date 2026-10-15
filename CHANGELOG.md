@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.8.99] - 2026-10-16
+
+### Performance
+- **手机远程流式渲染优化（不再"先出现一大坨 md 再变格式"）**：
+  - 手机端 PWA 流式期间改为**低频（~200ms）渲染 markdown**（此前流式期间是纯文本追加，收尾才渲染，故表现为"一大坨 md 突然变格式"）。渲染后切 `.stream-text--md`（normal 空白，避免 `pre-wrap` 与 `<p>` 双重间距）。
+  - `streamNode` 从 `<span>` 改为 `<div>`（承载块级 HTML，span 放块级不合法）。
+  - **降低端到端延迟**：bridge 节流 100→60ms、manager 节流 100→60ms（端到端首帧延迟约 240ms→120ms）。
+  - 收尾 `finishStreaming` 仍走全量渲染 + 代码块增强 + 复制按钮（不受影响）。
+
 ## [0.8.98] - 2026-10-16
 
 ### Performance

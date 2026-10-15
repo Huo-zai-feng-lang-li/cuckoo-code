@@ -41,8 +41,8 @@ export function initRemoteBridge(): void {
 
   // 1. 流式文本 → 上报（剥离工具代码块；此处节流 ~100ms，主进程再节流广播）
   //    节流原因：onStream 每个 token 事件都触发，若每帧对全文跑 stripBlocks（6 次正则）
-  //    会占满 AI 页面主线程（O(n²)）。合并到 ~100ms 一次，只处理最新全量文本。
-  //    注意：与 manager.ts 的 STREAM_FLUSH_MS（100ms）叠加后，端到端首帧延迟约 200ms。
+  //    会占满 AI 页面主线程（O(n²)）。合并到 ~60ms 一次，只处理最新全量文本。
+  //    注意：与 manager.ts 的 STREAM_FLUSH_MS（60ms）叠加后，端到端首帧延迟约 120ms。
   //    bridge 侧节流保留是为了省 AI 页面主线程的 stripBlocks 开销（下层更贵）。
   //    注意：跳过 finished 收尾帧（它带全文，会与 onInterceptedResponse 的 ai-reply 重复 → 双气泡）
   let streamTimer: any = null;
@@ -78,7 +78,7 @@ export function initRemoteBridge(): void {
       pendingThink = '';
       const clean = stripBlocks(text);
       if (clean || think) report({ type: 'ai-stream', text: clean, think });
-    }, 100);
+    }, 60);
   });
 
   // 2. AI 回复完成 → 上报（剥离工具代码块）
