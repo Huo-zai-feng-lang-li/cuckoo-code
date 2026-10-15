@@ -68,5 +68,6 @@
 | 064 | fix | [手机远程稳定性：隧道自愈 + 半开丢消息 + 后台保活](./064-remote-stability.md) | done | fix/064-remote-stability | 2026-10-16 |
 | 065 | fix | [工具结果回传偶发丢失（模型停下）—— observer 层重试 + 发送校验](./065-tool-result-retry.md) | done | fix/065-tool-result-retry | 2026-10-16 |
 | 066 | fix | [子代理审计：完成通知隔离 + tools 白名单生效 + 通知精确化](./066-subagent-audit.md) | done | fix/066-subagent-audit | 2026-10-16 |
+| 067 | fix | [用户记忆稳健性 + 上下文耗尽续接智能化](./067-memory-compact-audit.md) | done | fix/067-memory-compact-audit | 2026-10-16 |
 
-共 63 个需求。
+共 64 个需求。

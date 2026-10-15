@@ -37,6 +37,10 @@ const COMPACT_URL_FLAG = 'cuckoo-compact';
 const COMPACT_DIR_KEY = 'cuckoo-compact-project-dir';
 const PENDING_INIT_KEY = 'cuckoo-compact-pending-init';
 const IDB_WAIT_TIMEOUT = 20000;
+// 压缩摘要：段1 生成 → localStorage 跨刷新/跨页传递 → 段3 注入新会话（实现带前情提要的智能续接）
+const COMPACT_SUMMARY_KEY = 'cuckoo-compact-summary';
+/** 注入新会话的摘要长度上限（防 prompt 膨胀） */
+const MAX_SUMMARY_LEN = 8000;
 
 // 真截断：URL flag（触发 hook 的 IDB 写入拦截 + 页内检测）与跨刷新 pending 数据 key
 const TRUNCATE_URL_FLAG = 'cuckoo-truncate';
@@ -262,12 +266,20 @@ async function runCompaction(projectDir?: string): Promise<void> {
 
     // 记下"压缩前的会话ID"（段3 初始化新会话时写入血缘）
     try { localStorage.setItem('cuckoo-compact-parent-session', sessionId); } catch (_) {}
+    // 先清旧摘要，避免上次压缩失败的残留被本次误用
+    try { localStorage.removeItem(COMPACT_SUMMARY_KEY); } catch (_) {}
 
     logStep('summary', '发送摘要指令');
     const waitReply = waitForResponse(120000);
     sendToChat(SUMMARY_INSTRUCTION, '压缩-摘要', undefined);
     const { text: summaryText } = await waitReply;
     logStep('summary', '收到摘要回复，长度=' + (summaryText || '').length);
+    // 保存摘要（跨刷新 + 跨页传给新会话）。这是"智能续接"的核心：
+    // 原实现只取最近 20% 原文，前 80% 关键信息全丢；现在把摘要注入新会话，模型带前情提要。
+    try {
+      const s = (summaryText || '').trim();
+      if (s) localStorage.setItem(COMPACT_SUMMARY_KEY, s.slice(0, MAX_SUMMARY_LEN));
+    } catch (_) { /* ignore */ }
 
     // 清当前会话 IDB 记录，触发刷新后 DeepSeek 重新拉取完整历史
     logStep('idb', '清除当前会话 IDB 记录');
@@ -343,6 +355,8 @@ async function checkPendingCompact(): Promise<boolean> {
     return true;
   } catch (err: any) {
     console.error('[Cuckoo Compact] 段2失败:', err);
+    // 段2 失败：清掉已存的摘要（避免长期占用 localStorage；下次压缩会重新生成）
+    try { localStorage.removeItem(COMPACT_SUMMARY_KEY); } catch (_) { /* ignore */ }
     showToast('压缩失败: ' + err.message, 5000);
     return false;
   }
@@ -363,10 +377,17 @@ function checkPendingInit(): void {
   } catch (_) {}
   let parentSessionId = null;
   try { parentSessionId = localStorage.getItem('cuckoo-compact-parent-session'); } catch (_) {}
-  console.log('[Cuckoo Compact] 检测到压缩后待初始化，3 秒后执行；项目目录=' + (projectDir || '(无)') + '，压缩前会话=' + (parentSessionId || '(无)'));
+  // 读取上一段对话的摘要（若有），作为"前情提要"注入新会话，实现智能续接
+  let compactSummary = '';
+  try { compactSummary = localStorage.getItem(COMPACT_SUMMARY_KEY) || ''; } catch (_) {}
+  try { localStorage.removeItem(COMPACT_SUMMARY_KEY); } catch (_) {}
+  const extraPrompt = compactSummary
+    ? '以下是上一段对话（因上下文接近上限而被压缩）的摘要，请基于它无缝续接，不要重复已完成的工作：\n\n' + compactSummary
+    : '';
+  console.log('[Cuckoo Compact] 检测到压缩后待初始化，3 秒后执行；项目目录=' + (projectDir || '(无)') + '，压缩前会话=' + (parentSessionId || '(无)') + '，摘要长度=' + compactSummary.length);
   setTimeout(() => {
     try {
-      (window as any).electronAPI.initProject(projectDir || null, true, '', false, parentSessionId);
+      (window as any).electronAPI.initProject(projectDir || null, true, extraPrompt, false, parentSessionId);
     } catch (err) {
       console.error('[Cuckoo Compact] 压缩后初始化失败:', err);
     }
