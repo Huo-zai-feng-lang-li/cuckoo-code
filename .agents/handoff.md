@@ -1,45 +1,52 @@
-# 最新接续状态 (2026-10-16 01:30)
+# 最新接续状态 (2026-10-16 02:15)
 
 ## 核心进展
-- **057 二次审计整改** 已闭环并发版 v0.8.85（分支 fix/057-audit-rectify-r2）。修复 056 遗留的 🔴（stop/error 尾帧仍丢）+ 055 遗留的小瑕疵。
+- **058 限流自动切换改系统级浮窗告警** 已闭环并发版 v0.8.86（分支 feat/058-switch-alert-window）。
 
 ## 核心动机与背景 (Motivation & Background)
-- 对 v0.8.83（055）与 v0.8.84（056）做**二次独立子代理审计**：
-  - **056 R1（真缺陷，56 目标未达成）**：bridge 层 `stopStreamThrottle(true)` flush 后进入 manager，`onAiStream` 只是 `setTimeout(flushStream, 100)` 排队；紧接着 `ai-stop`/`ai-error` 到达 → `onAiStop`/`onAiError` 里 `clearTimeout(s.timer)` 取消 → 尾帧仍未广播。缺陷只是从 bridge 窗口位移到 manager 窗口。
-  - **055 N1**：`rename-profile` 只校验 `ctx` 非空，未校验"本窗口"；任一壳页面可改任意窗口名。
-  - **055 ②**：`update-window-name` 走 `updateProfileName`，被内部 `slice(0,50)` 静默截断（无提示）。
-  - **056 O1**：`dataset.raw` 是死数据（无读取点）。
-  - **056 O3**：bridge timer 触发后未清 `pendingText`（极端下重复 flush）。
-  - **055 N2**：`ensureSigNode` 死代码。
-  - **055 N3**：`ck-win-name` 判断是冗余分支（stopPropagation 已挡）→ 本版未动（无害）。
+- 用户反馈：限流自动切换前的 harness 内倒计时弹窗"经常看不到"（AI 页面盖住 / 窗口在后台 / 已切到别的应用）。
+- 需求：**系统级独立浮窗** + 10 秒倒计时 + [取消自动切换] [立即切换] 两个按钮。
 
 ## 关键设计与实现 (Implementation & Decisions)
-- **R1 修复**：`onAiStop` / `onAiError` 清 timer 后、清 `s.text` 前，`if (s.text && s.text !== s.sent) flushStream(pid)`（复用 manager 的 delta 逻辑，startsWith 自动算 delta、防空重启，安全）。
-- **N1**：`rename-profile` 补 `ctx.profileId !== profileId` 拒绝。
-- **②**：`update-window-name` 加注释说明"名字统一上限 50 字"。
-- **O1**：删 `finishStreaming` / `addAi` 里 `dataset.raw` 写入。
-- **O3**：bridge timer 回调先取出 text 再清 `pendingText`。
-- **N2**：删 `ensureSigNode`（PWA app.js）。
-- **N3**：保留（防御性冗余，无害）。
+- **新文件**：
+  - `src/ui/alert-window.html`：浮窗 UI，自绘 CSS（无依赖 base.css），深浅色自适应系统主题。
+  - `src/app/alert-preload.ts`：preload（`window.alertAPI`：onInit / action 两个通道）。
+  - `src/app/alert-window.ts`：对外 API `showSwitchAlert(options) → Promise<'cancel'|'switch-now'|'timeout'|'superseded'>`。单例（同刻只一个）。
+- **窗口属性**：无边框 + 透明 + alwaysOnTop('screen-saver') + setVisibleOnAllWorkspaces + skipTaskbar:false。
+- **显示器选择**：焦点窗口所在屏 → 光标最近屏 → 主屏（三级 fallback），**多屏下落在正确显示器**。
+- **定位**：屏幕 workArea 右下角，24px 边距。
+- **超时**：10 秒 → 自动 `'timeout'`（执行切换）。
+- **键盘**：Esc / Enter **均视为取消**（保守，防焦点在"取消"按钮上按 Enter 误切）。
+- **关闭 X**：视为取消。
+- **多窗口同时限流**：后到的 showSwitchAlert 用 `'superseded'` 顶替前者（区别于"用户取消"）。
+- **异常守卫**：`rate-limit-hit` 里 showSwitchAlert 加 try/catch，异常释放 `switchingProfiles`。
+- **弃用旧结构**：`countdownBeforeAutoSwitch` / `harness-cancel-switch` / `pendingAutoSwitch` / `harness-preload` 的 onSwitchCountdown + cancelSwitch 全部加"已弃用"注释保留，不删除（防牵连）。
 
 ## 待办事项 (Next Steps)
-- [ ] **真机验证**：stop 后手机端最后 <100ms 文本不丢；长回复流畅度；改名/签名正常。
-- [ ] **（遗留）窗口卡片键盘导航**：卡片本身不可 Tab 聚焦（低优先）。
-- [ ] **（遗留）`restoreHist` 全量 DOM 重建**：切会话 1-2s（400 条时），可虚拟化（低优先）。
+- [ ] **真机验证（关键）**：
+  1. 限流触发后右下角浮窗出现（**双屏时是否落在焦点窗口所在屏**）；
+  2. 倒计时数字正确递减、进度条走完；
+  3. [取消自动切换] 生效（源窗口原地不动）；
+  4. [立即切换] 生效（跳过剩余倒计时）；
+  5. Esc / Enter / 点 X 都取消；
+  6. 10 秒到点自动切换；
+  7. 深浅色主题下浮窗样式正常。
+- [ ] **（可选）** 如果觉得只显示"当前限流窗口名"信息太少，可在目标窗口确定后再追加快照——但这需要重构 showSwitchAlert 的时序（先探测目标再弹窗），暂不做。
 
 ## 关键上下文
 - 目录: D:\Desktop\Super-File\cuckoo-code
-- 分支: fix/057-audit-rectify-r2
+- 分支: feat/058-switch-alert-window
 - 主要文件：
-  - `src/remote/manager.ts`（R1：onAiStop/onAiError 补 flush）
-  - `src/app/entry.ts`（N1：rename-profile 本窗口校验；②：注释）
-  - `src/remote/pwa/app.js`（O1：删 dataset.raw；N2：删 ensureSigNode）
-  - `src/bridge/remote-bridge.ts`（O3：timer 回调清 pendingText）
-  - `docs/requirements/057-audit-rectify-r2.md`（需求档案）
-- 验证状态：typecheck / test(978) / lint(0 error) / compile 全绿；二次子代理审计发现的真缺陷已修（R1 为 056 遗留的必改项）。
+  - `src/app/alert-window.ts`：showSwitchAlert 实现
+  - `src/ui/alert-window.html`：浮窗 UI
+  - `src/app/alert-preload.ts`：preload
+  - `src/app/entry.ts`（rate-limit-hit：L1217 起调 showSwitchAlert）
+  - `docs/requirements/058-switch-alert-window.md`（需求档案）
+- 验证状态：typecheck / test(978) / lint(0 error) / compile 全绿；impeccable mechanical detector 无警告；子代理审计的 6 项（1🔴+3🟡+2🔵）全部修复。
 
-## 审计足迹
-- v0.8.81（053）审计：发现手机端每帧全量回写 `dataset.raw` → O(n²) 未真正消除；bridge stop/error 丢尾帧；→ 056 修。
-- v0.8.82（054）审计：发现增量渲染标记与气泡脱钩（前缀巧合吞字）；`clearPendingBubble` 漏摘 thinkBody 光标；`cancelStreamRender` 空壳 → 056 修。
-- v0.8.83（055）审计：发现 rename-profile 缺"本窗口"校验；`update-window-name` 隐性截断；`ensureSigNode` 死代码 → 057 修。
-- v0.8.84（056）审计：**发现 056 的 B 修复未真正生效**（bridge flush 被 manager 节流取消）→ 057 修。
+## 审计足迹（4 轮）
+- v0.8.81（053）→ 发现手机端 dataset.raw 每帧全量 → O(n²) → 056 修
+- v0.8.82（054）→ 发现 harness 标记脱钩丢字 + thinkBody 光标残留 → 056 修
+- v0.8.83（055）→ 发现 rename 缺本窗口校验 + 死代码 → 057 修
+- v0.8.84（056）→ **发现 056 的 B 修复没真生效** → 057 修
+- v0.8.86（058）→ 审计 6 项（Enter 误切、switchingProfiles 泄漏、superseded 语义、多屏定位、TDZ、弃用注释）全修

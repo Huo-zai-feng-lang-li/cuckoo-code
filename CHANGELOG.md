@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [0.8.86] - 2026-10-16
+
+### Added
+- **限流自动切换改系统级浮窗告警**：此前限流触发自动切换前，向 harness 页面发 IPC 让 harness 自己渲染倒计时弹窗，但用户经常看不到（AI 页面盖住 / 窗口在后台 / 已切到别的应用）。改用独立 Electron BrowserWindow 浮窗：
+  - **屏幕右下角**独立窗口（无边框、透明、圆角、自绘阴影），**多屏下自动落在焦点窗口所在的显示器**；
+  - **alwaysOnTop** + 跨虚拟桌面可见，确保任何场景都看得到；
+  - **10 秒倒计时**（进度条 + 等宽大数字实时递减）；
+  - 按钮 **[取消自动切换]** / **[立即切换]**；键盘 **Esc / Enter 均为取消**（保守原则，防误触切换）；点 ✕ 或 Alt+F4 也视为取消；10 秒到点自动执行切换；
+  - 窗口内显示当前限流窗口名。
+  - 新增文件：`src/ui/alert-window.html` / `src/app/alert-preload.ts` / `src/app/alert-window.ts`（对外 API `showSwitchAlert(options) → Promise<'cancel' | 'switch-now' | 'timeout' | 'superseded'>`）。
+
+### Changed
+- **harness 内倒计时结构（`countdownBeforeAutoSwitch` / `harness-cancel-switch` / `pendingAutoSwitch`）标为已弃用**：代码保留以备将来复用为"温和提示"，但自动切换流程不再调用。harness-preload 侧同名通道一并保留为历史兼容。
+
+### Fixed
+- **自动切换在告警浮窗异常时不再卡死**：`rate-limit-hit` 里 `showSwitchAlert` 加 try/catch，异常时释放 `switchingProfiles`，避免该窗口的后续限流全部被 `reason:'in-progress'` 吞掉。
+- **多窗口同时限流时语义污染**：第二个告警顶替第一个时返回 `'superseded'` 而非 `'cancel'`，调用方据此不再误记"用户取消"日志。
+
 ## [0.8.85] - 2026-10-16
 
 ### Fixed

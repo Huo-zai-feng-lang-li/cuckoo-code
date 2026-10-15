@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="color-scheme" content="light dark" />
+<title>账号限流</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --bg-elev: #fbfbfd;
+    --border: rgba(16, 24, 40, 0.08);
+    --text: #16181d;
+    --text-2: #545a67;
+    --text-dim: #8a8f9b;
+    --warn: #e6a23c;
+    --warn-soft: rgba(230, 162, 60, 0.10);
+    --primary: #4d6bfe;
+    --primary-hover: #3b5bdb;
+    --primary-soft: rgba(77, 107, 254, 0.10);
+    --danger: #e5484d;
+    --surface: #f5f6f8;
+    --surface-hover: #eef0f4;
+    --shadow: 0 12px 40px rgba(16, 24, 40, 0.16), 0 2px 8px rgba(16, 24, 40, 0.08);
+    --mono: "SF Mono", "Consolas", "Menlo", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d;
+      --bg-elev: #1c1f26;
+      --border: rgba(255, 255, 255, 0.10);
+      --text: #eef1f6;
+      --text-2: #c0c6d2;
+      --text-dim: #8a90a0;
+      --warn: #f0b95a;
+      --warn-soft: rgba(240, 185, 90, 0.14);
+      --primary: #7b8fff;
+      --primary-hover: #9aa9ff;
+      --primary-soft: rgba(123, 143, 255, 0.16);
+      --danger: #ff6369;
+      --surface: rgba(255, 255, 255, 0.05);
+      --surface-hover: rgba(255, 255, 255, 0.09);
+      --shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: transparent;
+    overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+  }
+
+  .card {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    padding: 16px 18px 14px;
+    animation: slideIn .22s cubic-bezier(.22, .61, .36, 1);
+    overflow: hidden;
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(12px) scale(.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .icon-wrap {
+    width: 32px; height: 32px;
+    border-radius: 9px;
+    background: var(--warn-soft);
+    color: var(--warn);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .icon-wrap svg { width: 18px; height: 18px; }
+
+  .head-text { flex: 1; min-width: 0; padding-top: 2px; }
+  .title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.25;
+    letter-spacing: -.01em;
+  }
+  .subtitle {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 3px;
+    line-height: 1.4;
+  }
+
+  .close {
+    width: 24px; height: 24px;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    border-radius: 7px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background .15s, color .15s;
+  }
+  .close:hover { background: var(--surface-hover); color: var(--text); }
+  .close svg { width: 14px; height: 14px; }
+
+  .body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--text-2);
+    min-width: 0;
+  }
+  .row .lbl {
+    color: var(--text-dim);
+    flex-shrink: 0;
+    font-size: 11px;
+  }
+  .row .val {
+    flex: 1;
+    min-width: 0;
+    color: var(--text);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .row .val.target { color: var(--primary); }
+
+  .progress-wrap {
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .progress {
+    flex: 1;
+    height: 6px;
+    background: var(--surface);
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+  .progress-bar {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    background: linear-gradient(90deg, var(--warn), var(--primary));
+    border-radius: 3px;
+    transform-origin: left center;
+    transform: scaleX(1);
+    transition: transform .1s linear;
+    will-change: transform;
+  }
+  .countdown {
+    font-family: var(--mono);
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    min-width: 56px;
+    text-align: right;
+    line-height: 1;
+    letter-spacing: -.02em;
+  }
+  .countdown .unit { color: var(--text-dim); font-size: 11px; font-weight: 500; margin-left: 2px; }
+
+  .foot {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 14px;
+  }
+
+  .btn {
+    height: 34px;
+    padding: 0 16px;
+    border-radius: 9px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background .15s, border-color .15s, color .15s, transform .08s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn:active { transform: scale(.97); }
+
+  .btn-secondary {
+    background: var(--bg);
+    border-color: var(--border);
+    color: var(--text-2);
+  }
+  .btn-secondary:hover { background: var(--surface-hover); color: var(--text); border-color: transparent; }
+
+  .btn-primary {
+    background: var(--primary);
+    color: #fff;
+    box-shadow: 0 4px 12px -4px var(--primary);
+  }
+  .btn-primary:hover { background: var(--primary-hover); }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="head">
+      <div class="icon-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      </div>
+      <div class="head-text">
+        <div class="title">账号限流，即将自动切换</div>
+        <div class="subtitle">当前账号触发限流，正在切换到组内下一个窗口</div>
+      </div>
+      <button class="close" id="btn-close" aria-label="关闭" title="关闭（视为取消）">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="body">
+      <div class="row">
+        <span class="lbl">当前</span>
+        <span class="val" id="cur-name">—</span>
+      </div>
+      <div class="row">
+        <span class="lbl">切换到</span>
+        <span class="val target" id="target-name">组内其他窗口</span>
+      </div>
+      <div class="progress-wrap">
+        <div class="progress"><div class="progress-bar" id="bar"></div></div>
+        <div class="countdown"><span id="sec">10</span><span class="unit">秒</span></div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <button class="btn btn-secondary" id="btn-cancel">取消自动切换</button>
+      <button class="btn btn-primary" id="btn-now">立即切换</button>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+      var api = window.alertAPI;
+      var elCur = document.getElementById('cur-name');
+      var elTarget = document.getElementById('target-name');
+      var elSec = document.getElementById('sec');
+      var elBar = document.getElementById('bar');
+      var totalSec = 10;
+      var endAt = 0;
+      var rafId = null;
+
+      function tick() {
+        var remain = Math.max(0, endAt - Date.now());
+        var secLeft = Math.ceil(remain / 1000);
+        elSec.textContent = String(secLeft);
+        elBar.style.transform = 'scaleX(' + (remain / (totalSec * 1000)) + ')';
+        if (remain <= 0) { stop(); return; }
+        rafId = requestAnimationFrame(tick);
+      }
+      function stop() {
+        if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      }
+
+      function act(action) {
+        stop();
+        try { api.action(action); } catch (_) {}
+      }
+
+      document.getElementById('btn-cancel').addEventListener('click', function () { act('cancel'); });
+      document.getElementById('btn-now').addEventListener('click', function () { act('switch-now'); });
+      document.getElementById('btn-close').addEventListener('click', function () { act('cancel'); });
+      document.addEventListener('keydown', function (e) {
+        // 保守原则：Esc / Enter 均视为取消（Enter 在按钮焦点上会同时触发 keydown + click，
+        // 若 Enter=切换，在"取消"按钮上按 Enter 会误切换；一律 cancel 最安全）
+        if (e.key === 'Escape' || e.key === 'Enter') act('cancel');
+      });
+
+      if (api && api.onInit) {
+        api.onInit(function (data) {
+          if (!data) return;
+          elCur.textContent = data.currentName || '—';
+          elTarget.textContent = data.targetName || '—';
+          totalSec = Number(data.seconds) || 10;
+          endAt = Date.now() + totalSec * 1000;
+          elSec.textContent = String(totalSec);
+          tick();
+        });
+      }
+    })();
+  </script>
+</body>
+</html>
