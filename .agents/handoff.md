@@ -1,47 +1,53 @@
-# 最新接续状态 (2026-10-16 08:00)
+# 最新接续状态 (2026-10-16 09:30)
 
-## 核心进展
-- **059** Harness 卡"生成中"修复 → v0.8.87
+## 核心进展（本轮完整交付）
+- **059** Harness 卡"生成中" → v0.8.87
 - **060** 手机远程 think 同步 + 重连状态同步 → v0.8.88
-- **061** 手机端流式签名动效增强 → v0.8.89
-- **062** 手机端历史思考块无法点击展开（闭包引用全局 thinkEl）→ v0.8.90
-- **063** 手机远程卡"正在生成回复"（加权威状态 watchdog 兜底）→ v0.8.91
-- 用户此前要求"移除手机远程功能"，已改为**先修复**（删除改动已回滚，未提交）。
+- **061** 手机端流式签名动效 → v0.8.89
+- **062** 手机端历史思考块无法点击展开 → v0.8.90
+- **063** 手机远程卡"正在生成回复"（watchdog 兜底）→ v0.8.91
+- **064** 手机远程连接稳定性（隧道自愈 + 判死放宽 + 半开检测）→ v0.8.92
+- **065** 工具结果回传偶发失败加重试 → v0.8.93
 
-## 核心动机与背景 (Motivation & Background)
-用户手机远程真机测试反馈：
-- 实时返回正常、切后台回来连接快、不丢消息（060 生效）✅
-- 思考同步、自动折叠正常 ✅
-- 但发现：**思考块回复完后点不开**（062 修）、**一直显示"正在生成回复"与电脑端不同步**（063 修）。
-- 签名动效已加（061，✦ Cuckoo 流式期间脉动）。
-- 未定位：用户曾提"原版（非纯净）模式回复两句就停"，尚未复现。
+## 用户核心目标（本轮明确）
+1. **把手机远程做得好用**（像市场主流 App 一样丝滑），做到就**保留**、不做则移除。
+2. **绝不能影响 Harness**（项目最核心功能）——不能导致 Harness 不稳定/崩溃，更不能影响模型回复质量。
+3. **改一个工程就闭环**，不引入其他工程 bug。
 
-## 关键设计与实现 (Implementation & Decisions)
-### 062（思考块点击）
-- `ensureThinkEl` 点击监听器闭包引用全局 `thinkEl`，多轮后指向最新元素 → 所有历史块点击都操作最新。改：局部 `el` 捕获本次节点。
+## 三个工程（全部闭环）
 
-### 063（手机远程卡生成中）
-- **根因**：手机端清"生成中"只依赖 `ai-reply/ai-stop/ai-error` 三个终态事件；`remote-bridge.ts` 的 `if (!clean) return`（回复含工具块被剥空时不发 ai-reply）→ 终态丢失 → 永久 busy。手机端独缺 Harness 的 `ai-state` 权威心跳兜底。
-- **修复**：manager 加 watchdog（每 3s）——`windowState.isGenerating=false` + 无工具 + 静默超阈值 → `onAiStop` 主动收尾。
-- **审计修复**：
-  - #1 toolCount 无超时兜底 → 加 `toolLastAt`，工具阶段无活动超 5min 视为 tool-end 丢失强制收尾。
-  - #2 子代理污染 → `windowState` 拆成两个集合：`isGenerating`（仅主窗口，watchdog 用）+ `isGeneratingAny`（含子代理，窗口组用）；`setGenerating(pid, gen, isSubagent)`。
-  - #7 错位注释修正。
+### 工程① 手机远程断线（064）
+根因（explore 调研 + 复核）：
+- cloudflared 隧道崩溃后无自愈（onExit 只清状态不重启）
+- 手机后台冻结心跳 → 服务端 60s 判死
+- 半开连接静默丢消息
+修复：隧道代际号+闭包绑定进程的自动重启；服务端判死放宽到约 120s；客户端 isConnStale(130s) 检测。
+两轮审计的 R1/R2/R3 + 🔴-1/🔴-2 + 🟡 全修（含我自己引入的"onExit 抹掉新进程引用"真 bug）。
+
+### 工程② 工具结果回传偶发丢失（065）
+根因：回传链路失败时无重试（findInputArea null / setInputContent 失败 → 永久丢失）。
+修复：observer.ts 新增 sendToolResultWithRetry（退避 600ms，最多 3 次）。
+**关键决策**：审计发现"发送后校验 verifySend"有双发风险（工具重复执行）→ **回退**，只保留可检测失败的重试。
+
+### 工程③ Harness 影响核查
+结论：**零影响**（信心 9/10）。理由：
+- 060/061/062 只动 `src/remote/pwa/`（手机端），与 Harness 的 `harness.html` 是两套前端
+- 063 只给 `setGenerating` 多传 isSubagent 参数，与 harness IPC 事件转发解耦
+- window.ts 双集合拆分：isGenerating（仅主窗口，remote 用）/ isGeneratingAny（含子代理，窗口组用），消费者等价
+- 065 对 Harness 工具循环是**正向增强**（减少回传丢失）
+- 059-065 **均未触及** `src/session/` / `src/prompt/` → 提示词组装、上下文压缩、发送给模型的文本无变化
 
 ## 待办事项 (Next Steps)
-- [ ] **真机验证 v0.8.91**：手机端发消息 → 正常收尾；模拟终态丢失 → 8s 内自动收尾；父窗口生成中同时开空闲子代理 → 不误停。
-- [ ] **定位"原版模式回复两句就停"**（用户曾反馈，未复现）。
-- [ ] 用户仍可能想**移除手机远程功能**——待明确。
+- [ ] **真机验证**：手机远程断线恢复、回传重试、Harness 正常
+- [ ] **"原版模式回复两句就停"**：用户反馈偶发 1-2 次，可能是 065 修的回传问题；若再复现需真机日志
+- [ ] **手机远程去留**：取决于好用程度，用户观察后决定
 
 ## 关键上下文
 - 目录: D:\Desktop\Super-File\cuckoo-code
-- 主分支: master（v0.8.91）
-- 关键文件：`src/remote/manager.ts`（watchdog）、`src/app/window.ts`（双集合）、`src/app/ipc/harness.ts`（setGenerating 传 isSubagent）、`src/app/entry.ts`（窗口组用 isGeneratingAny）、`src/remote/pwa/app.js`（think 块）
-- 验证状态：typecheck / test(978) / lint(0 error) / compile 全绿。
+- 主分支: master（v0.8.93）
+- 验证状态：typecheck / test(978) / lint(0 error) / compile 全绿
 
-## 审计足迹
-- v0.8.87（059）：Harness 卡生成中
-- v0.8.88（060）：手机远程 think 同步 + 重连
-- v0.8.89（061）：签名动效
-- v0.8.90（062）：思考块点击闭包修复
-- v0.8.91（063）：手机远程卡生成中 watchdog 兜底
+## 审计足迹（本轮）
+- 064：两轮子代理审计（隧道代际号方案）
+- 065：一轮子代理审计（推翻 verifySend 方案）
+- 工程③：arch-guard 专项审计（Harness 零影响）
