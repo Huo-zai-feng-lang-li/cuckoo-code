@@ -513,13 +513,6 @@
     s.innerHTML = SIG_HTML;
     return s;
   }
-  /** 确保消息末尾有签名节点（清理重复，保证在最后） */
-  function ensureSigNode(el) {
-    if (!el) return;
-    el.querySelectorAll('.msg-sig').forEach((n) => { if (n !== el.lastChild) n.remove(); });
-    if (!el.querySelector('.msg-sig')) el.appendChild(createSigNode());
-  }
-
   function startStreaming() {
     streamingEl = document.createElement('div');
     streamingEl.className = 'msg ai streaming';
@@ -553,10 +546,8 @@
       streamNode.appendChild(document.createTextNode(delta));
       streamingText += delta;
     }
-    // 注：流式期间不写 dataset.raw（避免每帧全量序列化 → 累积 O(n²)）。
-    //     复制/收尾由 finishStreaming 用全量写一次即可，无遗漏。
-    //     增量只 appendChild 到 streamNode，未改 streamingEl 的直接子节点顺序
-    //     → sig 恒在末位，无需每帧 ensureSigNode（该函数留给 startStreaming/finishStreaming）。
+    // 注：流式期间只 appendChild 到 streamNode，未改 streamingEl 的直接子节点顺序 → sig 恒在末位。
+    //     收尾由 finishStreaming 用全量渲染一次。
     scroll();
   }
 
@@ -565,7 +556,6 @@
     if (!streamingEl) {
       if (finalText) addAi(finalText);
     } else if (finalText) {
-      streamingEl.dataset.raw = finalText;
       streamingEl.innerHTML = renderMd(finalText);
       streamingEl.classList.remove('streaming'); // 收尾还原正式气泡样式
       // 尾部签名（✦ Cuckoo）：innerHTML 覆盖后补上，保证在正文末尾
@@ -586,7 +576,6 @@
     if (!text) return;
     const el = document.createElement('div');
     el.className = 'msg ai';
-    el.dataset.raw = text;
     el.innerHTML = renderMd(text);
     // 尾部签名（✦ Cuckoo）：innerHTML 后补上
     el.appendChild(createSigNode());

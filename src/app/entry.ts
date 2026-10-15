@@ -1405,9 +1405,11 @@ ipcMainForProfile.handle('set-profile-auto-open', async (_event: any, { profileI
 // 长度上限：防止超长名污染 profile-list.json / 标题 / 列表 DOM
 const RENAME_NAME_MAX = 50;
 ipcMainForProfile.handle('rename-profile', async (event: any, { profileId, name }: any) => {
-  // 纵深防御：只允许壳页面（含窗口上下文）调用，避免任意渲染进程改他人窗口名
+  // 纵深防御 1：只允许壳页面（含窗口上下文）调用
   const ctx = windowState.getContextByWebContents(event.sender);
   if (!ctx) return { success: false, error: '非法来源' };
+  // 纵深防御 2：只允许改本窗口自身的名字（拒绝跨窗口改名）
+  if (ctx.profileId !== profileId) return { success: false, error: '非法来源（不允许改其他窗口）' };
   if (!profileId) return { success: false, error: '缺少 profileId' };
   const trimmed = String(name == null ? '' : name).trim();
   if (!trimmed) return { success: false, error: '名称不能为空' };
@@ -1443,6 +1445,7 @@ ipcMainForProfile.handle('open-profile-window', async (_event: any, { profileId 
 });
 
 // 更新窗口名称（提取到 DeepSeek 用户信息后）
+// 注：名字统一上限 50 字（profile.ts updateProfileName 内 slice），用户重命名与平台提取共用约束
 ipcMainForProfile.handle('update-window-name', async (event: any, { displayName }: any) => {
   if (!displayName || !displayName.trim()) return { success: false };
   const ctx = windowState.getContextByWebContents(event.sender);

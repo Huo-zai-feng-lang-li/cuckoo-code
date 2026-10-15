@@ -60,5 +60,6 @@
 | 054 | performance | [harness 流式渲染 O(n²) + 历史持久化全量同步写卡顿](./054-harness-perf.md) | done | perf/054-harness-perf | 2026-10-15 |
 | 055 | fix | [窗口组下拉配色 + 窗口名编辑 + 手机端 AI 尾部签名](./055-window-rename-and-pwa-signature.md) | done | fix/055-window-rename-and-pwa-signature | 2026-10-15 |
 | 056 | fix | [审计整改：053 dataset.raw O(n²) + 054 增量标记脱钩丢字](./056-audit-rectify-perf-cache.md) | done | fix/056-audit-rectify-perf-cache | 2026-10-16 |
+| 057 | fix | [二次审计整改：056 R1（stop/error 尾帧仍丢）+ 055 小瑕疵](./057-audit-rectify-r2.md) | done | fix/057-audit-rectify-r2 | 2026-10-16 |
 
-共 55 个需求。
+共 56 个需求。
