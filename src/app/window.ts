@@ -33,19 +33,32 @@ function emitWindowsChanged(): void {
 /**
  * profileId → 是否正在生成（AI 页面忙闲）。
  * 数据源：bridge 每 2 秒上报的 ai-state 事件。
- * 用途：窗口组切换时跳过"正在跑任务"的窗口，避免把并行任务掐断。
+ * 主窗口与子代理**分开存储**：子代理与父窗口共用 profileId，若混在一起，
+ * 空闲子代理上报 false 会覆盖父窗口的 true（反之亦然），污染两类消费者：
+ *   - 窗口组切换需要"含子代理"的聚合状态（避免切走跑子代理的窗口）；
+ *   - 远程 watchdog 需要"仅主窗口"的状态（子代理在跑不代表主对话未结束）。
  */
-const generatingProfiles = new Set<string>();
+const generatingProfiles = new Set<string>();        // 主窗口生成中
+const generatingSubagents = new Set<string>();       // 子代理生成中
 
-function setGenerating(profileId: any, generating: boolean): void {
+function setGenerating(profileId: any, generating: boolean, isSubagent?: boolean): void {
   if (!profileId) return;
   const key = String(profileId);
-  if (generating) generatingProfiles.add(key);
-  else generatingProfiles.delete(key);
+  const set = isSubagent ? generatingSubagents : generatingProfiles;
+  if (generating) set.add(key);
+  else set.delete(key);
 }
 
+/** 主窗口是否正在生成（远程 watchdog 用；不受子代理干扰） */
 function isGenerating(profileId: any): boolean {
   return !!profileId && generatingProfiles.has(String(profileId));
+}
+
+/** 该窗口（含子代理）是否有任务在跑（窗口组切换用） */
+function isGeneratingAny(profileId: any): boolean {
+  if (!profileId) return false;
+  const key = String(profileId);
+  return generatingProfiles.has(key) || generatingSubagents.has(key);
 }
 
 function addWindow(win: any, profileId: any, providerId: any, sessionStore: any, view: any, isSubagent?: boolean): void {
@@ -54,6 +67,7 @@ function addWindow(win: any, profileId: any, providerId: any, sessionStore: any,
   win.on('closed', () => {
     windows.delete(win.id);
     generatingProfiles.delete(String(profileId));
+    generatingSubagents.delete(String(profileId));
     if (lastActiveWindowId === win.id) {
       const remaining = Array.from(windows.keys());
       lastActiveWindowId = remaining.length > 0 ? remaining[remaining.length - 1] : null;
@@ -150,6 +164,7 @@ export {
   removeWindow,
   setGenerating,
   isGenerating,
+  isGeneratingAny,
   getWindowContext,
   getContextByWebContents,
   getViewOf,

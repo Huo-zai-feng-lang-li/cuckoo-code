@@ -287,8 +287,9 @@ function registerHarnessIpc(): void {
     const ctx = findContext(event.sender);
     if (!ctx) return { success: false };
     // 记录窗口忙闲（供窗口组切换跳过忙碌窗口，避免掐断并行任务）
+    // 传 isSubagent：window 层分开存储"主窗口生成"与"子代理生成"，供不同消费者使用
     if (payload && payload.type === 'ai-state') {
-      try { windowState.setGenerating(ctx.profileId, !!payload.generating); } catch (_) { /* ignore */ }
+      try { windowState.setGenerating(ctx.profileId, !!payload.generating, !!ctx.isSubagent); } catch (_) { /* ignore */ }
     }
     // C3：把 AI 事件广播给已加载的 DSH 插件（事件总线）
     try {

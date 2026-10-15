@@ -64,5 +64,6 @@
 | 058 | feature | [限流自动切换改系统级浮窗告警（原 harness 内弹窗看不见）](./058-switch-alert-window.md) | done | feat/058-switch-alert-window | 2026-10-16 |
 | 059 | fix | [Harness 卡"生成中"—— aiGenerating 置位后无可靠复位时机](./059-harness-busy-stuck.md) | done | fix/059-harness-busy-stuck | 2026-10-16 |
 | 060 | fix | [手机远程修复：思考同步 + 自动折叠 + 重连状态同步 + remote-mode 广播](./060-remote-think-sync.md) | done | fix/060-remote-think-sync | 2026-10-16 |
+| 063 | fix | [手机远程卡"正在生成回复"—— 缺少权威生成状态兜底](./063-remote-busy-stuck.md) | done | fix/063-remote-busy-stuck | 2026-10-16 |
 
-共 59 个需求。
+共 60 个需求。

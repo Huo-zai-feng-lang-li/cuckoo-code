@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.8.91] - 2026-10-16
+
+### Fixed
+- **手机远程端卡"正在生成回复"（与电脑端不同步）**：手机端清"生成中"只依赖 `ai-reply`/`ai-stop`/`ai-error` 三个终态事件；当一轮回复含工具块被 `stripBlocks` 剥空（`remote-bridge.ts` `if (!clean) return`）或终态丢失时，无权威心跳兜底 → 永久 busy。
+  - **修复**：manager 新增 watchdog（每 3s）——对每个活跃流式状态，若网页已停止生成（`windowState.isGenerating=false`）且静默超阈值，则主动收尾。
+  - `StreamState` 加 `toolCount`/`lastAt`/`toolLastAt`；工具阶段无活动超 5 分钟视为 `tool-end` 丢失，强制收尾（防 toolCount 卡死让 watchdog 失效）。
+- **子代理窗口污染父窗口生成状态**：子代理与父窗口共用 `profileId`，空闲子代理上报 `ai-state(false)` 会覆盖父窗口的 `true`（反之亦然），污染两类消费者。修复：`windowState` 把"主窗口生成"与"子代理生成"**分开存储**——新增 `isGeneratingAny`（含子代理，供窗口组切换用），`isGenerating` 收窄为"仅主窗口"（供 watchdog 用）。
+
 ## [0.8.90] - 2026-10-16
 
 ### Fixed
