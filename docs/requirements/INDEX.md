@@ -57,5 +57,6 @@
 | 051 | refactor | [统一技能/MCP/规则目录到 .agents/ 标准规范并移除旧路径回退](./051-unify-agents-spec.md) | done | refactor/051-unify-agents-spec | 2026-10-15 |
 | 052 | feature | [窗口切换迁移携带目标/计划 + 启动提示](./052-switch-migrate-goal-plan.md) | done | feat/052-switch-migrate-goal-plan | 2026-10-15 |
 | 053 | performance | [远程手机端性能：流式全量广播/渲染 O(n²) + serveStatic 同步 IO](./053-remote-stream-perf.md) | done | perf/053-remote-stream-perf | 2026-10-15 |
+| 054 | performance | [harness 流式渲染 O(n²) + 历史持久化全量同步写卡顿](./054-harness-perf.md) | done | perf/054-harness-perf | 2026-10-15 |
 
-共 52 个需求。
+共 53 个需求。

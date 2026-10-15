@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.8.82] - 2026-10-15
+
+### Performance
+- **纯净对话模式（Harness）流式渲染消除 O(n²)**：此前 onStream 每帧携带「全量正文/思考」，每帧对**全文**执行 `renderMarkdown`（2 次全局正则 + marked.parse + 1 次全局正则）+ `innerHTML` 整棵子树重建，长回复（>2000 字）末端每秒数十次全量解析 → 纯净模式界面卡顿。改为**增量纯文本 append**：非 finished 帧只把新增部分 `appendChild(createTextNode)`，不做 markdown 解析、不重建 DOM；结束帧才全量 `renderMarkdown` 一次（保证收尾正确 + 光标消失）。异常重排（全量不以已渲染为前缀）走清空重来兜底。前缀校验用 `String.prototype.startsWith`（避免每帧 `slice` 分配）。
+- **Harness 历史持久化改节流合并**：此前 `pushHist` 每次（每次回复 / 工具 start/end / 系统消息）都对**整个 history 数组**（最多 400 条 × 6000 字符/字段 ≈ 数 MB）做 `JSON.stringify` + `localStorage.setItem`（同步 API），阻塞渲染进程主线程。改为 `scheduleSaveHist()`（500ms 窗口合并），非关键路径（pushHist / 工具 end）走节流；关键路径（会话切换 / 新对话 / 删除消息 / beforeunload）保留立即落盘。
+
+### Fixed
+- **Harness 流式增量渲染的 3 处缺陷**（首轮实现审计发现）：
+  - **占位三点残留**：增量 append 不会自动覆盖 pending-dots 占位，首个 think/text 到达时显式移除。
+  - **光标残留 thinkBody**：finished 帧只覆盖 `cur.body`、不触及 `thinkBody`，共享光标节点会残留在思考体里闪烁；`resetStreamRender` 现在会真正从 DOM 移除光标。
+  - **跨轮标记未复位**：终态为 `assistant` / `tool 收尾` 时不走 finished 分支，`_streamRenderedText/_streamRenderedThink` 带入下一轮；`onAssistantDone` 及无 cur 分支补 `resetStreamRender()`。
+
 ## [0.8.81] - 2026-10-15
 
 ### Performance
