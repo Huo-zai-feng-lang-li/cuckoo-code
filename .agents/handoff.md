@@ -1,4 +1,4 @@
-# 最新接续状态 (2026-10-16 15:30)
+# 最新接续状态 (2026-10-16 03:38)
 
 ## 核心进展
 - **手机远程流式渲染优化** → v0.8.99（`src/remote/pwa/app.js` + `style.css` + `remote-bridge.ts` + `manager.ts`）：流式期间改低频 markdown 渲染（~200ms），端到端延迟 240→120ms。
