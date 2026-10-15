@@ -47,10 +47,19 @@ export function initRemoteBridge(): void {
   //    注意：跳过 finished 收尾帧（它带全文，会与 onInterceptedResponse 的 ai-reply 重复 → 双气泡）
   let streamTimer: any = null;
   let pendingText = '';
-  /** 清理流式节流状态：任意终帧（reply/stop/error）到达时必须调用，
-   *  否则节流窗口内排队的幽灵帧会在终帧之后上报，导致手机端重复 ai-start、生成幽灵气泡。 */
-  function stopStreamThrottle(): void {
+  /** 清理流式节流状态。
+   *  flushText=true：先把节流窗口内未上报的最后一批文本发出去（stop/error 无后续全量帧兜底，必须 flush）；
+   *  flushText=false：只清 timer/pending（reply 有全量帧兜底，避免重复上报）。
+   *  调用点语义：
+   *   - onInterceptedResponse（ai-reply）：有全量 → false（避免与全文重复）
+   *   - onUserStop / onAiError：无全量 → true（保尾帧）
+   */
+  function stopStreamThrottle(flushText: boolean): void {
     if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
+    if (flushText && enabled && pendingText) {
+      const clean = stripBlocks(pendingText);
+      if (clean) { try { report({ type: 'ai-stream', text: clean }); } catch (_) { /* ignore */ } }
+    }
     pendingText = '';
   }
   onStream((ev: any) => {
@@ -66,7 +75,7 @@ export function initRemoteBridge(): void {
 
   // 2. AI 回复完成 → 上报（剥离工具代码块）
   onInterceptedResponse((text: string) => {
-    stopStreamThrottle(); // 先清幽灵帧，再上报终帧（顺序不能反）
+    stopStreamThrottle(false); // 有全量帧，不 flush（防重复）
     if (!enabled || !text) return;
     const clean = stripBlocks(text);
     if (!clean) return;
@@ -75,14 +84,14 @@ export function initRemoteBridge(): void {
 
   // 3. 用户停止生成（网页点停止或收到停止信号）→ 上报收尾
   onUserStop(() => {
-    stopStreamThrottle();
+    stopStreamThrottle(true); // 无后续全量帧，先 flush 保尾
     if (!enabled) return;
     report({ type: 'ai-stop' });
   });
 
   // 4. AI 请求失败（网络/限流报错）→ 上报收尾
   onAiError((detail: any) => {
-    stopStreamThrottle();
+    stopStreamThrottle(true); // 同上，保尾
     if (!enabled) return;
     report({ type: 'ai-error', error: (detail && detail.text) || '请求失败' });
   });

@@ -553,9 +553,10 @@
       streamNode.appendChild(document.createTextNode(delta));
       streamingText += delta;
     }
-    streamingEl.dataset.raw = streamingText; // dataset 需保留全量（复制/后续渲染用）
-    // 注：增量只 appendChild 到 streamNode，未改 streamingEl 的直接子节点顺序
-    // → sig 恒在末位，无需每帧 ensureSigNode（该函数留给 startStreaming/finishStreaming）
+    // 注：流式期间不写 dataset.raw（避免每帧全量序列化 → 累积 O(n²)）。
+    //     复制/收尾由 finishStreaming 用全量写一次即可，无遗漏。
+    //     增量只 appendChild 到 streamNode，未改 streamingEl 的直接子节点顺序
+    //     → sig 恒在末位，无需每帧 ensureSigNode（该函数留给 startStreaming/finishStreaming）。
     scroll();
   }
 

@@ -1672,9 +1672,8 @@
    * "仅思考 / 仅工具"回合漏清，三点永久残留在历史里（曾致历史消息恒显"生成中"三点）。
    */
   function clearPendingBubble() {
-    if (!cur) return;
+    if (!cur) { resetStreamRender(); return; }
     var dots = cur.body ? cur.body.querySelector('.pending-dots') : null;
-    var cursor = cur.body ? cur.body.querySelector('.streaming-cursor') : null;
     var hasThink = false, hasText = false;
     try { hasThink = !!(cur.thinkBody && cur.thinkBody.textContent && cur.thinkBody.textContent.trim()); } catch (e) { /* ignore */ }
     try { hasText = !!(cur.body && cur.body.textContent && cur.body.textContent.trim()); } catch (e) { /* ignore */ }
@@ -1684,9 +1683,10 @@
       if (cur.el && cur.el.parentNode) cur.el.parentNode.removeChild(cur.el); // 纯占位：整块移除
     } else {
       if (dots && dots.parentNode) dots.parentNode.removeChild(dots);
-      if (cursor && cursor.parentNode) cursor.parentNode.removeChild(cursor);
     }
+    // 光标清理由 resetStreamRender 统一负责（从实际父节点摘除，含 thinkBody）
     cur = null;
+    resetStreamRender();
   }
 
   function cancelGoalNudge() {
@@ -2503,11 +2503,15 @@
   //   - 异常重排（全量不以已渲染为前缀）：清空重来（防御性兜底）。
   //   - 会话切换 / resetConversation：调用 resetStreamRender 复位渲染标记。
   var _streamRenderedText = '';   // 已渲染的正文全量（用于计算 delta）
+  var _streamRenderedTextBody = null; // 正文标记归属的 body（换气泡时作废）
   var _streamRenderedThink = '';  // 已渲染的思考全量
+  var _streamRenderedThinkBody = null; // 思考标记归属的 body
   var _streamCursorEl = null;     // 光标节点（append 时保持在末尾）
   function resetStreamRender() {
     _streamRenderedText = '';
+    _streamRenderedTextBody = null;
     _streamRenderedThink = '';
+    _streamRenderedThinkBody = null;
     // 若光标仍在 DOM（如 finished 只覆盖 cur.body 未触及 thinkBody），必须移除，
     // 否则会残留在 thinkBody 里（用户展开思考会看到闪烁光标）
     if (_streamCursorEl && _streamCursorEl.parentNode) {
@@ -2531,14 +2535,19 @@
     if (fullText) body.appendChild(document.createTextNode(fullText));
     ensureStreamCursor(body);
   }
-  /** 追加 text 的新增部分到 body（增量 appendChild） */
+  /** 追加 text 的新增部分到 body（增量 appendChild）。
+   *  标记与 body 绑定：body 换了 → 旧标记作废（避免新气泡以旧文本为前缀时吞字）。 */
   function appendStreamBody(body, full, kind) {
-    // 异常路径：全量不以已渲染为前缀 → 清空重来（防串行错乱）
-    var rendered = kind === 'think' ? _streamRenderedThink : _streamRenderedText;
+    var rendered;
+    if (kind === 'think') {
+      rendered = (_streamRenderedThinkBody === body) ? _streamRenderedThink : '';
+    } else {
+      rendered = (_streamRenderedTextBody === body) ? _streamRenderedText : '';
+    }
+    // 异常路径：body 换了 / 全量不以已渲染为前缀 → 清空重来
     if (full.length < rendered.length || !full.startsWith(rendered)) {
-      // 回退/重排：只能整段覆盖
-      if (kind === 'think') { body.textContent = ''; _streamRenderedThink = ''; }
-      else { replaceStreamBody(body, ''); _streamRenderedText = ''; }
+      if (kind === 'think') { body.textContent = ''; _streamRenderedThink = ''; _streamRenderedThinkBody = body; }
+      else { replaceStreamBody(body, ''); _streamRenderedText = ''; _streamRenderedTextBody = body; }
       rendered = '';
     }
     var delta = full.slice(rendered.length);
@@ -2547,18 +2556,17 @@
     if (kind === 'think') {
       body.appendChild(node);
       _streamRenderedThink = full;
+      _streamRenderedThinkBody = body;
       ensureStreamCursor(body);
     } else {
       // 正文：把光标先摘掉，append 文本，再把光标补到末尾
       if (_streamCursorEl && _streamCursorEl.parentNode === body) body.removeChild(_streamCursorEl);
       body.appendChild(node);
       _streamRenderedText = full;
+      _streamRenderedTextBody = body;
       ensureStreamCursor(body);
     }
   }
-
-  // 兼容旧 API（保留函数名，避免其它地方引用报错；实际已不用）
-  function cancelStreamRender() { resetStreamRender(); }
 
   // 流式更新：think/text 均为全量快照
   function onStream(think, text, finished) {
@@ -3129,6 +3137,7 @@
     if (!text && files.length === 0 && hints.length === 0) return;
     clearAbortSuppression(); // 新任务：解除中止后的抑制窗口
     resetPlanDrive(); // 新任务：重置计划驱动轮数
+    resetStreamRender(); // 新任务：复位上一轮可能残留的流式标记（防前缀巧合吞字）
     hideSlashMenu();
     input.value = '';
     input.style.height = 'auto';
@@ -3281,6 +3290,9 @@
     markAborted(); // 先清工具计数：否则 setStatus 后按钮仍会因"工具在跑"保持停止态
     setStatus('就绪', 'ready');
     cancelGoalNudge();
+    // 显式复位流式渲染标记：中止后可能不再收到 onAssistantDone（无 final 收尾），
+    // 若不复位，下一轮新建气泡会带着旧标记，前缀巧合下吞字
+    resetStreamRender();
     var hadGoal = !!(goal && !goal.done);
     // 运行中按停止 = 退出目标（清掉目标条，不留半死状态）；已完成的目标条保留
     if (hadGoal) stopGoal('已停止生成，目标自动推进已一并退出（可 /goal 重新设定）');
