@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.8.81] - 2026-10-15
+
+### Performance
+- **远程手机端流式链路消除 O(n²)**：此前手机远程对话的流式推送与渲染全线按「全量覆盖」设计，长回复（>2000 字）下性能随文本长度平方级放大——电脑端每 100ms 广播**整个累积文本**（总出站量 ≈ L·M/2，经 Cloudflare 隧道带宽被放大数十倍），手机端每帧对**全文**执行 `markdown 解析 + XSS 消毒 + innerHTML 整棵子树重建`，卡顿、发烫、光标闪烁。本次改为**增量协议**：
+  - **主进程（`src/remote/manager.ts`）**：流式广播由全量 `text` 改为 `delta` + `reset` 标记（`StreamState` 新增 `sent` 字段记录已发送文本；以 `startsWith` 判断可增量则发新增部分，否则 `reset=true` 发全文让手机端重来）。
+  - **手机端（`src/remote/pwa/app.js`）**：流式期间改为**纯文本增量追加**（`appendChild(createTextNode(delta))`），不再每帧 markdown 解析 + DOM 重建；结束帧（`ai-reply`）才用全量做一次 markdown 渲染 + 代码块装饰。流式期间为纯文本、结束时补齐样式，是性能换体验的明确取舍。
+  - **bridge（`src/bridge/remote-bridge.ts`）**：`onStream` 回调加 ~100ms 节流，避免每个 token 事件都对全文跑 `stripBlocks`（6 次正则）占满 AI 页面主线程。
+- **serveStatic 异步化（`src/remote/server.ts`）**：PWA 静态资源改 `fs.promises.stat/readFile`，不再用 `readFileSync` 阻塞 Electron 主进程事件循环。
+
+### Fixed
+- **远程流式幽灵帧致手机端气泡卡死**：bridge 侧流式节流定时器在终帧（reply/stop/error）到达时未清理，节流窗口内排队的最后一帧会在终帧之后上报 → 主进程误判新一轮 `ai-start` → 手机端产生僵尸气泡且发送按钮永久禁用。修复：三个终帧回调入口统一调用 `stopStreamThrottle()`，并让手机端 `ai-start` 先移除可能残留的旧流式气泡。
+
 ## [0.8.80] - 2026-10-15
 
 ### Added
