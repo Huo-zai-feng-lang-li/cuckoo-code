@@ -2607,6 +2607,9 @@
         // 收尾帧：全量 renderMarkdown 一次（去掉光标）
         cur.body.innerHTML = renderMarkdown(text);
         resetStreamRender();
+        // 标记已渲染：供 onAssistantDone 的去重分支识别（否则同一条回复会被
+        // 全量 renderMarkdown 渲染第二次 = KaTeX+marked+DOM重建 ×2，长回复收尾卡顿主因）
+        lastDoneText = text.trim();
       } else {
         appendStreamBody(cur.body, text, 'text');
       }

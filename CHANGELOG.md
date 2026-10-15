@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.8.97] - 2026-10-16
+
+### Fixed
+- **Harness 流式收尾卡顿（同一条回复被全量渲染两次）**：纯净模式下流式结束、markdown 突然变格式那会的卡顿。根因：同一条回复被 `renderMarkdown`（KaTeX + marked + innerHTML 重建）跑了两次——`onStream(finished)` 收尾帧一次 + `onAssistantDone`（assistant-done 事件）又一次；`onAssistantDone` 本有文本去重，但 finished 帧未更新 `lastDoneText` → 去重不生效。修复：finished 帧渲染后标记 `lastDoneText`，让 assistant-done 去重命中、跳过重复渲染。
+  - 去重命中取决于两处文本一致（常见情况命中；工具块边界不一致时安全退化为渲染两次，**不丢内容**）。
+
 ## [0.8.96] - 2026-10-16
 
 ### Fixed
