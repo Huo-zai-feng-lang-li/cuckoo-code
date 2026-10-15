@@ -28,8 +28,9 @@
 
   // 当前展示窗口（多窗口隔离：只渲染该 profileId 的消息）
   let currentProfileId = '';
-  // 当前流式气泡
+  // 当前流式气泡（streamingEl = 气泡容器；streamNode = 内部纯文本容器；streamingText = 累积文本）
   let streamingEl = null;
+  let streamNode = null;
   let streamingText = '';
   // 是否在执行（切换 发送/停止 按钮）
   let executing = false;
@@ -270,15 +271,18 @@
         break;
       case 'ai-start':
         if (!isMyProfile(msg.profileId)) break;
+        // 防御性：异常顺序下可能残留旧流式气泡，先移除避免僵尸 DOM 累积
+        if (streamingEl) { try { streamingEl.remove(); } catch {} }
         clearOrphanCursor();
         showExec('正在生成回复…');
         setExecuting(true);
         streamingText = '';
         streamingEl = null;
+        streamNode = null;
         break;
       case 'ai-stream':
         if (!isMyProfile(msg.profileId)) break;
-        appendStreaming(msg.text || '');
+        appendStreaming(msg.delta || '', !!msg.reset);
         break;
       case 'ai-reply':
         if (!isMyProfile(msg.profileId)) break;
@@ -327,6 +331,7 @@
   function resetView() {
     messages.innerHTML = '';
     streamingEl = null;
+    streamNode = null;
     streamingText = '';
     hideExec();
     setExecuting(false);
@@ -508,8 +513,14 @@
 
   function startStreaming() {
     streamingEl = document.createElement('div');
-    streamingEl.className = 'msg ai';
-    streamingEl.innerHTML = '<span class="cursor"></span>';
+    streamingEl.className = 'msg ai streaming';
+    // 内部结构：纯文本容器（流式期间 appendChild 文本）+ 末尾光标
+    streamNode = document.createElement('span');
+    streamNode.className = 'stream-text';
+    streamingEl.appendChild(streamNode);
+    const cursor = document.createElement('span');
+    cursor.className = 'cursor';
+    streamingEl.appendChild(cursor);
     streamingText = '';
     messages.appendChild(streamingEl);
     checkEmptyState();
@@ -517,12 +528,25 @@
     scroll();
   }
 
-  function appendStreaming(full) {
-    if (!full) return;
+  /**
+   * 流式增量追加（性能关键路径）：
+   *  - reset=true：服务端 strip 结果回退/重排 → 清空文本重新累积
+   *  - 否则：把 delta 作为纯文本 appendChild（不做 markdown 解析、不重建 DOM）
+   * 流式期间为纯文本（快速），结束帧由 finishStreaming 用全量做一次 markdown 渲染。
+   */
+  function appendStreaming(delta, reset) {
     if (!streamingEl) startStreaming();
-    streamingText = full;
-    streamingEl.dataset.raw = full;
-    streamingEl.innerHTML = renderMd(streamingText) + '<span class="cursor"></span>';
+    if (reset) {
+      // 服务端 strip 结果回退/重排：清空重来（全量覆盖一次）
+      streamNode.textContent = delta || '';
+      streamingText = delta || '';
+    } else {
+      if (!delta) return;
+      // 增量挂文本节点，不重设 textContent（避免每帧 O(n) 覆盖 → 累积 O(n²)）
+      streamNode.appendChild(document.createTextNode(delta));
+      streamingText += delta;
+    }
+    streamingEl.dataset.raw = streamingText; // dataset 需保留全量（复制/后续渲染用）
     scroll();
   }
 
@@ -533,12 +557,14 @@
     } else if (finalText) {
       streamingEl.dataset.raw = finalText;
       streamingEl.innerHTML = renderMd(finalText);
+      streamingEl.classList.remove('streaming'); // 收尾还原正式气泡样式
       decorateContent(streamingEl);
       attachActions(streamingEl, finalText);
     } else {
       streamingEl.remove();
     }
     streamingEl = null;
+    streamNode = null;
     streamingText = '';
     checkEmptyState();
     scroll();
@@ -665,6 +691,7 @@
     clearBtn.addEventListener('click', () => {
       messages.innerHTML = '';
       streamingEl = null;
+      streamNode = null;
       streamingText = '';
       checkEmptyState();
       updateScrollBtn();

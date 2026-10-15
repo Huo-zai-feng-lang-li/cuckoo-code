@@ -22,13 +22,14 @@ import { startTunnel, stopTunnel, getTunnelStatus } from './tunnel.js';
 /** 流式节流：100ms 推送一次。注意 onStream 的 text 是「全量累积文本」，故直接覆盖。 */
 const STREAM_FLUSH_MS = 100;
 
-/** 每窗口独立的流式状态（防多窗口串扰） */
-interface StreamState { text: string; timer: any; active: boolean; }
+/** 每窗口独立的流式状态（防多窗口串扰）。
+ *  text = 最新全量累积文本；sent = 上次已广播出去的文本（用于计算 delta）。 */
+interface StreamState { text: string; sent: string; timer: any; active: boolean; }
 const streamStates = new Map<string, StreamState>();
 
 function getStreamState(profileId: string): StreamState {
   let s = streamStates.get(profileId);
-  if (!s) { s = { text: '', timer: null, active: false }; streamStates.set(profileId, s); }
+  if (!s) { s = { text: '', sent: '', timer: null, active: false }; streamStates.set(profileId, s); }
   return s;
 }
 
@@ -146,13 +147,25 @@ function selectProfile(profileId: string): void {
   targetProfileId = profileId || '';
 }
 
-/** 节流刷新某窗口的流式文本（全量） */
+/** 节流刷新某窗口的流式文本（增量 delta）。
+ *  全量以 sent 为前缀 → 只发新增部分（reset=false）；
+ *  否则（strip 结果回退/重排，如工具块被剔除）→ 发全文并置 reset=true 让手机端清空重来。 */
 function flushStream(profileId: string): void {
   const s = streamStates.get(profileId);
   if (!s) return;
   s.timer = null;
   if (!s.text) return;
-  remoteServer.broadcast({ type: 'ai-stream', profileId, text: s.text });
+  let delta: string;
+  let reset = false;
+  if (s.text.startsWith(s.sent)) {
+    delta = s.text.slice(s.sent.length);
+  } else {
+    delta = s.text;
+    reset = true;
+  }
+  s.sent = s.text;
+  if (!delta && !reset) return;
+  remoteServer.broadcast({ type: 'ai-stream', profileId, delta, reset });
 }
 
 /** 收到流式文本（onStream 给的是全量累积文本，直接覆盖） */
@@ -162,6 +175,7 @@ function onAiStream(text: string, profileId: string): void {
   const s = getStreamState(pid);
   if (!s.active) {
     s.active = true;
+    s.sent = ''; // 新一轮流式开始，重置增量基线
     remoteServer.broadcast({ type: 'ai-start', profileId: pid });
   }
   s.text = text || '';
@@ -176,6 +190,7 @@ function onAiReply(text: string, profileId: string): void {
   const s = getStreamState(pid);
   if (s.timer) { clearTimeout(s.timer); s.timer = null; }
   s.text = '';
+  s.sent = '';
   s.active = false;
   remoteServer.broadcast({ type: 'ai-reply', profileId: pid, text: text || '' });
 }
@@ -188,6 +203,7 @@ function onAiStop(profileId: string): void {
   const s = getStreamState(pid);
   if (s.timer) { clearTimeout(s.timer); s.timer = null; }
   s.text = '';
+  s.sent = '';
   s.active = false;
   remoteServer.broadcast({ type: 'ai-stop', profileId: pid });
 }
@@ -208,6 +224,7 @@ function onAiError(profileId: string, error?: string): void {
   const s = getStreamState(pid);
   if (s.timer) { clearTimeout(s.timer); s.timer = null; }
   s.text = '';
+  s.sent = '';
   s.active = false;
   remoteServer.broadcast({ type: 'ai-error', profileId: pid, error: error || '生成失败' });
 }

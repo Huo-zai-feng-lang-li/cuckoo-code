@@ -963,6 +963,13 @@ svg { flex-shrink: 0; }
   color: var(--fg);
 }
 
+/* Streaming text —— 流式期间为纯文本追加（性能），保留换行 */
+.stream-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
 /* Streaming caret —— 四角星流光（对齐电脑端品牌星 ✦） */
 .cursor {
   display: inline-block;

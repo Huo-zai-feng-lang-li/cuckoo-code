@@ -81,8 +81,8 @@ function checkToken(req: http.IncomingMessage): boolean {
   return !!(url && url.searchParams.get('token') === currentToken);
 }
 
-/** 静态文件响应（PWA 资源；防路径穿越） */
-function serveStatic(res: http.ServerResponse, pathname: string): void {
+/** 静态文件响应（PWA 资源；防路径穿越）。异步读盘，避免阻塞主进程事件循环 */
+async function serveStatic(res: http.ServerResponse, pathname: string): Promise<void> {
   let decoded = pathname;
   try { decoded = decodeURIComponent(pathname); } catch (_) {}
   const rel = decoded === '/' ? 'index.html' : decoded.replace(/^\//, '');
@@ -90,14 +90,18 @@ function serveStatic(res: http.ServerResponse, pathname: string): void {
   const prefix = PWA_DIR.endsWith(path.sep) ? PWA_DIR : PWA_DIR + path.sep;
   if (abs !== PWA_DIR && !abs.startsWith(prefix)) { res.writeHead(403); res.end('forbidden'); return; }
   let isFile = false;
-  try { isFile = fs.existsSync(abs) && fs.statSync(abs).isFile(); } catch (_) { isFile = false; }
+  try { isFile = (await fs.promises.stat(abs)).isFile(); } catch (_) { isFile = false; }
   if (!isFile) { res.writeHead(404); res.end('not found'); return; }
   try {
-    const buf = fs.readFileSync(abs);
+    const buf = await fs.promises.readFile(abs);
     res.writeHead(200, { 'Content-Type': guessMime(abs), 'Cache-Control': 'no-cache' });
     res.end(buf);
   } catch (err: any) {
-    res.writeHead(500); res.end(String(err && err.message ? err.message : err));
+    // 客户端可能已断开/已发头，避免 ERR_HTTP_HEADERS_SENT
+    if (!res.headersSent) {
+      try { res.writeHead(500); } catch (_) {}
+    }
+    try { res.end(String(err && err.message ? err.message : err)); } catch (_) {}
   }
 }
 
@@ -117,7 +121,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     return;
   }
   // 静态资源（页面本身不敏感；连 WS 时才鉴权）
-  serveStatic(res, url.pathname);
+  // serveStatic 为异步（非阻塞主进程），内部已兜底所有异常，此处防御性 catch
+  void serveStatic(res, url.pathname).catch(() => {});
 }
 
 /** WS 单条消息上限（防超大文本放大 JSON/IPC/渲染成本） */
