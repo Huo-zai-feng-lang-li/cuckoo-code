@@ -180,6 +180,7 @@ function handleWsMessage(ws: any, raw: any): void {
 function onWsConnection(ws: any): void {
   clients.add(ws);
   ws.isAlive = true;
+  ws.missedPongs = 0;
   try {
     ws.send(JSON.stringify({
       type: 'ready',
@@ -195,11 +196,18 @@ function onWsConnection(ws: any): void {
   try { deps.onNewClient && deps.onNewClient(); } catch (_) {}
 }
 
-/** 服务端心跳：每 30s ping 一次，两次无 pong 视为死连接并断开（清理半开连接） */
+/** 服务端心跳：每 30s ping 一次，连续 3 次无 pong（约 120s，含首次）视为死连接并断开。
+ *  放宽原因：手机端切后台时浏览器会冻结 JS 定时器，其应用层 pong 可能短暂停止；
+ *  给足恢复时间，避免"熄屏几分钟回来必断"。真正的半开连接由约 120s 兜底清理。 */
 function startHeartbeat(): any {
   return setInterval(() => {
     for (const c of clients) {
-      if (c.isAlive === false) { try { c.terminate(); } catch (_) {} clients.delete(c); continue; }
+      if (c.isAlive === false) {
+        c.missedPongs = (c.missedPongs || 0) + 1;
+        if (c.missedPongs >= 3) { try { c.terminate(); } catch (_) {} clients.delete(c); continue; }
+      } else {
+        c.missedPongs = 0;
+      }
       c.isAlive = false;
       try { c.ping(); } catch (_) {}
     }

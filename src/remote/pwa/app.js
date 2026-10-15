@@ -254,7 +254,22 @@
   }
   function hideOffline() { offlineBanner.classList.remove('show'); }
 
+  // 半开连接判定：TCP 已死但 ws.readyState 仍为 1 时，send() 会把消息发进死连接
+  // 且不报错（消息静默丢失）。用"最近 pong 距今过久"作为可疑半开的信号。
+  // 阈值取 130s，**明显大于服务端判死阈值（约 120s）**：让"服务端先断 → 客户端收到 close
+  // → 走正常重连"成为主路径，避免客户端把底层仍健康的连接（手机后台唤醒后）主动掐掉。
+  const STALE_MS = 130000;
+  function isConnStale() {
+    return connected && (Date.now() - lastPong > STALE_MS);
+  }
+
   function sendRaw(obj) {
+    // 可疑半开：不发送（避免静默丢），返回 false 让调用方走队列/重连
+    if (isConnStale()) {
+      console.warn('[Remote] 连接疑似半开（pong 超时），触发重连');
+      try { ws.close(); } catch {}
+      return false;
+    }
     if (connected && ws && ws.readyState === 1) {
       try { ws.send(JSON.stringify(obj)); return true; } catch {}
     }
@@ -824,7 +839,10 @@
 
   sendBtn.addEventListener('click', doSend);
   stopBtn.addEventListener('click', () => {
-    sendRaw({ type: 'stop' });
+    if (!sendRaw({ type: 'stop' })) {
+      // 发送失败（连接半开/断开）：不能静默——用户以为停了，实际没停
+      addSystem('连接已断开，停止指令未送达，正在重连…');
+    }
     hideExec();
     setExecuting(false);
   });
