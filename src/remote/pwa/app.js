@@ -32,6 +32,13 @@
   let streamingEl = null;
   let streamNode = null;
   let streamingText = '';
+  // 思考气泡（正文气泡上方的可折叠块）
+  let thinkEl = null;        // 思考块容器（.msg-think）
+  let thinkBody = null;      // 思考正文容器（流式 append）
+  let thinkLabel = null;     // 标题（"思考中…" / "已思考 (N 字)"）
+  let thinkText = '';        // 累积思考文本
+  let thinkUserToggled = false; // 用户手动展开/折叠过 → 不再自动折叠
+  let sawText = false;       // 本轮正文是否已出现（出现后 think 不再自动展开，防交替抖动）
   // 是否在执行（切换 发送/停止 按钮）
   let executing = false;
 
@@ -107,7 +114,7 @@
           $('token-input').value = text.trim();
           $('token-input').focus();
         }
-      } catch (_) {
+      } catch {
         $('token-input').focus();
       }
     });
@@ -278,10 +285,22 @@
         streamingText = '';
         streamingEl = null;
         streamNode = null;
+        // 只重置引用，**不动历史 think DOM**（上一轮的思考块应保留在会话里）
+        thinkEl = null; thinkBody = null; thinkLabel = null;
+        thinkText = ''; thinkUserToggled = false; sawText = false;
         break;
       case 'ai-stream':
         if (!isMyProfile(msg.profileId)) break;
-        appendStreaming(msg.delta || '', !!msg.reset);
+        if (msg.reset) {
+          // 重排/重连补发：清空**当前轮**的 think/text 容器重来（保留历史消息 DOM）
+          if (thinkEl) { try { thinkEl.remove(); } catch {} }
+          thinkEl = null; thinkBody = null; thinkLabel = null;
+          thinkText = ''; thinkUserToggled = false; sawText = false;
+          if (streamingEl) { try { streamingEl.remove(); } catch {} }
+          streamingEl = null; streamNode = null; streamingText = '';
+        }
+        if (msg.thinkDelta) appendThink(msg.thinkDelta);
+        if (msg.textDelta) appendStreaming(msg.textDelta);
         break;
       case 'ai-reply':
         if (!isMyProfile(msg.profileId)) break;
@@ -332,6 +351,7 @@
     streamingEl = null;
     streamNode = null;
     streamingText = '';
+    resetThink();
     hideExec();
     setExecuting(false);
     checkEmptyState();
@@ -528,31 +548,79 @@
     scroll();
   }
 
+  // ===== 思考块（正文上方，流式展开 → 正文出现后自动折叠）=====
+  function ensureThinkEl() {
+    if (thinkEl) return;
+    thinkEl = document.createElement('div');
+    thinkEl.className = 'msg think-block open';
+    thinkEl.innerHTML =
+      '<button class="think-head" type="button">' +
+        '<svg class="think-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2z"/><path d="M10 21h4"/></svg>' +
+        '<span class="think-label">思考中…</span>' +
+        '<svg class="think-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>' +
+      '</button>' +
+      '<div class="think-body"></div>';
+    thinkBody = thinkEl.querySelector('.think-body');
+    thinkLabel = thinkEl.querySelector('.think-label');
+    thinkEl.querySelector('.think-head').addEventListener('click', () => {
+      thinkUserToggled = true;
+      thinkEl.classList.toggle('open');
+    });
+    messages.appendChild(thinkEl);
+    checkEmptyState();
+  }
+
+  function appendThink(delta) {
+    if (!delta) return;
+    ensureThinkEl();
+    // 增量 append 纯文本（性能：不做 markdown、不重建 DOM）
+    thinkBody.appendChild(document.createTextNode(delta));
+    thinkText += delta;
+    thinkLabel.textContent = '思考中… (' + thinkText.length + ' 字)';
+    // 正文尚未出现时才自动展开（一旦正文出现就不再展开，防 think/text 交替抖动）
+    if (!thinkUserToggled && !sawText) thinkEl.classList.add('open');
+    checkEmptyState();
+    capMessages();
+    scroll();
+  }
+
+  /** 思考收尾：标记"已思考"，非用户手动时折叠 */
+  function finishThink() {
+    if (!thinkEl) return;
+    try {
+      thinkEl.classList.add('done'); // 停止脉动动画
+      if (thinkLabel) thinkLabel.textContent = '已思考 (' + thinkText.length + ' 字)';
+      if (!thinkUserToggled) thinkEl.classList.remove('open');
+    } catch { /* ignore */ }
+  }
+
+  function resetThink() {
+    if (thinkEl) { try { thinkEl.remove(); } catch {} }
+    thinkEl = null; thinkBody = null; thinkLabel = null;
+    thinkText = ''; thinkUserToggled = false; sawText = false;
+  }
+
   /**
    * 流式增量追加（性能关键路径）：
-   *  - reset=true：服务端 strip 结果回退/重排 → 清空文本重新累积
-   *  - 否则：把 delta 作为纯文本 appendChild（不做 markdown 解析、不重建 DOM）
-   * 流式期间为纯文本（快速），结束帧由 finishStreaming 用全量做一次 markdown 渲染。
+   *  把 delta 作为纯文本 appendChild（不做 markdown 解析、不重建 DOM）。
+   *  reset（清空重来）由调用方 handleServerMessage 的 msg.reset 分支处理。
+   *  流式期间为纯文本（快速），结束帧由 finishStreaming 用全量做一次 markdown 渲染。
    */
-  function appendStreaming(delta, reset) {
+  function appendStreaming(delta) {
+    if (!delta) return;
     if (!streamingEl) startStreaming();
-    if (reset) {
-      // 服务端 strip 结果回退/重排：清空重来（全量覆盖一次）
-      streamNode.textContent = delta || '';
-      streamingText = delta || '';
-    } else {
-      if (!delta) return;
-      // 增量挂文本节点，不重设 textContent（避免每帧 O(n) 覆盖 → 累积 O(n²)）
-      streamNode.appendChild(document.createTextNode(delta));
-      streamingText += delta;
-    }
-    // 注：流式期间只 appendChild 到 streamNode，未改 streamingEl 的直接子节点顺序 → sig 恒在末位。
-    //     收尾由 finishStreaming 用全量渲染一次。
+    // 增量挂文本节点，不重设 textContent（避免每帧 O(n) 覆盖 → 累积 O(n²)）
+    streamNode.appendChild(document.createTextNode(delta));
+    streamingText += delta;
+    // 正文已出现 → 标记 + 思考块自动折叠（非用户手动）
+    sawText = true;
+    if (thinkEl && !thinkUserToggled) thinkEl.classList.remove('open');
     scroll();
   }
 
   function finishStreaming(fullText) {
     const finalText = fullText || streamingText || '';
+    finishThink();
     if (!streamingEl) {
       if (finalText) addAi(finalText);
     } else if (finalText) {
@@ -696,6 +764,7 @@
       streamingEl = null;
       streamNode = null;
       streamingText = '';
+      resetThink();
       checkEmptyState();
       updateScrollBtn();
     });
