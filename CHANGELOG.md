@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.8.84] - 2026-10-16
+
+### Fixed
+- **手机端流式仍残留 O(n²)（053 整改）**：`src/remote/pwa/app.js` 的 `appendStreaming` 每帧把持续增长的 `streamingText` 写入 `streamingEl.dataset.raw`，浏览器须整串 flatten + 序列化 → 单帧 O(n)、累计 O(n²)。`appendChild(createTextNode(delta))` 的优化被这一行抵消。修复：流式期间不写 `dataset.raw`（复制/收尾由 `finishStreaming` 用全量写一次）。
+- **手机端 stop/error 丢尾帧（053 整改）**：`src/bridge/remote-bridge.ts` 的 `stopStreamThrottle()` 清了 timer 与 `pendingText` 但未 flush；`onUserStop` / `onAiError` 之后没有全量帧兜底 → 节流窗口内最后 <100ms 的文本永久丢失。修复：新增 `flushText` 参数——stop/error 传 `true` 先 flush 保尾，reply 传 `false`（有全量帧兜底，避免重复）。
+- **纯净模式前缀巧合丢字（054 整改）**：`src/ui/harness.html` 的 `_streamRenderedText` / `_streamRenderedThink` 是全局裸变量，未与气泡（body）绑定；中止/新任务新建气泡时若新文本以旧标记为前缀，`delta = full.slice(旧长度)` 会吞掉前缀。修复：增加 `_streamRenderedTextBody` / `_streamRenderedThinkBody` 归属校验（body 换了标记作废），并在 `stop()` / `send()` 显式 `resetStreamRender()` 双保险。
+- **纯净模式 stop 后光标残留在思考块**：`clearPendingBubble` 只从 `cur.body` 摘光标，thinkBody 里的漏摘（stop 等不跟 reset 的路径会在思考块留闪烁光标）。修复：`clearPendingBubble` 末尾补 `resetStreamRender()`（统一从实际父节点摘除）。
+- **删除已空壳的 `cancelStreamRender`**（054 整改）：全仓无有效调用点，仅 `resetStreamRender` 的别名。
+
 ## [0.8.83] - 2026-10-15
 
 ### Added

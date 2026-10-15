@@ -59,5 +59,6 @@
 | 053 | performance | [远程手机端性能：流式全量广播/渲染 O(n²) + serveStatic 同步 IO](./053-remote-stream-perf.md) | done | perf/053-remote-stream-perf | 2026-10-15 |
 | 054 | performance | [harness 流式渲染 O(n²) + 历史持久化全量同步写卡顿](./054-harness-perf.md) | done | perf/054-harness-perf | 2026-10-15 |
 | 055 | fix | [窗口组下拉配色 + 窗口名编辑 + 手机端 AI 尾部签名](./055-window-rename-and-pwa-signature.md) | done | fix/055-window-rename-and-pwa-signature | 2026-10-15 |
+| 056 | fix | [审计整改：053 dataset.raw O(n²) + 054 增量标记脱钩丢字](./056-audit-rectify-perf-cache.md) | done | fix/056-audit-rectify-perf-cache | 2026-10-16 |
 
-共 54 个需求。
+共 55 个需求。
