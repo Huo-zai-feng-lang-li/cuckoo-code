@@ -46,6 +46,10 @@ function registerRendererIpc(): void {
   ipcMain.handle('show-ai-notification', async (event: any) => {
     try {
       const ctx = windowState.getContextByWebContents(event.sender);
+      // 子代理窗口：完成属内部过程，不弹通知、不闪烁（只有父/主对话真正完成才通知）
+      if (ctx && ctx.isSubagent) {
+        return { success: true, skipped: true, reason: 'subagent-window' };
+      }
       const win = ctx ? ctx.win : windowState.getMainWindow();
 
       if (win && !win.isDestroyed() && win.isFocused()) {

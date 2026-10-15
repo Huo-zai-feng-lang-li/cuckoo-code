@@ -44,6 +44,15 @@ function buildSubagentPrompt(cfg: SubagentConfig): string {
   if (cfg.isGateway) return cfg.task || '';
   const parts: string[] = [];
   if (cfg.systemPrompt) parts.push(cfg.systemPrompt);
+  // 工具白名单约束：子代理是独立 AI 对话，机制层无法"物理"禁用工具，
+  // 故在系统提示里显式声明——这是让 frontmatter 的 tools 字段真正生效的手段。
+  const allowed = Array.isArray(cfg.tools) ? cfg.tools.filter(Boolean) : [];
+  if (allowed.length > 0) {
+    parts.push('');
+    parts.push('---');
+    parts.push('【工具约束】你只能使用以下工具：' + allowed.join('、') + '。');
+    parts.push('其他工具（如 edit、write、bash 等若未在列表内）一律不可用，不要尝试调用，否则会被拒绝。');
+  }
   parts.push('');
   parts.push('---');
   parts.push('任务：' + cfg.task);

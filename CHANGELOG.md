@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.8.94] - 2026-10-16
+
+### Fixed
+- **子代理完成弹系统通知**：`observer.ts` 在"任务完成"分支无条件调 `showAiNotification()`，而它是所有窗口共用（含子代理窗口）→ 子代理每轮纯文本回复都触发通知。修复：`renderer.ts` 的 `show-ai-notification` 判 `ctx.isSubagent` → 直接跳过（不通知、不闪烁任务栏）。**只有父/主对话真正完成才通知。**
+- **子代理 frontmatter 的 `tools` 字段完全失效**：`tools: read, readLines, glob, grep` 被 scanner 解析、传入 subagentConfig，但全链路无任何消费 → "只读"子代理（如 code-reviewer）实际能 edit/write/bash，专家约束形同虚设。修复：`bridge/subagent.ts` 的 `buildSubagentPrompt` 根据 `cfg.tools` 拼入【工具约束】提示（机制层无法物理禁用工具，用系统提示软约束；这是让该字段真正生效的可行手段）。
+
+### Added
+- 需求档案 `docs/requirements/066-subagent-audit.md`：子代理机制全面审计（项目级 10 + 插件专家包 5）。
+
 ## [0.8.93] - 2026-10-16
 
 ### Fixed
