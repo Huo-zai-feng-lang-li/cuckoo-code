@@ -1406,6 +1406,7 @@
     font-variant-numeric: tabular-nums;
   }
   .ck-token-hero-unit { font-size: 12px; color: var(--ck-text-dim); }
+  .ck-win-hint { margin-top: 10px; padding: 0 2px; font-size: 11.5px; line-height: 1.5; color: var(--ck-text-dim); }
   /* 「万/亿」单位字：用普通字体（等宽字体无中文，会回退导致不协调） */
   .ck-token-unit-char {
     font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -2367,6 +2368,7 @@ body[data-ck-dark] .ck-stat-item-hl .ck-stat-val { color: #fbbf24; }
               <div class="ck-list" id="win-list">
                 <div class="ck-list-empty">暂无窗口</div>
               </div>
+              <div class="ck-win-hint" id="win-list-hint"></div>
             </div>
 
             <!-- ===== 提示词 ===== -->
@@ -5646,8 +5648,10 @@ paths:            # 可选；省略 = 始终生效
     try {
       const res = await api.listProfiles();
       const profiles = res && res.success ? res.profiles : [];
+      const hintEl = document.getElementById("win-list-hint");
       if (!profiles || profiles.length === 0) {
         listEl2.innerHTML = '<div class="ck-list-empty">\u6682\u65E0\u7A97\u53E3</div>';
+        if (hintEl) hintEl.textContent = "";
         return;
       }
       const providerMap = {};
@@ -5684,6 +5688,9 @@ paths:            # 可选；省略 = 始终生效
         html += '<div class="ck-wg ck-wg-ungrouped"><div class="ck-wg-head"><span class="ck-wg-name">\u672A\u5206\u7EC4</span></div><div class="ck-wg-body">' + ungrouped.map((p) => renderWindowItem(p, providerMap)).join("") + "</div></div>";
       }
       listEl2.innerHTML = html;
+      if (hintEl) {
+        hintEl.textContent = profiles.some((p) => p.autoOpen === true) ? "\u52FE\u9009\u7684\u7A97\u53E3\u4F1A\u5728\u542F\u52A8\u65F6\u81EA\u52A8\u6253\u5F00\u3002" : "\u672A\u52FE\u9009\u4EFB\u4F55\u300C\u9ED8\u8BA4\u6253\u5F00\u300D\u65F6\uFF0C\u542F\u52A8\u4F1A\u6253\u5F00\u6700\u540E\u6D3B\u8DC3\u7684\u7A97\u53E3\u3002";
+      }
       listEl2.querySelectorAll(".ck-win-check input").forEach((cb) => {
         cb.addEventListener("click", (e) => e.stopPropagation());
         cb.addEventListener("change", async () => {

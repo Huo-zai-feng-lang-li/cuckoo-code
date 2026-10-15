@@ -3,31 +3,30 @@
 > 本文件由 Cuckoo Code 自动创建，用于跨会话记录工作状态。
 
 ## 目标
-美化「手机远程」PWA 页面（src/remote/pwa）：使用 impeccable 设计工艺 + archify 架构图。
+（无进行中目标）
 
-## 已完成
-- **PWA 精致化改造**（提交 3e5a8e2）：
-  - `index.html`：内联 SVG 图标精灵（12 个 symbol），替换全部 emoji（鸟/图表/烧瓶/文档/闪电/图片/锁/信息/显示器/垃圾桶/太阳/月亮/刷新/箭头等）
-  - `style.css`：重写设计 token——提升对比度至 WCAG AA、统一 4px 间距栅格、收敛圆角/阴影、新增 :focus-visible 键盘焦点环、品牌徽标（圆角渐变承载 logo）、login 环境光晕、prefers-reduced-motion 支持
-  - `app.js`：图片气泡相机 emoji → SVG
-  - `manifest.webmanifest` + 新增 `icon.svg`：favicon 与 PWA 图标
-- **archify 架构图**：`.archify/architecture-remote-20261015-120000/remote.html`（finalize 全 gate 通过）
+## 最近完成
+- **052 窗口切换迁移携带目标/计划 + 启动提示**（feat/052-switch-migrate-goal-plan，v0.8.80）：
+  - harness.html：`exportHarnessState` 扩展携带 goal / goalNoProgress / planState / planTodos；
+    `onSessionChanged`（暂存路径）与 `applyImportState`（直接路径）两条导入路径均恢复这三项；
+    在 `loadGoalState/loadPlanState` 之后覆盖，避免被新会话空值覆盖。
+  - 迁移路径补 `planState.phase` 校验（对齐 `loadPlanState`）。
+  - `resetConversation` 补 `cur = null`（流式气泡适配变量，原先漏清）。
+  - 窗口页新增「默认打开」行为提示（勾选/未勾选两种文案）。
+  - 验证：typecheck / compile / test(978) / lint(0 error) 全绿；真机 CDP 验证提示文案两分支正确。
 
 ## 未完成 / 下一步
-- 无（PWA 美化与架构图均完成）
-- 后续可选：为 PWA 补齐 PWA 图标位图（当前用 SVG）；真机（打包版）验证手机端渲染
+- 无（052 已闭环）
+- 遗留（低优先）：① 输入框草稿/待发附件不迁移（属临时态，用户已确认不带）；② lastUrl 在限流关源窗口时可能记成分享中间态（未处理，仅记录）
 
-## 关键文件
-- `src/remote/pwa/index.html`：图标精灵 + 结构
-- `src/remote/pwa/style.css`：设计系统
-- `src/remote/pwa/app.js`：交互逻辑
-- `src/remote/pwa/icon.svg`：新增 favicon
-- `.archify/architecture-remote-20261015-120000/remote.html`：架构图
+## 关键文件（052）
+- `src/ui/harness.html`：迁移导出/导入、resetConversation
+- `src/ui/shell/scripts/pages/windows.ts`：提示逻辑
+- `src/ui/shell/partials/pages/windows.html` + `src/ui/shell/styles/pages.css`：提示元素与样式
+- `docs/requirements/052-switch-migrate-goal-plan.md`：需求档案
 
 ## 佐证
-- typecheck 通过；lint 0 error（57 项既有 warning，与本改动无关）
+- typecheck 通过；compile 通过（shell.html 重建）
 - vitest：98 文件 / 978 用例全通过
-- compile 通过，out/src/remote/pwa 产物完整（含 icon.svg）
-- impeccable detector：0 findings
-- Playwright 截图核对：login/主界面/暗色/空状态/360px 窄屏（移动端）渲染正常
-- archify finalize：validate/deliver/check/browser-check 全 pass
+- lint：0 error（57 项既有 warning，与本改动无关）
+- 真机：窗口页提示文案两分支（有勾选/无勾选）渲染正确

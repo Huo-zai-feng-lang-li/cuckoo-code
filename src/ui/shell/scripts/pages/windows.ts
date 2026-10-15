@@ -40,8 +40,10 @@ export async function renderWindowList(): Promise<void> {
   try {
     const res = await api.listProfiles();
     const profiles = (res && res.success) ? res.profiles : [];
+    const hintEl = document.getElementById('win-list-hint');
     if (!profiles || profiles.length === 0) {
       listEl.innerHTML = '<div class="ck-list-empty">暂无窗口</div>';
+      if (hintEl) hintEl.textContent = '';
       return;
     }
     const providerMap: Record<string, string> = {};
@@ -93,6 +95,12 @@ export async function renderWindowList(): Promise<void> {
       '</div>';
     }
     listEl.innerHTML = html;
+
+    if (hintEl) {
+      hintEl.textContent = profiles.some((p: any) => p.autoOpen === true)
+        ? '勾选的窗口会在启动时自动打开。'
+        : '未勾选任何「默认打开」时，启动会打开最后活跃的窗口。';
+    }
 
     listEl.querySelectorAll('.ck-win-check input').forEach((cb: any) => {
       cb.addEventListener('click', (e: any) => e.stopPropagation());
