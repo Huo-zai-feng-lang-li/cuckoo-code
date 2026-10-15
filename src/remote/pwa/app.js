@@ -482,7 +482,7 @@
     el.innerHTML = `
       <div class="image-bubble">
         <img src="${dataUrl}" alt="${escapeAttr(name)}" class="uploaded-thumb" />
-        <div class="image-name">📷 ${escapeHtml(name)}</div>
+        <div class="image-name"><svg width="12" height="12" aria-hidden="true" style="vertical-align:-1px"><use href="#i-image" /></svg> ${escapeHtml(name)}</div>
       </div>
     `;
     messages.appendChild(el);
