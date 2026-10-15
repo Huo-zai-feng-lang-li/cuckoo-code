@@ -1,35 +1,34 @@
-# 最新接续状态 (2026-10-16 14:00)
+# 最新接续状态 (2026-10-16 15:00)
 
 ## 核心进展（近几轮）
 - **067 记忆稳健性 + 压缩摘要注入** → v0.8.95
 - **068 记忆截断边界修复** → v0.8.96
 - **069 Harness 流式收尾卡顿修复** → v0.8.97
-- **070 Harness 流式体验优化** → v0.8.98
+- **070 Harness 流式体验优化**（hook 节流 + rAF 滚动）→ v0.8.98
+- **071 手机远程流式渲染优化** → v0.8.99
 
-## 070 内容（Harness 流式体验）
-用户反馈：出字"一坨一坨"不流畅 + 收尾 markdown 变格式卡顿。
-- **069 已修**：收尾卡顿（同一条回复被 renderMarkdown 渲染两次 → finished 帧设 lastDoneText 去重）
-- **070 修**：
-  - 三个 hook（deepseek/claude/chatgpt）流式节流 **80ms → 40ms**（12.5→25fps，出字更流畅；finished 帧绕过节流不受影响）
-  - harness.html scrollBottom 改 **rAF 合并**（一帧最多滚一次，防每帧强制 reflow）
-  - 审计修复：rAF 内重新校验 pinBottom，避免把上翻历史的用户弹回底部（我引入的回归，已修）
-
-## 069 根因（已闭环）
-- onStream(finished) 渲染一次 + onAssistantDone 又一次 = 全量 renderMarkdown ×2
-- finished 帧未更新 lastDoneText → 去重不生效
-- 修复：finished 帧渲染后 lastDoneText = text.trim()
+## 071 内容（手机远程流式渲染）
+用户反馈：手机远程也是"先出现一大坨 md 再渲染格式"。
+**根因**：手机端流式期间是纯文本追加（pwa/app.js:630-640），收尾才渲染；且三层节流（hook 40ms → bridge 100ms → manager 100ms ≈ 端到端 240ms/批）。
+**修复**：
+- 手机端 PWA 流式期间改**低频（~200ms）渲染 markdown**（scheduleStreamMd/flushStreamMd/cancelStreamMd）
+- streamNode span→div（承载块级 HTML）
+- .stream-text--md 切 normal 空白（防 pre-wrap 与 <p> 双重间距）
+- bridge/manager 节流 100→60ms（端到端约 240→120ms）
+- 收尾 finishStreaming 全量渲染 + decorateContent + 复制按钮不变
 
 ## 关键教训（已存入记忆）
 **判断"是否闭环"必须端到端真实运行验证，不能只读代码就下结论。**
 
 ## 关键上下文
 - 目录: D:\Desktop\Super-File\cuckoo-code
-- 主分支: master（v0.8.98）
+- 主分支: master（v0.8.99）
 - 验证：typecheck / test(981) / lint(0 error) / compile 全绿
-- **hook 改动只能真机验证**（注入主世界，单测覆盖不到）
+- **手机端 + hook 改动只能真机验证**
 
 ## 待办 (Next Steps)
-- [ ] **真机验证 v0.8.98**：出字流畅度（节流 40ms）、长回复不卡、上翻历史不被弹回
+- [ ] **真机验证 v0.8.99（手机端）**：流式期间是否有格式（不再一大坨 md）、延迟是否降低
+- [ ] **真机验证 v0.8.98（电脑端）**：出字流畅度、上翻历史不被弹回
 - [ ] 真机验证记忆写入、压缩续接（v0.8.95-96）
 - [ ] 手机远程去留（待用户定）
 
@@ -38,4 +37,5 @@
 - v0.8.95（067）：记忆稳健性 + 压缩摘要注入
 - v0.8.96（068）：记忆截断边界修复
 - v0.8.97（069）：Harness 流式收尾卡顿
-- v0.8.98（070）：Harness 流式体验优化（节流 + rAF 滚动）
+- v0.8.98（070）：Harness 流式体验优化
+- v0.8.99（071）：手机远程流式渲染优化
