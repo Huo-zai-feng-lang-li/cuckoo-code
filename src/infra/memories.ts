@@ -61,18 +61,43 @@ function listMemories(): Memory[] {
   return [];
 }
 
-/** 整体覆盖写入 */
+/** 整体覆盖写入（原子：先写临时文件，再 rename 覆盖）。
+ *  为什么用 temp+rename：writeFileSync 直写目标文件时，若进程中途崩溃会留下
+ *  半截 JSON → 下次 listMemories 解析失败 → 全部记忆静默丢失。
+ *  rename 在多数文件系统上是原子的：要么旧文件完整，要么新文件完整。
+ *  注：防的是"进程崩溃导致半截 JSON"，不承诺防断电（未 fsync）。 */
 function saveMemories(list: any): boolean {
   const file = getMemoriesFile();
+  const tmp = file + '.tmp-' + process.pid;
+  let json: string;
   try {
     const arr = Array.isArray(list) ? list : [];
     const clean = arr.map(normalizeMemory).filter(Boolean) as Memory[];
+    json = JSON.stringify(clean, null, 2);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(clean, null, 2), 'utf-8');
+  } catch (err: any) {
+    console.error('[Memories] 准备写入失败:', err.message);
+    return false;
+  }
+  try {
+    fs.writeFileSync(tmp, json, 'utf-8');
+    try {
+      fs.renameSync(tmp, file);
+    } catch (e: any) {
+      // Windows：目标文件被外部进程短暂占用（Defender/索引器）时 rename 会 EPERM/EBUSY。
+      // 此时降级为就地覆盖（牺牲原子性，保住本次写入），避免"修复引入新失败"。
+      if (e && (e.code === 'EPERM' || e.code === 'EBUSY' || e.code === 'EEXIST')) {
+        fs.writeFileSync(file, json, 'utf-8');
+        try { fs.unlinkSync(tmp); } catch (_) { /* 清理临时文件 */ }
+      } else {
+        throw e;
+      }
+    }
     console.log('[Memories] 已写入:', file);
     return true;
   } catch (err: any) {
     console.error('[Memories] 写入失败:', err.message);
+    try { fs.unlinkSync(tmp); } catch (_) { /* 清理临时文件 */ }
     return false;
   }
 }
@@ -134,9 +159,19 @@ function buildMemorySection(): string {
   if (!list.length) return '';
   const lines = list.map((m) => '- ' + m.text.replace(/\n/g, ' '));
   let body = lines.join('\n');
-  // 章节总长上限，超出截断并提示（防 prompt 膨胀）
+  // 章节总长上限，超出时保留**最新**的记忆（丢弃最旧的）。
+  // 注意：list 顺序是"旧→新"，故从尾部取；与 MAX_MEMORIES 的"丢弃最旧"策略一致。
+  // （原实现 slice(0, MAX) 保留的是最早的，反而丢掉用户刚记的偏好——方向反了。）
   if (body.length > MAX_SECTION_LEN) {
-    body = body.slice(0, MAX_SECTION_LEN) + '\n- ...（更多记忆已省略）';
+    const kept = [];
+    let len = 0;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const add = lines[i].length + 1;
+      if (len + add > MAX_SECTION_LEN) break;
+      kept.unshift(lines[i]);
+      len += add;
+    }
+    body = '- ...（较早的记忆已省略）\n' + kept.join('\n');
   }
   return [
     '## 用户记忆',

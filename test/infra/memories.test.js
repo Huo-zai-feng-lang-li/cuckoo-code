@@ -86,6 +86,29 @@ test('addMemory 超过 200 条时丢弃最旧', () => {
 test('buildMemorySection 超长时截断并提示', () => {
   for (let i = 0; i < 100; i++) addMemory('很长的记忆内容' + i + '-' + 'y'.repeat(100));
   const s = buildMemorySection();
-  assert.ok(s.includes('更多记忆已省略'));
+  assert.ok(s.includes('较早的记忆已省略'));
   assert.ok(s.length < 5000);
+});
+
+test('buildMemorySection 超长时保留最新（丢弃最旧）', () => {
+  for (let i = 0; i < 100; i++) addMemory('记忆条目' + i + '-' + 'z'.repeat(80));
+  const s = buildMemorySection();
+  // 最新的应保留，最旧的应被丢弃
+  assert.ok(s.includes('记忆条目99'), '最新记忆应保留');
+  assert.ok(!s.includes('记忆条目0-'), '最旧记忆应被丢弃');
+});
+
+test('saveMemories 原子写：不残留临时文件', () => {
+  saveMemories([{ text: '原子写测试' }]);
+  assert.strictEqual(listMemories().length, 1);
+  // 目录下不应残留 .tmp-* 文件
+  const leftovers = fs.readdirSync(TMP).filter((f) => f.includes('.tmp-'));
+  assert.strictEqual(leftovers.length, 0, '不应残留临时文件');
+});
+
+test('listMemories 遇损坏文件不抛错（返回空/已恢复）', () => {
+  fs.writeFileSync(path.join(TMP, 'memories.json'), '{ 半截损坏 JSON', 'utf-8');
+  // 不应抛异常
+  const list = listMemories();
+  assert.ok(Array.isArray(list));
 });
