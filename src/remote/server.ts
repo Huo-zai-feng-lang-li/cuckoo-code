@@ -42,6 +42,8 @@ interface ServerDeps {
   onGetCurrentProfile?: () => string;
   /** 切换目标窗口 */
   onSelectProfile?: (profileId: string) => void;
+  /** 新客户端连入（供主进程补发当前流式状态，避免重连后丢消息） */
+  onNewClient?: () => void;
 }
 
 let httpServer: http.Server | null = null;
@@ -189,6 +191,8 @@ function onWsConnection(ws: any): void {
   ws.on('message', (raw: any) => handleWsMessage(ws, raw));
   ws.on('close', () => { clients.delete(ws); });
   ws.on('error', () => { clients.delete(ws); });
+  // 新客户端连入：通知主进程补发当前流式状态（重连后不丢消息）
+  try { deps.onNewClient && deps.onNewClient(); } catch (_) {}
 }
 
 /** 服务端心跳：每 30s ping 一次，两次无 pong 视为死连接并断开（清理半开连接） */

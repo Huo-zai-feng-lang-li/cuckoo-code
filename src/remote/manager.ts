@@ -24,12 +24,12 @@ const STREAM_FLUSH_MS = 100;
 
 /** 每窗口独立的流式状态（防多窗口串扰）。
  *  text = 最新全量累积文本；sent = 上次已广播出去的文本（用于计算 delta）。 */
-interface StreamState { text: string; sent: string; timer: any; active: boolean; }
+interface StreamState { text: string; sent: string; think: string; thinkSent: string; timer: any; active: boolean; }
 const streamStates = new Map<string, StreamState>();
 
 function getStreamState(profileId: string): StreamState {
   let s = streamStates.get(profileId);
-  if (!s) { s = { text: '', sent: '', timer: null, active: false }; streamStates.set(profileId, s); }
+  if (!s) { s = { text: '', sent: '', think: '', thinkSent: '', timer: null, active: false }; streamStates.set(profileId, s); }
   return s;
 }
 
@@ -154,32 +154,54 @@ function flushStream(profileId: string): void {
   const s = streamStates.get(profileId);
   if (!s) return;
   s.timer = null;
-  if (!s.text) return;
-  let delta: string;
-  let reset = false;
-  if (s.text.startsWith(s.sent)) {
-    delta = s.text.slice(s.sent.length);
-  } else {
-    delta = s.text;
-    reset = true;
-  }
+  if (!s.text && !s.think) return;
+  // 正文与思考各自算增量；任一"前缀不匹配"即触发 reset（手机端清空重来）
+  // 关键：reset 时两个字段都必须发全量（手机端会清空，只发 delta 会丢前缀）
+  const textOk = s.text.startsWith(s.sent);
+  const thinkOk = s.think.startsWith(s.thinkSent);
+  const reset = !textOk || !thinkOk;
+  const textDelta = reset ? s.text : s.text.slice(s.sent.length);
+  const thinkDelta = reset ? s.think : s.think.slice(s.thinkSent.length);
   s.sent = s.text;
-  if (!delta && !reset) return;
-  remoteServer.broadcast({ type: 'ai-stream', profileId, delta, reset });
+  s.thinkSent = s.think;
+  if (!textDelta && !thinkDelta && !reset) return;
+  remoteServer.broadcast({ type: 'ai-stream', profileId, thinkDelta, textDelta, reset });
 }
 
-/** 收到流式文本（onStream 给的是全量累积文本，直接覆盖） */
-function onAiStream(text: string, profileId: string): void {
+/** 收到流式文本（onStream 给的是全量累积快照，直接覆盖）。
+ *  think 为思考全量，text 为正文全量；两者独立累积。 */
+function onAiStream(text: string, think: string, profileId: string): void {
   if (!remoteServer.isRunning()) return;
   const pid = profileId || '';
   const s = getStreamState(pid);
   if (!s.active) {
     s.active = true;
     s.sent = ''; // 新一轮流式开始，重置增量基线
+    s.think = '';
+    s.thinkSent = '';
     remoteServer.broadcast({ type: 'ai-start', profileId: pid });
   }
   s.text = text || '';
+  s.think = think || '';
   if (!s.timer) s.timer = setTimeout(() => flushStream(pid), STREAM_FLUSH_MS);
+}
+
+/** 新客户端连入：把每个活跃流的当前全量以 reset=true 补发，避免重连后缺消息 */
+function pushActiveStreamsToNewClient(): void {
+  if (!remoteServer.isRunning()) return;
+  for (const [pid, s] of streamStates) {
+    if (!s.active) continue;
+    remoteServer.broadcast({
+      type: 'ai-stream',
+      profileId: pid,
+      thinkDelta: s.think,
+      textDelta: s.text,
+      reset: true,
+    });
+    // 关键：补发即把当前全量标记为"已送达"，否则下一轮 flush 会重复发尾部
+    s.sent = s.text;
+    s.thinkSent = s.think;
+  }
 }
 
 /** 收到完整回复 */
@@ -191,6 +213,8 @@ function onAiReply(text: string, profileId: string): void {
   if (s.timer) { clearTimeout(s.timer); s.timer = null; }
   s.text = '';
   s.sent = '';
+  s.think = '';
+  s.thinkSent = '';
   s.active = false;
   remoteServer.broadcast({ type: 'ai-reply', profileId: pid, text: text || '' });
 }
@@ -202,10 +226,12 @@ function onAiStop(profileId: string): void {
   clearBusy(pid);
   const s = getStreamState(pid);
   if (s.timer) { clearTimeout(s.timer); s.timer = null; }
-  // 先把尚未广播的尾帧 flush 出去，再清空（否则节流窗口内最后 <100ms 文本永久丢失）
-  if (s.text && s.text !== s.sent) flushStream(pid);
+  // 先把尚未广播的尾帧 flush 出去，再清空（否则节流窗口内最后 <100ms 文本/思考永久丢失）
+  if ((s.text && s.text !== s.sent) || (s.think && s.think !== s.thinkSent)) flushStream(pid);
   s.text = '';
   s.sent = '';
+  s.think = '';
+  s.thinkSent = '';
   s.active = false;
   remoteServer.broadcast({ type: 'ai-stop', profileId: pid });
 }
@@ -225,10 +251,12 @@ function onAiError(profileId: string, error?: string): void {
   clearBusy(pid);
   const s = getStreamState(pid);
   if (s.timer) { clearTimeout(s.timer); s.timer = null; }
-  // 同 onAiStop：先 flush 未广播的尾帧，再清空
-  if (s.text && s.text !== s.sent) flushStream(pid);
+  // 同 onAiStop：先 flush 未广播的尾帧（含思考），再清空
+  if ((s.text && s.text !== s.sent) || (s.think && s.think !== s.thinkSent)) flushStream(pid);
   s.text = '';
   s.sent = '';
+  s.think = '';
+  s.thinkSent = '';
   s.active = false;
   remoteServer.broadcast({ type: 'ai-error', profileId: pid, error: error || '生成失败' });
 }
@@ -255,6 +283,18 @@ function onTool(phase: string, name: string, profileId: string): void {
   remoteServer.broadcast({ type: 'tool', profileId: profileId || '', phase, name: name || '' });
 }
 
+/** 广播远程启用状态给所有 AI 页面（bridge 门控开关） */
+function broadcastRemoteMode(enabled: boolean): void {
+  for (const ctx of windowState.getAllContexts()) {
+    try {
+      const v = ctx && ctx.view;
+      if (v && v.webContents && !v.webContents.isDestroyed()) {
+        v.webContents.send('remote-mode', { enabled });
+      }
+    } catch (_) { /* ignore */ }
+  }
+}
+
 /** 启动远程服务 */
 async function initRemote(): Promise<void> {
   const cfg = readConfig();
@@ -279,6 +319,7 @@ async function initRemote(): Promise<void> {
     onListProfiles: listProfiles,
     onGetCurrentProfile: getCurrentProfile,
     onSelectProfile: selectProfile,
+    onNewClient: pushActiveStreamsToNewClient,
   }, cfg.port, cfg.token);
   if (!r.ok) {
     console.error('[Remote] 启动失败:', r.error);
@@ -287,6 +328,10 @@ async function initRemote(): Promise<void> {
     return;
   }
   console.log('[Remote] 已启动，端口=' + r.port + '，令牌已配置');
+  // 广播启用状态给所有 AI 页面（bridge 据此打开上报门控）。
+  // 关键：bridge 若在服务启动前查询 remote-is-enabled 得到 false，此后再无事件复位 →
+  // onStream 被门控全丢（"连接成功但推送失败"）。故启动成功后必须主动广播一次。
+  broadcastRemoteMode(true);
 
   // 若开启了内置隧道托管，自动拉起 cloudflared
   if (cfg.tunnelEnabled) {
@@ -315,6 +360,7 @@ async function stopRemote(): Promise<void> {
   if (disposeWindowsChanged) { try { disposeWindowsChanged(); } catch (_) {} disposeWindowsChanged = null; }
   try { await stopTunnel(); } catch (_) {}
   await remoteServer.stopServer();
+  broadcastRemoteMode(false);
 }
 
-export { initRemote, stopRemote, onAiStream, onAiReply, onAiStop, onAiError, onTool, getTunnelStatus };
+export { initRemote, stopRemote, onAiStream, onAiReply, onAiStop, onAiError, onTool, getTunnelStatus, broadcastRemoteMode };

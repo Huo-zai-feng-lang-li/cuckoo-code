@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [0.8.88] - 2026-10-16
+
+### Added
+- **手机远程端显示 AI 思考过程**：此前手机端完全收不到思考（thinking），现在实时同步并展示：
+  - 正文上方独立可折叠的思考块（流式期间自动展开，正文出现或收尾后自动折叠）；
+  - 用户手动点过标题后尊重其选择（不再自动折叠）；
+  - 收尾显示"已思考 (N 字)"。
+- **协议升级**：`ai-stream` 从 `{ delta, reset }` 升级为 `{ thinkDelta, textDelta, reset }`，think 与 text 独立增量（各自算 delta，任一前缀回退即整体 reset）。
+
+### Fixed
+- **"连接成功但消息推送失败"**：`initRemote` 启动服务后从不广播 `remote-mode`，若 AI 页面 preload 在服务启动前查询 `remote-is-enabled` 得到 `false`，此后无事件复位 → bridge 门控永久关闭，所有流式上报被丢弃。修复：启动成功后主动广播 `remote-mode(true)`。
+- **"切后台再切回需重连"后丢消息**：重连后只发 `ready`，不同步当前流式状态。修复：新增 `onNewClient` 回调，新客户端连入时把每个活跃流的当前全量以 `reset=true` 补发，并同步基线 `sent/thinkSent`（防重复发尾巴）。
+- **stop/error 时思考尾帧丢失**：`onAiStop`/`onAiError` 的 flush 条件只看 `text`，think 仍有未广播增量时不触发 flush → 尾部思考永久丢失。修复：条件纳入 think。
+
+### Changed
+- `broadcastRemoteMode` 统一由 `remote/manager.ts` 导出，删除 `ipc/remote.ts` 的重复实现。
+- PWA 清理：`appendStreaming` 的 `reset` 死参数删除（清空逻辑已上移到消息处理层）；`resetThink` 补 `sawText` 复位。
+
 ## [0.8.87] - 2026-10-16
 
 ### Fixed

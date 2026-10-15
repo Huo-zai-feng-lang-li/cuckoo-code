@@ -47,6 +47,7 @@ export function initRemoteBridge(): void {
   //    注意：跳过 finished 收尾帧（它带全文，会与 onInterceptedResponse 的 ai-reply 重复 → 双气泡）
   let streamTimer: any = null;
   let pendingText = '';
+  let pendingThink = '';
   /** 清理流式节流状态。
    *  flushText=true：先把节流窗口内未上报的最后一批文本发出去（stop/error 无后续全量帧兜底，必须 flush）；
    *  flushText=false：只清 timer/pending（reply 有全量帧兜底，避免重复上报）。
@@ -56,22 +57,27 @@ export function initRemoteBridge(): void {
    */
   function stopStreamThrottle(flushText: boolean): void {
     if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
-    if (flushText && enabled && pendingText) {
+    if (flushText && enabled && (pendingText || pendingThink)) {
       const clean = stripBlocks(pendingText);
-      if (clean) { try { report({ type: 'ai-stream', text: clean }); } catch (_) { /* ignore */ } }
+      if (clean || pendingThink) { try { report({ type: 'ai-stream', text: clean, think: pendingThink }); } catch (_) { /* ignore */ } }
     }
     pendingText = '';
+    pendingThink = '';
   }
   onStream((ev: any) => {
-    if (!enabled || !ev || !ev.text || ev.finished) return;
-    pendingText = ev.text;
+    if (!enabled || !ev || ev.finished) return;
+    if (!ev.text && !ev.think) return; // 空心跳
+    pendingText = ev.text || '';
+    pendingThink = ev.think || '';
     if (streamTimer) return;
     streamTimer = setTimeout(() => {
       streamTimer = null;
       const text = pendingText;
+      const think = pendingThink;
       pendingText = ''; // 已投递：清空，防下一轮 stop 时重复 flush 上一段全文
+      pendingThink = '';
       const clean = stripBlocks(text);
-      if (clean) report({ type: 'ai-stream', text: clean });
+      if (clean || think) report({ type: 'ai-stream', text: clean, think });
     }, 100);
   });
 

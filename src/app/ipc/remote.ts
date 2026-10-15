@@ -7,22 +7,10 @@ import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { readConfig, writeConfig, resetToken } from '../../remote/config.js';
 import { getPort, isRunning, getClientCount } from '../../remote/server.js';
-import { initRemote, stopRemote, onAiStream, onAiReply, onAiStop, onAiError, onTool, getTunnelStatus } from '../../remote/manager.js';
+import { initRemote, stopRemote, onAiStream, onAiReply, onAiStop, onAiError, onTool, getTunnelStatus, broadcastRemoteMode } from '../../remote/manager.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
-
-/** 通知所有 AI 页面：远程启用状态（bridge 据此决定是否上报） */
-function broadcastRemoteMode(enabled: boolean): void {
-  for (const ctx of windowState.getAllContexts()) {
-    try {
-      const v = ctx && ctx.view;
-      if (v && v.webContents && !v.webContents.isDestroyed()) {
-        v.webContents.send('remote-mode', { enabled });
-      }
-    } catch (_) { /* ignore */ }
-  }
-}
 
 function registerRemoteIpc(): void {
   // 读配置 + 状态
@@ -98,7 +86,7 @@ function registerRemoteIpc(): void {
     const profileId = (ctx && ctx.profileId) || '';
     const type = payload && payload.type;
     try {
-      if (type === 'ai-stream') onAiStream(String(payload.text || ''), profileId);
+      if (type === 'ai-stream') onAiStream(String(payload.text || ''), String(payload.think || ''), profileId);
       else if (type === 'ai-reply') onAiReply(String(payload.text || ''), profileId);
       else if (type === 'ai-stop') onAiStop(profileId);
       else if (type === 'ai-error') onAiError(profileId, String(payload.error || ''));
