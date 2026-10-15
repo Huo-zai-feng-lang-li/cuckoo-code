@@ -2307,12 +2307,29 @@
   function isNearBottom() {
     return (stream.scrollHeight - stream.scrollTop - stream.clientHeight) < 90;
   }
+  // rAF 合并滚动：流式每帧都调 scrollBottom，直接设 scrollTop 会每帧强制 reflow；
+  // 一帧内多次调用合并为一次，减少长回复下的布局抖动（配合 hook 节流降低）。
+  // _scrollForce：本帧内是否有 force 请求（即便 pinBottom 中途被用户上滚改 false，force 仍要滚）。
+  var _scrollRaf = null;
+  var _scrollForce = false;
   function scrollBottom(force) {
     if (force || pinBottom) {
-      stream.scrollTop = stream.scrollHeight;
+      _scrollForce = _scrollForce || !!force;
       pinBottom = true;
+      if (_scrollRaf) return; // 本帧已排，合并
+      _scrollRaf = requestAnimationFrame(function () {
+        _scrollRaf = null;
+        var must = _scrollForce;
+        _scrollForce = false;
+        // 关键：rAF 内重新校验。若这帧内用户已上滚（pinBottom 变 false）且非 force，
+        // 则放弃滚底，避免把正在翻历史的用户弹回底部。
+        if (!must && !pinBottom) { updateScrollBtn(); return; }
+        stream.scrollTop = stream.scrollHeight;
+        updateScrollBtn();
+      });
+    } else {
+      updateScrollBtn();
     }
-    updateScrollBtn();
   }
   var scrollBtn = null;
   function updateScrollBtn() {

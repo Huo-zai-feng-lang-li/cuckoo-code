@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.8.98] - 2026-10-16
+
+### Performance
+- **Harness 流式出字更流畅**：三个 provider hook（deepseek/claude/chatgpt）的流式节流从 **80ms → 40ms**（刷新率 12.5→25 fps），缓解出字"一坨一坨"的卡顿感。finished 帧绕过节流不受影响。
+- **滚动 rAF 合并**：`harness.html` 的 `scrollBottom` 改为一帧最多滚动一次，减少长回复下每帧强制 reflow 的布局抖动（配合节流降低）。含修复：rAF 内重新校验 `pinBottom`，避免把正在上翻历史的用户弹回底部。
+
 ## [0.8.97] - 2026-10-16
 
 ### Fixed

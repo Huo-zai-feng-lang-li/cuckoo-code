@@ -40,11 +40,11 @@ function install(): void {
     } catch (e) { /* ignore */ }
   }
 
-  // 流式增量事件（纯新增，供纯净模式实时渲染；节流 ~80ms）
+  // 流式增量事件（供纯净模式实时渲染；节流 ~40ms）
   var lastStreamAt = 0;
   function dispatchStream(think, text, finished) {
     var now = Date.now();
-    if (!finished && now - lastStreamAt < 80) return;
+    if (!finished && now - lastStreamAt < 40) return;
     lastStreamAt = now;
     try {
       window.dispatchEvent(new CustomEvent('cuckoo-ai-stream', {

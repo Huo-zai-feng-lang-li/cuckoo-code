@@ -91,13 +91,13 @@ function install(): void {
     return 'error';
   }
 
-  // 流式增量事件（纯新增，供纯净模式实时渲染；节流 ~80ms）
+  // 流式增量事件（供纯净模式实时渲染；节流 ~40ms）
   var lastStreamAt = 0;
   // acc：服务端下发的 accumulated_token_usage（= prompt + 已生成输出），
   // 下游用"当前 acc − 本轮起始 acc"得到精确的本轮输出 token 数。
   function dispatchStream(think, text, finished, acc) {
     var now = Date.now();
-    if (!finished && now - lastStreamAt < 80) return;
+    if (!finished && now - lastStreamAt < 40) return;
     lastStreamAt = now;
     try {
       window.dispatchEvent(new CustomEvent('cuckoo-ai-stream', {
