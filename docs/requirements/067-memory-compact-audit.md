@@ -67,3 +67,24 @@ updated: 2026-10-16
 
 - 初判"记忆并发丢更新" → **驳回**：全同步 API + 主进程单线程，天然串行，无竞态。
 - 子代理验证：renameSync 在 Windows 能覆盖（Node 用 MOVEFILE_REPLACE_EXISTING）；tmp 名无并发冲突；截断顺序正确；localStorage 同源（chat.deepseek.com）；extraPrompt 注入路径与子代理一致。
+
+## 窗口组转移审计澄清（重要：此前措辞不准确，此处更正）
+
+**结论：窗口组转移的完整性无需修改。** 此前把它列为"分支历史丢失"问题是**措辞不准确**，特此澄清：
+
+### 实际迁移内容（`harness.html:exportHarnessState()` 3736 行）
+- `history` —— 完整可见对话
+- `sendQueue` —— 待发队列
+- `goal` / `goalNoProgress` —— 目标
+- `planState` / `planTodos` —— 计划
+
+**即：队列、目标、计划、最新对话——全都在迁移，无遗漏。**
+
+### "不迁分支"是正确设计，不是缺陷
+- 窗口组切换的分享取 `pickRecentPairedIds(allMsgs, currentMessageId, 1.0)`（`compaction.ts:564`）：`ratio=1.0` = **全量**，沿 `parent_id` 从**当前叶子**回溯 → 得到**最新主对话线**。
+- "重新生成 / 编辑"产生的**废弃分支**（旧答案）本就**不该**给模型看——它只会污染上下文、造成角色序列错乱。
+- 且这是 DeepSeek 分享 API 的**硬约束**：`share/create` 要求消息 USER/ASSISTANT 成对，分支会破坏配对 → 直接报 `MESSAGES_MUST_APPEAR_IN_PAIRS`。故 `pickRecentPairedIds` 刻意沿 `parent_id` 回溯，是**正确实现**。
+
+### 修正后的结论
+- 窗口组转移**没有需要修的完整性问题**（v0.8.95 已闭环）。
+- 之前"分支历史丢失"的表述，准确说法是："分支是废弃版本，本就不该迁移——丢掉是正确行为。"
