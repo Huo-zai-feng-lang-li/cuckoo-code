@@ -2418,6 +2418,10 @@
    * 此时不能据"未生成"收尾（否则又会出现"网页在跑、界面却停了"）。
    */
   var AI_STATE_QUIET_MS = 6000;
+  // 工具运行中的静默容忍：AI 网页已停止生成（generating=false）时，框架侧工具仍可能在跑
+  // （bash / 长任务几十秒无事件）。此时不能按 6s 收尾 —— 会误清工具计数、把卡片状态弄乱。
+  // 给一个宽上限（10 分钟）仅兜底 tool-end 丢失，正常路径由 tool-end / task-idle 收尾。
+  var AI_STATE_QUIET_TOOL_MS = 600000;
   function onAiState(generating) {
     if (generating) {
       // 反向：AI 页面在工作而界面没显示 → 补上运行态（无竞态风险）
@@ -2426,7 +2430,8 @@
       return;
     }
     if (!isBusy()) return;
-    if (Date.now() - lastActivityAt <= AI_STATE_QUIET_MS) return;
+    var quietMs = toolRunningCount > 0 ? AI_STATE_QUIET_TOOL_MS : AI_STATE_QUIET_MS;
+    if (Date.now() - lastActivityAt <= quietMs) return;
     toolRunningCount = 0; // 权威判定已停止：陈旧工具计数一并清掉（防 tool-end 丢失卡死）
     frameworkDriveUntil = 0;
     setStatus('就绪', 'ready');
@@ -2443,7 +2448,8 @@
     // 连 task-idle 都会因它提前返回。工具确实可能跑很久，故给一个宽上限；
     // 超过即视为陈旧账目，清零复位（用户不必知道要按停止键才能解套）。
     if (toolRunningCount > 0) {
-      if (Date.now() - lastActivityAt > 600000) {
+      // 与 onAiState 共用同一阈值（工具相关的最长静默容忍）
+      if (Date.now() - lastActivityAt > AI_STATE_QUIET_TOOL_MS) {
         toolRunningCount = 0;
         frameworkDriveUntil = 0;
         setStatus('就绪', 'ready');

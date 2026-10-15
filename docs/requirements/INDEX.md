@@ -62,5 +62,6 @@
 | 056 | fix | [审计整改：053 dataset.raw O(n²) + 054 增量标记脱钩丢字](./056-audit-rectify-perf-cache.md) | done | fix/056-audit-rectify-perf-cache | 2026-10-16 |
 | 057 | fix | [二次审计整改：056 R1（stop/error 尾帧仍丢）+ 055 小瑕疵](./057-audit-rectify-r2.md) | done | fix/057-audit-rectify-r2 | 2026-10-16 |
 | 058 | feature | [限流自动切换改系统级浮窗告警（原 harness 内弹窗看不见）](./058-switch-alert-window.md) | done | feat/058-switch-alert-window | 2026-10-16 |
+| 059 | fix | [Harness 卡"生成中"—— aiGenerating 置位后无可靠复位时机](./059-harness-busy-stuck.md) | done | fix/059-harness-busy-stuck | 2026-10-16 |
 
-共 57 个需求。
+共 58 个需求。

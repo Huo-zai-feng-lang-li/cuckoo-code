@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.8.87] - 2026-10-16
+
+### Fixed
+- **Harness 纯净模式卡"生成中"**：AI 网页原始回复已终止（真实任务结束），但 Harness 仍显示"生成中"、发送键停在"停止"态。
+  - **根因**：`aiGenerating` 一旦置 true 缺少可靠复位时机，叠加"心跳续命"形成死循环——
+    1. `harness-bridge.ts` 的 `onStream` 只处理非 finished 帧（置 true），**finished 帧不复位**；
+    2. `onInterceptedResponse` 仅当"回复不含 js/cuckoo 代码块"才复位，含工具块的回复**永不复位**；
+    3. `aiGenerating` 卡 true 后，2 秒心跳**持续上报 true**；
+    4. `harness.html` 的 `onAiState(true)` 每次都刷新 `lastActivityAt`，令 6 秒静默兜底**永不满足**。
+  - **修复**：`onStream` 的 **finished 帧（流式结束的权威信号）复位 `aiGenerating`**；`onAiState` 在工具运行中（`toolRunningCount>0`）改用 600 秒静默阈值（防误清长工具），工具一结束即回落 6 秒。
+  - 真机验证：ai-state 序列 `[0,0,0,0,1,1,0,1,1,0,0,...]` —— 生成置 1、finished 后正确复位 0。
+
 ## [0.8.86] - 2026-10-16
 
 ### Added
