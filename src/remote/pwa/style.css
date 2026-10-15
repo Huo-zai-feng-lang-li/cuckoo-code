@@ -1026,7 +1026,7 @@ svg { flex-shrink: 0; }
 }
 
 /* AI 消息尾部签名（✦ Cuckoo，与电脑端一致）——
-   流式期间兼作光标（四角星流光），结束后保持为静态署名 */
+   流式期间像光标一样持续脉动（缩放 + 旋转 + 辉光），结束后保持为静态署名 */
 .msg-sig {
   display: inline-flex;
   align-items: center;
@@ -1046,14 +1046,37 @@ svg { flex-shrink: 0; }
   height: 11px;
   flex-shrink: 0;
   display: block;
+  transform-origin: 50% 50%;
 }
-/* 流式中：四角星流光动画（作为光标） */
+/* 流式中：四角星持续脉动（缩放 + 旋转 + 辉光），像正在生成的光标 */
 .msg.ai.streaming .msg-sig svg {
-  animation: starFlow 1.2s ease-in-out infinite;
+  animation: starPulse 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  will-change: transform, opacity, filter;
 }
-@keyframes starFlow {
-  0%, 100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 3px var(--accent-glow)); }
-  50% { opacity: 0.45; transform: scale(0.8); filter: drop-shadow(0 0 1px var(--accent-glow)); }
+@keyframes starPulse {
+  0% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 5px var(--accent-glow));
+  }
+  45% {
+    opacity: 0.35;
+    transform: scale(0.58) rotate(-22deg);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 5px var(--accent-glow));
+  }
+}
+/* 流式中：签名文字轻微呼吸，与星星同步（"正在生成"的呼吸感） */
+.msg.ai.streaming .msg-sig {
+  animation: sigBreath 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes sigBreath {
+  0%, 100% { opacity: 0.95; }
+  50% { opacity: 0.4; }
 }
 
 /* Message actions */
