@@ -14,6 +14,7 @@ import * as mcpConfig from '../mcp/config.js';
 import * as mcpClient from '../mcp/client.js';
 import { resolveAsset, resolveSrc } from '../infra/paths.js';
 import { applyHarnessZoom } from './harness-zoom.js';
+import { showSwitchAlert } from './alert-window.js';
 
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, nativeTheme, ipcMain: ipcMainForProfile, Notification } = require('electron');
@@ -1157,7 +1158,8 @@ injectWindowGroupDeps({
 });
 
 // ========== 限流触发自动切换 ==========
-// 待确认的自动切换（倒计时期间可被用户取消）
+// 【已弃用】pendingAutoSwitch + harness-cancel-switch + countdownBeforeAutoSwitch 配套结构——
+// 2026-10-16 起改用 alert-window.ts 的 showSwitchAlert 系统浮窗，本结构仅保留历史代码，无调用方。
 const pendingAutoSwitch = new Map<number, { cancel: () => void }>();
 // 正在切换中的 profileId：限流会连续触发多次 rate-limit-hit，
 // 用此守卫避免并发倒计时 / 双切换（同一窗口同一时刻只处理一次）
@@ -1176,7 +1178,8 @@ ipcMainForProfile.handle('harness-cancel-switch', async (event: any) => {
   return { success: true, cancelled: false };
 });
 
-/** 自动切换前给源窗口 3s 倒计时（用户可取消）。返回是否被取消。 */
+/** 【已弃用】harness 内倒计时（容易被 AI 页面盖住，2026-10-16 起改用 showSwitchAlert 系统浮窗）
+ *  保留代码以备将来复用为「温和提示」；当前自动切换不再调用。 */
 function countdownBeforeAutoSwitch(ctx: any, seconds: number): Promise<boolean> {
   return new Promise((resolve) => {
     const hv = ctx && ctx.harnessView;
@@ -1210,9 +1213,31 @@ ipcMainForProfile.handle('rate-limit-hit', async (event: any) => {
   }
   switchingProfiles.add(profileId);
   console.log('[窗口组] 限流触发自动切换，组=' + group.name);
-  // 自动切换：先给源窗口 6s 倒计时（突兀切换改为可见倒计时，可取消）
-  const cancelled = await countdownBeforeAutoSwitch(ctx, 6);
-  if (cancelled) { switchingProfiles.delete(profileId); return { success: true, switched: false, reason: 'cancelled' }; }
+  // 系统级浮窗告警：右下角独立 BrowserWindow（一定看得见），10 秒倒计时，可取消/加速
+  // 注：目标窗口此刻尚未探测（要等分享 + 逐个探测），故只显示源窗口名
+  let decision: string;
+  try {
+    decision = await showSwitchAlert({
+      currentName: profileDisplayName(profileId),
+      seconds: 10,
+    });
+  } catch (err: any) {
+    // 浮窗异常（理论上不会，但守卫必要）：视同取消并释放 switchingProfiles，防该 profile 永久卡死
+    console.error('[窗口组] 告警浮窗异常:', err && err.message);
+    switchingProfiles.delete(profileId);
+    return { success: false, error: (err && err.message) || '告警浮窗异常' };
+  }
+  if (decision === 'cancel') {
+    console.log('[窗口组] 用户取消自动切换');
+    switchingProfiles.delete(profileId);
+    return { success: true, switched: false, reason: 'cancelled' };
+  }
+  if (decision === 'superseded') {
+    // 被新告警顶替（多窗口同时限流）：本轮静默放弃，不写"用户取消"误导日志
+    console.log('[窗口组] 告警被新告警顶替，放弃本轮切换 ' + profileId);
+    switchingProfiles.delete(profileId);
+    return { success: true, switched: false, reason: 'superseded' };
+  }
   // 触发切换（复用 P2 的编排）
   try {
     const res = await runSwitchForGroup(group.id, profileId, true);
