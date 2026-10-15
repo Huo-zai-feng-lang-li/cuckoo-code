@@ -1,37 +1,37 @@
-# 最新接续状态 (2026-10-15 23:30)
+# 最新接续状态 (2026-10-15 23:55)
 
 ## 核心进展
-- **053 远程手机端流式性能修复（O(n²) → O(n)）** 已闭环并发版 v0.8.81（分支 perf/053-remote-stream-perf）。核心：两端流式链路从「全量覆盖」改「增量协议」，另修一处幽灵帧竞态。
+- **054 Harness 性能修复（流式渲染 O(n²) + 历史全量同步写）** 已闭环并发版 v0.8.82（分支 perf/054-harness-perf）。核心在 `src/ui/harness.html`。
 
 ## 核心动机与背景 (Motivation & Background)
-- **问题**：远程手机端（PWA）与电脑端（主进程）的流式链路全线按「全量覆盖」设计，长回复（>2000 字）性能随文本长度**平方级放大**：
-  - 主进程每 100ms 广播**整个累积文本**（总出站量 ≈ L·M/2，经 Cloudflare 隧道放大数十倍）；
-  - 手机端每帧对**全文**执行 `markdown 解析 + XSS 消毒（new DOMParser）+ innerHTML 整棵子树重建`；
-  - bridge 层每个 token 事件都对全量文本跑 `stripBlocks`（6 次正则），占满 AI 页面主线程；
-  - `serveStatic` 用 `readFileSync` 阻塞主进程。
-- **性质**：不是崩溃型 bug，是长回复场景下的体验退化（卡顿/发烫/光标闪烁/带宽暴涨），用户判定为「准 bug」要求修复。
+- **问题**：纯净对话模式（Harness）两处**用户可感知卡顿**：
+  1. 流式渲染 O(n²)：`onStream` 每帧带全量正文，每帧对全文跑 `renderMarkdown`（marked + KaTeX 全量解析）+ `innerHTML` 重建；长回复 >2000 字时末段每秒数十次全量解析 → 卡顿。
+  2. 历史持久化全量同步写：`pushHist` 每次（回复 / 工具 start-end / 系统消息）都全量 `JSON.stringify(history)` + `localStorage.setItem` 同步写盘（最多 400 条 × 6000 字符 ≈ 数 MB）→ 阻塞渲染进程主线程。
 
 ## 关键设计与实现 (Implementation & Decisions)
-- **增量协议**：`StreamState` 新增 `sent` 字段（已发送基线）。`flushStream` 以 `s.text.startsWith(s.sent)` 判断——是前缀则发 `delta = 新增部分`（reset=false），否则发全文（reset=true）。三条终帧（reply/stop/error）清 `sent`。
-- **手机端**：`startStreaming` 建 `.stream-text` 文本容器 + 光标；`appendStreaming(delta, reset)` 非 reset 时 `appendChild(createTextNode(delta))`（真 O(n)），reset 时 `textContent` 全量覆盖；`finishStreaming` 才 `renderMd` 全量渲染 + `decorateContent` + `attachActions`，并 `classList.remove('streaming')`。
-- **bridge 节流**：`streamTimer/pendingText` 合并到 ~100ms 一次；**关键**：三个终帧回调入口统一调 `stopStreamThrottle()` 清幽灵帧（否则竞态 → 手机端僵尸气泡 + 按钮永久禁用）。
-- **serveStatic 异步化**：`fs.promises.stat/readFile`；catch 里防 `headersSent` 重复写头。
-- **取舍**：流式期间为纯文本（失去实时 Markdown 样式），结束帧补齐——性能换体验。
-- **协议兼容**：电脑端与手机端同步发布；老手机端连新电脑端会看不到流式（结束帧 ai-reply 仍正常）。
+- **流式增量渲染**：新增 `_streamRenderedText` / `_streamRenderedThink` / `_streamCursorEl` 三个模块变量。`appendStreamBody(body, full, kind)`：
+  - 全量以已渲染为前缀 → `appendChild(createTextNode(delta))`，光标保持末尾（`ensureStreamCursor`）。
+  - 不以已渲染为前缀（回退重排）→ 清空重来（`replaceStreamBody`）。
+  - 前缀校验用 `startsWith`（避免 `slice` 分配）。
+- **finished 帧**：绕过节流，`cur.body.innerHTML = renderMarkdown(text)` 全量一次 + `resetStreamRender()` 清标记、删光标 DOM。
+- **光标清理**：`resetStreamRender` 现在真正从 DOM 移除光标（不只置 null），修复「finished 只覆盖 body、光标残留 thinkBody」。
+- **占位三点清理**：首个 think/text 到达时显式移除 `.pending-dots`（增量 append 不会覆盖它）。
+- **跨轮复位**：`onAssistantDone` 及「无 cur 分支」都调 `resetStreamRender()`，防下一轮用旧标记算 delta（前缀巧合下丢字/串字风险）。
+- **saveHist 节流**：新增 `_saveHistTimer` + `scheduleSaveHist()`（500ms 窗口合并）；关键路径（`onSessionChanged` / `resetConversation` / 删除消息 / `beforeunload`）保留立即 `saveHist`。`clearTransientState` 显式清 timer。
+- **审计**：首轮子代理审计发现 5 个问题（1 个 UX 回归 + 1 个光标残留 + 1 个前缀校验仍 O(n²) + 1 个跨轮标记未复位 + 1 个 timer 未取消），全部修复。
 
 ## 待办事项 (Next Steps)
-- [ ] **用户真机验证**：长回复流式流畅度、最终 Markdown 渲染正确性、幽灵帧是否复现。
-- [ ] **（低优先）双层节流**：bridge 100ms + manager 100ms → 端到端首帧延迟 ~200ms，可考虑合并为单层。
-- [ ] **（低优先）图片上传**：base64 塞 WS 单帧（8MB→~11MB），可改 HTTP POST 分片。
+- [ ] **真机验证**：长回复流式流畅度、工具循环中 think/text 交替、会话切换无残留。
+- [ ] **（低优先）restoreHist 全量 DOM 重建**（切会话 1-2s 卡顿，400 条历史时）：可虚拟化/分帧。
 
 ## 关键上下文
 - 目录: D:\Desktop\Super-File\cuckoo-code
-- 分支: perf/053-remote-stream-perf
-- 主要文件:
-  - `src/remote/manager.ts`：`StreamState`（含 sent）、`flushStream`（delta）、`onAiStream/onAiReply/onAiStop/onAiError`
-  - `src/remote/pwa/app.js`：`startStreaming/appendStreaming/finishStreaming`、`streamNode`
-  - `src/bridge/remote-bridge.ts`：`onStream` 节流 + `stopStreamThrottle`
-  - `src/remote/server.ts`：`serveStatic` 异步
-  - `src/remote/pwa/style.css`：`.stream-text`
-  - `docs/requirements/053-remote-stream-perf.md`：需求档案
-- 验证状态：typecheck / test(978) / lint(0 error) / compile 全绿；code-reviewer 审计的 2 个 P0 竞态已修复。
+- 分支: perf/054-harness-perf
+- 主要文件：`src/ui/harness.html`（约 4061 行）
+  - 流式渲染：L2497-2602（`appendStreamBody` / `resetStreamRender` / `onStream`）
+  - 历史持久化：L868-914（`saveHist` / `scheduleSaveHist` / `pushHist`）
+  - 收尾复位：L2604-2631（`onAssistantDone`）
+  - 会话切换：L1344-1347（`clearTransientState`）
+- 验证状态：typecheck / test(978) / lint(0 error) / compile 全绿；子代理审计 5 问题全修。
+- 需求档案：`docs/requirements/054-harness-perf.md`
+- 审计报告：`.agents/harness性能与模型降质-审计.md`（诚实结论：harness 性能**不影响模型降质**，独立渲染进程 + 上下文路径独立；本次修复属 UI 卡顿 bug）

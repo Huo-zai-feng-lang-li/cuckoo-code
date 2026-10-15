@@ -864,7 +864,9 @@
       if (e.code) e.code = truncHist(e.code);
     }
   }
+  /** 立即全量落盘（关键路径用：会话切换 / 新对话 / 卸载前） */
   function saveHist() {
+    if (_saveHistTimer) { clearTimeout(_saveHistTimer); _saveHistTimer = null; }
     try {
       if (history.length > 400) history = history.slice(-400);
       compactHist();
@@ -882,6 +884,23 @@
       }
     } catch (e) { /* ignore */ }
   }
+  // 节流合并：非关键路径（每次 pushHist / 工具 end）不立即落盘，
+  // 500ms 窗口内合并为一次写盘，避免长会话下每帧全量 JSON.stringify + localStorage.setItem
+  // 同步阻塞渲染进程主线程。
+  var _saveHistTimer = null;
+  function scheduleSaveHist() {
+    if (_saveHistTimer) return;
+    _saveHistTimer = setTimeout(function () {
+      _saveHistTimer = null;
+      saveHist();
+    }, 500);
+  }
+  // 页面卸载前：把未落盘的定时写盘 flush 掉，防丢数据
+  try {
+    window.addEventListener('beforeunload', function () {
+      if (_saveHistTimer) { clearTimeout(_saveHistTimer); _saveHistTimer = null; saveHist(); }
+    });
+  } catch (_) { /* ignore */ }
   function pushHist(e) {
     // 入库前先截断大字段
     if (e) {
@@ -892,7 +911,7 @@
       if (e.code) e.code = truncHist(e.code);
     }
     history.push(e);
-    saveHist();
+    scheduleSaveHist(); // 节流合并，避免每次 push 都全量同步写盘
   }
   var PREFIX_SVG = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l1.8 4.6L14.5 8l-4.7 2.4L8 15l-1.8-4.6L1.5 8l4.7-2.4z"/></svg>';
 
@@ -1322,7 +1341,10 @@
     renderAttach();
     pendingHints = [];
     renderHints();
-    cancelStreamRender(); // 取消挂起的流式渲染，避免切会话后多余的滚动副作用
+    resetStreamRender(); // 复位流式增量渲染标记 + 清光标 DOM（切会话/新对话都要清）
+    // 清掉未落盘的 saveHist 定时器：切会话会由 onSessionChanged 显式 saveHist；
+    // 新对话会在后面 saveHist 空历史——都不该让残留 timer 再触发一次多余写盘
+    if (_saveHistTimer) { clearTimeout(_saveHistTimer); _saveHistTimer = null; }
     cur = null;
   }
 
@@ -2472,33 +2494,71 @@
   var lastDoneText = '';
   // 去重：已写入历史的最新 assistant 文本
   var lastPushedAssistant = '';
-  // ===== 流式正文渲染节流 =====
-  // onStream 每帧都带「全量正文」，而 renderMarkdown 是全量解析（marked + KaTeX）。
-  // 逐帧渲染 → 单轮回复累计 O(n²)（正文越长每帧越贵）。用 rAF 合并同一帧内多次更新，
-  // 只渲染最后一次；finished 帧绕过节流立即渲染，保证收尾不留延迟、光标正确消失。
-  var _streamRenderBody = null;
-  var _streamRenderText = '';
-  var _streamRenderPending = false;
-  function _doStreamRender() {
-    _streamRenderPending = false;
-    var body = _streamRenderBody, text = _streamRenderText;
-    _streamRenderBody = null;
-    // 仅当目标气泡仍有效时才渲染 + 滚动（会话切换/收尾后 body 失效 → 整体 no-op，
-    // 不再无条件 scrollBottom，避免切会话后被挂起的 rAF 触发多余滚动）
-    if (body && body.isConnected && cur && cur.body === body) {
-      body.innerHTML = renderMarkdown(text) + '<span class="streaming-cursor"></span>';
-      scrollBottom(false);
+  // ===== 流式正文增量渲染 =====
+  // onStream 每帧都带「全量正文/思考」，若逐帧 renderMarkdown 全量解析 + innerHTML 重建
+  // → 单轮累计 O(n²)（正文越长每帧越贵）。改为「增量纯文本 append」：
+  //   - 非 finished 帧：只把新增部分 appendChild(createTextNode)，保留光标在末尾；
+  //     不做 markdown 解析、不重建整棵子树。
+  //   - finished 帧：绕过节流，走全量 renderMarkdown 一次，保证收尾正确 + 光标消失。
+  //   - 异常重排（全量不以已渲染为前缀）：清空重来（防御性兜底）。
+  //   - 会话切换 / resetConversation：调用 resetStreamRender 复位渲染标记。
+  var _streamRenderedText = '';   // 已渲染的正文全量（用于计算 delta）
+  var _streamRenderedThink = '';  // 已渲染的思考全量
+  var _streamCursorEl = null;     // 光标节点（append 时保持在末尾）
+  function resetStreamRender() {
+    _streamRenderedText = '';
+    _streamRenderedThink = '';
+    // 若光标仍在 DOM（如 finished 只覆盖 cur.body 未触及 thinkBody），必须移除，
+    // 否则会残留在 thinkBody 里（用户展开思考会看到闪烁光标）
+    if (_streamCursorEl && _streamCursorEl.parentNode) {
+      try { _streamCursorEl.parentNode.removeChild(_streamCursorEl); } catch (_) {}
+    }
+    _streamCursorEl = null;
+  }
+  /** 确保 body 里有流式光标节点，且位于末尾 */
+  function ensureStreamCursor(body) {
+    if (!body) return;
+    if (!_streamCursorEl || !_streamCursorEl.isConnected) {
+      _streamCursorEl = document.createElement('span');
+      _streamCursorEl.className = 'streaming-cursor';
+    }
+    // 始终把光标 append 到末尾（追加新文本后调用本函数）
+    if (body.lastChild !== _streamCursorEl) body.appendChild(_streamCursorEl);
+  }
+  /** 把 body 里的纯文本内容替换为新的全量（异常重排时用） */
+  function replaceStreamBody(body, fullText) {
+    body.textContent = '';
+    if (fullText) body.appendChild(document.createTextNode(fullText));
+    ensureStreamCursor(body);
+  }
+  /** 追加 text 的新增部分到 body（增量 appendChild） */
+  function appendStreamBody(body, full, kind) {
+    // 异常路径：全量不以已渲染为前缀 → 清空重来（防串行错乱）
+    var rendered = kind === 'think' ? _streamRenderedThink : _streamRenderedText;
+    if (full.length < rendered.length || !full.startsWith(rendered)) {
+      // 回退/重排：只能整段覆盖
+      if (kind === 'think') { body.textContent = ''; _streamRenderedThink = ''; }
+      else { replaceStreamBody(body, ''); _streamRenderedText = ''; }
+      rendered = '';
+    }
+    var delta = full.slice(rendered.length);
+    if (!delta) { ensureStreamCursor(body); return; }
+    var node = document.createTextNode(delta);
+    if (kind === 'think') {
+      body.appendChild(node);
+      _streamRenderedThink = full;
+      ensureStreamCursor(body);
+    } else {
+      // 正文：把光标先摘掉，append 文本，再把光标补到末尾
+      if (_streamCursorEl && _streamCursorEl.parentNode === body) body.removeChild(_streamCursorEl);
+      body.appendChild(node);
+      _streamRenderedText = full;
+      ensureStreamCursor(body);
     }
   }
-  function scheduleStreamRender(body, text) {
-    _streamRenderBody = body;
-    _streamRenderText = text;
-    if (_streamRenderPending) return;
-    _streamRenderPending = true;
-    (window.requestAnimationFrame || function (cb) { return setTimeout(cb, 16); })(_doStreamRender);
-  }
-  // 取消挂起：清目标 + 复位 pending（否则切换后首个 schedule 会因 pending 残留走早返回）
-  function cancelStreamRender() { _streamRenderBody = null; _streamRenderText = ''; _streamRenderPending = false; }
+
+  // 兼容旧 API（保留函数名，避免其它地方引用报错；实际已不用）
+  function cancelStreamRender() { resetStreamRender(); }
 
   // 流式更新：think/text 均为全量快照
   function onStream(think, text, finished) {
@@ -2511,10 +2571,18 @@
     // finished 帧不置忙：收尾交给 onAssistantDone（否则会在结束瞬间又点亮运行态）。
     if (!finished && (text || think) && !isBusy()) setStatus('生成中…', 'busy');
     if (!cur) cur = createAssistant();
-    if (cur.pending && (think || text)) { cur.pending = false; }
+    if (cur.pending && (think || text)) {
+      cur.pending = false;
+      // 清掉占位三点：增量 append 不会自动覆盖它，必须显式移除
+      try {
+        var pd = cur.body.querySelector('.pending-dots');
+        if (pd && pd.parentNode) pd.parentNode.removeChild(pd);
+      } catch (_) {}
+    }
     if (think) {
       cur.thinkEl.style.display = '';
-      cur.thinkBody.textContent = think;
+      // 思考体：仅更新标签，内容走增量 append
+      appendStreamBody(cur.thinkBody, think, 'think');
       cur.thinkLabel.textContent = text ? '已思考 (' + think.length + ' 字)' : '思考中…';
       // 正文尚未出现时，自动展开思考；正文出现后自动折叠
       if (!text) cur.thinkEl.classList.add('open');
@@ -2522,12 +2590,11 @@
     }
     if (text) {
       if (finished) {
-        // 收尾帧：绕过节流立即渲染（去掉光标），保证结束无延迟
-        cancelStreamRender();
+        // 收尾帧：全量 renderMarkdown 一次（去掉光标）
         cur.body.innerHTML = renderMarkdown(text);
+        resetStreamRender();
       } else {
-        // 流式帧：rAF 合并，同一帧多次只渲染最后一次
-        scheduleStreamRender(cur.body, text);
+        appendStreamBody(cur.body, text, 'text');
       }
     }
     scrollBottom(false); // 跟随但不打扰往上翻看
@@ -2540,7 +2607,7 @@
     else setStatus('就绪', 'ready');
     var t = (text || '').trim();
     // 去重：与上一条已完成一致则忽略（防 finished 流 + assistant-done 双触发）
-    if (t && t === lastDoneText) { clearPendingBubble(); return; }
+    if (t && t === lastDoneText) { clearPendingBubble(); resetStreamRender(); return; }
     if (t) lastDoneText = t;
     if (cur) {
       if (t) {
@@ -2554,10 +2621,14 @@
         } catch (e) { /* ignore */ }
         clearPendingBubble();
       }
+      // 跨轮复位：finished 帧之外的终态路径（assistant-done / tool 收尾）也走这里，
+      // 若不复位，下一轮新气泡会用旧标记算 delta，存在前缀巧合下丢字/串字的隐性风险
+      resetStreamRender();
       cur = null;
       scrollBottom(false);
       return;
     }
+    resetStreamRender();
     if (!t) return;
     clearEmpty();
     var d = document.createElement('div');
@@ -2742,7 +2813,7 @@
           // 更新最近一个"未完成"的工具历史（从后往前找 success===null）
           for (var ti = history.length - 1; ti >= 0; ti--) {
             if (history[ti].t === 'tool' && history[ti].success === null) {
-              history[ti].success = payload.success; history[ti].output = payload.output; history[ti].error = payload.error; saveHist(); break;
+              history[ti].success = payload.success; history[ti].output = payload.output; history[ti].error = payload.error; scheduleSaveHist(); break;
             }
           }
           // 工具全部结束且无生成中：补一次续跑判定。
