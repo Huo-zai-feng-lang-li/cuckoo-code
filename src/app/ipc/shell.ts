@@ -9,7 +9,7 @@ import * as windowState from '../window.js';
 import * as profileManager from '../profile.js';
 import { getProvider } from '../../providers/registry.js';
 import { setWindowUsage, getTotal, getTodayTotal, getRecentDailyTotal, getWindowUsageList, cleanupSubagentKeys } from '../token-stats.js';
-import { resolveAsset, resolveSrc } from '../../infra/paths.js';
+import { resolveAsset } from '../../infra/paths.js';
 import * as updater from '../../updater/index.js';
 // 新对话要让 harness 视图一起重置 —— 两个入口共用同一段逻辑，避免行为分叉
 import { prepareNewConversation } from './harness.js';
@@ -301,25 +301,6 @@ function registerShellIpc(): void {
       const url = view && !view.webContents.isDestroyed() ? view.webContents.getURL() : '';
       if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return { success: false, error: '当前页面不是网页地址' };
       await shell.openExternal(url);
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err.message };
-    }
-  });
-
-  // 打开「飞书配置教程」应用内新窗口（自包含 HTML，离线可用）
-  ipcMain.handle('open-feishu-setup', async () => {
-    try {
-      const htmlPath = resolveSrc('ui/feishu-setup.html');
-      const win = new BrowserWindow({
-        width: 900,
-        height: 820,
-        title: '飞书同步配置教程',
-        backgroundColor: '#16181d',
-        autoHideMenuBar: true,
-        webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
-      });
-      win.loadFile(htmlPath);
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };

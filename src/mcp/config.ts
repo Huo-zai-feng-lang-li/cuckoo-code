@@ -34,11 +34,16 @@ const { app } = require('electron');
 // ========== 路径 ==========
 
 /**
- * 用户级目录。默认 ~/.cuckoo；可用环境变量 CUCKOO_HOME 覆盖（测试隔离 / 用户自定义）。
+ * 用户级目录。统一为 ~/.agents；可用环境变量 CUCKOO_HOME 覆盖（测试隔离 / 用户自定义）。
  */
 function getUserDir(): string {
   const override = process.env.CUCKOO_HOME;
-  return override ? override : path.join(os.homedir(), '.cuckoo');
+  if (override) {
+    const agentsDir = path.join(override, '.agents');
+    if (fs.existsSync(agentsDir)) return agentsDir;
+    return override;
+  }
+  return path.join(os.homedir(), '.agents');
 }
 function getUserConfigFile(): string {
   return path.join(getUserDir(), 'mcp.json');
@@ -47,10 +52,10 @@ function getUserStateFile(): string {
   return path.join(getUserDir(), 'mcp-state.json');
 }
 function getProjectConfigFile(projectDir: string): string {
-  return path.join(projectDir, '.cuckoo', 'mcp.json');
+  return path.join(projectDir, '.agents', 'mcp.json');
 }
 function getProjectStateFile(projectDir: string): string {
-  return path.join(projectDir, '.cuckoo', 'mcp-state.json');
+  return path.join(projectDir, '.agents', 'mcp-state.json');
 }
 
 // 兼容旧导出名（entry.ts 用于显示路径）
@@ -86,17 +91,14 @@ function writeJson(file: string, data: any): boolean {
   }
 }
 
-// ========== 首次迁移 ==========
+// ========== 首次迁移（仅保留 userData 兜底） ==========
 
 /**
- * 启动时调用一次：
- * 1. ~/.cuckoo/mcp.json 已存在 → 什么都不做
- * 2. 不存在 → 若 userData/mcp.json 存在且是合法 JSON → 复制到 ~/.cuckoo/mcp.json
- * 3. 旧文件保留原样（不删、不改名）
+ * 启动时调用一次：兼容旧 userData/mcp.json（若 ~/.agents/mcp.json 不存在时）
  */
 function migrateLegacy(): void {
   const newFile = getUserConfigFile();
-  if (fs.existsSync(newFile)) return; // 新位置已有，不动
+  if (fs.existsSync(newFile)) return;
 
   let legacyFile: string;
   try {

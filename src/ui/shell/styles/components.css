@@ -264,7 +264,7 @@
   .ck-set-textarea:focus { outline: none; border-color: var(--ck-primary); box-shadow: 0 0 0 3px var(--ck-primary-soft); }
   .ck-set-inline { display: flex; align-items: center; gap: 8px; }
   .ck-set-sep { font-size: 12px; color: var(--ck-text-dim); flex-shrink: 0; }
-  /* 飞书�?*/
+  /* 状态圆点（远程控制等）*/
   .fs-status { display: flex; align-items: center; gap: 7px; }
   .fs-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--ck-text-dim); }
   .fs-dot.connected { background: var(--ck-green); box-shadow: 0 0 0 3px rgba(48,164,108,.15); }

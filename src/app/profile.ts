@@ -95,8 +95,6 @@ function createProfile(name: string, providerId: string): any {
     partition: 'persist:' + (pid ? pid + ':' : '') + id,
     createdAt: new Date().toISOString(),
     autoOpen: false,
-    feishuChatId: '',
-    feishuChatName: '',
   };
   profiles.push(profile);
   writeProfiles(profiles);
@@ -189,24 +187,6 @@ function cleanupSubagentStores(): void {
   }
 }
 
-/** 设置某 profile 绑定的飞书群（chatId/chatName）；空串表示解绑 */
-function setProfileFeishuChat(id: string, chatId: string, chatName: string): any {
-  const profiles = readProfiles();
-  const p = profiles.find(x => x.id === id);
-  if (!p) return null;
-  p.feishuChatId = chatId || '';
-  p.feishuChatName = chatName || '';
-  writeProfiles(profiles);
-  console.log('[Profile] 飞书群绑定更新:', id, chatId ? (chatName + '(' + chatId + ')') : '(解绑)');
-  return p;
-}
-
-/** 按飞书群 chatId 反查 profile（哪个窗口绑了这个群） */
-function getProfileByFeishuChat(chatId: string): any {
-  if (!chatId) return null;
-  return readProfiles().find(p => p.feishuChatId === chatId) || null;
-}
-
 /** 设置某 profile 是否"启动时默认打开" */
 function setAutoOpen(id: string, on: boolean): any {
   const profiles = readProfiles();
@@ -280,8 +260,6 @@ export {
   getDefaultProfile,
   getProfileById,
   updateProfileName,
-  setProfileFeishuChat,
-  getProfileByFeishuChat,
   updateProfileProvider,
   deleteProfile,
   setLastActiveProfileId,

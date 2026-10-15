@@ -23,7 +23,7 @@ import { startSessionWatcher, startWatchdog, checkSessionChange } from './loop/w
 import { initSubagentIfNeeded } from './subagent.js';
 import { initHarnessBridge } from './harness-bridge.js';
 import { initProbeIfNeeded } from './probe.js';
-import { initFeishuBridge } from './feishu-bridge.js';
+import { initRemoteBridge } from './remote-bridge.js';
 import { initPlugins, bindPluginReload } from './plugin-system.js';
 import { buildUserAgentDataFix } from '../infra/user-agent.js';
 
@@ -273,8 +273,8 @@ function init(): void {
     // 纯净对话模式：把回复/工具调用上报主进程，并接收用户消息
     initHarnessBridge();
 
-    // 飞书同步：上报用户消息/AI回复/工具状态，并接收飞书来消息
-    initFeishuBridge();
+    // 远程控制：上报 AI 回复/流式/工具状态给手机
+    initRemoteBridge();
 
     // Cuckoo 插件系统：加载 dsh/*.js 风格插件（异步，不阻塞）
     // 子代理窗口不加载 UI 插件——否则每个子代理都会注入一份面板（如 MCP 桥）浮到主窗口上。

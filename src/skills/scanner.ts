@@ -78,9 +78,22 @@ function scanSkillsRoot(skillsDir: string, source: SkillSource): SkillMeta[] {
   return result;
 }
 
-/** 扫描某个作用域基目录下的 `.cuckoo/skills` */
-function scanDir(baseDir: string, source: SkillSource): SkillMeta[] {
-  return scanSkillsRoot(path.join(baseDir, '.cuckoo', 'skills'), source);
+/** 用户级 skills 目录（统一为 ~/.agents/skills，可用 CUCKOO_HOME 覆盖供测试隔离） */
+export function getUserSkillsDir(): string {
+  const override = process.env.CUCKOO_HOME;
+  if (override) {
+    const agentsSkills = path.join(override, '.agents', 'skills');
+    if (fs.existsSync(agentsSkills)) return agentsSkills;
+    const directSkills = path.join(override, 'skills');
+    if (fs.existsSync(directSkills)) return directSkills;
+    return directSkills;
+  }
+  return path.join(os.homedir(), '.agents', 'skills');
+}
+
+/** 项目级 skills 目录：统一为 `<projectDir>/.agents/skills` */
+export function getProjectSkillsDir(projectDir: string): string {
+  return path.join(projectDir, '.agents', 'skills');
 }
 
 /** 合并技能列表：同名时 项目级 > 用户级 > 插件级 */
@@ -95,8 +108,8 @@ export function mergeSkills(project: SkillMeta[], user: SkillMeta[], plugin: Ski
 /**
  * 扫描并合并技能。
  * 目录约定：
- *  - 项目级：`<projectDir>/.cuckoo/skills/<name>/SKILL.md`
- *  - 用户级：`~/.cuckoo/skills/<name>/SKILL.md`
+ *  - 项目级：`<projectDir>/.agents/skills/<name>/SKILL.md`
+ *  - 用户级：`~/.agents/skills/<name>/SKILL.md`
  *  - 插件级：由 `extraSkillDirs` 传入的绝对目录（形如 `~/.cuckoo/plugins/<id>/skills`）
  *
  * @param projectDir 项目根目录（可为 null，表示未初始化项目）
@@ -105,8 +118,9 @@ export function mergeSkills(project: SkillMeta[], user: SkillMeta[], plugin: Ski
  * @returns 合并后的技能列表（项目级 > 用户级 > 插件级）
  */
 export function scanSkills(projectDir: string | null, extraSkillDirs: string[] = []): SkillMeta[] {
-  const user = scanDir(os.homedir(), 'user');
-  const project = projectDir ? scanDir(projectDir, 'project') : [];
+  const user = scanSkillsRoot(getUserSkillsDir(), 'user');
+  const project = projectDir ? scanSkillsRoot(getProjectSkillsDir(projectDir), 'project') : [];
+
   const plugin: SkillMeta[] = [];
   for (const dir of extraSkillDirs) {
     if (!dir) continue;

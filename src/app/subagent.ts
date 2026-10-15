@@ -22,7 +22,7 @@ export function injectSubagentDeps(deps: { createWindow: CreateWindowFn; profile
 /** 等待子代理完成的回调注册表：windowId → resolve */
 const pending = new Map<number, (text: string) => void>();
 
-/** 每个 profile 正在跑的子代理数量（用于飞书消息拦截等） */
+/** 每个 profile 正在跑的子代理数量（用于远程消息拦截等） */
 const runningByProfile = new Map<string, number>();
 
 /** ===== 运行中子代理注册表（供壳页面展示进度）===== */

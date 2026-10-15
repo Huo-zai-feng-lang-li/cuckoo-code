@@ -1,0 +1,143 @@
+'use strict';
+import { describe, test, afterEach } from 'vitest';
+import assert from 'node:assert';
+import http from 'node:http';
+import { createRequire } from 'node:module';
+import { startServer, stopServer, broadcast, isRunning, getClientCount } from '../../src/remote/server.js';
+
+const require = createRequire(import.meta.url);
+const WebSocket = require('ws');
+
+let portCounter = 17800;
+const TEST_TOKEN = 'testtoken1234567890abcdef123456';
+
+function httpGet(port, pathStr, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path: pathStr,
+      method: 'GET',
+      headers,
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => resolve({ statusCode: res.statusCode, headers: res.headers, body: data }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+describe('remote server', () => {
+  afterEach(async () => {
+    await stopServer();
+  });
+
+  test('startServer 正常启动，托管 PWA 静态资源', async () => {
+    const port = ++portCounter;
+    const r = await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(isRunning(), true);
+
+    const res = await httpGet(port, '/');
+    assert.strictEqual(res.statusCode, 200);
+    assert.ok(res.headers['content-type'].includes('text/html'));
+    assert.ok(res.body.includes('<!DOCTYPE html>') || res.body.includes('<html'));
+  });
+
+  test('HTTP 拦截跨目录路径穿越攻击 (403)', async () => {
+    const port = ++portCounter;
+    await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
+
+    const res = await httpGet(port, '/..%2f..%2fpackage.json');
+    assert.strictEqual(res.statusCode, 403);
+  });
+
+  test('HTTP API 鉴权：未带 token 或 token 错误返回 401', async () => {
+    const port = ++portCounter;
+    await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
+
+    const resNoAuth = await httpGet(port, '/api/ping');
+    assert.strictEqual(resNoAuth.statusCode, 401);
+
+    const resBadAuth = await httpGet(port, '/api/ping', {
+      authorization: 'Bearer wrongtoken',
+    });
+    assert.strictEqual(resBadAuth.statusCode, 401);
+
+    const resGoodAuth = await httpGet(port, '/api/ping', {
+      authorization: 'Bearer ' + TEST_TOKEN,
+    });
+    assert.strictEqual(resGoodAuth.statusCode, 200);
+    assert.deepStrictEqual(JSON.parse(resGoodAuth.body), { ok: true });
+  });
+
+  test('WebSocket 连接与鉴权：token 错误拒绝，正确则连通并收发', async () => {
+    const port = ++portCounter;
+    let receivedMsg = '';
+    await startServer({
+      onUserMessage: (t) => { receivedMsg = t; },
+      onListProfiles: () => [{ id: 'p1', name: 'Profile 1' }],
+      onGetCurrentProfile: () => 'p1',
+    }, port, TEST_TOKEN);
+
+    // 1. 错误 token 建立 ws 应当被断开
+    await new Promise((resolve) => {
+      const badWs = new WebSocket(`ws://127.0.0.1:${port}/ws?token=badtoken`);
+      let done = false;
+      const finish = () => { if (!done) { done = true; resolve(); } };
+      badWs.on('error', () => { finish(); });
+      badWs.on('close', () => { finish(); });
+    });
+
+    // 2. 正确 token 建立 ws 连接
+    const client = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${TEST_TOKEN}`);
+    client.on('error', () => {});
+    const messages = [];
+    client.on('message', (data) => {
+      try {
+        messages.push(JSON.parse(data.toString()));
+      } catch (_) {}
+    });
+
+    await new Promise((resolve, reject) => {
+      client.on('open', resolve);
+      client.on('error', reject);
+    });
+
+    // 握手后应接收到 ready 消息
+    await new Promise((r) => setTimeout(r, 80));
+    assert.ok(messages.some((m) => m.type === 'ready' && m.currentProfileId === 'p1'), '应收到 ready 握手消息');
+
+    // 3. 手机端发送 send 消息
+    client.send(JSON.stringify({ type: 'send', text: 'phone test msg' }));
+    await new Promise((r) => setTimeout(r, 50));
+    assert.strictEqual(receivedMsg, 'phone test msg');
+
+    // 4. 服务端调用 broadcast，客户端能收到
+    broadcast({ type: 'ai-stream', text: 'stream chunk' });
+    await new Promise((r) => setTimeout(r, 50));
+    assert.ok(messages.some((m) => m.type === 'ai-stream' && m.text === 'stream chunk'));
+
+    await new Promise((resolve) => {
+      client.on('close', resolve);
+      client.close();
+    });
+  });
+
+  test('stopServer 能够完整关闭并释放端口，避免重启 EADDRINUSE', async () => {
+    const port = ++portCounter;
+    const r1 = await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
+    assert.strictEqual(r1.ok, true);
+
+    await stopServer();
+    assert.strictEqual(isRunning(), false);
+    assert.strictEqual(getClientCount(), 0);
+
+    // 立即再次启动同端口，必须能正常启动，证明端口已彻底释放
+    const r2 = await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
+    assert.strictEqual(r2.ok, true);
+    await stopServer();
+  });
+});

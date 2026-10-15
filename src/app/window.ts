@@ -20,6 +20,16 @@ interface WindowContext {
 const windows = new Map<number, WindowContext>(); // windowId -> { win, profileId, providerId, sessionStore }
 let lastActiveWindowId: number | null = null;
 
+/** 窗口集合变化监听器（供远程控制等同步窗口列表；回调注入，避免上层依赖） */
+const windowsChangedListeners = new Set<() => void>();
+function onWindowsChanged(cb: () => void): () => void {
+  windowsChangedListeners.add(cb);
+  return () => { windowsChangedListeners.delete(cb); };
+}
+function emitWindowsChanged(): void {
+  for (const cb of windowsChangedListeners) { try { cb(); } catch (_) { /* ignore */ } }
+}
+
 /**
  * profileId → 是否正在生成（AI 页面忙闲）。
  * 数据源：bridge 每 2 秒上报的 ai-state 事件。
@@ -48,7 +58,9 @@ function addWindow(win: any, profileId: any, providerId: any, sessionStore: any,
       const remaining = Array.from(windows.keys());
       lastActiveWindowId = remaining.length > 0 ? remaining[remaining.length - 1] : null;
     }
+    emitWindowsChanged();
   });
+  emitWindowsChanged();
 }
 
 function removeWindow(windowId: number): void {
@@ -57,6 +69,7 @@ function removeWindow(windowId: number): void {
     const remaining = Array.from(windows.keys());
     lastActiveWindowId = remaining.length > 0 ? remaining[remaining.length - 1] : null;
   }
+  emitWindowsChanged();
 }
 
 function getWindowContext(windowId: number): WindowContext | null {
@@ -114,7 +127,7 @@ function getAllContexts(): WindowContext[] {
 /**
  * 按 profileId 取窗口。
  * 子代理与父窗口共用 profileId，故此方法**只返回主窗口**（跳过子代理），
- * 避免"已开就聚焦""删除窗口""飞书转发"等场景误命中子代理窗口。
+ * 避免"已开就聚焦""删除窗口""远程转发"等场景误命中子代理窗口。
  */
 function getWindowByProfileId(profileId: any): WindowContext | null {
   for (const ctx of windows.values()) {
@@ -148,4 +161,5 @@ export {
   getAllContexts,
   getWindowByProfileId,
   getAllWindowsByProfileId,
+  onWindowsChanged,
 };

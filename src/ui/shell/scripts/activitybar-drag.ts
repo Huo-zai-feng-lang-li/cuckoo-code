@@ -14,7 +14,7 @@ const ORDER_KEY = 'cuckoo-activitybar-order';
 const DRAG_THRESHOLD = 6; // 移动超过 6px 才算拖拽
 const SPACER_KEY = '_spacer';
 // 底部固定区：这些项应始终沉底（靠 _spacer 的 flex:1 撑开）
-const BOTTOM_KEYS = ['about', 'feishu', 'settings'];
+const BOTTOM_KEYS = ['remote', 'settings', 'about'];
 
 let dragEl: HTMLElement | null = null;
 let startY = 0;
@@ -86,7 +86,7 @@ export function applyActivitybarOrder(): void {
   // 算"期望顺序"：
   //   ① 按持久化 order 命中的元素（_spacer 也按其在 order 中的位置）
   //   ② 未命中的新元素（插件动态图标等）插到 _spacer **之前**（主区末尾）
-  //      —— 不能追加到整体末尾，否则会落进底部固定区（关于/飞书/设置之后）
+  //      —— 不能追加到整体末尾，否则会落进底部固定区（关于/远程/设置之后）
   const desired: HTMLElement[] = [];
   const used = new Set<HTMLElement>();
   for (const key of order) {
@@ -153,7 +153,7 @@ export function initActivitybarDrag(): void {
   b.addEventListener('mousedown', (e: any) => {
     const item = e.target && e.target.closest ? e.target.closest('.ck-ab-item') : null;
     if (!item || !b.contains(item)) return;
-    // 底部固定区（_spacer 之后）不可拖拽：保持"关于/飞书/设置"沉底
+    // 底部固定区（_spacer 之后）不可拖拽：保持"关于/远程/设置"沉底
     const spacer = b.querySelector('.ck-ab-spacer');
     if (spacer && (spacer.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING)) return;
     dragEl = item;

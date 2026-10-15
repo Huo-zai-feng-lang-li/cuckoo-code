@@ -102,18 +102,18 @@ let pendingSend: PendingSend | null = null;
 // 避免并发时后一条覆盖输入框、导致前一条内容丢失（实测 Bug：两条并发只发出后者）。
 let sendChain: Promise<any> = Promise.resolve();
 
-// 「用户消息已发出」回调（供 bridge 上报飞书等；overlay 不依赖上层，用回调注入）
-// 系统内部消息的 tag（不视为"用户消息"，不上报飞书）
+// 「用户消息已发出」回调（供 bridge 上报远程等；overlay 不依赖上层，用回调注入）
+// 系统内部消息的 tag（不视为"用户消息"，不上报远程）
 const SYSTEM_MSG_TAGS = [
-  'JS汇总', '飞书', '看门狗', '重试', '重试(操作频繁)',
+  'JS汇总', '看门狗', '重试', '重试(操作频繁)',
   '压缩-摘要', 'MCP信息', '技能与代理清单', '继续',
   'JSON工具调用提示', 'XML工具调用提示', '系统提示词',
 ];
-let onUserMessageSentCb: ((text: string, tag?: string) => void) | null = null;
-/** 注册"用户消息已发出"回调（返回取消注册） */
+const userMessageSentListeners = new Set<(text: string, tag?: string) => void>();
+/** 注册"用户消息已发出"回调（支持多订阅；返回取消注册） */
 function onUserMessageSent(cb: (text: string, tag?: string) => void): () => void {
-  onUserMessageSentCb = cb;
-  return () => { if (onUserMessageSentCb === cb) onUserMessageSentCb = null; };
+  userMessageSentListeners.add(cb);
+  return () => { userMessageSentListeners.delete(cb); };
 }
 
 // 「消息已投递」回调：所有经 sendToChat 发出的消息都派发（含系统内部消息），
@@ -125,7 +125,7 @@ function onMessageDelivered(cb: (info: { text: string; tag: string; isSystem: bo
   return () => { if (onMessageDeliveredCb === cb) onMessageDeliveredCb = null; };
 }
 
-/** 是否框架内部消息（不视为"用户消息"，飞书不上报；纯净模式只反馈状态不显示内容） */
+/** 是否框架内部消息（不视为"用户消息"，远程不上报；纯净模式只反馈状态不显示内容） */
 function isSystemTag(tag?: string): boolean {
   return SYSTEM_MSG_TAGS.indexOf(tag || '') !== -1;
 }
@@ -175,10 +175,12 @@ async function doSendToChat(msg: string, tag?: string, fixedDelay?: number, afte
       console.log('[Cuckoo Code] 等待结束，开始触发发送');
       triggerSend(input);
       console.log('[Cuckoo Code] 已触发发送, ' + (tag || '') + ', 长度=' + msg.length);
-      // 通知监听者（飞书同步等）；系统内部消息（工具结果/看门狗/重试等）不上报
-      try {
-        if (onUserMessageSentCb && !isSystemTag(tag)) onUserMessageSentCb(msg, tag);
-      } catch (_) {}
+      // 通知监听者（远程等）；系统内部消息（工具结果/看门狗/重试等）不上报
+      if (!isSystemTag(tag)) {
+        for (const cb of userMessageSentListeners) {
+          try { cb(msg, tag); } catch (_) { /* ignore */ }
+        }
+      }
       // 纯净模式：任何投递（含框架内部消息）都派发一次，用于显示"框架正在驱动"运行态
       emitMessageDelivered(msg, tag);
       if (typeof afterSent === 'function') afterSent();

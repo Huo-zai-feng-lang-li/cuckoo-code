@@ -22,7 +22,6 @@
 | 016 | feat | [子代理（Subagents，对齐 Claude Code）](./016-subagents.md) | done | feat/016-subagents | 2026-09-26 |
 | 017 | feat | [快捷提示词（Snippets）——「提示词」页](./017-snippets.md) | in_progress | feat/017-snippets | 2026-09-29 |
 | 018 | feature | [纯净对话模式（Harness 模式，类 Codex 体验）](./018-harness-mode.md) | doing | feat/017-harness-mode | 2026-10-02 |
-| 019 | feature | [飞书同步（手机收发对话）](./019-feishu-sync.md) | doing | feat/019-feishu-sync | 2026-09-30 |
 | 020 | feature | [插件市场（GitHub topic 自动发现与安装）](./020-plugin-market.md) | review | feat/020-plugin-market | 2026-10-02 |
 | 021 | feature | [窗口组（多账号限流轮换）](./021-window-groups.md) | done | feat/021-window-groups | 2026-10-05 |
 | 022 | fix | [危险命令检测增强（前缀/通配符/长选项）](./022-dangerous-cmd-bypass.md) | done | fix/022-dangerous-cmd-bypass | 2026-10-06 |
@@ -55,5 +54,6 @@
 | 048 | performance | [harness 流式渲染节流（rAF 合并，消除 O(n²)）](./048-harness-stream-throttle.md) | doing | (直接主分支) | 2026-10-14 |
 | 049 | feature | [提交详情 diff 结构化渲染（摘要卡 + 文件列表 + 行号 + 降噪）](./049-diff-structured.md) | doing | (直接主分支) | 2026-10-14 |
 | 050 | fix | [工具窗口（openBrowserWindow）无法登录 Google（缺 UA 指纹修正）](./050-browser-window-ua.md) | done | fix/050-browser-window-ua | 2026-10-14 |
+| 051 | refactor | [统一技能/MCP/规则目录到 .agents/ 标准规范并移除旧路径回退](./051-unify-agents-spec.md) | done | refactor/051-unify-agents-spec | 2026-10-15 |
 
 共 50 个需求。

@@ -16,10 +16,17 @@ import os from 'node:os';
 import { parseRuleFrontmatter } from './frontmatter.js';
 import type { RuleMeta, RuleSource } from './types.js';
 
-/** 用户级目录（可用 CUCKOO_HOME 覆盖，供测试隔离） */
-function getUserRulesDir(): string {
-  const base = process.env.CUCKOO_HOME || path.join(os.homedir(), '.cuckoo');
-  return path.join(base, 'rules');
+/** 用户级目录（统一为 ~/.agents/rules，可用 CUCKOO_HOME 覆盖，供测试隔离） */
+export function getUserRulesDir(): string {
+  const override = process.env.CUCKOO_HOME;
+  if (override) {
+    const agentsRules = path.join(override, '.agents', 'rules');
+    if (fs.existsSync(agentsRules)) return agentsRules;
+    const directRules = path.join(override, 'rules');
+    if (fs.existsSync(directRules)) return directRules;
+    return directRules;
+  }
+  return path.join(os.homedir(), '.agents', 'rules');
 }
 
 function scanDir(rulesDir: string, source: RuleSource): RuleMeta[] {
@@ -48,14 +55,10 @@ function scanDir(rulesDir: string, source: RuleSource): RuleMeta[] {
 }
 
 /**
- * 扫描项目级规则目录。
- * 优先 `.agents/rules/`（多 AI 工具统一入口）；不存在则回退 `.cuckoo/rules/`（兼容旧项目）。
- * 二选一，避免两目录并存时重复注入。
+ * 扫描项目级规则目录：统一为 `<projectDir>/.agents/rules/`（不回退旧路径）。
  */
 function scanProjectRules(projectDir: string): RuleMeta[] {
-  const agentsDir = path.join(projectDir, '.agents', 'rules');
-  if (fs.existsSync(agentsDir)) return scanDir(agentsDir, 'project');
-  return scanDir(path.join(projectDir, '.cuckoo', 'rules'), 'project');
+  return scanDir(path.join(projectDir, '.agents', 'rules'), 'project');
 }
 
 /**

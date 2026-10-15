@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Cuckoo Code 主进程入口（多窗口多 profile 版）
  * 由项目根目录 main.js 薄壳加载。
  */
@@ -50,7 +50,7 @@ if (RENDERER_LOG_DIR) {
 import { registerIpcHandlers } from './ipc/index.js';
 import * as taskManager from '../infra/task-manager.js';
 import { buildChromeUserAgent, ensureClientHints } from '../infra/user-agent.js';
-import { initFeishu } from './ipc/feishu.js';
+import { initRemote, stopRemote } from '../remote/manager.js';
 import { injectSubagentDeps, runAgent as runAgentImpl, runGatewayQuery as runGatewayQueryImpl } from './subagent.js';
 import { injectAgentRunner, injectSubagentChecker } from '../tools/impl/run-agent.js';
 import { injectGoalDonePusher } from '../tools/impl/goal-done.js';
@@ -1227,8 +1227,8 @@ ipcMainForProfile.handle('rate-limit-hit', async (event: any) => {
 // ========== IPC 处理器 ==========
 registerIpcHandlers();
 
-// ========== 飞书同步（若已配置启用则自动连接）==========
-try { initFeishu(); } catch (err: any) { console.error('[Feishu] 初始化失败:', err.message); }
+// ========== 远程控制（若已启用则启动本地服务）==========
+initRemote().catch((err: any) => console.error('[Remote] 初始化失败:', err.message));
 
 // 覆盖层"新建窗口"按钮触发
 ipcMainForProfile.handle('create-profile-window', async (_event: any, { providerId }: any = {}) => {
@@ -1588,6 +1588,7 @@ app.on('before-quit', (event: any) => {
   Promise.all([
     flushAllSessions().catch(() => {}),
     mcpClient.disconnectAll().catch(() => {}),
+    stopRemote().catch(() => {}),
   ]).finally(() => {
     app.quit();
   });

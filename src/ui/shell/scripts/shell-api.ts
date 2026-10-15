@@ -189,13 +189,9 @@ export interface ShellAPI {
   getAssetUrl?: (rel: string) => Promise<any>;
   openExternal?: (url: string) => Promise<any>;
   openCurrentExternal?: () => Promise<any>;
-  openFeishuSetup?: () => Promise<any>;
-  // 飞书
-  getFeishuConfig?: () => Promise<any>;
-  saveFeishuConfig?: (data: any) => Promise<any>;
-  reconnectFeishu?: () => Promise<any>;
-  disconnectFeishu?: () => Promise<any>;
-  listFeishuChats?: () => Promise<any>;
-  getFeishuBinding?: () => Promise<any>;
-  bindFeishuChat?: (chatId: string, chatName: string) => Promise<any>;
+  // 远程控制
+  getRemoteConfig?: () => Promise<any>;
+  saveRemoteConfig?: (data: any) => Promise<any>;
+  resetRemoteToken?: () => Promise<any>;
+  restartRemote?: () => Promise<any>;
 }

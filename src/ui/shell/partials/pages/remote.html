@@ -1,0 +1,80 @@
+            <!-- ===== 远程控制 ===== -->
+            <div class="ck-tab" data-panel="remote">
+              <!-- 卡片一：服务基本开关 -->
+              <div class="ck-card">
+                <div class="ck-set-group-title">远程控制服务</div>
+                <p class="ck-about-tip">在手机浏览器中远程控制电脑上的 Cuckoo（发指令、查看实时生成、随时中断、多窗口无缝切换）。</p>
+                <div class="ck-set-field ck-set-toggle">
+                  <span class="ck-set-key">启用远程控制</span>
+                  <label class="ck-switch">
+                    <input type="checkbox" id="rm-enabled" />
+                    <span class="ck-switch-track"></span>
+                  </label>
+                </div>
+                <div class="ck-set-field">
+                  <span class="ck-set-key">本地监听端口</span>
+                  <input type="number" class="ck-set-input" id="rm-port" placeholder="7799" />
+                </div>
+                <div class="ck-actions">
+                  <button class="ck-btn ck-btn-primary" id="rm-save">保存并应用</button>
+                  <button class="ck-btn ck-btn-secondary" id="rm-restart">重启服务</button>
+                </div>
+                <div class="fs-status" style="margin-top: 12px;">
+                  <span class="fs-dot" id="rm-dot"></span>
+                  <span class="ck-set-key" id="rm-status-text">未启动</span>
+                </div>
+              </div>
+
+              <!-- 卡片二：手机免密直达链接（核心交互） -->
+              <div class="ck-card">
+                <div class="ck-set-group-title">手机免密直达链接</div>
+                <p class="ck-about-tip">复制下方链接发给手机微信或在手机浏览器中打开，<strong>自动免密登录并永久记忆</strong>，无需手动敲 32 位令牌：</p>
+                <div class="ck-set-field">
+                  <span class="ck-set-key">直达链接</span>
+                  <input type="text" class="ck-set-input" id="rm-direct-url" readonly placeholder="服务启动后生成直达链接" />
+                </div>
+                <div class="ck-actions" style="margin-top: 10px;">
+                  <button class="ck-btn ck-btn-primary" id="rm-copy-direct-url">复制手机直达链接</button>
+                </div>
+                <div class="ck-set-field" style="margin-top: 14px;">
+                  <span class="ck-set-key">固定外网域名</span>
+                  <input type="text" class="ck-set-input" id="rm-public-url" placeholder="如 https://remote.example.com" />
+                </div>
+                <p class="ck-about-tip" style="margin-top: 4px; font-size: 12px; opacity: 0.8;">若配置了固定域名或隧道，填写后直达链接将自动生成该域名格式。</p>
+              </div>
+
+              <!-- 卡片三：Cloudflare 隧道子进程托管 -->
+              <div class="ck-card">
+                <div class="ck-set-group-title">Cloudflare 隧道（内置托管）</div>
+                <p class="ck-about-tip">由 Cuckoo Code 内部自动拉起与管理 cloudflared 穿透子进程，退出软件时自动销毁释放。</p>
+                <div class="ck-set-field ck-set-toggle">
+                  <span class="ck-set-key">自动托管隧道</span>
+                  <label class="ck-switch">
+                    <input type="checkbox" id="rm-tunnel-enabled" />
+                    <span class="ck-switch-track"></span>
+                  </label>
+                </div>
+                <div class="ck-set-field">
+                  <span class="ck-set-key">Tunnel Token</span>
+                  <input type="password" class="ck-set-input" id="rm-tunnel-token" placeholder="固定隧道凭证（留空则拉起临时快速隧道）" />
+                </div>
+                <div class="fs-status" style="margin-top: 10px;">
+                  <span class="fs-dot" id="rm-tunnel-dot"></span>
+                  <span class="ck-set-key" id="rm-tunnel-status-text">隧道未启动</span>
+                </div>
+              </div>
+
+              <!-- 卡片四：访问令牌（安全管理） -->
+              <div class="ck-card">
+                <div class="ck-set-group-title">访问令牌与安全</div>
+                <p class="ck-about-tip">32 位强校验密钥。若怀疑泄露，重置后所有手机端需重新访问直达链接。</p>
+                <div class="ck-set-field">
+                  <span class="ck-set-key">令牌</span>
+                  <input type="text" class="ck-set-input" id="rm-token" readonly />
+                </div>
+                <div class="ck-actions">
+                  <button class="ck-btn ck-btn-secondary" id="rm-copy-token">仅复制令牌</button>
+                  <button class="ck-btn ck-btn-secondary" id="rm-reset-token">重置令牌</button>
+                </div>
+              </div>
+            </div>

@@ -11,7 +11,7 @@ export async function loadSkills(): Promise<void> {
     const r = await api.listSkills();
     const skills = (r && r.success) ? r.skills : [];
     if (!skills || skills.length === 0) {
-      listEl.innerHTML = '<div class="ck-list-empty">未发现技能<br>（.cuckoo/skills/ 或 ~/.cuckoo/skills/）</div>';
+      listEl.innerHTML = '<div class="ck-list-empty">未发现技能<br>（.agents/skills/ 或 ~/.agents/skills/）</div>';
       return;
     }
     const skillCard = (s: any) =>

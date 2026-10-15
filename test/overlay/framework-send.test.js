@@ -76,7 +76,7 @@ beforeEach(async () => {
 
 test('isSystemTag：框架内部消息全部命中', () => {
   for (const tag of ['JS汇总', '看门狗', '重试', '重试(操作频繁)', '压缩-摘要', 'MCP信息',
-    '技能与代理清单', '继续', 'JSON工具调用提示', 'XML工具调用提示', '系统提示词', '飞书']) {
+    '技能与代理清单', '继续', 'JSON工具调用提示', 'XML工具调用提示', '系统提示词']) {
     assert.strictEqual(chat.isSystemTag(tag), true, tag + ' 应判定为系统消息');
   }
 });

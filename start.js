@@ -32,7 +32,18 @@ if (build.status !== 0) {
   console.error('[start.js] 编译失败，退出。');
   process.exit(build.status ?? 1);
 }
-console.log('[start.js] 编译完成，启动 Electron...');
+console.log('[start.js] 编译完成');
+
+// ========== 1.2 复制远程控制 PWA 静态资源 ==========
+try {
+  spawnSync('node', ['scripts/copy-remote-pwa.mjs'], {
+    stdio: 'inherit',
+    cwd: import.meta.dirname,
+    shell: true,
+  });
+} catch (_) {}
+
+console.log('[start.js] 启动 Electron...');
 
 // ========== 1.5 给 electron.exe 打 Cuckoo 图标（任务栏显示，幂等） ==========
 try {

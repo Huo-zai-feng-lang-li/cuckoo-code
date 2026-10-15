@@ -22,7 +22,7 @@ beforeEach(async () => {
   process.env.CUCKOO_HOME = FAKE_HOME;
   fs.rmSync(TMP, { recursive: true, force: true });
   fs.mkdirSync(FAKE_HOME, { recursive: true });
-  fs.mkdirSync(path.join(PROJ, '.cuckoo', 'rules'), { recursive: true });
+  fs.mkdirSync(path.join(PROJ, '.agents', 'rules'), { recursive: true });
   rules = await import('../../src/rules/index.js');
 });
 
@@ -32,7 +32,7 @@ afterEach(() => {
 });
 
 function writeProjRule(file, content) {
-  fs.writeFileSync(path.join(PROJ, '.cuckoo', 'rules', file), content);
+  fs.writeFileSync(path.join(PROJ, '.agents', 'rules', file), content);
 }
 function writeUserRule(file, content) {
   fs.mkdirSync(path.join(FAKE_HOME, 'rules'), { recursive: true });

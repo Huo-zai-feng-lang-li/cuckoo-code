@@ -36,7 +36,7 @@ let cfg;
 let oldHome;
 
 function userConfigFile() { return path.join(FAKE_HOME, 'mcp.json'); }
-function projConfigFile(p) { return path.join(p, '.cuckoo', 'mcp.json'); }
+function projConfigFile(p) { return path.join(p, '.agents', 'mcp.json'); }
 
 beforeEach(async () => {
   vi.resetModules();
@@ -113,7 +113,7 @@ test('upsertServer 覆盖同名 server', () => {
 
 test('项目级覆盖用户级同名 server', () => {
   cfg.upsertServer({ name: 'fs', type: 'stdio', command: 'user-cmd' });
-  fs.mkdirSync(path.join(PROJ1, '.cuckoo'), { recursive: true });
+  fs.mkdirSync(path.join(PROJ1, '.agents'), { recursive: true });
   fs.writeFileSync(projConfigFile(PROJ1), JSON.stringify({
     mcpServers: { fs: { command: 'proj-cmd' } }
   }));
@@ -124,7 +124,7 @@ test('项目级覆盖用户级同名 server', () => {
 });
 
 test('不同项目读到不同的项目级配置', () => {
-  fs.mkdirSync(path.join(PROJ1, '.cuckoo'), { recursive: true });
+  fs.mkdirSync(path.join(PROJ1, '.agents'), { recursive: true });
   fs.writeFileSync(projConfigFile(PROJ1), JSON.stringify({ mcpServers: { onlyP1: { command: 'x' } } }));
   assert.strictEqual(cfg.getServers(PROJ1).length, 1);
   assert.strictEqual(cfg.getServers(PROJ2).length, 0);
@@ -137,10 +137,10 @@ test('用户级 server 在所有项目都可见', () => {
 });
 
 test('项目级 server 的状态存项目级（不污染用户级）', () => {
-  fs.mkdirSync(path.join(PROJ1, '.cuckoo'), { recursive: true });
+  fs.mkdirSync(path.join(PROJ1, '.agents'), { recursive: true });
   fs.writeFileSync(projConfigFile(PROJ1), JSON.stringify({ mcpServers: { p: { command: 'x' } } }));
   cfg.setServerEnabled('p', false, PROJ1);
-  const st = JSON.parse(fs.readFileSync(path.join(PROJ1, '.cuckoo', 'mcp-state.json'), 'utf-8'));
+  const st = JSON.parse(fs.readFileSync(path.join(PROJ1, '.agents', 'mcp-state.json'), 'utf-8'));
   assert.strictEqual(st.p, false);
   const ustateFile = path.join(FAKE_HOME, 'mcp-state.json');
   if (fs.existsSync(ustateFile)) {
@@ -292,7 +292,7 @@ test('插件 mcp.json：无 mcp.json 的插件不产生任何 server', () => {
 
 test('插件 mcp.json：项目级/用户级不受插件影响（优先级不变）', () => {
   cfg.upsertServer({ name: 'mine', type: 'stdio', command: 'user' });
-  fs.mkdirSync(path.join(PROJ1, '.cuckoo'), { recursive: true });
+  fs.mkdirSync(path.join(PROJ1, '.agents'), { recursive: true });
   fs.writeFileSync(projConfigFile(PROJ1), JSON.stringify({ mcpServers: { mine: { command: 'proj' } } }));
   makePluginWithMcp('demo', { mine: { command: 'plugin' } });
   setPluginEnabled('demo', true);

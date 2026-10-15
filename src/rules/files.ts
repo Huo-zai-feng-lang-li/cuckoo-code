@@ -5,7 +5,17 @@ import os from 'node:os';
 import { DEFAULT_RULE_FILE, DEFAULT_RULE_CONTENT } from './defaults.js';
 
 export interface RuleFileRecord { name: string; fileName: string; rulePath: string; content: string; hash: string; updatedAt: string; }
-function rulesDir(): string { return path.resolve(process.env.CUCKOO_HOME || path.join(os.homedir(), '.cuckoo'), 'rules'); }
+function rulesDir(): string {
+  const override = process.env.CUCKOO_HOME;
+  if (override) {
+    const agentsRules = path.resolve(override, '.agents', 'rules');
+    if (fs.existsSync(agentsRules)) return agentsRules;
+    const directRules = path.resolve(override, 'rules');
+    if (fs.existsSync(directRules)) return directRules;
+    return directRules;
+  }
+  return path.resolve(os.homedir(), '.agents', 'rules');
+}
 function hash(content: string): string { return crypto.createHash('sha256').update(content, 'utf8').digest('hex'); }
 const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
 function validFileName(value: unknown): value is string {
@@ -18,6 +28,7 @@ function validFileName(value: unknown): value is string {
 }
 function contained(base: string, target: string): boolean { const rel = path.relative(base, target); return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)); }
 function safePath(fileName: unknown): string | null { if (!validFileName(fileName)) return null; const base = rulesDir(); const target = path.resolve(base, fileName); return contained(base, target) && path.basename(target) === fileName ? target : null; }
+
 function ensureDirectory(): string {
   const dir = rulesDir();
   const parts: string[] = [];
@@ -66,9 +77,12 @@ export function saveUserRule(fileName: unknown, content: unknown, expectedHash: 
 export function deleteUserRule(fileName: unknown, expectedHash: unknown): void { const rulePath = safePath(fileName); if (!rulePath) throw new Error('规则文件名非法'); const current = readRecord(rulePath); if (!current) throw new Error('规则文件不存在或不安全'); if (typeof expectedHash !== 'string' || current.hash !== expectedHash) throw new Error('文件已被外部修改，请重新加载'); fs.unlinkSync(rulePath); }
 export function openUserRulesDir(): string { return ensureDirectory(); }
 
-/** seed 标记文件（存在则不再 seed，防止"用户删除后复活"） */
 function seedMarkerPath(): string {
   return path.join(path.dirname(rulesDir()), '.rules-seeded');
+}
+
+function legacySeedMarkerPath(): string {
+  return path.join(os.homedir(), '.cuckoo', '.rules-seeded');
 }
 
 /**
@@ -77,7 +91,7 @@ function seedMarkerPath(): string {
  */
 export function seedDefaultRules(): void {
   try {
-    if (fs.existsSync(seedMarkerPath())) return; // 已 seed 过
+    if (fs.existsSync(seedMarkerPath()) || fs.existsSync(legacySeedMarkerPath())) return; // 已 seed 过
     const dir = rulesDir();
     if (fs.existsSync(dir)) {
       const existing = fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.md'));

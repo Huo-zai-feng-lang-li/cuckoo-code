@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node scripts/fetch-runtime.mjs && node scripts/copy-monaco.mjs && node start.js",
     "dev": "node scripts/fetch-runtime.mjs && node scripts/copy-monaco.mjs && node start.js --dev",
-    "compile": "node scripts/copy-monaco.mjs && node scripts/build-hooks.mjs && tsc -p tsconfig.build.json && node scripts/build-tool-api.mjs && node scripts/build-shell.mjs",
+    "compile": "node scripts/copy-monaco.mjs && node scripts/build-hooks.mjs && tsc -p tsconfig.build.json && node scripts/copy-remote-pwa.mjs && node scripts/build-tool-api.mjs && node scripts/build-shell.mjs",
     "copy-monaco": "node scripts/copy-monaco.mjs",
     "fetch-runtime": "node scripts/fetch-runtime.mjs",
     "test": "vitest run",
@@ -150,7 +150,6 @@
   },
   "dependencies": {
     "@joplin/turndown-plugin-gfm": "^1.0.67",
-    "@larksuiteoapi/node-sdk": "^1.74.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@vscode/ripgrep": "^1.18.0",
     "electron-log": "^5.4.4",
@@ -160,7 +159,8 @@
     "mysql2": "^3.24.2",
     "picomatch": "^4.0.7",
     "tar": "^7.5.22",
-    "turndown": "^7.2.4"
+    "turndown": "^7.2.4",
+    "ws": "^8.22.0"
   },
   "allowScripts": {
     "electron@44.4.3": true,

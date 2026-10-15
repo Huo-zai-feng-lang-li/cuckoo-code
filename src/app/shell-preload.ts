@@ -251,15 +251,11 @@ const shellAPI = {
   getAssetUrl: (rel: string) => ipcRenderer.invoke('get-asset-url', { rel }),
   openExternal: (url: string) => ipcRenderer.invoke('open-external', { url }),
   openCurrentExternal: () => ipcRenderer.invoke('open-current-external'),
-  openFeishuSetup: () => ipcRenderer.invoke('open-feishu-setup'),
-  // ========== 飞书同步 ==========
-  getFeishuConfig: () => ipcRenderer.invoke('feishu-get-config'),
-  saveFeishuConfig: (data: any) => ipcRenderer.invoke('feishu-save-config', { data }),
-  reconnectFeishu: () => ipcRenderer.invoke('feishu-reconnect'),
-  disconnectFeishu: () => ipcRenderer.invoke('feishu-disconnect'),
-  listFeishuChats: () => ipcRenderer.invoke('feishu-list-chats'),
-  getFeishuBinding: () => ipcRenderer.invoke('feishu-get-binding'),
-  bindFeishuChat: (chatId: string, chatName: string) => ipcRenderer.invoke('feishu-bind-chat', { chatId, chatName }),
+  // ========== 远程控制 ==========
+  getRemoteConfig: () => ipcRenderer.invoke('remote-get-config'),
+  saveRemoteConfig: (data: any) => ipcRenderer.invoke('remote-save-config', { data }),
+  resetRemoteToken: () => ipcRenderer.invoke('remote-reset-token'),
+  restartRemote: () => ipcRenderer.invoke('remote-restart'),
   // ========== 自动压缩 ==========
   getAutoCompact: () => ipcRenderer.invoke('get-autocompact'),
   saveAutoCompact: (data: any) => ipcRenderer.invoke('save-autocompact', { data }),
