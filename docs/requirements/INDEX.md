@@ -58,5 +58,6 @@
 | 052 | feature | [窗口切换迁移携带目标/计划 + 启动提示](./052-switch-migrate-goal-plan.md) | done | feat/052-switch-migrate-goal-plan | 2026-10-15 |
 | 053 | performance | [远程手机端性能：流式全量广播/渲染 O(n²) + serveStatic 同步 IO](./053-remote-stream-perf.md) | done | perf/053-remote-stream-perf | 2026-10-15 |
 | 054 | performance | [harness 流式渲染 O(n²) + 历史持久化全量同步写卡顿](./054-harness-perf.md) | done | perf/054-harness-perf | 2026-10-15 |
+| 055 | fix | [窗口组下拉配色 + 窗口名编辑 + 手机端 AI 尾部签名](./055-window-rename-and-pwa-signature.md) | done | fix/055-window-rename-and-pwa-signature | 2026-10-15 |
 
-共 53 个需求。
+共 54 个需求。

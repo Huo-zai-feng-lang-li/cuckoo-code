@@ -1401,6 +1401,32 @@ ipcMainForProfile.handle('set-profile-auto-open', async (_event: any, { profileI
   return { success: true };
 });
 
+// 重命名窗口（列表页改名；写 profile-list.json，同时更新窗口标题与状态栏）
+// 长度上限：防止超长名污染 profile-list.json / 标题 / 列表 DOM
+const RENAME_NAME_MAX = 50;
+ipcMainForProfile.handle('rename-profile', async (event: any, { profileId, name }: any) => {
+  // 纵深防御：只允许壳页面（含窗口上下文）调用，避免任意渲染进程改他人窗口名
+  const ctx = windowState.getContextByWebContents(event.sender);
+  if (!ctx) return { success: false, error: '非法来源' };
+  if (!profileId) return { success: false, error: '缺少 profileId' };
+  const trimmed = String(name == null ? '' : name).trim();
+  if (!trimmed) return { success: false, error: '名称不能为空' };
+  if (trimmed.length > RENAME_NAME_MAX) return { success: false, error: '名称过长（最多 ' + RENAME_NAME_MAX + ' 字）' };
+  const updated = profileManager.updateProfileName(profileId, trimmed);
+  if (!updated) return { success: false, error: '窗口不存在' };
+  // 若该 profile 有活跃窗口：更新标题 + 推送状态栏
+  try {
+    const ctxs = windowState.getAllWindowsByProfileId(profileId);
+    for (const c of ctxs) {
+      if (c && c.win && !c.win.isDestroyed()) {
+        c.win.setTitle('Cuckoo Code Pro - ' + updated.name);
+        try { c.win.webContents.send('shell-window-name-updated', updated.name); } catch (_) {}
+      }
+    }
+  } catch (_) { /* ignore */ }
+  return { success: true, name: updated.name };
+});
+
 // 打开指定 profile 的窗口（若已存在则聚焦）
 ipcMainForProfile.handle('open-profile-window', async (_event: any, { profileId }: any) => {
   const existing = windowState.getWindowByProfileId(profileId);

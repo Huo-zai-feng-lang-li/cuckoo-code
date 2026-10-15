@@ -1,7 +1,7 @@
 /**
  * 窗口列表页：列出/新建/切换/删除窗口、默认打开。
  */
-import { api, ckConfirm, ckPrompt, escapeHtml, escapeAttr } from '../shared.js';
+import { api, ckConfirm, ckPrompt, ckAlert, escapeHtml, escapeAttr } from '../shared.js';
 
 const PROVIDER_COLORS: Record<string, string> = {
   deepseek: 'linear-gradient(135deg, #4d6bfe, #3b5bdb)',
@@ -22,7 +22,8 @@ function renderWindowItem(p: any, providerMap: Record<string, string>): string {
   return '<div class="ck-win-item" data-profile-id="' + escapeHtml(p.id) + '">' +
     '<div class="ck-win-top">' +
       '<span class="ck-win-avatar"' + (avatarStyle ? ' style="background:' + avatarStyle + '"' : '') + '>' + escapeHtml(initial) + '</span>' +
-      '<span class="ck-win-name">' + escapeHtml(p.name) + '</span>' +
+      '<span class="ck-win-name" title="点击重命名">' + escapeHtml(p.name) + '</span>' +
+      '<span class="ck-win-edit" data-profile-id="' + escapeHtml(p.id) + '" data-name="' + escapeAttr(p.name || '') + '" title="重命名">✎</span>' +
       '<span class="ck-win-del" data-profile-id="' + escapeHtml(p.id) + '" title="删除窗口">✕</span>' +
     '</div>' +
     '<div class="ck-win-bottom">' +
@@ -118,8 +119,33 @@ export async function renderWindowList(): Promise<void> {
     listEl.querySelectorAll('.ck-win-item').forEach((el: any) => {
       el.addEventListener('click', async (e: any) => {
         if (e.target.classList.contains('ck-win-del')) return;
+        if (e.target.classList.contains('ck-win-edit')) return;
         if (e.target.closest('.ck-win-check')) return;
+        if (e.target.classList.contains('ck-win-name')) return; // 点击名字走重命名
         try { await api.openProfileWindow?.(el.dataset.profileId); } catch (_) { /* ignore */ }
+      });
+    });
+    // 重命名：点编辑图标或点名字
+    const onRename = async (item: any) => {
+      const pid = item.dataset.profileId;
+      const editBtn = item.querySelector('.ck-win-edit');
+      const oldName = (editBtn && editBtn.dataset.name) || '';
+      const v = await ckPrompt({ title: '重命名窗口', placeholder: '窗口名称', value: oldName });
+      if (v === null) return; // 用户取消
+      const r = await api.renameProfile?.(pid, v);
+      if (r && r.success) { renderWindowList(); return; }
+      ckAlert((r && r.error) || '改名失败，请重试');
+    };
+    listEl.querySelectorAll('.ck-win-edit').forEach((btn: any) => {
+      btn.addEventListener('click', (e: any) => { e.stopPropagation(); onRename(btn.closest('.ck-win-item')); });
+    });
+    listEl.querySelectorAll('.ck-win-name').forEach((el: any) => {
+      el.addEventListener('click', (e: any) => {
+        // 只有点名字本身才进入重命名（点卡片其他区域 = 打开窗口）
+        const item = el.closest('.ck-win-item');
+        if (!item) return;
+        e.stopPropagation();
+        onRename(item);
       });
     });
     listEl.querySelectorAll('.ck-win-del').forEach((btn: any) => {

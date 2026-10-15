@@ -273,7 +273,6 @@
         if (!isMyProfile(msg.profileId)) break;
         // 防御性：异常顺序下可能残留旧流式气泡，先移除避免僵尸 DOM 累积
         if (streamingEl) { try { streamingEl.remove(); } catch {} }
-        clearOrphanCursor();
         showExec('正在生成回复…');
         setExecuting(true);
         streamingText = '';
@@ -506,21 +505,29 @@
     scroll();
   }
 
-  function clearOrphanCursor() {
-    if (streamingEl) { const c = streamingEl.querySelector('.cursor'); if (c) c.remove(); }
-    messages.querySelectorAll('.cursor').forEach((c) => c.remove());
+  // AI 消息尾部签名（✦ Cuckoo）——与电脑端一致。流式期间兼作光标
+  const SIG_HTML = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1l1.8 4.6L14.5 8l-4.7 2.4L8 15l-1.8-4.6L1.5 8l4.7-2.4z"/></svg>Cuckoo';
+  function createSigNode() {
+    const s = document.createElement('span');
+    s.className = 'msg-sig';
+    s.innerHTML = SIG_HTML;
+    return s;
+  }
+  /** 确保消息末尾有签名节点（清理重复，保证在最后） */
+  function ensureSigNode(el) {
+    if (!el) return;
+    el.querySelectorAll('.msg-sig').forEach((n) => { if (n !== el.lastChild) n.remove(); });
+    if (!el.querySelector('.msg-sig')) el.appendChild(createSigNode());
   }
 
   function startStreaming() {
     streamingEl = document.createElement('div');
     streamingEl.className = 'msg ai streaming';
-    // 内部结构：纯文本容器（流式期间 appendChild 文本）+ 末尾光标
+    // 内部结构：纯文本容器（流式期间 appendChild 文本）+ 末尾签名
     streamNode = document.createElement('span');
     streamNode.className = 'stream-text';
     streamingEl.appendChild(streamNode);
-    const cursor = document.createElement('span');
-    cursor.className = 'cursor';
-    streamingEl.appendChild(cursor);
+    streamingEl.appendChild(createSigNode());
     streamingText = '';
     messages.appendChild(streamingEl);
     checkEmptyState();
@@ -547,6 +554,8 @@
       streamingText += delta;
     }
     streamingEl.dataset.raw = streamingText; // dataset 需保留全量（复制/后续渲染用）
+    // 注：增量只 appendChild 到 streamNode，未改 streamingEl 的直接子节点顺序
+    // → sig 恒在末位，无需每帧 ensureSigNode（该函数留给 startStreaming/finishStreaming）
     scroll();
   }
 
@@ -558,6 +567,8 @@
       streamingEl.dataset.raw = finalText;
       streamingEl.innerHTML = renderMd(finalText);
       streamingEl.classList.remove('streaming'); // 收尾还原正式气泡样式
+      // 尾部签名（✦ Cuckoo）：innerHTML 覆盖后补上，保证在正文末尾
+      streamingEl.appendChild(createSigNode());
       decorateContent(streamingEl);
       attachActions(streamingEl, finalText);
     } else {
@@ -576,6 +587,8 @@
     el.className = 'msg ai';
     el.dataset.raw = text;
     el.innerHTML = renderMd(text);
+    // 尾部签名（✦ Cuckoo）：innerHTML 后补上
+    el.appendChild(createSigNode());
     decorateContent(el);
     attachActions(el, text);
     messages.appendChild(el);

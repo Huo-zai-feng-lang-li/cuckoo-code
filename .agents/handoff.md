@@ -1,37 +1,42 @@
-# 最新接续状态 (2026-10-15 23:55)
+# 最新接续状态 (2026-10-16 00:15)
 
 ## 核心进展
-- **054 Harness 性能修复（流式渲染 O(n²) + 历史全量同步写）** 已闭环并发版 v0.8.82（分支 perf/054-harness-perf）。核心在 `src/ui/harness.html`。
+- **055 窗口名编辑 + 窗口组下拉配色 + 手机端 AI 尾部签名** 已闭环并发版 v0.8.83（分支 fix/055-window-rename-and-pwa-signature）。
 
 ## 核心动机与背景 (Motivation & Background)
-- **问题**：纯净对话模式（Harness）两处**用户可感知卡顿**：
-  1. 流式渲染 O(n²)：`onStream` 每帧带全量正文，每帧对全文跑 `renderMarkdown`（marked + KaTeX 全量解析）+ `innerHTML` 重建；长回复 >2000 字时末段每秒数十次全量解析 → 卡顿。
-  2. 历史持久化全量同步写：`pushHist` 每次（回复 / 工具 start-end / 系统消息）都全量 `JSON.stringify(history)` + `localStorage.setItem` 同步写盘（最多 400 条 × 6000 字符 ≈ 数 MB）→ 阻塞渲染进程主线程。
+- 用户反馈 3 个问题：
+  1. **窗口组「添加窗口」下拉深色主题下 option 白底浅字看不清**（用的是 `.ck-input`，不是已适配深色的 `.ck-set-input`）。
+  2. **窗口名不可编辑**：`profile.ts` 早有 `updateProfileName()` 但未暴露 IPC；用户要求卡片上能改名。
+  3. **手机端 AI 消息视觉与电脑端不一致**：电脑端每条 AI 消息顶部有 `✦ Cuckoo` 前缀；手机端没有。用户要求把 `✦ Cuckoo` 放到**消息尾部代替光标**（一物两用）。
 
 ## 关键设计与实现 (Implementation & Decisions)
-- **流式增量渲染**：新增 `_streamRenderedText` / `_streamRenderedThink` / `_streamCursorEl` 三个模块变量。`appendStreamBody(body, full, kind)`：
-  - 全量以已渲染为前缀 → `appendChild(createTextNode(delta))`，光标保持末尾（`ensureStreamCursor`）。
-  - 不以已渲染为前缀（回退重排）→ 清空重来（`replaceStreamBody`）。
-  - 前缀校验用 `startsWith`（避免 `slice` 分配）。
-- **finished 帧**：绕过节流，`cur.body.innerHTML = renderMarkdown(text)` 全量一次 + `resetStreamRender()` 清标记、删光标 DOM。
-- **光标清理**：`resetStreamRender` 现在真正从 DOM 移除光标（不只置 null），修复「finished 只覆盖 body、光标残留 thinkBody」。
-- **占位三点清理**：首个 think/text 到达时显式移除 `.pending-dots`（增量 append 不会覆盖它）。
-- **跨轮复位**：`onAssistantDone` 及「无 cur 分支」都调 `resetStreamRender()`，防下一轮用旧标记算 delta（前缀巧合下丢字/串字风险）。
-- **saveHist 节流**：新增 `_saveHistTimer` + `scheduleSaveHist()`（500ms 窗口合并）；关键路径（`onSessionChanged` / `resetConversation` / 删除消息 / `beforeunload`）保留立即 `saveHist`。`clearTransientState` 显式清 timer。
-- **审计**：首轮子代理审计发现 5 个问题（1 个 UX 回归 + 1 个光标残留 + 1 个前缀校验仍 O(n²) + 1 个跨轮标记未复位 + 1 个 timer 未取消），全部修复。
+- **窗口组下拉配色**：`select.ck-input` 补 `color-scheme: light/dark` + `option` 配色（参照既有 `.ck-set-input` 处理）。
+- **窗口名编辑**：
+  - 主进程 `entry.ts` 新增 IPC `rename-profile`：`sender` 归属校验（纵深防御）、长度上限 50、`setTitle` + `shell-window-name-updated` 广播。
+  - `profile.ts` `updateProfileName` 加 `slice(0, 50)` 兜底。
+  - `shell-preload.ts` 暴露 `renameProfile`；`shell-api.ts` 补类型。
+  - `windows.ts` `renderWindowItem` 加 `.ck-win-edit`（✎ 图标）；点名字/图标 → `ckPrompt` → `renameProfile`。改名失败弹提示。
+  - CSS：`.ck-win-edit` hover/focus-visible 显示（键盘可达）。
+- **手机端 AI 尾部签名**：
+  - `app.js`：`SIG_HTML`（同电脑端四角星 SVG + "Cuckoo"）+ `createSigNode` / `ensureSigNode`。
+  - `startStreaming` 建 `.msg-sig` 节点代替原 `.cursor`；`finishStreaming` / `addAi` 渲染后 appendChild。
+  - 流式期间：`.msg.ai.streaming .msg-sig svg` 走 `starFlow` 动画（兼作光标）。
+  - `style.css`：删 `.cursor` + `starFlow`；新增 `.msg-sig` + 流式星流光动画。
+  - `appendStreaming` 里**不**每帧 ensureSigNode（增量只动 streamNode，sig 恒在末位——审计 S2）。
 
 ## 待办事项 (Next Steps)
-- [ ] **真机验证**：长回复流式流畅度、工具循环中 think/text 交替、会话切换无残留。
-- [ ] **（低优先）restoreHist 全量 DOM 重建**（切会话 1-2s 卡顿，400 条历史时）：可虚拟化/分帧。
+- [ ] **真机验证**：窗口组下拉深色主题可读、改名生效、手机端尾部签名渲染正确。
+- [ ] **（低优先）窗口卡片键盘导航**：目前 ✎ / ✕ 靠 focus-visible 可见，但卡片本身不可 Tab 聚焦（按需再补）。
 
 ## 关键上下文
 - 目录: D:\Desktop\Super-File\cuckoo-code
-- 分支: perf/054-harness-perf
-- 主要文件：`src/ui/harness.html`（约 4061 行）
-  - 流式渲染：L2497-2602（`appendStreamBody` / `resetStreamRender` / `onStream`）
-  - 历史持久化：L868-914（`saveHist` / `scheduleSaveHist` / `pushHist`）
-  - 收尾复位：L2604-2631（`onAssistantDone`）
-  - 会话切换：L1344-1347（`clearTransientState`）
-- 验证状态：typecheck / test(978) / lint(0 error) / compile 全绿；子代理审计 5 问题全修。
-- 需求档案：`docs/requirements/054-harness-perf.md`
-- 审计报告：`.agents/harness性能与模型降质-审计.md`（诚实结论：harness 性能**不影响模型降质**，独立渲染进程 + 上下文路径独立；本次修复属 UI 卡顿 bug）
+- 分支: fix/055-window-rename-and-pwa-signature
+- 主要文件：
+  - `src/app/entry.ts`（rename-profile IPC）
+  - `src/app/profile.ts`（updateProfileName 兜底限长）
+  - `src/app/shell-preload.ts` / `src/ui/shell/scripts/shell-api.ts`（暴露 renameProfile）
+  - `src/ui/shell/scripts/pages/windows.ts`（改名 UI）
+  - `src/ui/shell/styles/components.css`（select.ck-input option 配色 + .ck-win-edit）
+  - `src/remote/pwa/app.js` / `src/remote/pwa/style.css`（手机端签名）
+  - `docs/requirements/055-window-rename-and-pwa-signature.md`（需求档案）
+- 验证状态：typecheck / test(978) / lint(0 error) / compile 全绿；子代理审计 4 项必修（R1/R2/S1/S2/S4）已全修。

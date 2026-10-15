@@ -122,6 +122,7 @@ const shellAPI = {
   openProfileWindow: (profileId: string) => ipcRenderer.invoke('open-profile-window', { profileId }),
   deleteProfileWindow: (profileId: string) => ipcRenderer.invoke('delete-profile', { profileId }),
   setProfileAutoOpen: (profileId: string, autoOpen: boolean) => ipcRenderer.invoke('set-profile-auto-open', { profileId, autoOpen }),
+  renameProfile: (profileId: string, name: string) => ipcRenderer.invoke('rename-profile', { profileId, name }),
   // ========== 会话（侧边栏「工作区」页）==========
   listAllSessions: () => ipcRenderer.invoke('list-all-sessions'),
   navigateSession: (sessionId: string) => ipcRenderer.invoke('navigate-session', { sessionId }),

@@ -699,6 +699,10 @@
     font-size: 12.5px; font-family: inherit;
   }
   .ck-input:focus, .ck-textarea:focus { outline: none; border-color: var(--ck-primary); box-shadow: 0 0 0 3px var(--ck-primary-soft); }
+  /* select 弹层跟随 color-scheme（否则深色主题下原生 option 白底浅字看不清） */
+  select.ck-input { color-scheme: light; }
+  body[data-ck-dark] select.ck-input { color-scheme: dark; }
+  select.ck-input option { background: var(--ck-bg); color: var(--ck-text); }
   .ck-textarea { resize: vertical; min-height: 220px; line-height: 1.6; }
   .ck-textarea-sm { min-height: 110px; }
   .ck-modal-foot { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -803,6 +807,17 @@
     flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ck-text);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  .ck-win-name { cursor: text; }
+  .ck-win-edit {
+    width: 24px; height: 24px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 7px; font-size: 12px; color: var(--ck-text-dim);
+    cursor: pointer; transition: opacity .15s, background .15s, color .15s;
+    opacity: 0; pointer-events: none;   /* 默认隐藏，悬停卡片才出现 */
+  }
+  .ck-win-item:hover .ck-win-edit { opacity: 1; pointer-events: auto; }
+  .ck-win-edit:focus-visible { opacity: 1; pointer-events: auto; }
+  .ck-win-edit:hover { background: var(--ck-primary-soft); color: var(--ck-primary); }
   .ck-win-del {
     width: 24px; height: 24px; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
@@ -811,6 +826,7 @@
     opacity: 0; pointer-events: none;   /* 默认隐藏，悬停卡片才出现 */
   }
   .ck-win-item:hover .ck-win-del { opacity: 1; pointer-events: auto; }
+  .ck-win-del:focus-visible { opacity: 1; pointer-events: auto; }
   .ck-win-del:hover { background: var(--ck-danger); color: #fff; }
   .ck-win-bottom { display: flex; align-items: center; gap: 8px; }
   .ck-win-provider {
@@ -5640,7 +5656,7 @@ paths:            # 可选；省略 = 始终生效
     const checked = p.autoOpen === true ? " checked" : "";
     const initial = (p.name || "?").trim().charAt(0).toUpperCase();
     const avatarStyle = providerAvatarStyle(p.providerId);
-    return '<div class="ck-win-item" data-profile-id="' + escapeHtml(p.id) + '"><div class="ck-win-top"><span class="ck-win-avatar"' + (avatarStyle ? ' style="background:' + avatarStyle + '"' : "") + ">" + escapeHtml(initial) + '</span><span class="ck-win-name">' + escapeHtml(p.name) + '</span><span class="ck-win-del" data-profile-id="' + escapeHtml(p.id) + '" title="\u5220\u9664\u7A97\u53E3">\u2715</span></div><div class="ck-win-bottom"><span class="ck-win-provider">' + escapeHtml(pname) + '</span><label class="ck-win-check' + (p.autoOpen === true ? " ck-win-check-on" : "") + '" title="\u542F\u52A8\u65F6\u9ED8\u8BA4\u6253\u5F00"><input type="checkbox" data-profile-id="' + escapeHtml(p.id) + '"' + checked + " />\u9ED8\u8BA4\u6253\u5F00</label></div></div>";
+    return '<div class="ck-win-item" data-profile-id="' + escapeHtml(p.id) + '"><div class="ck-win-top"><span class="ck-win-avatar"' + (avatarStyle ? ' style="background:' + avatarStyle + '"' : "") + ">" + escapeHtml(initial) + '</span><span class="ck-win-name" title="\u70B9\u51FB\u91CD\u547D\u540D">' + escapeHtml(p.name) + '</span><span class="ck-win-edit" data-profile-id="' + escapeHtml(p.id) + '" data-name="' + escapeAttr(p.name || "") + '" title="\u91CD\u547D\u540D">\u270E</span><span class="ck-win-del" data-profile-id="' + escapeHtml(p.id) + '" title="\u5220\u9664\u7A97\u53E3">\u2715</span></div><div class="ck-win-bottom"><span class="ck-win-provider">' + escapeHtml(pname) + '</span><label class="ck-win-check' + (p.autoOpen === true ? " ck-win-check-on" : "") + '" title="\u542F\u52A8\u65F6\u9ED8\u8BA4\u6253\u5F00"><input type="checkbox" data-profile-id="' + escapeHtml(p.id) + '"' + checked + " />\u9ED8\u8BA4\u6253\u5F00</label></div></div>";
   }
   async function renderWindowList() {
     const listEl2 = document.getElementById("win-list");
@@ -5709,11 +5725,40 @@ paths:            # 可选；省略 = 始终生效
       listEl2.querySelectorAll(".ck-win-item").forEach((el2) => {
         el2.addEventListener("click", async (e) => {
           if (e.target.classList.contains("ck-win-del")) return;
+          if (e.target.classList.contains("ck-win-edit")) return;
           if (e.target.closest(".ck-win-check")) return;
+          if (e.target.classList.contains("ck-win-name")) return;
           try {
             await api.openProfileWindow?.(el2.dataset.profileId);
           } catch (_) {
           }
+        });
+      });
+      const onRename = async (item) => {
+        const pid = item.dataset.profileId;
+        const editBtn = item.querySelector(".ck-win-edit");
+        const oldName = editBtn && editBtn.dataset.name || "";
+        const v = await ckPrompt({ title: "\u91CD\u547D\u540D\u7A97\u53E3", placeholder: "\u7A97\u53E3\u540D\u79F0", value: oldName });
+        if (v === null) return;
+        const r = await api.renameProfile?.(pid, v);
+        if (r && r.success) {
+          renderWindowList();
+          return;
+        }
+        ckAlert(r && r.error || "\u6539\u540D\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5");
+      };
+      listEl2.querySelectorAll(".ck-win-edit").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onRename(btn.closest(".ck-win-item"));
+        });
+      });
+      listEl2.querySelectorAll(".ck-win-name").forEach((el2) => {
+        el2.addEventListener("click", (e) => {
+          const item = el2.closest(".ck-win-item");
+          if (!item) return;
+          e.stopPropagation();
+          onRename(item);
         });
       });
       listEl2.querySelectorAll(".ck-win-del").forEach((btn) => {

@@ -247,7 +247,8 @@ function updateProfileName(id: string, name: string): any {
   const profiles = readProfiles();
   const p = profiles.find(x => x.id === id);
   if (!p || !name || !name.trim()) return null;
-  p.name = name.trim();
+  const trimmed = name.trim().slice(0, 50); // 兜底：入口层未限长时也不污染磁盘
+  p.name = trimmed;
   writeProfiles(profiles);
   return p;
 }
