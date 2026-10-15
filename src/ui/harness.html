@@ -1347,6 +1347,7 @@
     saveHist();
     stream.innerHTML = '';
     toolSeq = 0;
+    cur = null;          // 流式气泡适配变量：随会话一起归零，否则残留到新对话
     sendQueue = [];
     renderSendQueue();
 
@@ -1391,10 +1392,18 @@
     var _impState = _pendingImportState;
     _pendingImportState = null;
     var _impQueue = null;
+    var _impGoal = null, _impPlanState = null, _impPlanTodos = null, _impGoalNoProgress = -1;
     if (_impState && sid) {
       history = (_impState.history || []).slice();
       saveHist();  // 写入新 sid 的 key（覆盖可能的空历史）
       _impQueue = _impState.sendQueue || null;
+      // 目标/计划迁移：会话隔离态，需在 loadGoalState/loadPlanState 之后覆盖（见下）
+      _impGoal = _impState.goal || null;
+      // phase 校验对齐 loadPlanState：缺 phase 视为无效，避免下游走到未定义分支
+      _impPlanState = (_impState.planState && _impState.planState.phase) ? _impState.planState : null;
+      _impPlanTodos = Array.isArray(_impState.planTodos) ? _impState.planTodos : null;
+      // goalNoProgress 是独立变量（不在 goal 对象内），不显式带会丢"无进展计数"
+      if (typeof _impState.goalNoProgress === 'number') _impGoalNoProgress = _impState.goalNoProgress;
     } else if (pendingTruncate && sid && sid === pendingTruncate.oldSid) {
       // 回到原会话 = 截断失败回退（分享页激活失败自动退回）：清掉待迁移状态，
       // 按原会话正常载入历史。若不拦住，截断后历史会覆盖原会话本地历史，造成视图与网页不一致。
@@ -1412,9 +1421,28 @@
       loadHist();
     }
     loadGoalState();       // 载入新会话的 goal
-    renderGoalBar();
     loadPlanState();       // 载入新会话的 plan 模式状态
-    renderPlan(planBySession[sid] || []);  // 载入新会话的 plan 步骤
+    // 窗口组切换迁移：用源窗口的 goal/plan 覆盖。
+    // loadGoalState/loadPlanState 读的是「新 sid」的 localStorage（空），
+    // 故必须在它们之后、渲染之前覆盖，否则自动推进会断（目标窗口无 goal/plan）。
+    if (_impGoal) {
+      goal = _impGoal;
+      if (typeof goal.elapsed !== 'number') goal.elapsed = 0;
+      if (!goal.done && !goal.paused && !goal.startedAt) goal.startedAt = Date.now();
+      saveGoalState();
+    }
+    if (_impGoalNoProgress >= 0) goalNoProgress = _impGoalNoProgress;
+    if (_impPlanState) {
+      planState = _impPlanState;
+      if (typeof planState.elapsed !== 'number') planState.elapsed = 0;
+      if (planState.phase === 'exec' && !planState.startedAt) planState.startedAt = Date.now();
+      if (typeof planState.noProgress !== 'number') planState.noProgress = 0;
+      if (typeof planState.round !== 'number') planState.round = 0;
+      savePlanState();
+    }
+    if (_impPlanTodos) planBySession[sid] = _impPlanTodos;
+    renderGoalBar();
+    renderPlan(planBySession[sid] || []);  // 载入/迁移后的 plan 步骤
     renderPlanBar();
     cancelGoalNudge();
     cur = null;
@@ -3618,7 +3646,15 @@
   /** 导出当前 harness 状态（主进程切换时调用，供目标窗口重建） */
   function exportHarnessState() {
     // 直接返回引用：exportStateReply 经 ipcRenderer.send 会做结构化克隆，无需预先 JSON 深拷贝（大历史省一次拷贝）
-    return { history: history, sendQueue: sendQueue };
+    // goal / planState / planTodos：会话隔离态，目标窗口是新分享会话（新 sid），不显式携带就会丢
+    return {
+      history: history,
+      sendQueue: sendQueue,
+      goal: goal,
+      goalNoProgress: goalNoProgress,
+      planState: planState,
+      planTodos: planBySession[currentSessionId] || [],
+    };
   }
   if (api.onExportStateReq) {
     api.onExportStateReq(function (data) {
@@ -3643,6 +3679,30 @@
     if (Array.isArray(data.sendQueue) && data.sendQueue.length) {
       sendQueue = data.sendQueue;
       renderSendQueue();
+    }
+    // 3) 目标：恢复目标条（会话已确定，直接覆盖本会话）
+    if (data.goal) {
+      goal = data.goal;
+      if (typeof goal.elapsed !== 'number') goal.elapsed = 0;
+      if (!goal.done && !goal.paused && !goal.startedAt) goal.startedAt = Date.now();
+      saveGoalState();
+      renderGoalBar();
+    }
+    if (typeof data.goalNoProgress === 'number') goalNoProgress = data.goalNoProgress;
+    // 4) 计划模式 + 步骤：恢复计划面板（会话已确定，直接覆盖本会话）
+    //    phase 校验对齐 loadPlanState：缺 phase 视为无效
+    if (data.planState && data.planState.phase) {
+      planState = data.planState;
+      if (typeof planState.elapsed !== 'number') planState.elapsed = 0;
+      if (planState.phase === 'exec' && !planState.startedAt) planState.startedAt = Date.now();
+      if (typeof planState.noProgress !== 'number') planState.noProgress = 0;
+      if (typeof planState.round !== 'number') planState.round = 0;
+      savePlanState();
+    }
+    if (Array.isArray(data.planTodos)) planBySession[currentSessionId] = data.planTodos;
+    if ((data.planState && data.planState.phase) || Array.isArray(data.planTodos)) {
+      renderPlan(planBySession[currentSessionId] || []);
+      renderPlanBar();
     }
   }
   /** 导入源窗口状态（切换后目标窗口调用）。
