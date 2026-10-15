@@ -163,15 +163,18 @@ function buildMemorySection(): string {
   // 注意：list 顺序是"旧→新"，故从尾部取；与 MAX_MEMORIES 的"丢弃最旧"策略一致。
   // （原实现 slice(0, MAX) 保留的是最早的，反而丢掉用户刚记的偏好——方向反了。）
   if (body.length > MAX_SECTION_LEN) {
+    // 提示前缀也占空间，须计入预算，否则 body 会超出 MAX_SECTION_LEN（边界漏洞）
+    const prefix = '- ...（较早的记忆已省略）\n';
+    const budget = Math.max(0, MAX_SECTION_LEN - prefix.length);
     const kept = [];
     let len = 0;
     for (let i = lines.length - 1; i >= 0; i--) {
       const add = lines[i].length + 1;
-      if (len + add > MAX_SECTION_LEN) break;
+      if (len + add > budget) break;
       kept.unshift(lines[i]);
       len += add;
     }
-    body = '- ...（较早的记忆已省略）\n' + kept.join('\n');
+    body = prefix + kept.join('\n');
   }
   return [
     '## 用户记忆',
