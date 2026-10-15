@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.8.85] - 2026-10-16
+
+### Fixed
+- **手机端 stop/error 尾帧仍丢（056 遗留修复）**：056 让 bridge 层 `stopStreamThrottle(true)` 先 flush pendingText，但 flush 后进入 manager 的 `onAiStream` 只是 `setTimeout(flushStream, 100)`，紧接着 `ai-stop` / `ai-error` 到达 → `onAiStop`/`onAiError` 里 `clearTimeout(s.timer)` 把排队的 flush 取消 → 尾帧**仍未广播**。缺陷只是从 bridge 窗口位移到 manager 窗口。修复：`onAiStop` / `onAiError` 在清 timer 后、清 `s.text` 前，若 `s.text && s.text !== s.sent` 先调 `flushStream(pid)` 广播未发送的尾帧。
+- **rename-profile 缺"本窗口"校验（055 遗留）**：`entry.ts` 的 `rename-profile` 只校验 `ctx` 非空，未校验 `ctx.profileId === profileId`。任一窗口的壳页面可改**任意**窗口名。修复：补 `ctx.profileId !== profileId` 拒绝。
+- **bridge timer 触发后未清 pendingText（056 遗留）**：极端场景（timer 刚触发 → 下一次 onStream 之前）stop 会重复 flush 上一段全文。修复：timer 回调里先取出 text、再清 `pendingText`。
+
+### Changed
+- **删除 `dataset.raw` 死数据写入**（`src/remote/pwa/app.js`）：全仓无读取点（复制走闭包 `rawText`）；056 已消除流式每帧写入，本版把 finishStreaming/addAi 里各剩的一次也删除。
+- **删除 `ensureSigNode` 死代码**（`src/remote/pwa/app.js`）：定义后从未调用。
+- **`update-window-name` 加注释说明**：名字统一上限 50 字（与用户重命名一致，由 `profile.ts updateProfileName` 内部 slice 兜底）。
+
 ## [0.8.84] - 2026-10-16
 
 ### Fixed

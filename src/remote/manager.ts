@@ -202,6 +202,8 @@ function onAiStop(profileId: string): void {
   clearBusy(pid);
   const s = getStreamState(pid);
   if (s.timer) { clearTimeout(s.timer); s.timer = null; }
+  // 先把尚未广播的尾帧 flush 出去，再清空（否则节流窗口内最后 <100ms 文本永久丢失）
+  if (s.text && s.text !== s.sent) flushStream(pid);
   s.text = '';
   s.sent = '';
   s.active = false;
@@ -223,6 +225,8 @@ function onAiError(profileId: string, error?: string): void {
   clearBusy(pid);
   const s = getStreamState(pid);
   if (s.timer) { clearTimeout(s.timer); s.timer = null; }
+  // 同 onAiStop：先 flush 未广播的尾帧，再清空
+  if (s.text && s.text !== s.sent) flushStream(pid);
   s.text = '';
   s.sent = '';
   s.active = false;

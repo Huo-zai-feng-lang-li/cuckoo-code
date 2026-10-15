@@ -68,7 +68,9 @@ export function initRemoteBridge(): void {
     if (streamTimer) return;
     streamTimer = setTimeout(() => {
       streamTimer = null;
-      const clean = stripBlocks(pendingText);
+      const text = pendingText;
+      pendingText = ''; // 已投递：清空，防下一轮 stop 时重复 flush 上一段全文
+      const clean = stripBlocks(text);
       if (clean) report({ type: 'ai-stream', text: clean });
     }, 100);
   });
