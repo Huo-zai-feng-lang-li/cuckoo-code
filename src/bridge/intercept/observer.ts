@@ -93,6 +93,31 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * 发送工具结果回 AI，带重试（防偶发失败导致模型停下）。
+ *
+ * 覆盖"可检测的机械失败"：找不到输入框（页面重渲染/导航中）、填入内容失败。
+ * 这类失败在"偶发"场景里最常见，重试即可恢复。
+ *
+ * 不覆盖"triggerSend 假阳性"（发了但站点没接收）：该情况无法可靠检测
+ * （输入框清空时机 / contenteditable 文本归一化都不可控），强行检测会导致
+ * 同一条工具结果重复发送 → 工具重复执行（破坏性 > 原 bug）。故不做自动补发。
+ *
+ * 只作用于工具结果回传路径，不改 chat-input 任何函数签名 → Harness 零影响。
+ * @returns 是否最终发送成功
+ */
+async function sendToolResultWithRetry(results: any, onSent?: () => void): Promise<boolean> {
+  const MAX_ATTEMPTS = 3;     // 常规发送最多 3 次
+  const RETRY_DELAY_MS = 600; // 重试间隔
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const sent = await sendCombinedJsResultsToChat(results, onSent).catch(() => false);
+    if (sent) return true;
+    console.warn('[Cuckoo Code][拦截] 工具结果回传失败（第 ' + attempt + '/' + MAX_ATTEMPTS + ' 次）');
+    if (attempt < MAX_ATTEMPTS) await sleep(RETRY_DELAY_MS);
+  }
+  return false;
+}
+
+/**
  * 执行 JS 代码块，遇到"代码不完整"错误时自动重试。
  * 拦截模式下文本已完整（finished），无需重新提取，简单重试执行即可。
  */
@@ -182,9 +207,13 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
     });
     if (abortRequested) { abortRequested = false; hideToolMask(); console.log('[Cuckoo Code][拦截] 已请求中止，不回传工具结果'); return; }
     // afterSent 在"结果已发出"时触发隐藏；发送失败（找不到输入框等）则立即隐藏兜底
-    const sent = await sendCombinedJsResultsToChat(results, hideToolMask);
+    const sent = await sendToolResultWithRetry(results, hideToolMask);
     if (cancelled) return; // 用户已取消，不再处理
-    if (!sent) hideToolMask();
+    if (!sent) {
+      // 重试后仍失败：隐藏遮罩 + 提示用户（避免"模型莫名停下"无从察觉）
+      hideToolMask();
+      console.error('[Cuckoo Code][拦截] 工具结果回传最终失败，模型可能无法继续');
+    }
     return;
   }
 
