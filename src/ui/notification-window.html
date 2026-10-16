@@ -58,13 +58,15 @@
   .card.closing { animation:slideOut .2s ease forwards; }
   @keyframes slideOut { to{opacity:0;transform:translateX(18px) scale(.97)} }
 
-  /* 图片轮换区（仅当有图时显示）。底部渐变过渡到文字区 */
-  .pic-wrap { position:relative; width:100%; height:100px; background:#e7eaf0;
-    overflow:hidden; flex-shrink:0; display:none; }
+  /* 图片轮换区（仅当有图时显示）。高度按图片真实比例自适应（不裁切）。
+     初始 180px 为占位（约 400/2.2），图片加载后由 JS 修正为精确比例。 */
+  .pic-wrap { position:relative; width:100%; height:180px; background:#e7eaf0;
+    overflow:hidden; flex-shrink:0; display:none;
+    transition:height .28s cubic-bezier(.22,.61,.36,1); }
   .pic-wrap.show { display:block; }
   .pic-wrap img { width:100%; height:100%; object-fit:cover; display:block;
     transition:opacity .45s ease; }
-  .pic-wrap::after { content:""; position:absolute; left:0; right:0; bottom:0; height:46%;
+  .pic-wrap::after { content:""; position:absolute; left:0; right:0; bottom:0; height:52%;
     background:linear-gradient(180deg, transparent, var(--bg) 94%); pointer-events:none; }
 
   .inner { flex:1; min-width:0; display:flex; align-items:flex-start; gap:12px;
@@ -83,8 +85,14 @@
     display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .body:empty { display:none; }
 
+  /* 倒计时进度条：渐变从实色 → 提亮 → 淡出，缩短时右端先消隐，有"流光"感 */
   .timer { position:absolute; left:0; bottom:0; height:3px; width:100%;
-    background:linear-gradient(90deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 45%, transparent) 100%);
+    background:linear-gradient(90deg,
+      var(--accent) 0%,
+      color-mix(in srgb, var(--accent) 78%, #fff) 42%,
+      var(--accent) 72%,
+      color-mix(in srgb, var(--accent) 30%, transparent) 100%);
+    box-shadow:0 0 8px -1px color-mix(in srgb, var(--accent) 55%, transparent);
     transform-origin:left center; transform:scaleX(1);
     transition:transform .1s linear; will-change:transform; z-index:2; }
 
@@ -140,6 +148,37 @@
         im.src = src;
         preloaded[src] = true;
       }
+      /** 测量卡片自然高度并回传主进程（贴合窗口，消除底部空白） */
+      function measureAndResize() {
+        try {
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              try {
+                var prev = card.style.height;
+                card.style.height = 'auto';
+                var h = Math.ceil(card.getBoundingClientRect().height);
+                card.style.height = prev;
+                if (h > 0 && api && typeof api.resize === 'function') api.resize(h);
+              } catch (_) {}
+            });
+          });
+        } catch (_) {}
+      }
+      /** 按图片真实比例设置图片区高度（完整显示，不裁切） */
+      function applyPicRatio(natW, natH) {
+        try {
+          if (!natW || !natH) return;
+          var ratio = natW / natH;
+          var w = picWrap.clientWidth || 400;
+          var h = Math.round(w / ratio);
+          // 夹在合理区间，防极端比例撑爆窗口
+          h = Math.max(80, Math.min(320, h));
+          if (h > 0 && Math.abs(h - picWrap.offsetHeight) > 1) {
+            picWrap.style.height = h + 'px';
+            measureAndResize(); // 高度变了 → 卡片总高变 → 重新回传
+          }
+        } catch (_) {}
+      }
       function showPic(n) {
         if (!IMAGES.length) return;
         picIdx = ((n % IMAGES.length) + IMAGES.length) % IMAGES.length;
@@ -151,6 +190,7 @@
           picEl.src = src;
           picEl.style.opacity = 1;
           preload(IMAGES[(picIdx + 1) % IMAGES.length]); // 预加载下一张
+          applyPicRatio(im.naturalWidth, im.naturalHeight); // 按真实比例调图片区高度
         };
         im.onerror = function () { picEl.style.opacity = 1; };
         im.src = src;
@@ -188,21 +228,8 @@
             IMAGES = data.images.slice();
             startPic();
           }
-          // 内容就绪后测量自然高度回传主进程（贴合窗口，消除底部空白）。
-          // 双 rAF 等布局稳定（字体/换行计算完成）。
-          try {
-            requestAnimationFrame(function () {
-              requestAnimationFrame(function () {
-                try {
-                  var prev = card.style.height;
-                  card.style.height = 'auto';
-                  var h = Math.ceil(card.getBoundingClientRect().height);
-                  card.style.height = prev;
-                  if (h > 0 && api && typeof api.resize === 'function') api.resize(h);
-                } catch (_) {}
-              });
-            });
-          } catch (_) {}
+          // 内容就绪后测量自然高度回传主进程（贴合窗口，消除底部空白）
+          measureAndResize();
           totalMs = Number(data.durationMs) || 0;
           if (totalMs > 0) { endAt = Date.now() + totalMs; elTimer.style.display = ''; tick(); }
           else { elTimer.style.display = 'none'; }
