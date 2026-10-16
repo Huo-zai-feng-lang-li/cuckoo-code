@@ -32,11 +32,14 @@ export interface SystemNotificationItem {
   durationMs?: number;
   /** 点击卡片的回调（通常用于聚焦到对应窗口） */
   onClick?: () => void;
+  /** 是否显示图片轮换区（任务完成等"喜庆"场景用；高度自动增加） */
+  withImages?: boolean;
 }
 
 /** 单张卡片的固定尺寸（内容自适应到固定高度，超长省略） */
 const WIDTH = 400;
 const HEIGHT = 118;
+const PIC_HEIGHT = 170; // 图片轮换区高度（withImages 时叠加到 HEIGHT 上）
 const GAP = 12;
 const MARGIN = 24;
 /** 同时最多显示的通知条数（超出关闭最旧的） */
@@ -45,11 +48,34 @@ const MAX_VISIBLE = 3;
 interface ActiveItem {
   win: any;
   timer: any;
+  height: number;
   onClose: () => void;
 }
 
 /** 活跃通知（数组尾部 = 最新 = 最靠下） */
 const active: ActiveItem[] = [];
+
+/** 图片轮换列表缓存（相对 HTML 的路径，如 notif-images/card_1.webp） */
+let notifImagesCache: string[] | null = null;
+function listNotifImages(): string[] {
+  if (notifImagesCache !== null) return notifImagesCache;
+  let result: string[] = [];
+  try {
+    const dir = resolveSrc('ui/notif-images');
+    const names = require('node:fs').readdirSync(dir)
+      .filter((f: string) => /\.(webp|png|jpe?g)$/i.test(f))
+      .sort((a: string, b: string) => {
+        const na = parseInt((a.match(/\d+/) || ['0'])[0], 10);
+        const nb = parseInt((b.match(/\d+/) || ['0'])[0], 10);
+        return na - nb;
+      });
+    result = names.map((n: string) => 'notif-images/' + n);
+  } catch (_) {
+    result = [];
+  }
+  notifImagesCache = result;
+  return result;
+}
 
 /** 计算右下角基准点（焦点窗口所在屏 → 光标最近屏 → 主屏） */
 function computeWorkArea(): { x: number; y: number; width: number; height: number } {
@@ -73,20 +99,22 @@ function computeWorkArea(): { x: number; y: number; width: number; height: numbe
   return wa;
 }
 
-/** 重排所有活跃通知：从底部向上堆叠 */
+/** 重排所有活跃通知：从底部向上堆叠（每项高度可能不同：带图更高） */
 function relayout(): void {
   const wa = computeWorkArea();
   const x = Math.max(wa.x + 8, wa.x + wa.width - WIDTH - MARGIN);
   // 从底部往上：最后一条（最新）在最下
-  let y = wa.y + wa.height - MARGIN - HEIGHT;
+  let y = wa.y + wa.height - MARGIN;
   for (let i = active.length - 1; i >= 0; i--) {
     const it = active[i];
+    const h = it.height || HEIGHT;
+    y -= h;
     try {
       if (it.win && !it.win.isDestroyed()) {
-        it.win.setBounds({ x, y, width: WIDTH, height: HEIGHT });
+        it.win.setBounds({ x, y, width: WIDTH, height: h });
       }
     } catch (_) { /* ignore */ }
-    y -= (HEIGHT + GAP);
+    y -= GAP;
   }
 }
 
@@ -109,12 +137,15 @@ function showSystemNotification(item: SystemNotificationItem): void {
   if (!item || !item.title) return;
   const kind: NotificationKind = item.kind || 'info';
   const durationMs = typeof item.durationMs === 'number' ? item.durationMs : 4200;
+  // 图片轮换区：仅当显式开启且有图时叠加高度
+  const images = item.withImages ? listNotifImages() : [];
+  const height = images.length ? (HEIGHT + PIC_HEIGHT) : HEIGHT;
 
   let win: any;
   try {
     win = new BrowserWindow({
       width: WIDTH,
-      height: HEIGHT,
+      height,
       x: 0,
       y: 0,
       frame: false,
@@ -149,6 +180,7 @@ function showSystemNotification(item: SystemNotificationItem): void {
   const entry: ActiveItem = {
     win,
     timer: null,
+    height,
     onClose: () => { closed = true; },
   };
 
@@ -160,6 +192,7 @@ function showSystemNotification(item: SystemNotificationItem): void {
         title: item.title,
         body: item.body || '',
         durationMs,
+        images,
       });
     } catch (_) { /* ignore */ }
     active.push(entry);

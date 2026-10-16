@@ -144,6 +144,7 @@
       "src/overlay/template/*.html",
       "src/overlay/template/*.css",
       "src/ui/*.html",
+      "src/ui/notif-images/**",
       "src/ui/feishu-images/**",
       "src/ui/vendor/**"
     ]

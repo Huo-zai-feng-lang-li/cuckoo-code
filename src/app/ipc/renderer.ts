@@ -56,6 +56,7 @@ function registerRendererIpc(): void {
           title: 'AI 任务已完成',
           body: windowName + ' 的回复已生成',
           durationMs: 4200,
+          withImages: true,
           onClick: () => {
             try {
               // 动态重查：优先按 profileId 找当前窗口（原窗口关闭后重开也能命中）；
