@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.9.22] - 2026-10-17
+
+### Fixed
+- **增强「炫酷图片」背景样式选不中/不持久**：v0.9.21 遗漏给 ui-prefs 的 PromptEnhancerConfig 补 backgroundStyle/backgroundImage 字段——保存时写入了，但主进程 normEnhancer 读回时把这两字段丢弃，导致关弹窗再开又回到「科技网格」。现补齐字段定义 + 规整逻辑。
+
 ## [0.9.21] - 2026-10-17
 
 ### Added

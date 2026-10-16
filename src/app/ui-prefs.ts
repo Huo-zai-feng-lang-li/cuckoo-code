@@ -27,6 +27,10 @@ export interface PromptEnhancerConfig {
   contextRounds: number;
   /** 自定义增强系统提示词（空 = 用内置模板） */
   systemPrompt: string;
+  /** 增强中的输入框背景样式：grid=科技网格（默认）/ image=炫酷图片 */
+  backgroundStyle: 'grid' | 'image';
+  /** 图片模式下指定图片文件名（如 "07.jpg"；空 = 随机） */
+  backgroundImage: string;
 }
 
 export interface UiPrefs {
@@ -44,6 +48,8 @@ const DEFAULTS: UiPrefs = {
     mode: 'gentle',
     contextRounds: 8,
     systemPrompt: '',
+    backgroundStyle: 'grid',
+    backgroundImage: '',
   },
 };
 const MIN_ZOOM = 0.8;
@@ -84,6 +90,8 @@ function normEnhancer(raw: any): PromptEnhancerConfig {
     mode: raw.mode === 'strict' ? 'strict' : 'gentle',
     contextRounds: clampRounds(raw.contextRounds),
     systemPrompt: typeof raw.systemPrompt === 'string' ? raw.systemPrompt : d.systemPrompt,
+    backgroundStyle: raw.backgroundStyle === 'image' ? 'image' : 'grid',
+    backgroundImage: typeof raw.backgroundImage === 'string' ? raw.backgroundImage : d.backgroundImage,
   };
 }
 
