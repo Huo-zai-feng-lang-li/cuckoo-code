@@ -6454,6 +6454,12 @@ paths:            # 可选；省略 = 始终生效
     renderActivitybarToggles();
   } catch (_) {
   }
+  window.addEventListener("cuckoo-activitybar-mounted", () => {
+    try {
+      renderActivitybarToggles();
+    } catch (_) {
+    }
+  });
   {
     const head = document.getElementById("st-ab-head");
     const body = document.getElementById("st-ab-body");
@@ -8473,6 +8479,10 @@ paths:            # 可选；省略 = 始终生效
       st.id = "ck-plugin-panel-style";
       st.textContent = "[data-plugin-panel]{display:none}[data-plugin-panel].ck-tab-active{display:block}";
       document.head.appendChild(st);
+    }
+    try {
+      window.dispatchEvent(new CustomEvent("cuckoo-activitybar-mounted"));
+    } catch (_) {
     }
   }
   function mountSlot(m) {

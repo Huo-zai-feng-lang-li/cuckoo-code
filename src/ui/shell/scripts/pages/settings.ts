@@ -209,6 +209,10 @@ export function renderActivitybarToggles(): void {
 }
 // 初始化渲染（模块加载时）
 try { renderActivitybarToggles(); } catch (_) { /* ignore */ }
+// 插件图标异步挂载 → 若设置页已打开，刷新图标显隐列表
+window.addEventListener('cuckoo-activitybar-mounted', () => {
+  try { renderActivitybarToggles(); } catch (_) { /* ignore */ }
+});
 // 活动栏图标区：默认收起，点标题展开/收起
 {
   const head = document.getElementById('st-ab-head');

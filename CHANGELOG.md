@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.9.16] - 2026-10-16
+
+### Fixed
+- **新建对话导航失败时监听器泄漏**：`new-conversation-for-project`（侧栏"用项目新建对话"）在 `loadURL` 失败时未移除 `did-finish-load` 监听器 → 残留累积，下次任意导航都会误触发 `initProject`（给非目标会话注入系统提示词）。现对齐 `web-new-conversation` 的处理（失败时显式移除）。
+- **同 URL 导航时 loading 遮罩残留**：用户已在首页再点「+」时，Electron 可能不派发 `did-finish-load` → `onLoad` 不执行 → 遮罩残留到 15s 兜底。现检测"导航前后 URL 相同"时手动触发。
+- **新建对话双击重复注入**：`new-conversation-for-project` 补上双击防护（清理上一次未完成的监听器/定时器），与 `web-new-conversation` 行为一致。
+- **设置页图标列表漏插件图标**：插件图标异步挂载时若设置页已打开，列表不刷新。现插件挂载后派发事件，设置页订阅刷新。
+- **首次提示抑制窗口偏宽**：点「+」后抑制「初始化项目」弹窗的时间窗 10s → 5s。
+
 ## [0.9.15] - 2026-10-16
 
 ### Added

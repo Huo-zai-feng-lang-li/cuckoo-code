@@ -215,14 +215,14 @@ function registerShellIpc(): void {
   ipcMain.handle('web-new-conversation', async (event: any) => {
     const ctx = windowState.getContextByWebContents(event.sender);
     const view = ctx ? ctx.view : null;
-    if (!view) return { success: false };
-    // 新建对话完成 → 通知壳页面隐藏 loading 遮罩（各分支均会触发）
+    // 新建对话完成 → 通知壳页面隐藏 loading 遮罩（各分支均会触发，否则遮罩残留到 15s 兜底）
     const notifyDone = () => {
       try { if (ctx && ctx.win && !ctx.win.isDestroyed()) ctx.win.webContents.send('shell-newconv-done'); } catch (_) { /* ignore */ }
     };
+    if (!view) { notifyDone(); return { success: false }; }
     const provider = (ctx && ctx.providerId) ? getProvider(ctx.providerId) : null;
     const url = provider && provider.homeUrl ? provider.homeUrl : '';
-    if (!url) return { success: false, error: 'no-home-url' };
+    if (!url) { notifyDone(); return { success: false, error: 'no-home-url' }; }
     // 沿用当前项目目录：新对话仍绑定同一个项目，无需用户重新选择。
     // 取不到（未初始化项目）则退化为纯新会话，与旧行为一致。
     const currentDir = (ctx && ctx.sessionStore && ctx.sessionStore.state)
@@ -242,6 +242,9 @@ function registerShellIpc(): void {
       try { clearTimeout(ctxAny.__newConvTimer); } catch (_) { /* ignore */ }
       ctxAny.__newConvTimer = null;
     }
+    // 记录导航前 URL：若目标与当前相同（用户已在首页点「+」），Electron 可能不派发
+    // did-finish-load → onLoad 不执行 → 遮罩残留到 15s 兜底。故需短路处理。
+    const beforeUrl = (() => { try { return wc.getURL(); } catch (_) { return ''; } })();
     let onLoad: (() => void) | null = null;
     if (currentDir) {
       // 有当前项目 → 等页面加载完自动注入系统提示词（不弹目录框，复用 new-conversation-for-project 的加载等待逻辑）
@@ -271,6 +274,8 @@ function registerShellIpc(): void {
       await view.webContents.loadURL(url);
       // 无项目目录分支：不会走 initProject，导航完成即算完成（延迟一点让首页渲染稳定）
       if (!currentDir) setTimeout(notifyDone, 600);
+      // 同 URL 导航：did-finish-load 可能不触发 → 手动触发 onLoad（走 initProject + notifyDone）
+      else if (beforeUrl === url && onLoad) { setTimeout(onLoad, 100); }
       return { success: true };
     } catch (err: any) {
       // loadURL 失败：did-finish-load 不会触发，必须显式移除监听器，否则残留累积

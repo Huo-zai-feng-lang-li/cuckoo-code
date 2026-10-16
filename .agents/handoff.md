@@ -1,5 +1,21 @@
 # 最新接续状态 (2026-10-16)
 
+## v0.9.16 本次会话（2026-10-16）——v0.9.15 的 bug 修复
+
+### 背景
+用户问"v0.9.15 会不会引入别的 bug、是否闭环"。自查 + 子代理审查发现 1 个真实缺陷 + 若干健壮性问题，全部修复。
+
+### 修复
+1. **session.ts 监听器泄漏**（🔴 真 bug）：new-conversation-for-project 的 loadURL 失败时未 wc.off → 监听器残留，下次导航误触发 initProject。已对齐 shell.ts 处理。
+2. **同 URL 导航遮罩残留**：已在首页再点「+」时 did-finish-load 可能不触发 → 手动触发 onLoad。
+3. **session.ts 双击防护**：补 __newConvOnLoad/__newConvTimer 清理，与 shell.ts 一致。
+4. **设置页漏插件图标**：plugin-shell 挂载后派发 cuckoo-activitybar-mounted，settings 订阅刷新。
+5. **首次提示抑制窗 10s → 5s**。
+
+### 验证
+- typecheck / test(988) / lint(0 error) / compile 全绿
+- 子代理审查确认：删除文件引用清干净、notifyDone 分支覆盖、tooltip 无重复绑定、通知高度不影响其它 kind
+
 ## v0.9.15 本次会话（2026-10-16）——新建loading + 耗时优化 + tooltip回归
 
 ### 交付（需求档案 076，直接 master）

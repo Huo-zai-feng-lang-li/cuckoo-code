@@ -169,6 +169,9 @@ function mountSidebar(m: MountSpec): void {
     st.textContent = '[data-plugin-panel]{display:none}[data-plugin-panel].ck-tab-active{display:block}';
     document.head.appendChild(st);
   }
+
+  // 通知"活动栏图标已挂载"：设置页若正打开，需刷新图标显隐列表（否则看不到新插件图标）
+  try { window.dispatchEvent(new CustomEvent('cuckoo-activitybar-mounted')); } catch (_) { /* ignore */ }
 }
 
 /** 通用槽位渲染（对标 DSH slots）：按 slot 找容器，按 order 排序插入 */

@@ -413,12 +413,19 @@ function registerSessionIpc(): void {
     const homeUrl = provider && provider.homeUrl ? provider.homeUrl : null;
     if (!homeUrl) return { success: false, error: '当前平台无首页地址' };
     const wc = ctx.view.webContents;
+    const ctxAny = ctx as any;
     console.log('[Cuckoo Code] 用项目新建对话 → ' + projectDir);
+    // 防快速双击：清理上一次未完成的监听器/定时器，避免两次导航合并为一次 did-finish-load
+    // → 两个监听器都触发 → initProject 重复执行（与 web-new-conversation 行为一致）。
+    if (ctxAny.__newConvOnLoad) { try { wc.off('did-finish-load', ctxAny.__newConvOnLoad); } catch (_) { /* ignore */ } ctxAny.__newConvOnLoad = null; }
+    if (ctxAny.__newConvTimer) { try { clearTimeout(ctxAny.__newConvTimer); } catch (_) { /* ignore */ } ctxAny.__newConvTimer = null; }
     // 页面加载完成后初始化。initial-prompt 监听器在 preload 顶层同步注册（did-finish-load 时已就绪），
     // 输入框就绪由 chat-input 轮询保证 → 无需固定等 2s，仅留极短渲染缓冲。
     const onLoad = () => {
       try { wc.off('did-finish-load', onLoad); } catch (_) { /* ignore */ }
-      setTimeout(async () => {
+      ctxAny.__newConvOnLoad = null;
+      ctxAny.__newConvTimer = setTimeout(async () => {
+        ctxAny.__newConvTimer = null;
         try {
           await initProject(false, ctx, projectDir, false, '', false);
         } catch (err: any) {
@@ -426,8 +433,16 @@ function registerSessionIpc(): void {
         }
       }, 400);
     };
+    ctxAny.__newConvOnLoad = onLoad;
     try { wc.on('did-finish-load', onLoad); } catch (_) { /* ignore */ }
-    try { await wc.loadURL(homeUrl); } catch (err: any) { return { success: false, error: err.message }; }
+    try {
+      await wc.loadURL(homeUrl);
+    } catch (err: any) {
+      // 导航失败：did-finish-load 不会触发 → 必须显式移除监听器，否则残留累积，
+      // 下次任意导航都会误触发 initProject（给非目标会话注入系统提示词）。
+      try { wc.off('did-finish-load', onLoad); } catch (_) { /* ignore */ }
+      return { success: false, error: err.message };
+    }
     return { success: true };
   });
 

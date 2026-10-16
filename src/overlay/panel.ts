@@ -400,7 +400,7 @@ function showFirstTimeDialog(): void {
   // 标记经 localStorage 传递（跨 loadURL 导航存活，同源）。
   try {
     const ts = parseInt(localStorage.getItem('cuckoo-new-conv-ts') || '0', 10);
-    if (ts && Date.now() - ts < 10000) { hideFirstTimeDialog(); return; }
+    if (ts && Date.now() - ts < 5000) { hideFirstTimeDialog(); return; }
   } catch (_) { /* ignore */ }
   const dialog = document.getElementById('cuckoo-first-time-dialog');
   if (dialog) dialog.classList.remove('cuckoo-hidden');
