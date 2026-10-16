@@ -1,5 +1,35 @@
 # 最新接续状态 (2026-10-16)
 
+## v0.9.9 本次会话（2026-10-16）——压缩续接会话标题
+
+### 背景
+用户问"为什么有的标题可以显示中文，有的不行？"——真机取证：显示 UUID 的会话 title 全为 null 且 kind 全为 `compaction`。根因两层：① setSessionLineage 新建条目 title 硬编码 null；② 命名提示词只覆盖"首条用户消息"，压缩新会话先收到系统摘要，不会触发命名。
+
+### 交付（方案 A+B，需求档案 069）
+1. **方案 A 继承父标题**：`setSessionLineage` 写 compaction 血缘时，父有标题且本条目无标题则复制（store.ts）。
+2. **方案 B AI 生成标题**：摘要指令要求首行「【标题】xxx」→ `parseSummaryTitle` 解析 → 段1 存 `COMPACT_TITLE_KEY` → 段3 调新增 IPC `set-pending-session-title`（`forceStage=true` 强制暂存，避免误写父会话）→ 新会话 ID 出现时绑定，覆盖方案 A 继承标题。
+3. **新增 IPC**：`src/app/ipc/session.ts` set-pending-session-title + `src/bridge/api.ts` setPendingSessionTitle。
+
+### 审查修复（子代理审查 + 主代理审计，5 项）
+- parseSummaryTitle 正则 `\s*` 跨行 bug（标题空时误吞正文首行）→ 先剥前导空白、首行精确匹配、无论标题空否都剥标签行
+- setPendingSessionTitle 时序脆弱（可能误写父会话）→ 新增 `forceStage` 参数
+- 段2 失败未清 COMPACT_TITLE_KEY → 补齐
+- setPendingSessionTitle 未捕获 rejection → 补 .catch()
+- 标题截断 30→20 对齐提示词
+
+### 真机验证（dev 9444）
+- `setPendingSessionTitle('测试压缩标题')` → `{success:true, pending:true}`（forceStage 生效）✅
+- 单测：新增 7 个 parseSummaryTitle 用例；typecheck / test(988) / lint(0 error) / compile 全绿
+
+### 待真机确认
+- 触发完整压缩流程，确认新会话显示 AI 生成标题（或兜底父标题）
+
+### 关键文件
+- `src/session/store.ts`（setSessionLineage 继承 + setSessionTitle forceStage）
+- `src/session/compaction.ts`（SUMMARY_INSTRUCTION + parseSummaryTitle + COMPACT_TITLE_KEY + 段1/段3）
+- `src/app/ipc/session.ts` + `src/bridge/api.ts`（新 IPC）
+- `test/session/compaction.test.js`（parseSummaryTitle 测试）
+
 ## v0.9.8 本次会话（2026-10-16）——UI 四改
 
 ### 交付

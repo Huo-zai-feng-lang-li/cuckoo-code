@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.9.9] - 2026-10-16
+
+### Added
+- **压缩续接会话自动继承/生成标题**：此前压缩产生的新会话 `title` 为 null，工作区列表回退显示一串 UUID（真机取证：所有显示 UUID 的会话均为 `kind: compaction` 且 title 为 null），用户难以辨认。现：
+  - 压缩新会话从父会话**继承标题**作为兜底；
+  - 压缩摘要指令要求 AI 首行输出「【标题】xxx」，段3 解析后经新增 IPC `set-pending-session-title` 暂存（`forceStage` 强制暂存，避免误写父会话），待新会话 ID 出现时绑定，**覆盖继承的父标题**。
+
+### Fixed
+- **压缩摘要标题解析正则跨行 bug**：`parseSummaryTitle` 原正则在标题为空时会把正文首行误当标题；改为先剥离前导空白、按首行精确匹配，且无论标题是否为空都剥离标签行（防污染注入新会话的 extraPrompt）。
+- **段2 压缩失败未清理标题残留**：补齐 `COMPACT_TITLE_KEY` 清理，与摘要清理对称。
+- **setPendingSessionTitle 未捕获 rejection**：补 `.catch()`，避免 unhandled promise rejection。
+
 ## [0.9.8] - 2026-10-16
 
 ### Changed

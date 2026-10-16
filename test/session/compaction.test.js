@@ -137,3 +137,48 @@ test('_sliceChainUpTo 截断点非 ASSISTANT → null（防不成对）', () => 
   // 目标 3 是 USER，截到此为止链尾是 USER → 不成对，返回 null
   assert.strictEqual(compaction._sliceChainUpTo(msgs, 3, 3), null);
 });
+
+// ===== 压缩标题解析：parseSummaryTitle =====
+
+test('_parseSummaryTitle 标准格式：首行标题 + 正文', () => {
+  const r = compaction._parseSummaryTitle('【标题】修复登录 bug\n\n这是摘要正文。');
+  assert.strictEqual(r.title, '修复登录 bug');
+  assert.strictEqual(r.body, '这是摘要正文。');
+});
+
+test('_parseSummaryTitle 无标题行 → title 空、body 为全文', () => {
+  const r = compaction._parseSummaryTitle('这是一段没有标题的摘要。');
+  assert.strictEqual(r.title, '');
+  assert.strictEqual(r.body, '这是一段没有标题的摘要。');
+});
+
+test('_parseSummaryTitle 标签后标题为空 → 不把正文首行误当标题', () => {
+  // 【标题】后直接换行，正文另起一行：不应把正文首行当作标题
+  const r = compaction._parseSummaryTitle('【标题】\n这是正文第一行。');
+  assert.strictEqual(r.title, '');
+  assert.ok(!r.body.includes('【标题】'), '正文不含标签');
+});
+
+test('_parseSummaryTitle 仅标题行无正文', () => {
+  const r = compaction._parseSummaryTitle('【标题】测试标题');
+  assert.strictEqual(r.title, '测试标题');
+  assert.strictEqual(r.body, '');
+});
+
+test('_parseSummaryTitle 标题超 20 字截断', () => {
+  const long = '一二三四五六七八九十一二三四五六七八九十一二三四五';
+  const r = compaction._parseSummaryTitle('【标题】' + long + '\n正文');
+  assert.strictEqual(r.title.length, 20);
+});
+
+test('_parseSummaryTitle 首尾空白容错', () => {
+  const r = compaction._parseSummaryTitle('  \n【标题】  带空格标题  \n正文');
+  assert.strictEqual(r.title, '带空格标题');
+  assert.strictEqual(r.body, '正文');
+});
+
+test('_parseSummaryTitle 空字符串', () => {
+  const r = compaction._parseSummaryTitle('');
+  assert.strictEqual(r.title, '');
+  assert.strictEqual(r.body, '');
+});

@@ -333,6 +333,20 @@ function registerSessionIpc(): void {
     return { success: true };
   });
 
+  // 暂存压缩续接标题（AI 生成）：会话 ID 未出现时先存 pendingTitle，出现后自动绑定
+  ipcMain.handle('set-pending-session-title', async (event: any, { title }: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const store = ctx ? ctx.sessionStore : null;
+    const t = String(title || '').trim();
+    if (!store || !t) return { success: false, error: 'no-store-or-title' };
+    // forceStage=true：标题属于即将出现的新会话，强制暂存（不写当前会话）
+    const r = store.setSessionTitle(t, true);
+    if (r && r.success && !r.pending && ctx) {
+      try { if (ctx.win && !ctx.win.isDestroyed()) ctx.win.webContents.send('shell-sessions-changed'); } catch (_) { /* ignore */ }
+    }
+    return r;
+  });
+
   // 归档/取消归档项目
   ipcMain.handle('set-project-archived', async (event: any, { dir, archived }: any) => {
     const ctx = windowState.getContextByWebContents(event.sender);
