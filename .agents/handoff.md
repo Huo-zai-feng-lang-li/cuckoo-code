@@ -1,6 +1,7 @@
 # 最新接续状态 (2026-10-16)
 
 ## 核心进展
+- **弹窗视觉重构 + 队列插队修复** → v0.9.2（通知/确认浮窗去关闭按钮、实心图标、发丝线、渐变进度条；确认窗动态高度；纯净模式队列手动插队不再连带自动发送——新增 autoFlushPaused + 恢复按钮；确认框 Enter 双触发修复）。真机验证：队列插队后剩余保留、点恢复自动排空。
 - **手机端进入显示电脑对话历史** → v0.9.1（`remote/server.ts` 新增 sendToClient；`remote/manager.ts` 新增 pushHistoryToNewClient，**先补历史再补活跃流**；`pwa/app.js` 新增 renderHistory）。真机验证：手机 WS 连入收到 history len=8、PWA 正确渲染。
 - **自绘通知/确认浮窗 + 流式体验回归修复** → v0.9.0（详见下）
 - **手机远程流式渲染优化** → v0.8.99（`src/remote/pwa/app.js` + `style.css` + `remote-bridge.ts` + `manager.ts`）：流式期间改低频 markdown 渲染（~200ms），端到端延迟 240→120ms。
