@@ -234,6 +234,8 @@
   .ck-ab-spacer { flex: 1; }
   /* 活动栏溢出：隐藏项 + 「⋯」按钮 + hover 弹框 */
   .ck-ab-of-hidden { display: none !important; }
+  /* 用户手动隐藏（设置页开关）：不进「⋯」弹框，彻底不显示 */
+  .ck-ab-user-hidden { display: none !important; }
   .ck-ab-more { cursor: default; }
   .ck-ab-overflow-pop {
     position: fixed; z-index: 9998; display: none;
@@ -596,6 +598,9 @@
   }
   .ck-set-field { display: flex; flex-direction: column; gap: 6px; }
   .ck-set-field.ck-set-toggle { flex-direction: row; align-items: center; justify-content: space-between; }
+  .ck-ab-toggle-list { display: flex; flex-direction: column; }
+  .ck-ab-toggle-list .ck-set-field { padding: 5px 0; border-bottom: 1px solid var(--ck-border); }
+  .ck-ab-toggle-list .ck-set-field:last-child { border-bottom: none; }
   .ck-set-key { font-size: 12px; color: var(--ck-text-2); }
   .ck-set-input {
     width: 100%; min-height: 32px;
@@ -1933,7 +1938,7 @@ body[data-ck-dark] .ck-stat-item-hl .ck-stat-val { color: #fbbf24; }
             <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
           </button>
           <button class="ck-ab-item" data-tab="token" title="Token（词元）">
-            <span class="ck-ab-text">元</span>
+            <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 8v8"/></svg>
           </button>
           <div class="ck-ab-spacer"></div>
           <button class="ck-ab-item" data-tab="remote" title="远程控制（手机）">
@@ -2619,6 +2624,12 @@ paths:            # 可选；省略 = 始终生效
                     <option value="1.5">超大 (150%)</option>
                   </select>
                 </div>
+              </div>
+
+              <div class="ck-card">
+                <div class="ck-set-group-title">活动栏图标</div>
+                <p class="ck-about-tip">开关控制左侧活动栏显示哪些图标（设置不可隐藏）。</p>
+                <div id="st-ab-list" class="ck-ab-toggle-list"></div>
               </div>
               <div class="ck-card">
                 <div class="ck-set-group-title">失败自动重试</div>
@@ -5947,6 +5958,189 @@ paths:            # 可选；省略 = 始终生效
 
   // src/ui/shell/scripts/pages/settings.ts
   init_shared();
+
+  // src/ui/shell/scripts/activitybar-overflow.ts
+  var MAX_MAIN = 14;
+  var BAR_SEL = ".ck-activitybar";
+  var BTN_ID = "ck-ab-overflow-btn";
+  var POP_ID = "ck-ab-overflow-pop";
+  var HIDDEN_CLS = "ck-ab-of-hidden";
+  function bar() {
+    return document.querySelector(BAR_SEL);
+  }
+  function mainIcons() {
+    const b = bar();
+    if (!b) return [];
+    const spacer = b.querySelector(".ck-ab-spacer");
+    const out = [];
+    for (const el2 of Array.from(b.children)) {
+      if (el2 === spacer) break;
+      if (!el2.classList.contains("ck-ab-item")) continue;
+      if (el2.id === BTN_ID) continue;
+      if (el2.classList.contains("ck-ab-user-hidden")) continue;
+      out.push(el2);
+    }
+    return out;
+  }
+  var hideTimer = null;
+  function popover() {
+    let p = document.getElementById(POP_ID);
+    if (p) return p;
+    p = document.createElement("div");
+    p.id = POP_ID;
+    p.className = "ck-ab-overflow-pop";
+    document.body.appendChild(p);
+    p.addEventListener("mouseenter", () => {
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+        hideTimer = null;
+      }
+    });
+    p.addEventListener("mouseleave", () => {
+      scheduleHide();
+    });
+    return p;
+  }
+  function showPopover() {
+    const btn = document.getElementById(BTN_ID);
+    if (!btn) return;
+    if (hideTimer) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+    const hidden = mainIcons().filter((i) => i.classList.contains(HIDDEN_CLS));
+    const p = popover();
+    p.innerHTML = "";
+    hidden.forEach((ic) => {
+      const clone = ic.cloneNode(true);
+      clone.classList.remove(HIDDEN_CLS);
+      clone.removeAttribute("id");
+      clone.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        try {
+          ic.click();
+        } catch (_) {
+        }
+        hidePopover();
+      });
+      p.appendChild(clone);
+    });
+    const r = btn.getBoundingClientRect();
+    p.style.left = r.right + 6 + "px";
+    p.style.top = Math.max(8, Math.min(r.top, window.innerHeight - 40)) + "px";
+    p.classList.add("show");
+  }
+  function hidePopover() {
+    const p = document.getElementById(POP_ID);
+    if (p) p.classList.remove("show");
+  }
+  function scheduleHide() {
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      hideTimer = null;
+      hidePopover();
+    }, 160);
+  }
+  function ensureBtn() {
+    let btn = document.getElementById(BTN_ID);
+    if (btn) return btn;
+    btn = document.createElement("button");
+    btn.id = BTN_ID;
+    btn.className = "ck-ab-item ck-ab-more";
+    btn.title = "\u66F4\u591A";
+    btn.innerHTML = '<span class="ck-ab-text">\u22EF</span>';
+    btn.addEventListener("mouseenter", () => showPopover());
+    btn.addEventListener("mouseleave", () => scheduleHide());
+    return btn;
+  }
+  var observer = null;
+  function refreshActivitybarOverflow() {
+    const b = bar();
+    if (!b) return;
+    if (observer) observer.disconnect();
+    try {
+      const spacer = b.querySelector(".ck-ab-spacer");
+      const icons = mainIcons();
+      const needBtn = icons.length > MAX_MAIN;
+      const visibleCount = MAX_MAIN - 1;
+      icons.forEach((ic, idx) => {
+        const shouldHide = needBtn && idx >= visibleCount;
+        if (shouldHide !== ic.classList.contains(HIDDEN_CLS)) ic.classList.toggle(HIDDEN_CLS, shouldHide);
+      });
+      const btn = document.getElementById(BTN_ID);
+      if (!needBtn) {
+        if (btn) {
+          btn.remove();
+          hidePopover();
+        }
+        return;
+      }
+      const b2 = ensureBtn();
+      const anchor = icons[visibleCount - 1];
+      if (anchor) {
+        if (anchor.nextSibling !== b2) b.insertBefore(b2, anchor.nextSibling || spacer);
+      } else if (spacer && b2.nextSibling !== spacer) {
+        b.insertBefore(b2, spacer);
+      }
+    } finally {
+      if (observer) observer.observe(b, { childList: true });
+    }
+  }
+  function initActivitybarOverflow() {
+    const b = bar();
+    if (!b) return;
+    refreshActivitybarOverflow();
+    window.addEventListener("resize", () => hidePopover());
+  }
+
+  // src/ui/shell/scripts/activitybar-visibility.ts
+  var STORAGE_KEY = "cuckoo-activitybar-hidden";
+  var USER_HIDDEN_CLS = "ck-ab-user-hidden";
+  var PROTECTED = ["settings"];
+  function getHiddenTabs() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return [];
+      const a = JSON.parse(raw);
+      return Array.isArray(a) ? a.filter((x) => typeof x === "string") : [];
+    } catch (_) {
+      return [];
+    }
+  }
+  function setHiddenTabs(list) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    } catch (_) {
+    }
+  }
+  function applyActivitybarVisibility() {
+    const bar3 = document.querySelector(".ck-activitybar");
+    if (!bar3) return;
+    const hidden = new Set(getHiddenTabs());
+    bar3.querySelectorAll(".ck-ab-item").forEach((el2) => {
+      const tab = el2.dataset ? el2.dataset.tab : "";
+      if (!tab) return;
+      const shouldHide = hidden.has(tab) && !PROTECTED.includes(tab);
+      el2.classList.toggle(USER_HIDDEN_CLS, shouldHide);
+    });
+    try {
+      refreshActivitybarOverflow();
+    } catch (_) {
+    }
+  }
+  function toggleTab(tab, visible) {
+    if (!tab || PROTECTED.includes(tab)) return;
+    const list = new Set(getHiddenTabs());
+    if (visible) list.delete(tab);
+    else list.add(tab);
+    setHiddenTabs([...list]);
+    applyActivitybarVisibility();
+  }
+  function initActivitybarVisibility() {
+    applyActivitybarVisibility();
+  }
+
+  // src/ui/shell/scripts/pages/settings.ts
   var SET_FIELDS = [
     ["retry-delay-min", "retryDelayMin"],
     ["retry-delay-max", "retryDelayMax"],
@@ -6035,6 +6229,7 @@ paths:            # 可选；省略 = 始终生效
     loadSettings();
     loadUiPrefs();
     refreshThemeValue();
+    renderActivitybarToggles();
   });
   document.getElementById("st-reset")?.addEventListener("click", async () => {
     if (!api.resetSettings) return;
@@ -6091,6 +6286,43 @@ paths:            # 可选；省略 = 始终生效
     });
     refreshThemeValue();
     initThemeListener();
+  }
+  var AB_ITEMS = [
+    ["workspaces", "\u5DE5\u4F5C\u533A\uFF08\u4F1A\u8BDD\uFF09"],
+    ["files", "\u9879\u76EE\u6587\u4EF6"],
+    ["git", "\u6E90\u4EE3\u7801\u7BA1\u7406"],
+    ["tasks", "\u4EFB\u52A1"],
+    ["snippets", "\u63D0\u793A\u8BCD"],
+    ["memories", "\u8BB0\u5FC6"],
+    ["skills", "\u6280\u80FD"],
+    ["plugins", "\u63D2\u4EF6\u5E02\u573A"],
+    ["agents", "\u5B50\u4EE3\u7406"],
+    ["rules", "\u5168\u5C40\u89C4\u5219"],
+    ["mcp", "MCP\uFF08\u8FDE\u63A5\u5668\uFF09"],
+    ["windows", "\u7A97\u53E3"],
+    ["token", "Token\uFF08\u8BCD\u5143\uFF09"],
+    ["remote", "\u8FDC\u7A0B\u63A7\u5236\uFF08\u624B\u673A\uFF09"],
+    ["about", "\u5173\u4E8E"],
+    ["settings", "\u8BBE\u7F6E\uFF08\u4E0D\u53EF\u9690\u85CF\uFF09"]
+  ];
+  function renderActivitybarToggles() {
+    const box = document.getElementById("st-ab-list");
+    if (!box) return;
+    const hidden = new Set(getHiddenTabs());
+    box.innerHTML = AB_ITEMS.map(([tab, label]) => {
+      const disabled = tab === "settings" ? " disabled" : "";
+      const checked = tab === "settings" || !hidden.has(tab) ? " checked" : "";
+      return '<div class="ck-set-field ck-set-toggle"><span class="ck-set-key">' + label + '</span><label class="ck-switch"><input type="checkbox" data-ab-tab="' + tab + '"' + checked + disabled + ' /><span class="ck-switch-track"></span></label></div>';
+    }).join("");
+    box.querySelectorAll("input[data-ab-tab]").forEach((el2) => {
+      el2.addEventListener("change", () => {
+        toggleTab(el2.dataset.abTab, el2.checked);
+      });
+    });
+  }
+  try {
+    renderActivitybarToggles();
+  } catch (_) {
   }
   var zoomSelect = document.getElementById("st-harness-zoom");
   function loadUiPrefs() {
@@ -8504,139 +8736,6 @@ paths:            # 可选；省略 = 始终生效
     }
   }
 
-  // src/ui/shell/scripts/activitybar-overflow.ts
-  var MAX_MAIN = 14;
-  var BAR_SEL = ".ck-activitybar";
-  var BTN_ID = "ck-ab-overflow-btn";
-  var POP_ID = "ck-ab-overflow-pop";
-  var HIDDEN_CLS = "ck-ab-of-hidden";
-  function bar() {
-    return document.querySelector(BAR_SEL);
-  }
-  function mainIcons() {
-    const b = bar();
-    if (!b) return [];
-    const spacer = b.querySelector(".ck-ab-spacer");
-    const out = [];
-    for (const el2 of Array.from(b.children)) {
-      if (el2 === spacer) break;
-      if (!el2.classList.contains("ck-ab-item")) continue;
-      if (el2.id === BTN_ID) continue;
-      out.push(el2);
-    }
-    return out;
-  }
-  var hideTimer = null;
-  function popover() {
-    let p = document.getElementById(POP_ID);
-    if (p) return p;
-    p = document.createElement("div");
-    p.id = POP_ID;
-    p.className = "ck-ab-overflow-pop";
-    document.body.appendChild(p);
-    p.addEventListener("mouseenter", () => {
-      if (hideTimer) {
-        clearTimeout(hideTimer);
-        hideTimer = null;
-      }
-    });
-    p.addEventListener("mouseleave", () => {
-      scheduleHide();
-    });
-    return p;
-  }
-  function showPopover() {
-    const btn = document.getElementById(BTN_ID);
-    if (!btn) return;
-    if (hideTimer) {
-      clearTimeout(hideTimer);
-      hideTimer = null;
-    }
-    const hidden = mainIcons().filter((i) => i.classList.contains(HIDDEN_CLS));
-    const p = popover();
-    p.innerHTML = "";
-    hidden.forEach((ic) => {
-      const clone = ic.cloneNode(true);
-      clone.classList.remove(HIDDEN_CLS);
-      clone.removeAttribute("id");
-      clone.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        try {
-          ic.click();
-        } catch (_) {
-        }
-        hidePopover();
-      });
-      p.appendChild(clone);
-    });
-    const r = btn.getBoundingClientRect();
-    p.style.left = r.right + 6 + "px";
-    p.style.top = Math.max(8, Math.min(r.top, window.innerHeight - 40)) + "px";
-    p.classList.add("show");
-  }
-  function hidePopover() {
-    const p = document.getElementById(POP_ID);
-    if (p) p.classList.remove("show");
-  }
-  function scheduleHide() {
-    if (hideTimer) clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => {
-      hideTimer = null;
-      hidePopover();
-    }, 160);
-  }
-  function ensureBtn() {
-    let btn = document.getElementById(BTN_ID);
-    if (btn) return btn;
-    btn = document.createElement("button");
-    btn.id = BTN_ID;
-    btn.className = "ck-ab-item ck-ab-more";
-    btn.title = "\u66F4\u591A";
-    btn.innerHTML = '<span class="ck-ab-text">\u22EF</span>';
-    btn.addEventListener("mouseenter", () => showPopover());
-    btn.addEventListener("mouseleave", () => scheduleHide());
-    return btn;
-  }
-  var observer = null;
-  function refreshActivitybarOverflow() {
-    const b = bar();
-    if (!b) return;
-    if (observer) observer.disconnect();
-    try {
-      const spacer = b.querySelector(".ck-ab-spacer");
-      const icons = mainIcons();
-      const needBtn = icons.length > MAX_MAIN;
-      const visibleCount = MAX_MAIN - 1;
-      icons.forEach((ic, idx) => {
-        const shouldHide = needBtn && idx >= visibleCount;
-        if (shouldHide !== ic.classList.contains(HIDDEN_CLS)) ic.classList.toggle(HIDDEN_CLS, shouldHide);
-      });
-      const btn = document.getElementById(BTN_ID);
-      if (!needBtn) {
-        if (btn) {
-          btn.remove();
-          hidePopover();
-        }
-        return;
-      }
-      const b2 = ensureBtn();
-      const anchor = icons[visibleCount - 1];
-      if (anchor) {
-        if (anchor.nextSibling !== b2) b.insertBefore(b2, anchor.nextSibling || spacer);
-      } else if (spacer && b2.nextSibling !== spacer) {
-        b.insertBefore(b2, spacer);
-      }
-    } finally {
-      if (observer) observer.observe(b, { childList: true });
-    }
-  }
-  function initActivitybarOverflow() {
-    const b = bar();
-    if (!b) return;
-    refreshActivitybarOverflow();
-    window.addEventListener("resize", () => hidePopover());
-  }
-
   // src/ui/shell/scripts/activitybar-drag.ts
   var BAR_SEL2 = ".ck-activitybar";
   var ORDER_KEY = "cuckoo-activitybar-order";
@@ -8761,6 +8860,7 @@ paths:            # 可选；省略 = 始终生效
     b.addEventListener("mousedown", (e) => {
       const item = e.target && e.target.closest ? e.target.closest(".ck-ab-item") : null;
       if (!item || !b.contains(item)) return;
+      if (item.classList.contains("ck-ab-user-hidden")) return;
       const spacer = b.querySelector(".ck-ab-spacer");
       if (spacer && spacer.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING) return;
       dragEl = item;
@@ -8943,6 +9043,10 @@ paths:            # 可选；省略 = 始终生效
   try {
     initActivitybarDrag();
     applyActivitybarOrder();
+  } catch (_) {
+  }
+  try {
+    initActivitybarVisibility();
   } catch (_) {
   }
   try {

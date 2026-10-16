@@ -219,8 +219,20 @@ function showSystemNotification(item: SystemNotificationItem): void {
   };
   try { require('electron').ipcMain.on('notification-action', onAction); } catch (_) { /* ignore */ }
 
+  // 渲染进程测量内容自然高度 → 贴合窗口（消除底部空白）
+  const onResize = (event: any, h: any) => {
+    if (!win || win.isDestroyed()) return;
+    if (event.sender !== win.webContents) return;
+    const nh = Math.max(48, Math.min(400, Math.round(Number(h) || 0)));
+    if (!nh || nh === entry.height) return;
+    entry.height = nh;
+    relayout();
+  };
+  try { require('electron').ipcMain.on('notification-resize', onResize); } catch (_) { /* ignore */ }
+
   win.on('closed', () => {
     try { require('electron').ipcMain.removeListener('notification-action', onAction); } catch (_) { /* ignore */ }
+    try { require('electron').ipcMain.removeListener('notification-resize', onResize); } catch (_) { /* ignore */ }
     const i = active.indexOf(entry);
     if (i !== -1) active.splice(i, 1);
     relayout();

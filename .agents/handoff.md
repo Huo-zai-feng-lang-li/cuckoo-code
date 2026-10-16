@@ -1,4 +1,19 @@
-# 最新接续状态 (2026-10-16)
+# 最新接续状态 (2026-10-16 18:33)
+
+## v0.9.12 本次会话（2026-10-16）——活动栏显隐 + Token图标 + 通知高度
+
+### 背景
+UI 评审（实测）发现：活动栏图标 20 个，高频功能被溢出塞进「⋯」；Token 图标用文字「元」与其余不一致；通知浮窗底部留白。
+
+### 交付（需求档案 072，分支 fix/072-ui-fixes）
+1. **活动栏图标显隐**：新增 `activitybar-visibility.ts`（localStorage `cuckoo-activitybar-hidden`）；设置页「活动栏图标」卡片逐个开关；`settings` 不可隐藏；用户隐藏项不进「⋯」弹框（overflow + drag 均跳过）。
+2. **Token 图标**：`<span>元</span>` → 硬币 SVG。
+3. **通知浮窗高度自适应**：渲染后测真实高度 → IPC `notification-resize` → 主进程 relayout（clamp 48~400）。
+
+### 验证
+- typecheck / test(988) / lint(0 error) / compile 全绿
+- 生成物含：`.ck-ab-user-hidden`、`renderActivitybarToggles`、`st-ab-list`
+- ⚠️ 待用户手动测试（开发环境）
 
 ## v0.9.11 本次会话（2026-10-16）——思考阶段 TPS 修复
 
