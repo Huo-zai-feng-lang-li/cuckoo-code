@@ -2362,6 +2362,15 @@
   /** 对话是否在运行：模型生成中，或工具正在执行（工具执行期间任务同样没结束） */
   function isBusy() { return generating || toolRunningCount > 0; }
 
+  // ===== 队列"立即发送"：等旧任务停止（尾部事件过去）再发，防回填到新对话 =====
+  // 判据：自 stop（及最后一次事件）起持续 AI_STOP_QUIET_MS 无事件，且网页生成状态已停；
+  //       超时兜底。aiPageGenerating 来自 bridge 的 ai-state，但 stop 信号会令其乐观置 false，
+  //       故不能单用，必须叠加"事件静默期"——旧任务真在吐内容时事件不断，静默期就不满足。
+  var aiPageGenerating = false;
+  var AI_STOP_POLL_MS = 100;      // 轮询间隔
+  var AI_STOP_QUIET_MS = 300;     // 静默期阈值：这段时间无事件即视为旧任务尾部已过
+  var AI_STOP_WAIT_MAX_MS = 3000; // 超时兜底：网页异常不停时，最多等这么久后照常发
+
   // 中止抑制：锁在"任务代次"上而非墙上时间 —— 中止后迟到的旧任务事件被忽略，
   // 但用户发起新任务（或被显式认领的新一轮）会自增代次，立即恢复正常忙碌判定。
   var abortEpoch = 0;      // 每次中止自增；事件/状态先记下它属于哪一代
@@ -2458,6 +2467,7 @@
   // 给一个宽上限（10 分钟）仅兜底 tool-end 丢失，正常路径由 tool-end / task-idle 收尾。
   var AI_STATE_QUIET_TOOL_MS = 600000;
   function onAiState(generating) {
+    aiPageGenerating = !!generating;
     if (generating) {
       // 反向：AI 页面在工作而界面没显示 → 补上运行态（无竞态风险）
       lastActivityAt = Date.now();
@@ -2942,6 +2952,30 @@
     }
   }
 
+  /**
+   * 停止当前任务后，等旧任务停止（尾部事件过去）再发出该条。
+   * 旧实现只等固定 80ms —— 若网页侧收尾慢于 80ms，旧任务的尾部事件（流式帧 / 回复完成 /
+   * 工具结果回传）会在新任务开始后到达，被算进新对话（回填）。
+   * 判据：
+   *   1) 事件静默期——自 max(stop 时刻, 最近事件) 起持续 AI_STOP_QUIET_MS 无事件到达；
+   *      lastActivityAt 由 onEvent 每次刷新，旧任务真在吐内容时静默期不会满足；
+   *   2) 网页生成状态已停（!aiPageGenerating）——叠加兜底；
+   *   3) 超时 AI_STOP_WAIT_MAX_MS —— 网页异常不停时照常发出，避免卡死。
+   */
+  function waitForAiIdleThenSend(it) {
+    var stopAt = Date.now();
+    function tick() {
+      var quiet = Date.now() - Math.max(stopAt, lastActivityAt);
+      if ((!aiPageGenerating && quiet >= AI_STOP_QUIET_MS) || Date.now() - stopAt >= AI_STOP_WAIT_MAX_MS) {
+        clearAbortSuppression();
+        doSendQueueItem(it);
+        return;
+      }
+      setTimeout(tick, AI_STOP_POLL_MS);
+    }
+    setTimeout(tick, 0);
+  }
+
   /** 立即发送队列中的某一项：移出队列并立刻发出；若当前正忙则中止当前任务后发出。
    *  手动插队后暂停"任务结束自动排空"，避免剩余队列被连带发出去（用户明确只发这一条）。 */
   function sendQueueItemNow(it) {
@@ -2951,17 +2985,17 @@
     if (!(it.text && it.text.trim()) && !(it.files && it.files.length) && !(it.hints && it.hints.length)) {
       return;
     }
+    // 已有一条"立即发送"在途：忽略后续点击，避免两条同时插队导致顺序错乱
+    if (manualSendInFlight) return;
     sendQueue.splice(at, 1);
     flushingSuppressed = true; // 操作期间临时抑制自动排空（避免 stop() 后队列被连带发出）
     renderSendQueue();
     clearAbortSuppression();
-    // isBusy() 会因 stop() 同步复位而变 false，故手动发送在途时也走"先停再发"分支，防连点顺序错乱
-    if (isBusy() || manualSendInFlight) {
+    // isBusy() 会因 stop() 同步复位而变 false；先置 manualSendInFlight 挡住"停→发"之间的连点
+    if (isBusy()) {
+      manualSendInFlight = true;
       stop();
-      setTimeout(function () {
-        clearAbortSuppression();
-        doSendQueueItem(it);
-      }, 80);
+      waitForAiIdleThenSend(it);
     } else {
       doSendQueueItem(it);
     }

@@ -1,9 +1,17 @@
-# 最新接续状态 (2026-10-16 23:50)
+# 最新接续状态 (2026-10-17)
 
 ## 核心进展
-- **最新版本 v0.9.17**（master，typecheck/lint(0)/compile 全绿；真机 CDP 验证通过）。
+- **最新版本 v0.9.18**（master，typecheck/lint(0)/test(988)/compile 全绿；真机 CDP 验证通过）。
+- **v0.9.18**：**发送队列「立即发送」旧任务尾巴回填新对话修复**（详见下）。
 - **v0.9.17**：窗口列表交互修复 —— 点击窗口名不再直接进入重命名（改为普通文本），点名字/卡片其它区域 = 打开窗口；仅点铅笔图标（✎）才重命名。
-- 本会话从 v0.9.9 连续迭代到 v0.9.17，主线是**一批 UI/交互体验修复 + 两次自查修复**。
+- 本会话从 v0.9.9 连续迭代到 v0.9.18，主线是**一批 UI/交互体验修复 + 两次自查修复**。
+
+### v0.9.18 详情（发送队列立即发送回填）
+- **问题**：AI 生成中点队列某条的「立即发送」，旧实现停任务后固定只等 80ms 就发新消息 → 网页收尾慢于 80ms 时，旧任务尾部事件（流式帧/回复完成/工具结果回传）在新任务开始后到达，被算进新对话（回填串台）。
+- **修复**（`src/ui/harness.html`）：`sendQueueItemNow` 忙碌分支改为 `waitForAiIdleThenSend(it)` —— 主判据「自 max(stop 时刻, lastActivityAt) 起持续 `AI_STOP_QUIET_MS`(300ms) 无事件」，叠加 `!aiPageGenerating`（bridge ai-state 权威态），超时 `AI_STOP_WAIT_MAX_MS`(3000ms) 兜底；事件到达则重置静默期。`manualSendInFlight` 在途时忽略后续点击。
+- **关键坑1**：`harness-stop-signal` 一到 bridge 就乐观置 `aiPageGenerating=false`，**不能单用它判停** → 必须叠加事件静默期（旧任务真在吐内容时事件不断）。
+- **关键坑2**：harness 是 WebContentsView，页面内定时器被节流到 ~1s；验证"事件不断"须用 **Node 侧定时器**驱动 `fireActivity`，不能用页面 setInterval。
+- **真机验证**（开发实例 9444 + CDP）：S1 无事件 ~500ms 发 / S2 事件不断 ~3.7s(超时)发 / S3 事件后静默 ~700ms 发，均符合设计。
 
 ### 版本足迹（本会话补充）
 - **v0.9.17**：窗口列表"点名字误触发重命名"修复（windows.ts，去掉 name 的 title + 点击监听）。
@@ -60,9 +68,9 @@
 - `store.ts: setSessionLineage` 继承父标题；`compaction.ts` 摘要首行 `【标题】xxx` → 段3 经 IPC `set-pending-session-title`（`forceStage`）绑定。
 
 ## 待办事项 (Next Steps)
-- [ ] **队列"立即发送"回填风险**（用户说"等一会儿再说"）：`harness.html: sendQueueItemNow` 停任务后只等固定 80ms + 发送前 `clearAbortSuppression()`，旧任务尾部事件可能回填到新对话。建议改为"等 AI 确认停止（`ai-state` generating=false）+ 超时兜底"再发。
-- [ ] 旧会话 UUID 标题迁移（069 只对新压缩会话生效，历史数据仍显示 UUID）。
-- [ ] 打包版真机验证：更新确认框/系统通知浮窗/窗口组切换通知（`app.isPackaged` 才触发，dev 测不了）。
+- [x] **队列"立即发送"回填风险**（v0.9.18 已修）：改为等旧任务真正停止（事件静默期 + ai-state + 超时兜底）再发。
+- [ ] 旧会话 UUID 标题迁移（069 只对新压缩会话生效，历史数据仍显示 UUID）。**优先级低**：影响仅"远古未命名会话在列表显示 UUID"，且存储里无对话正文可作补标题的数据源。
+- [x] 打包版真机验证：更新确认框/系统通知浮窗/窗口组切换通知 —— **用户已测过，通过**。
 
 ## 关键上下文
 - 目录: `D:\Desktop\Super-File\cuckoo-code`
