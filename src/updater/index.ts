@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import updaterPkg from 'electron-updater';
 import { showSystemNotification } from '../app/notification-window.js';
-import { showConfirmDialog } from '../app/confirm-window.js';
+import { showConfirmDialog, updateConfirmProgress, closeConfirmDialog } from '../app/confirm-window.js';
 
 // electron 特殊：其 index.js 导出字符串，须用 createRequire（见 P3a 手册 1.5）
 const require = createRequire(import.meta.url);
@@ -168,6 +168,72 @@ function isGitHubAccessError(error: any): boolean {
   return githubKeywords.some((kw) => msg.includes(kw));
 }
 
+/** HTML 转义（渲染端用 innerHTML 显示日志，防注入） */
+function escapeHtml(s: string): string {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/**
+ * GitHub 的 releaseNotes 实为 HTML 片段（atom feed 的 content 字段），
+ * 也可能被替换为纯 Markdown。统一转纯文本：
+ * 块级标签 → 换行，剥其余标签，解码常见实体（&amp; 放最后，防二次解码）。
+ */
+function htmlToText(html: string): string {
+  return String(html || '')
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\s*\/?\s*(p|div|li|ul|ol|h[1-6]|tr|section|article|blockquote)\b[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&(?:#0*39|#x27|apos);/gi, "'")
+    .replace(/&mdash;/gi, '—')
+    .replace(/&ndash;/gi, '–')
+    .replace(/&hellip;/gi, '…')
+    .replace(/&amp;/gi, '&');
+}
+
+/** 从 UpdateInfo 提取更新日志条目（最多 5 条；兼容 HTML/Markdown，剥前缀、截断过长行） */
+function extractReleaseNotes(info: any): string[] {
+  const out: string[] = [];
+  const push = (raw: string) => {
+    const t = String(raw || '')
+      .replace(/^\s*[-*+]\s+/, '')
+      .replace(/^\s*#{1,6}\s+/, '')
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .trim();
+    if (t) out.push(escapeHtml(t));
+  };
+  try {
+    const rn = info && info.releaseNotes;
+    if (typeof rn === 'string') {
+      htmlToText(rn).split(/\r?\n/).forEach(push);
+    } else if (Array.isArray(rn)) {
+      rn.forEach((item) => {
+        const note = item && item.note;
+        if (typeof note === 'string') htmlToText(note).split(/\r?\n/).forEach(push);
+      });
+    }
+  } catch (_) { /* ignore */ }
+  return out.slice(0, 5).map((s) => (s.length > 80 ? s.slice(0, 78) + '…' : s));
+}
+
+/** 从 UpdateInfo 的文件列表算总体积（MB）；拿不到返回空串 */
+function formatSize(info: any): string {
+  try {
+    const files = (info && info.files) || [];
+    let total = 0;
+    files.forEach((f: any) => { if (f && typeof f.size === 'number') total += f.size; });
+    if (total <= 0) return '';
+    const mb = total / (1024 * 1024);
+    return mb >= 100 ? Math.round(mb) + ' MB' : mb.toFixed(1) + ' MB';
+  } catch (_) { return ''; }
+}
+
 /** 把更新进度推送给壳页面（状态栏进度条） */
 function sendProgress(data: any): void {
   try {
@@ -258,12 +324,20 @@ autoUpdater.on('checking-for-update', () => {
 
 autoUpdater.on('update-available', async (info: any) => {
   console.log('[Updater] 发现新版本:', info.version);
+  const curVersion = app.getVersion();
+  const notes = extractReleaseNotes(info);
+  const sizeText = formatSize(info);
   const ok = await showConfirmDialog({
     kind: 'update',
     title: '发现新版本 v' + info.version,
     body: '是否立即更新？将自动下载并重启安装。',
     primaryText: '立即更新',
     secondaryText: '稍后',
+    version: curVersion,
+    newVersion: info.version,
+    notes,
+    sizeText,
+    keepOpenOnPrimary: true,   // 点「立即更新」后保留窗口实时显示下载进度
   });
   if (ok) {
     // 用户选「立即更新」→ 自动下载，下载完自动重启安装（见 update-downloaded）
@@ -273,6 +347,7 @@ autoUpdater.on('update-available', async (info: any) => {
     autoUpdater.downloadUpdate().catch((err) => {
       console.error('[Updater] 下载失败:', err);
       autoInstallAfterDownload = false;
+      try { closeConfirmDialog(); } catch (_) { /* ignore */ }
     });
   } else {
     // 用户选「稍后」→ 不下载
@@ -300,6 +375,8 @@ autoUpdater.on('download-progress', (progressObj: any) => {
     total: progressObj.total || 0,
     bytesPerSecond: progressObj.bytesPerSecond || 0,
   });
+  // 同步到更新确认弹窗（如果窗口还开着）
+  updateConfirmProgress(percent);
 });
 
 autoUpdater.on('update-downloaded', (info: any) => {
@@ -312,6 +389,7 @@ autoUpdater.on('update-downloaded', (info: any) => {
   if (autoInstallAfterDownload) {
     autoInstallAfterDownload = false;
     console.log('[Updater] 自动安装并重启');
+    try { closeConfirmDialog(); } catch (_) { /* ignore */ }
     setTimeout(() => {
       // 静默安装（/S 跳过 NSIS 向导）+ 装完自动重启
       installAndRestart(info && info.version);
