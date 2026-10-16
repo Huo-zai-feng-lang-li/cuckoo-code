@@ -22,7 +22,7 @@ function renderWindowItem(p: any, providerMap: Record<string, string>): string {
   return '<div class="ck-win-item" data-profile-id="' + escapeHtml(p.id) + '">' +
     '<div class="ck-win-top">' +
       '<span class="ck-win-avatar"' + (avatarStyle ? ' style="background:' + avatarStyle + '"' : '') + '>' + escapeHtml(initial) + '</span>' +
-      '<span class="ck-win-name" title="点击重命名">' + escapeHtml(p.name) + '</span>' +
+      '<span class="ck-win-name">' + escapeHtml(p.name) + '</span>' +
       '<span class="ck-win-edit" data-profile-id="' + escapeHtml(p.id) + '" data-name="' + escapeAttr(p.name || '') + '" title="重命名">✎</span>' +
       '<span class="ck-win-del" data-profile-id="' + escapeHtml(p.id) + '" title="删除窗口">✕</span>' +
     '</div>' +
@@ -121,11 +121,10 @@ export async function renderWindowList(): Promise<void> {
         if (e.target.classList.contains('ck-win-del')) return;
         if (e.target.classList.contains('ck-win-edit')) return;
         if (e.target.closest('.ck-win-check')) return;
-        if (e.target.classList.contains('ck-win-name')) return; // 点击名字走重命名
         try { await api.openProfileWindow?.(el.dataset.profileId); } catch (_) { /* ignore */ }
       });
     });
-    // 重命名：点编辑图标或点名字
+    // 重命名：仅点铅笔编辑图标
     const onRename = async (item: any) => {
       const pid = item.dataset.profileId;
       const editBtn = item.querySelector('.ck-win-edit');
@@ -138,15 +137,6 @@ export async function renderWindowList(): Promise<void> {
     };
     listEl.querySelectorAll('.ck-win-edit').forEach((btn: any) => {
       btn.addEventListener('click', (e: any) => { e.stopPropagation(); onRename(btn.closest('.ck-win-item')); });
-    });
-    listEl.querySelectorAll('.ck-win-name').forEach((el: any) => {
-      el.addEventListener('click', (e: any) => {
-        // 只有点名字本身才进入重命名（点卡片其他区域 = 打开窗口）
-        const item = el.closest('.ck-win-item');
-        if (!item) return;
-        e.stopPropagation();
-        onRename(item);
-      });
     });
     listEl.querySelectorAll('.ck-win-del').forEach((btn: any) => {
       btn.addEventListener('click', async (e: any) => {

@@ -5790,7 +5790,7 @@ paths:            # 可选；省略 = 始终生效
     const checked = p.autoOpen === true ? " checked" : "";
     const initial = (p.name || "?").trim().charAt(0).toUpperCase();
     const avatarStyle = providerAvatarStyle(p.providerId);
-    return '<div class="ck-win-item" data-profile-id="' + escapeHtml(p.id) + '"><div class="ck-win-top"><span class="ck-win-avatar"' + (avatarStyle ? ' style="background:' + avatarStyle + '"' : "") + ">" + escapeHtml(initial) + '</span><span class="ck-win-name" title="\u70B9\u51FB\u91CD\u547D\u540D">' + escapeHtml(p.name) + '</span><span class="ck-win-edit" data-profile-id="' + escapeHtml(p.id) + '" data-name="' + escapeAttr(p.name || "") + '" title="\u91CD\u547D\u540D">\u270E</span><span class="ck-win-del" data-profile-id="' + escapeHtml(p.id) + '" title="\u5220\u9664\u7A97\u53E3">\u2715</span></div><div class="ck-win-bottom"><span class="ck-win-provider">' + escapeHtml(pname) + '</span><label class="ck-win-check' + (p.autoOpen === true ? " ck-win-check-on" : "") + '" title="\u542F\u52A8\u65F6\u9ED8\u8BA4\u6253\u5F00"><input type="checkbox" data-profile-id="' + escapeHtml(p.id) + '"' + checked + " />\u9ED8\u8BA4\u6253\u5F00</label></div></div>";
+    return '<div class="ck-win-item" data-profile-id="' + escapeHtml(p.id) + '"><div class="ck-win-top"><span class="ck-win-avatar"' + (avatarStyle ? ' style="background:' + avatarStyle + '"' : "") + ">" + escapeHtml(initial) + '</span><span class="ck-win-name">' + escapeHtml(p.name) + '</span><span class="ck-win-edit" data-profile-id="' + escapeHtml(p.id) + '" data-name="' + escapeAttr(p.name || "") + '" title="\u91CD\u547D\u540D">\u270E</span><span class="ck-win-del" data-profile-id="' + escapeHtml(p.id) + '" title="\u5220\u9664\u7A97\u53E3">\u2715</span></div><div class="ck-win-bottom"><span class="ck-win-provider">' + escapeHtml(pname) + '</span><label class="ck-win-check' + (p.autoOpen === true ? " ck-win-check-on" : "") + '" title="\u542F\u52A8\u65F6\u9ED8\u8BA4\u6253\u5F00"><input type="checkbox" data-profile-id="' + escapeHtml(p.id) + '"' + checked + " />\u9ED8\u8BA4\u6253\u5F00</label></div></div>";
   }
   async function renderWindowList() {
     const listEl2 = document.getElementById("win-list");
@@ -5861,7 +5861,6 @@ paths:            # 可选；省略 = 始终生效
           if (e.target.classList.contains("ck-win-del")) return;
           if (e.target.classList.contains("ck-win-edit")) return;
           if (e.target.closest(".ck-win-check")) return;
-          if (e.target.classList.contains("ck-win-name")) return;
           try {
             await api.openProfileWindow?.(el2.dataset.profileId);
           } catch (_) {
@@ -5885,14 +5884,6 @@ paths:            # 可选；省略 = 始终生效
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
           onRename(btn.closest(".ck-win-item"));
-        });
-      });
-      listEl2.querySelectorAll(".ck-win-name").forEach((el2) => {
-        el2.addEventListener("click", (e) => {
-          const item = el2.closest(".ck-win-item");
-          if (!item) return;
-          e.stopPropagation();
-          onRename(item);
         });
       });
       listEl2.querySelectorAll(".ck-win-del").forEach((btn) => {
