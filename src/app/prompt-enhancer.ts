@@ -85,19 +85,32 @@ export function buildSystemPrompt(cfg: PromptEnhancerConfig, tech: string): stri
   ].join('\n') + ctxLine;
 }
 
-/** 组装 messages（system + 最近 N 轮历史 + 当前草稿） */
+/**
+ * 组装 messages。
+ *
+ * 关键：历史**不能**作为真实对话轮次（user/assistant 交替）发送 —— 否则模型会
+ * 把增强请求理解成"继续这段对话"，输出对用户需求的回复（如"收到，我先看下项目…"），
+ * 而不是改写后的提示词。故把历史折叠为**单条 user 消息里的背景文本**，
+ * 模型只看到「背景 + 待增强输入 + 指令」，不产生续写动机。
+ */
 export function buildMessages(cfg: PromptEnhancerConfig, input: EnhanceInput, tech: string): any[] {
   const msgs: any[] = [{ role: 'system', content: buildSystemPrompt(cfg, tech) }];
   const rounds = Math.max(0, Math.min(20, cfg.contextRounds || 0));
+  const lines: string[] = [];
   if (rounds > 0 && Array.isArray(input.history) && input.history.length) {
     const h = input.history.slice(-rounds * 2);
     for (const it of h) {
       if (!it || !it.content) continue;
-      const role = it.role === 'assistant' ? 'assistant' : 'user';
-      msgs.push({ role, content: clip(it.content, MAX_MSG_CHARS) });
+      const who = it.role === 'assistant' ? '助手' : '用户';
+      lines.push(who + '：' + clip(it.content, MAX_MSG_CHARS));
     }
   }
-  msgs.push({ role: 'user', content: input.text });
+  let content = '';
+  if (lines.length) {
+    content += '【最近对话背景（仅供理解上下文，不要回应这些内容）】\n' + lines.join('\n') + '\n\n';
+  }
+  content += '【需要增强的输入】\n' + input.text + '\n\n请把上面「需要增强的输入」改写为更清晰、可执行的提示词，只输出改写结果。';
+  msgs.push({ role: 'user', content });
   return msgs;
 }
 
@@ -135,9 +148,20 @@ export async function enhancePrompt(input: EnhanceInput, cfgOverride?: PromptEnh
       const body = await resp.text().catch(() => '');
       return { success: false, error: 'API 错误 ' + resp.status + (body ? (': ' + clip(body, 200)) : '') };
     }
-    const data: any = await resp.json();
+    let data: any;
+    try {
+      data = await resp.json();
+    } catch (_) {
+      // 非 JSON 响应（如网关返回 HTML 502 页）单独分类，便于排障
+      return { success: false, error: '响应不是合法 JSON（可能被网关拦截）' };
+    }
     const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-    const out = typeof content === 'string' ? content.trim() : '';
+    // 兼容多模态返回：content 可能是数组 [{ type:'text', text }]
+    let out = '';
+    if (typeof content === 'string') out = content.trim();
+    else if (Array.isArray(content)) {
+      out = content.map((c: any) => (c && typeof c.text === 'string') ? c.text : '').join('').trim();
+    }
     if (!out) return { success: false, error: 'API 返回为空' };
     return { success: true, text: out };
   } catch (err: any) {

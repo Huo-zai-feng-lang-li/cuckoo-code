@@ -24,6 +24,8 @@
     --text-strong: var(--ck-text, #000000);
     --accent: var(--ck-primary, #4d6bfe);
     --accent-soft: var(--ck-primary-soft, rgba(77, 107, 254, 0.08));
+    --enh-grid: rgba(77, 107, 254, 0.05);
+    --enh-scan: rgba(77, 107, 254, 0.10);
     --green: var(--ck-green, #30a46c);
     --red: var(--ck-danger, #e5484d);
     --amber: #b07d2b;
@@ -55,6 +57,8 @@
     --text-strong: var(--ck-text, #ffffff);
     --accent: var(--ck-primary, #7b8fff);
     --accent-soft: var(--ck-primary-soft, rgba(107, 131, 255, 0.20));
+    --enh-grid: rgba(123, 143, 255, 0.08);
+    --enh-scan: rgba(123, 143, 255, 0.16);
     --green: var(--ck-green, #46b47e);
     --red: var(--ck-danger, #ff6369);
     --amber: #d9a05b;
@@ -243,6 +247,10 @@
   /* 流式光标 */
   .msg.system { display: flex; justify-content: center; }
   .msg.system .sys-text { font-size: 12px; color: var(--amber); padding: 4px 12px; background: var(--amber-soft); border-radius: 6px; }
+  /* 瞬时提示：accent 色 + 自动淡出 */
+  .msg.system.toast { transition: opacity .4s ease, transform .4s ease; }
+  .msg.system.toast .sys-text { color: var(--accent); background: var(--accent-soft); }
+  .msg.system.toast.out { opacity: 0; transform: translateY(-4px); }
   .streaming-cursor {
     display: inline-block; width: 7px; height: 15px; margin-left: 2px;
     background: var(--accent); vertical-align: text-bottom;
@@ -355,15 +363,76 @@
   .composer-inner {
     max-width: 100%; margin: 0 auto;
     display: flex; align-items: flex-end; gap: 8px;
-    background: var(--bg-elev); border: 1px solid var(--border);
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
     border-radius: 12px; padding: 10px 10px 10px 14px;
-    transition: border-color .15s, box-shadow .15s;
+    transition: border-color .2s cubic-bezier(.16, 1, .3, 1);
   }
-  .composer-inner:focus-within { border-color: var(--border-strong); box-shadow: 0 0 0 3px var(--hover-soft); }
+  .composer-inner:hover { border-color: var(--border-strong); }
+  /* 聚焦：边框微亮 + 内部淡科技方格（无阴影） */
+  .composer-inner:focus-within {
+    border-color: color-mix(in srgb, var(--accent) 42%, var(--border-strong));
+    background-image:
+      repeating-linear-gradient(90deg, var(--enh-grid) 0, var(--enh-grid) 1px, transparent 1px, transparent 26px),
+      repeating-linear-gradient(0deg, var(--enh-grid) 0, var(--enh-grid) 1px, transparent 1px, transparent 26px);
+    background-repeat: repeat, repeat;
+  }
+  /* 顶部拖拽手柄：上拖增大输入框高度 */
+  .composer-resize {
+    position: absolute; top: 3px; left: 50%; transform: translateX(-50%);
+    width: 46px; height: 5px; border-radius: 3px; cursor: ns-resize;
+    background: var(--border-strong); opacity: 0; transition: opacity .15s, background .15s;
+    z-index: 3;
+  }
+  .composer-inner:hover .composer-resize { opacity: .55; }
+  .composer-resize:hover, .composer-resize:active { opacity: 1; background: var(--accent); }
+  /* 增强中：科技流光边框（conic 旋转扫描 + 外发光脉动） */
+  @property --enh-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+  .composer-inner.enhancing {
+    border-color: transparent; box-shadow: none;
+    background-clip: border-box;
+    background-color: var(--bg-elev);
+    background-image:
+      linear-gradient(100deg, transparent 32%, var(--enh-scan) 50%, transparent 68%),
+      repeating-linear-gradient(90deg, var(--enh-grid) 0, var(--enh-grid) 1px, transparent 1px, transparent 28px),
+      repeating-linear-gradient(0deg, var(--enh-grid) 0, var(--enh-grid) 1px, transparent 1px, transparent 28px);
+    background-size: 50% 100%, auto, auto;
+    background-position: -60% 0, 0 0, 0 0;
+    background-repeat: no-repeat, repeat, repeat;
+    animation: enhScanSweep 2.6s linear infinite;
+  }
+  @keyframes enhScanSweep {
+    0% { background-position: -60% 0, 0 0, 0 0; }
+    100% { background-position: 160% 0, 0 0, 0 0; }
+  }
+  .composer-inner.enhancing::before {
+    content: ''; position: absolute; inset: -1.5px; border-radius: 13.5px; padding: 1.5px;
+    background: conic-gradient(from var(--enh-angle),
+      transparent 0deg, transparent 55deg,
+      var(--accent) 115deg, #ffffff 155deg, var(--accent) 195deg,
+      transparent 255deg, transparent 360deg);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+    animation: enhBorderSpin 2.2s linear infinite;
+    pointer-events: none; z-index: 2;
+  }
+  @keyframes enhBorderSpin { to { --enh-angle: 360deg; } }
+  .composer-inner.enhancing::after {
+    content: ''; position: absolute; inset: -1.5px; border-radius: 13.5px;
+    box-shadow: 0 0 22px -2px var(--accent); opacity: .35;
+    animation: enhGlowPulse 2.2s ease-in-out infinite;
+    pointer-events: none; z-index: 1;
+  }
+  @keyframes enhGlowPulse { 0%, 100% { opacity: .22; } 50% { opacity: .55; } }
+  @media (prefers-reduced-motion: reduce) {
+    .composer-inner.enhancing { animation: none; }
+    .composer-inner.enhancing::before { animation: none; }
+    .composer-inner.enhancing::after { animation: none; opacity: .4; }
+  }
   #input {
     flex: 1; border: none; outline: none; background: transparent; resize: none;
-    color: var(--text); font-family: inherit; font-size: 13px; line-height: 1.65;
-    max-height: 260px; min-height: 72px; padding: 3px 0;
+    color: var(--text); font-family: inherit; font-size: 14px; line-height: 1.7;
+    max-height: 70vh; min-height: 84px; padding: 3px 0;
     scrollbar-width: thin;
   }
   #input::placeholder { color: var(--text-dim); }
@@ -411,24 +480,53 @@
   .attach-chip .ac-del { width: 16px; height: 16px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; border-radius: 4px; }
   .attach-chip .ac-del:hover { background: var(--surface-hover); color: var(--text); }
   .attach-chip .ac-del svg { width: 10px; height: 10px; }
+  .composer-tools { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
   .attach-btn {
     flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px; border: none;
     background: transparent; color: var(--text-dim); cursor: pointer;
     display: flex; align-items: center; justify-content: center; transition: all .14s;
   }
   .attach-btn:hover { background: var(--surface); color: var(--text); }
+  .attach-btn:active { transform: scale(.9); }
   .attach-btn svg { width: 17px; height: 17px; }
   /* 提示词增强按钮 */
   .enhance-btn {
     flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px; border: none;
     background: transparent; color: var(--text-dim); cursor: pointer;
-    display: flex; align-items: center; justify-content: center; transition: all .14s;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .16s, color .16s, transform .12s cubic-bezier(.16, 1, .3, 1);
   }
+  .enhance-btn { position: relative; }
   .enhance-btn:hover { background: var(--surface); color: var(--accent); }
-  .enhance-btn svg { width: 16px; height: 16px; }
+  .enhance-btn:active { transform: scale(.9); }
+  .enhance-btn svg { width: 16px; height: 16px; position: relative; z-index: 1; }
+  /* hover 能量环（辐射光晕） */
+  .enhance-btn::after {
+    content: ''; position: absolute; inset: 3px; border-radius: 6px;
+    background: radial-gradient(circle, var(--accent-soft) 0%, transparent 70%);
+    opacity: 0; transition: opacity .2s ease; pointer-events: none;
+  }
+  .enhance-btn:hover::after { opacity: 1; }
   .enhance-btn.busy { color: var(--accent); cursor: default; }
-  .enhance-btn.busy svg { animation: spin 1s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  /* 增强中：图标能量脉冲 + 扩散环 */
+  .enhance-btn.busy svg { animation: enhPulseIcon 1.6s ease-in-out infinite; }
+  @keyframes enhPulseIcon {
+    0%, 100% { opacity: .55; transform: scale(.94); }
+    50% { opacity: 1; transform: scale(1.06); }
+  }
+  .enhance-btn.busy::before {
+    content: ''; position: absolute; inset: 2px; border-radius: 7px;
+    border: 1.5px solid var(--accent);
+    animation: enhRing 1.6s cubic-bezier(.16, 1, .3, 1) infinite;
+    pointer-events: none;
+  }
+  @keyframes enhRing {
+    0% { transform: scale(.7); opacity: .8; }
+    100% { transform: scale(1.5); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .enhance-btn.busy svg, .enhance-btn.busy::before { animation: none; }
+  }
   .enhance-btn:disabled { opacity: .4; cursor: default; }
   /* 增强后撤销条 */
   .enhance-undo {
@@ -863,10 +961,13 @@
     </div>
     <button class="init-project-btn" id="init-project-btn" style="display:none">首次对话需选择项目目录</button>
     <div class="composer-inner">
+      <div class="composer-resize" id="composer-resize" title="拖拽调整输入框高度"></div>
       <button class="scroll-bottom" id="scroll-bottom" title="回到底部"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M8 13l-4-4M8 13l4-4"/></svg></button>
       <div class="slash-menu" id="slash-menu"></div>
-      <button class="attach-btn" id="attach-btn" title="添加附件（图片/文件）"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 4.5l-5 5a2 2 0 0 0 2.8 2.8l5-5a3.5 3.5 0 0 0-5-5l-4.5 4.5a5 5 0 0 0 7 7l4-4"/></svg></button>
-      <button class="enhance-btn" id="enhance-btn" title="增强提示词（Ctrl+E）"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l1.6 4.1 4.4 1.6-4.4 1.6L8 12.9l-1.6-4.1L2 7.2l4.4-1.6z"/><path d="M12.5 11l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z"/></svg></button>
+      <div class="composer-tools">
+        <button class="attach-btn" id="attach-btn" title="添加附件（图片/文件）"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 4.5l-5 5a2 2 0 0 0 2.8 2.8l5-5a3.5 3.5 0 0 0-5-5l-4.5 4.5a5 5 0 0 0 7 7l4-4"/></svg></button>
+        <button class="enhance-btn" id="enhance-btn" title="增强提示词（Ctrl+E）"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l1.6 4.1 4.4 1.6-4.4 1.6L8 12.9l-1.6-4.1L2 7.2l4.4-1.6z"/><path d="M12.5 11l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z"/></svg></button>
+      </div>
       <textarea id="input" rows="3" placeholder="输入消息…  / 查看技能与工具"></textarea>
       <button id="send" title="发送"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M8 3l-4 4M8 3l4 4"/></svg></button>
       <input type="file" id="file-input" multiple style="display:none" />
@@ -3362,6 +3463,7 @@
     resetStreamRender(); // 新任务：复位上一轮可能残留的流式标记（防前缀巧合吞字）
     hideSlashMenu();
     input.value = '';
+    inputMinH = 84;            // 复位手动拖拽高度
     input.style.height = 'auto';
     // 目标："/goal xxx" 或带"目标"chip（与"计划"同款）
     var displayText = text, sendText = text;
@@ -3498,7 +3600,7 @@
     }
   }
 
-  // 追加一条系统提示（居中灰色小字）
+  // 追加一条系统提示（居中灰色小字，常驻 + 写历史）
   function appendSystem(text) {
     clearEmpty();
     var d = document.createElement('div');
@@ -3506,6 +3608,21 @@
     d.innerHTML = '<div class="sys-text">' + esc(text) + '</div>';
     stream.appendChild(d);
     scrollBottom(true);
+  }
+
+  // 瞬时提示：居中轻提示，ttl 后自动淡出移除（不写历史、不常驻）——用于"已增强/请先输入"等一次性反馈
+  function appendToast(text, ttl) {
+    clearEmpty();
+    var d = document.createElement('div');
+    d.className = 'msg system toast';
+    d.innerHTML = '<div class="sys-text">' + esc(text) + '</div>';
+    stream.appendChild(d);
+    scrollBottom(true);
+    var life = (typeof ttl === 'number' && ttl > 0) ? ttl : 3200;
+    setTimeout(function () {
+      d.classList.add('out');
+      setTimeout(function () { if (d.parentNode) d.parentNode.removeChild(d); }, 420);
+    }, life);
   }
 
   /**
@@ -3591,9 +3708,36 @@
       send();
     }
   });
-  input.addEventListener('input', function () {
+  // 输入框高度：自动增高到内容全显示（上限 70vh，超过才滚动）；顶部手柄可手动拖拽加大
+  var inputMinH = 84; // 手动拖拽设定的最小高度（发送后复位 84）
+  function maxInputHeight() { return Math.max(84, Math.round(window.innerHeight * 0.7)); }
+  function autoGrowInput() {
     input.style.height = 'auto';
-    input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+    var want = Math.max(input.scrollHeight, inputMinH);
+    input.style.height = Math.min(want, maxInputHeight()) + 'px';
+  }
+  (function initComposerResize() {
+    var handle = document.getElementById('composer-resize');
+    if (!handle) return;
+    var dragging = false, startY = 0, startH = 0;
+    handle.addEventListener('pointerdown', function (e) {
+      dragging = true; startY = e.clientY; startH = input.getBoundingClientRect().height;
+      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+    });
+    handle.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      var delta = startY - e.clientY; // 上拖增大
+      var next = Math.max(84, Math.min(startH + delta, maxInputHeight()));
+      inputMinH = next;
+      input.style.height = next + 'px';
+    });
+    function endDrag(e) { dragging = false; try { handle.releasePointerCapture(e.pointerId); } catch (_) {} }
+    handle.addEventListener('pointerup', endDrag);
+    handle.addEventListener('pointercancel', endDrag);
+  })();
+  input.addEventListener('input', function () {
+    autoGrowInput();
     var v = input.value;
     if (v.length > 0 && v.charAt(v.length - 1) === '/') { openSlashMenu(); return; }
     // 菜单已打开且正在输入过滤词（"/" 后跟非空白字符）
@@ -3940,10 +4084,54 @@
   var enhConfig = null;          // 当前增强配置（主进程读回）
 
   function setEnhanceBtnBusy(b) {
-    if (!enhanceBtn) return;
     enhanceInFlight = !!b;
-    if (b) { enhanceBtn.classList.add('busy'); enhanceBtn.disabled = true; }
-    else { enhanceBtn.classList.remove('busy'); enhanceBtn.disabled = false; }
+    var ci = document.querySelector('.composer-inner');
+    if (enhanceBtn) {
+      if (b) { enhanceBtn.classList.add('busy'); enhanceBtn.disabled = true; }
+      else { enhanceBtn.classList.remove('busy'); enhanceBtn.disabled = false; }
+    }
+    // 整个输入框"科技流光边框"（与按钮联动，表达框架正在处理）
+    if (ci) ci.classList.toggle('enhancing', !!b);
+    // 开始增强时迸发粒子
+    if (b && enhanceBtn) spawnEnhanceParticles(enhanceBtn);
+  }
+
+  /** 增强启动时的粒子爆发（SVG 特效）：从按钮向外迸射细碎光点 */
+  function spawnEnhanceParticles(anchor) {
+    try {
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      var rect = anchor.getBoundingClientRect();
+      var cx = rect.left + rect.width / 2;
+      var cy = rect.top + rect.height / 2;
+      var NS = 'http://www.w3.org/2000/svg';
+      var svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('class', 'enh-burst');
+      svg.style.cssText = 'position:fixed;left:' + (cx - 60) + 'px;top:' + (cy - 60) + 'px;width:120px;height:120px;pointer-events:none;z-index:9999;overflow:visible';
+      var accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#7b8fff';
+      var N = 10;
+      for (var i = 0; i < N; i++) {
+        var a = (Math.PI * 2 * i) / N + (Math.random() * 0.5 - 0.25);
+        var dist = 26 + Math.random() * 22;
+        var x2 = 60 + Math.cos(a) * dist;
+        var y2 = 60 + Math.sin(a) * dist;
+        var line = document.createElementNS(NS, 'line');
+        line.setAttribute('x1', 60); line.setAttribute('y1', 60);
+        line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+        line.setAttribute('stroke', accent);
+        line.setAttribute('stroke-width', '1.6');
+        line.setAttribute('stroke-linecap', 'round');
+        svg.appendChild(line);
+        (function (ln, xx, yy) {
+          ln.style.transition = 'transform .55s cubic-bezier(.16,1,.3,1), opacity .55s ease';
+          requestAnimationFrame(function () {
+            ln.style.transform = 'translate(' + (xx - 60) * 0.6 + 'px,' + (yy - 60) * 0.6 + 'px) scale(1.4)';
+            ln.style.opacity = '0';
+          });
+        })(line, x2, y2);
+      }
+      document.body.appendChild(svg);
+      setTimeout(function () { if (svg.parentNode) svg.parentNode.removeChild(svg); }, 640);
+    } catch (_) { /* ignore */ }
   }
   function applyEnhancerEnabled() {
     if (!enhanceBtn) return;
@@ -3980,10 +4168,10 @@
   }
   function runEnhance() {
     if (!enhanceBtn || enhanceInFlight) return;
-    if (!enhConfig) { appendSystem('增强配置尚未加载，请稍候重试'); return; }
-    if (!enhConfig.enabled) { appendSystem('提示词增强已关闭（可在"增强设置"里启用）'); return; }
+    if (!enhConfig) { appendToast('增强配置尚未加载，请稍候重试'); return; }
+    if (!enhConfig.enabled) { appendToast('提示词增强已关闭（可在"增强设置"里启用）'); return; }
     var text = (input.value || '').trim();
-    if (!text) { appendSystem('请先输入内容再增强'); return; }
+    if (!text) { appendToast('请先输入内容再增强'); return; }
     var myToken = ++enhanceToken;
     var prev = input.value;
     setEnhanceBtnBusy(true);
@@ -3997,7 +4185,12 @@
       setEnhanceBtnBusy(false);
       setStatus('就绪', 'ready');
       if (!r || !r.success) {
-        appendSystem('增强失败：' + ((r && r.error) || '未知错误'));
+        appendToast('增强失败：' + ((r && r.error) || '未知错误'), 4000);
+        return;
+      }
+      // 用户等待期间若改了输入框，不覆盖其新输入（防数据丢失）
+      if (input.value !== prev) {
+        appendToast('增强完成，但你已修改输入框，未自动覆盖（请重新点 ✨ 基于新内容增强）', 4000);
         return;
       }
       // 回填（不发送）；记录原文供撤销
@@ -4006,12 +4199,12 @@
       input.style.height = 'auto';
       input.focus();
       showUndo();
-      appendSystem('✨ 提示词已增强，可编辑后发送');
+      appendToast('✨ 提示词已增强，可编辑后发送');
     }).catch(function (e) {
       if (myToken !== enhanceToken) return;
       setEnhanceBtnBusy(false);
       setStatus('就绪', 'ready');
-      appendSystem('增强异常：' + ((e && e.message) || '未知错误'));
+      appendToast('增强异常：' + ((e && e.message) || '未知错误'), 4000);
     });
   }
   if (enhanceBtn) enhanceBtn.addEventListener('click', runEnhance);
@@ -4021,7 +4214,7 @@
     input.style.height = 'auto';
     input.focus();
     hideUndo();
-    appendSystem('已撤销增强');
+    appendToast('已撤销增强');
   });
 
   // ===== 增强设置弹窗（无保存按钮：改动即存 + 全局广播）=====
@@ -4034,17 +4227,32 @@
     rounds: document.getElementById('enh-rounds'),
     systemPrompt: document.getElementById('enh-system-prompt')
   };
-  function fillEnhancerForm(cfg) {
+  // full=true：全量填充（打开弹窗/初始加载）；full=false：保存响应/广播回填，跳过正在聚焦的字段（防覆盖在途编辑）
+  function fillEnhancerForm(cfg, full) {
     enhConfig = cfg || enhConfig;
     if (!enhConfig) return;
-    if (enhEls.enabled) enhEls.enabled.checked = !!enhConfig.enabled;
-    if (enhEls.apiUrl) enhEls.apiUrl.value = enhConfig.apiUrl || '';
-    if (enhEls.apiKey) enhEls.apiKey.value = enhConfig.apiKey || '';
-    if (enhEls.model) enhEls.model.value = enhConfig.model || '';
-    if (enhEls.rounds) enhEls.rounds.value = String(enhConfig.contextRounds != null ? enhConfig.contextRounds : 8);
-    if (enhEls.systemPrompt) enhEls.systemPrompt.value = enhConfig.systemPrompt || '';
+    var ae = document.activeElement;
+    function setVal(el, val) {
+      if (!el) return;
+      if (!full && el === ae) return; // 正在编辑的字段不覆盖
+      el.value = val;
+    }
+    function setChecked(el, val) {
+      if (!el) return;
+      if (!full && el === ae) return;
+      el.checked = val;
+    }
+    setChecked(enhEls.enabled, !!enhConfig.enabled);
+    setVal(enhEls.apiUrl, enhConfig.apiUrl || '');
+    setVal(enhEls.apiKey, enhConfig.apiKey || '');
+    setVal(enhEls.model, enhConfig.model || '');
+    setVal(enhEls.rounds, String(enhConfig.contextRounds != null ? enhConfig.contextRounds : 8));
+    setVal(enhEls.systemPrompt, enhConfig.systemPrompt || '');
     var radios = document.querySelectorAll('input[name="enh-mode"]');
-    for (var i = 0; i < radios.length; i++) radios[i].checked = (radios[i].value === (enhConfig.mode || 'gentle'));
+    for (var i = 0; i < radios.length; i++) {
+      if (!full && radios[i] === ae) continue;
+      radios[i].checked = (radios[i].value === (enhConfig.mode || 'gentle'));
+    }
     applyEnhancerEnabled();
   }
   /** 收集表单 → 保存（即时生效，无保存按钮） */
@@ -4064,14 +4272,14 @@
     };
     if (!Number.isFinite(cfg.contextRounds) || cfg.contextRounds < 0) cfg.contextRounds = 8;
     Promise.resolve(api.setEnhancerConfig(cfg)).then(function (r) {
-      if (r && r.success && r.config) fillEnhancerForm(r.config);
+      if (r && r.success && r.config) fillEnhancerForm(r.config, false);
     }).catch(function () { /* ignore */ });
   }
   function openEnhSettings() {
     if (!enhMask) return;
     if (api.getEnhancerConfig) {
       Promise.resolve(api.getEnhancerConfig()).then(function (r) {
-        if (r && r.success && r.config) fillEnhancerForm(r.config);
+        if (r && r.success && r.config) fillEnhancerForm(r.config, true);
       }).catch(function () { /* ignore */ });
     }
     enhMask.classList.add('show');
@@ -4082,20 +4290,20 @@
   var enhClose = document.getElementById('enh-close');
   if (enhClose) enhClose.addEventListener('click', closeEnhSettings);
   if (enhMask) enhMask.addEventListener('click', function (e) { if (e.target === enhMask) closeEnhSettings(); });
-  // 表单改动即存（input/change 都接；change 覆盖 checkbox/radio/失焦）
+  // 表单改动即存：change（checkbox/radio/下拉）+ blur 捕获（文本框失焦/关弹窗前兜底）
   var enhBody = enhMask ? enhMask.querySelector('.enh-body') : null;
   if (enhBody) {
     enhBody.addEventListener('change', saveEnhancerForm);
     enhBody.addEventListener('blur', saveEnhancerForm, true);
   }
-  // 其他窗口改动 → 同步本窗口
+  // 其他窗口改动 → 同步本窗口（不全量覆盖正在编辑的字段）
   if (api.onEnhancerConfig) {
-    api.onEnhancerConfig(function (cfg) { fillEnhancerForm(cfg); });
+    api.onEnhancerConfig(function (cfg) { fillEnhancerForm(cfg, false); });
   }
   // 初始加载配置
   if (api.getEnhancerConfig) {
     Promise.resolve(api.getEnhancerConfig()).then(function (r) {
-      if (r && r.success && r.config) fillEnhancerForm(r.config);
+      if (r && r.success && r.config) fillEnhancerForm(r.config, true);
     }).catch(function () { /* ignore */ });
   }
 

@@ -120,8 +120,8 @@ test('成功：回填增强文本，请求体含 model + messages', async () => 
     assert.strictEqual(seenAuth, 'Bearer sk-test');
     assert.strictEqual(seenBody.model, 'test-model');
     assert.ok(Array.isArray(seenBody.messages) && seenBody.messages.length >= 2);
-    // 最后一条 = 用户草稿
-    assert.strictEqual(seenBody.messages[seenBody.messages.length - 1].content, '写个登录页');
+    // 最后一条 user 消息内含待增强草稿（历史折叠后不再是裸文本）
+    assert.ok(seenBody.messages[seenBody.messages.length - 1].content.indexOf('写个登录页') >= 0);
     // 第一条 = system
     assert.strictEqual(seenBody.messages[0].role, 'system');
   } finally { srv.close(); }
@@ -173,19 +173,28 @@ test('buildSystemPrompt：有技术栈时注入项目信息', () => {
   assert.ok(s.indexOf('react') >= 0);
 });
 
-test('buildMessages：含 system + 历史（截断到 N 轮）+ 当前草稿', () => {
+test('buildMessages：固定 system + 1 条 user（历史折叠进 user 文本，不作真实轮次）', () => {
   const history = [];
   for (let i = 0; i < 10; i++) history.push({ role: 'user', content: 'u' + i });
   for (let i = 0; i < 10; i++) history.push({ role: 'assistant', content: 'a' + i });
   const msgs = enh.buildMessages({ ...baseCfg, contextRounds: 2 }, { text: 'NEW', history }, '');
-  // system + 2轮*2条 + 当前 = 1 + 4 + 1 = 6
-  assert.strictEqual(msgs.length, 6);
-  assert.strictEqual(msgs[msgs.length - 1].content, 'NEW');
+  // 关键：不能是 user/assistant 交替的真实轮次（会让模型续写对话而非增强）
+  assert.strictEqual(msgs.length, 2);
+  assert.strictEqual(msgs[0].role, 'system');
+  assert.strictEqual(msgs[1].role, 'user');
+  // 历史作为背景文本折叠进 user 消息（只取最近 2 轮 = 4 条 → a6~a9）
+  assert.ok(msgs[1].content.indexOf('a6') >= 0);
+  assert.ok(msgs[1].content.indexOf('a9') >= 0);
+  assert.ok(msgs[1].content.indexOf('u0') < 0, '更早的历史应被截掉');
+  // 待增强输入在文本中
+  assert.ok(msgs[1].content.indexOf('NEW') >= 0);
 });
 
-test('buildMessages：contextRounds=0 → 不带历史', () => {
+test('buildMessages：contextRounds=0 → 无历史背景段', () => {
   const msgs = enh.buildMessages({ ...baseCfg, contextRounds: 0 }, { text: 'NEW', history: [{ role: 'user', content: 'x' }] }, '');
   assert.strictEqual(msgs.length, 2);
+  assert.ok(msgs[1].content.indexOf('最近对话背景') < 0, '不应含历史背景段');
+  assert.ok(msgs[1].content.indexOf('NEW') >= 0);
 });
 
 // ===== 配置读取（ui-prefs）=====

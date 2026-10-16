@@ -1,7 +1,8 @@
 # 最新接续状态 (2026-10-17)
 
 ## 核心进展
-- **最新版本 v0.9.19**（feat/077-update-popup-redesign，typecheck/lint(0)/test(988)/compile 全绿）。
+- **最新版本 v0.9.20**（需求 078 提示词增强 + 最近胶囊全局化，typecheck/lint(0)/test(1011)/compile 全绿）。
+- **v0.9.20**：**纯净模式提示词增强**（需求 078）——✨ 按钮调独立 API 改写草稿、回填不发送、可撤销、全局配置跨窗口同步；**底部「最近」胶囊全局化**（localStorage → 主进程全局存储）；输入框自适应增高 + 拖拽手柄；科技流光/粒子动效；发丝边框。另含**发送队列等待期切会话仍发旧消息**的收尾修复（manualSendToken）。
 - **v0.9.19**：**更新弹窗重设计**（需求 077）——「发现新版本」改专属版式（品牌头 + 版本跃迁 + 更新日志 + 体积），点「立即更新」保留窗口显示实时下载进度。
 - **v0.9.18**（已发 tag）：**发送队列「立即发送」旧任务尾巴回填新对话修复**（详见下）。
 - **v0.9.17**：窗口列表交互修复 —— 点击窗口名不再直接进入重命名（改为普通文本），点名字/卡片其它区域 = 打开窗口；仅点铅笔图标（✎）才重命名。
@@ -69,13 +70,14 @@
 - `store.ts: setSessionLineage` 继承父标题；`compaction.ts` 摘要首行 `【标题】xxx` → 段3 经 IPC `set-pending-session-title`（`forceStage`）绑定。
 
 ## 待办事项 (Next Steps)
-- [x] **队列"立即发送"回填风险**（v0.9.18 已修）：改为等旧任务真正停止（事件静默期 + ai-state + 超时兜底）再发。
+- [x] **队列"立即发送"回填风险**（v0.9.18 已修）：改为等旧任务真正停止（事件静默期 + ai-state + 超时兜底）再发。v0.9.20 补：等待期间切会话的作废（manualSendToken）。
+- [ ] **提示词增强·图片背景模式**：用户将提供科技图（约 3200×900），增强设置加「CSS 网格 / 自定义图」切换（待图到位）。
 - [ ] 旧会话 UUID 标题迁移（069 只对新压缩会话生效，历史数据仍显示 UUID）。**优先级低**：影响仅"远古未命名会话在列表显示 UUID"，且存储里无对话正文可作补标题的数据源。
 - [x] 打包版真机验证：更新确认框/系统通知浮窗/窗口组切换通知 —— **用户已测过，通过**。
 
 ## 关键上下文
 - 目录: `D:\Desktop\Super-File\cuckoo-code`
-- 构建/验证: `npm run typecheck` / `npm test`（988）/ `npm run lint`（0 error）/ `npm run compile`
+- 构建/验证: `npm run typecheck` / `npm test`（1011）/ `npm run lint`（0 error）/ `npm run compile`
 - **生成物禁手改**：`*.generated.ts`、`src/tools/api.d.ts`、`src/ui/shell.html`（改真源 + compile）
 - **依赖铁律**：`infra ← providers ← tools ← bridge ← session ← app`；overlay 不依赖 bridge/session；tools 不依赖上层（注入）
 - **窗口结构**：AI 页面在 `ctx.view.webContents`，不是 `ctx.win.webContents`
