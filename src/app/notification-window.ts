@@ -19,7 +19,7 @@ import { resolveSrc } from '../infra/paths.js';
 const require = createRequire(import.meta.url);
 const { BrowserWindow, screen } = require('electron');
 
-export type NotificationKind = 'success' | 'info' | 'warn' | 'error';
+export type NotificationKind = 'success' | 'info' | 'warn' | 'error' | 'update';
 
 export interface SystemNotificationItem {
   /** 语义类型（决定配色与图标） */

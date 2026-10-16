@@ -178,9 +178,9 @@ function sendProgress(data: any): void {
 }
 
 /** 显示系统通知浮窗（自绘，右下角，沿用限流浮窗视觉；不打断用户） */
-function showNotification(title: string, body: string): void {
+function showNotification(title: string, body: string, kind: 'info' | 'update' = 'info'): void {
   try {
-    showSystemNotification({ kind: 'info', title, body, durationMs: 4200 });
+    showSystemNotification({ kind, title, body, durationMs: 4200 });
   } catch (_) { /* ignore */ }
 }
 
@@ -224,7 +224,7 @@ async function checkForUpdates(): Promise<void> {
   if (updateDownloaded) {
     // 已有下载完成的更新，直接提示安装（自绘确认框）
     const ok = await showConfirmDialog({
-      kind: 'info',
+      kind: 'update',
       title: '更新已就绪',
       body: '新版本已下载完成，是否立即重启应用并安装？',
       primaryText: '立即重启',
@@ -259,7 +259,7 @@ autoUpdater.on('checking-for-update', () => {
 autoUpdater.on('update-available', async (info: any) => {
   console.log('[Updater] 发现新版本:', info.version);
   const ok = await showConfirmDialog({
-    kind: 'info',
+    kind: 'update',
     title: '发现新版本 v' + info.version,
     body: '是否立即更新？将自动下载并重启安装。',
     primaryText: '立即更新',
@@ -268,7 +268,7 @@ autoUpdater.on('update-available', async (info: any) => {
   if (ok) {
     // 用户选「立即更新」→ 自动下载，下载完自动重启安装（见 update-downloaded）
     autoInstallAfterDownload = true;
-    showNotification('开始更新', '正在下载 v' + info.version + '…');
+    showNotification('开始更新', '正在下载 v' + info.version + '…', 'update');
     sendProgress({ state: 'downloading', percent: 0, version: info.version });
     autoUpdater.downloadUpdate().catch((err) => {
       console.error('[Updater] 下载失败:', err);
@@ -321,7 +321,7 @@ autoUpdater.on('update-downloaded', (info: any) => {
 
   // 否则（后台自动检查下载完成）弹确认框询问是否立即安装
   showConfirmDialog({
-    kind: 'info',
+    kind: 'update',
     title: '更新已就绪',
     body: '新版本 v' + info.version + ' 已下载完成，是否立即重启应用并安装？',
     primaryText: '立即重启',

@@ -15,7 +15,7 @@ import { resolveSrc } from '../infra/paths.js';
 const require = createRequire(import.meta.url);
 const { BrowserWindow, ipcMain, screen } = require('electron');
 
-export type ConfirmKind = 'info' | 'success' | 'warn' | 'error';
+export type ConfirmKind = 'info' | 'success' | 'warn' | 'error' | 'update';
 
 export interface ConfirmDialogOptions {
   kind?: ConfirmKind;
