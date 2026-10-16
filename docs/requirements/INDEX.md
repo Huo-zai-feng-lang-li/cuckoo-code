@@ -73,5 +73,6 @@
 | 070 | feature | [纯净模式生成中禁用工作区其他会话切换 + package.json 脚本默认折叠](./070-ws-busy-disable.md) | done | feat/070-ws-busy-disable | 2026-10-16 |
 | 071 | fix | [思考阶段 TPS 显示 -- （只估算正文，忽略思考内容）](./071-tps-think.md) | done | fix/071-tps-think | 2026-10-16 |
 | 072 | feature | [活动栏图标显隐设置 + Token 图标统一 + 通知浮窗高度自适应](./072-ui-fixes.md) | doing | fix/072-ui-fixes | 2026-10-16 |
+| 073 | fix | [通知浮窗图片按真实比例完整显示 + 进度条渐变](./073-notif-pic-progress.md) | done | fix/073-notif-pic-progress | 2026-10-16 |
 
-共 68 个需求。
+共 69 个需求。
