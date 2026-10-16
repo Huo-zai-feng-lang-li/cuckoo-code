@@ -71,5 +71,6 @@
 | 067 | fix | [用户记忆稳健性 + 上下文耗尽续接智能化](./067-memory-compact-audit.md) | done | fix/067-memory-compact-audit | 2026-10-16 |
 | 069 | feature | [压缩续接会话继承/生成标题（消除工作区 UUID 显示）](./069-compaction-title.md) | done | feat/069-compaction-title | 2026-10-16 |
 | 070 | feature | [纯净模式生成中禁用工作区其他会话切换 + package.json 脚本默认折叠](./070-ws-busy-disable.md) | done | feat/070-ws-busy-disable | 2026-10-16 |
+| 071 | fix | [思考阶段 TPS 显示 -- （只估算正文，忽略思考内容）](./071-tps-think.md) | done | fix/071-tps-think | 2026-10-16 |
 
-共 66 个需求。
+共 67 个需求。
