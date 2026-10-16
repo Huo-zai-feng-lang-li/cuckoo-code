@@ -29,7 +29,7 @@ function bringWindowToFront(win: any): void {
 
 function registerRendererIpc(): void {
   // AI 回复完成时：窗口已聚焦则不打扰；否则弹通知并让任务栏/Dock 闪烁
-  ipcMain.handle('show-ai-notification', async (event: any) => {
+  ipcMain.handle('show-ai-notification', async (event: any, { summary }: any = {}) => {
     try {
       const ctx = windowState.getContextByWebContents(event.sender);
       // 子代理窗口：完成属内部过程，不弹通知、不闪烁（只有父/主对话真正完成才通知）
@@ -51,10 +51,12 @@ function registerRendererIpc(): void {
         }
 
         // 自绘浮窗（沿用限流浮窗的视觉语言），取代系统通知中心样式
+        // 优先展示 AI 回复摘要（用户一眼可见说了什么）；无摘要时退回"回复已生成"
+        const summaryText = (typeof summary === 'string' && summary.trim()) ? summary.trim() : '';
         showSystemNotification({
           kind: 'success',
           title: 'AI 任务已完成',
-          body: windowName + ' 的回复已生成',
+          body: summaryText || (windowName + ' 的回复已生成'),
           durationMs: 4200,
           withImages: true,
           onClick: () => {

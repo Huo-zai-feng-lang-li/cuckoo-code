@@ -4003,20 +4003,25 @@
       tip.classList.remove('measuring');
 
       var gap = 6;
-      var top = rect.bottom + gap;
-      var left = rect.left + (rect.width - tipW) / 2;
+      var left, top;
 
-      // 下方空间不足且上方放得下时，翻转到上方
-      if (top + tipH > window.innerHeight - 8 && rect.top - tipH - gap >= 8) {
-        top = rect.top - tipH - gap;
+      // 右侧空间不足（如右侧对话导航）→ 放到元素左侧并垂直居中，避免遮挡元素本身
+      if (rect.right + gap + tipW > window.innerWidth - 8) {
+        left = rect.left - tipW - gap;
+        top = rect.top + (rect.height - tipH) / 2;
+      } else {
+        left = rect.left + (rect.width - tipW) / 2;
+        top = rect.bottom + gap;
+        // 下方空间不足且上方放得下时，翻转到上方
+        if (top + tipH > window.innerHeight - 8 && rect.top - tipH - gap >= 8) {
+          top = rect.top - tipH - gap;
+        }
       }
 
-      // 水平防溢出保护
-      if (left < 8) {
-        left = 8;
-      } else if (left + tipW > window.innerWidth - 8) {
-        left = window.innerWidth - 8 - tipW;
-      }
+      // 边界保护
+      if (left < 8) left = 8;
+      if (top < 8) top = 8;
+      if (top + tipH > window.innerHeight - 8) top = window.innerHeight - 8 - tipH;
 
       tip.style.left = Math.round(left) + 'px';
       tip.style.top = Math.round(top) + 'px';
@@ -4115,7 +4120,12 @@
       document.addEventListener('pointerover', handlePointerOver, true);
       document.addEventListener('pointerout', handlePointerOut, true);
       document.addEventListener('pointerdown', hideTooltip, true);
-      window.addEventListener('scroll', hideTooltip, true);
+      // 滚动时隐藏 tooltip（避免错位）；但右侧对话导航是 fixed 定位，滚动不影响它，
+      // 且生成中 scrollBottom 会频繁触发 scroll——若一并隐藏，导航 tooltip 一显示就被打断。
+      window.addEventListener('scroll', function () {
+        if (activeTarget && activeTarget.closest && activeTarget.closest('.conv-nav')) return;
+        hideTooltip();
+      }, true);
       window.addEventListener('blur', hideTooltip);
       window.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') hideTooltip();

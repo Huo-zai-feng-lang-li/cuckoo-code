@@ -39,7 +39,7 @@ export interface SystemNotificationItem {
 /** 单张卡片的固定尺寸（内容自适应到固定高度，超长省略） */
 const WIDTH = 400;
 const HEIGHT = 118;
-const PIC_HEIGHT = 170; // 图片轮换区高度（withImages 时叠加到 HEIGHT 上）
+const PIC_HEIGHT = 100; // 图片轮换区高度（withImages 时叠加到 HEIGHT 上；过高会喧宾夺主）
 const GAP = 12;
 const MARGIN = 24;
 /** 同时最多显示的通知条数（超出关闭最旧的） */

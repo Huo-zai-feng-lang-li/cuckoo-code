@@ -1,5 +1,23 @@
 # 最新接续状态 (2026-10-16)
 
+## v0.9.8 本次会话（2026-10-16）——UI 四改
+
+### 交付
+1. **对话导航 tooltip 修复**：生成中 `scrollBottom` 频繁触发 `scroll` → 全局 tooltip 引擎监听 scroll 立即隐藏 → 导航 tooltip 一显示就被打断。现 `.conv-nav`（fixed）的 tooltip 不受滚动影响；且右侧空间不足时**显示在元素左侧**（垂直居中），不再遮挡导航。
+2. **底部「最近」快捷按钮**：技能/MCP/子代理/提示词统一改为**只填入输入框不自动发送**（autoSend=false）。
+3. **任务完成通知**：图片区 170px→100px；正文改为展示 **AI 回复摘要**（截断 120 字），无摘要退回"回复已生成"。
+
+### 真机验证（dev 9444）
+- 导航 tooltip：shown=true、位置在元素左侧（tipRight 1195 ≤ elLeft 1201）、scroll 后仍显示 ✅
+- 通知：title="AI 任务已完成"、body=回复摘要、picH=100px、innerH=218 ✅
+- typecheck / test(981) / lint(0 error) / compile 全绿
+
+### 关键文件
+- `src/ui/harness.html`（positionTooltip 左侧翻转、scroll 监听放行 conv-nav）
+- `src/ui/shell/scripts/recent.ts`（autoSend=false）
+- `src/app/notification-window.ts`（PIC_HEIGHT 100）+ `src/ui/notification-window.html`（pic-wrap 100px）
+- `src/bridge/api.ts` + `src/bridge/intercept/observer.ts` + `src/app/ipc/renderer.ts`（通知摘要链路）
+
 ## v0.9.7 本次会话（2026-10-16）
 
 ### 背景

@@ -4798,14 +4798,14 @@ paths:            # 可选；省略 = 始终生效
           const it = list.find((x) => x.type === "snippet" && x.name === name);
           if (it && it.payload && api.triggerSnippet) {
             try {
-              await api.triggerSnippet(it.payload, it.autoSend !== false);
+              await api.triggerSnippet(it.payload, false);
             } catch (_) {
             }
           }
         } else {
           if (api.triggerSnippet) {
             try {
-              await api.triggerSnippet(snippetText(type, name), true);
+              await api.triggerSnippet(snippetText(type, name), false);
             } catch (_) {
             }
           }

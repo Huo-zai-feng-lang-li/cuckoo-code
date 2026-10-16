@@ -117,15 +117,15 @@ export function renderRecent(): void {
       if ((e.target as HTMLElement)?.closest('.sb-chip-del')) return;
 
       // 注意：点击底部快捷按钮【只执行动作】，不重新排序（排序只在侧边栏点击卡片时发生）
+      // 底栏快捷方式：只把内容填到输入框（autoSend=false），不自动发送——留给用户确认后再发
       if (type === 'snippet') {
         const it = list.find((x) => x.type === 'snippet' && x.name === name);
         if (it && it.payload && api.triggerSnippet) {
-          try { await api.triggerSnippet(it.payload, it.autoSend !== false); } catch (_) { /* ignore */ }
+          try { await api.triggerSnippet(it.payload, false); } catch (_) { /* ignore */ }
         }
       } else {
-        // 底栏快捷方式：回显到输入框后直接发送（技能/MCP/子代理）
         if (api.triggerSnippet) {
-          try { await api.triggerSnippet(snippetText(type, name), true); } catch (_) { /* ignore */ }
+          try { await api.triggerSnippet(snippetText(type, name), false); } catch (_) { /* ignore */ }
         }
       }
     });

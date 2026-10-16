@@ -257,7 +257,9 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
   console.log('[Cuckoo Code][拦截] 正常文本回复，未检测到工具调用');
   if (!suppressAiNotification) {
     try {
-      (window as any).electronAPI.showAiNotification().catch(() => {});
+      // 传回复正文作为通知摘要（主进程截断展示），让用户一眼看到 AI 说了什么
+      const summary = String(raw || '').replace(/s+/g, ' ').trim().slice(0, 120);
+      (window as any).electronAPI.showAiNotification(summary).catch(() => {});
     } catch (e) { /* ignore */ }
   }
   // 任务空闲信号（工具循环结束 = AI 给出普通文本回复）——供自动压缩等"任务边界"逻辑使用

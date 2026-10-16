@@ -193,8 +193,8 @@ let electronAPI: any = {
   updateWindowName: (displayName: any) => {
     return ipcRenderer.invoke('update-window-name', { displayName });
   },
-  showAiNotification: () => {
-    return ipcRenderer.invoke('show-ai-notification');
+  showAiNotification: (summary: any) => {
+    return ipcRenderer.invoke('show-ai-notification', { summary: summary || '' });
   },
   updateTokenUsage: (context: any, cumulative: any, windowCumulative: any, todayCumulative: any, daily: any) => {
     return ipcRenderer.invoke('update-token-usage', { context, cumulative, windowCumulative, todayCumulative, daily });
