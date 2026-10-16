@@ -106,22 +106,6 @@
     line-height: 1.4;
   }
 
-  .close {
-    width: 24px; height: 24px;
-    border: none;
-    background: transparent;
-    color: var(--text-dim);
-    border-radius: 7px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: background .15s, color .15s;
-  }
-  .close:hover { background: var(--surface-hover); color: var(--text); }
-  .close svg { width: 14px; height: 14px; }
-
   .body {
     flex: 1;
     display: flex;
@@ -243,12 +227,6 @@
         <div class="title">账号限流，即将自动切换</div>
         <div class="subtitle">当前账号触发限流，正在切换到组内下一个窗口</div>
       </div>
-      <button class="close" id="btn-close" aria-label="关闭" title="关闭（视为取消）">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18"/>
-          <line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </button>
     </div>
 
     <div class="body">
@@ -303,7 +281,6 @@
 
       document.getElementById('btn-cancel').addEventListener('click', function () { act('cancel'); });
       document.getElementById('btn-now').addEventListener('click', function () { act('switch-now'); });
-      document.getElementById('btn-close').addEventListener('click', function () { act('cancel'); });
       document.addEventListener('keydown', function (e) {
         // 保守原则：Esc / Enter 均视为取消（Enter 在按钮焦点上会同时触发 keydown + click，
         // 若 Enter=切换，在"取消"按钮上按 Enter 会误切换；一律 cancel 最安全）
