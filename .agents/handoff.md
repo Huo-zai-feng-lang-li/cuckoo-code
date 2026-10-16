@@ -1,5 +1,35 @@
 # 最新接续状态 (2026-10-16)
 
+## v0.9.7 本次会话（2026-10-16）
+
+### 背景
+用户提问：限流切换 / 手动切换 / 压缩新开对话会不会丢上下文/队列/目标/侧导航？会不会降质？TPS 准不准？
+
+### 分析结论（真机取证 + 代码核实）
+- **切换类（限流/手动）**：harness 状态全量迁移（history/sendQueue/goal/planState/planTodos），不丢。两处调用 closeSource=true（都关源窗口），原注释有误已修。
+- **压缩**：AI 侧续接（摘要+最近20%），但 harness 侧队列/目标/计划/侧导航**重置为空白**（用户明确"不需要迁移，只需提示语"）。
+- **分享页可续聊**：**真机验证确认** —— 打开 /share/xxx 有输入框、上下文完整（bodyHead 含完整系统提示词）。切换降质担忧解除。
+- **TPS**：滑动窗口 4s，DeepSeek 用服务端 acc 差值较准，ChatGPT/Claude 长度估算不准；显示策略问题（结束后残留）已修。
+
+### 交付
+1. **压缩续接提示**：harness 检测 framework-send tag='压缩-摘要' → 置内存标记 → 新会话空历史时显示提示。
+   - ⚠️ 关键坑：harness 是 file:// 页面，AI 页面是 https://，**localStorage 隔离**，跨页标记方案不生效（真机验证发现）。改用内存标志。
+2. **TPS 清空**：task-idle + tool-start 时清空为 `--`（新增 onToolStart 回调注入）。
+3. **注释修正**：entry.ts 窗口组切换注释。
+
+### 真机验证（dev 9444）
+- 分享页 /share/xxx：hasTextarea=true、上下文完整 ✅
+- TPS 流式→有值(141)→task-idle 清空(--) ✅
+- TPS 流式→有值→tool-start 清空(--) ✅
+- 压缩提示：simulateFrameworkSend('压缩-摘要')→提示正确显示、标记消费 ✅；无 pending/过期不显示 ✅
+- 验证：typecheck / test(981) / lint(0 error) / compile 全绿
+
+### 关键文件
+- `src/ui/harness.html`（onFrameworkSend 置标记、showCompactedHintIfAny、onSessionChanged 空历史分支）
+- `src/overlay/events.ts`（onTaskIdle/onToolStart 清 TPS）
+- `src/bridge/entry.ts`（wireEvents 注入 onToolStart）
+- `src/app/entry.ts`（注释）
+
 ## 核心进展
 - **任务完成通知图片轮换 + 队列手动发送修复** → v0.9.6：通知浮窗新增 170px 图片轮换区（src/ui/notif-images/ 27 张 webp，原 129MB 压至 1.6MB；懒加载+预加载下一张+hover暂停）；队列"点一个立即发送"改为临时抑制（不再永久暂停整个队列）+ manualSendInFlight 防连点顺序错乱。真机验证：队列剩余项照常自动排空。
 - **更新弹窗改用专属 update 图标（下载箭头）** → v0.9.5

@@ -20,6 +20,8 @@ let hooks: {
   onInterceptedResponse?: (cb: (text: string, meta: any) => void) => void;
   onTaskIdle?: (cb: () => void) => void;
   onStream?: (cb: (ev: any) => void) => void;
+  /** 工具开始执行（模型本轮输出已结束，正在跑工具）→ 用于清空 TPS 展示 */
+  onToolStart?: (cb: () => void) => void;
 } = {};
 // 服务端权威 token 统计（由 bridge 经回调推送，不共享状态）
 let serverTokenUsage: any = null;
@@ -392,8 +394,20 @@ function startTokenCounter() {
     }
     updateConversationTokenDisplay();
   });
-  // 自动压缩：只在"任务空闲"（工具循环结束）时检查——避免与工具结果抢输入框
-  hooks.onTaskIdle?.(() => checkAutoCompact());
+  // 任务空闲（工具循环结束 = 整轮任务真正结束）：
+  //  - 检查自动压缩
+  //  - 清空输出速度：否则状态栏会一直停留在上一轮的最终 TPS，让用户误以为还在生成
+  hooks.onTaskIdle?.(() => {
+    checkAutoCompact();
+    tpsMeter.reset();
+    pushTps();
+  });
+  // 工具开始执行 = 模型本轮输出已结束（正在跑工具，未在出字）：
+  // 清空输出速度，避免状态栏停留上一轮数值让用户误以为还在生成。
+  hooks.onToolStart?.(() => {
+    tpsMeter.reset();
+    pushTps();
+  });
   updateConversationTokenDisplay();
 
   // 输出速度（TPS）：订阅流式正文增量，实时计算并推送。

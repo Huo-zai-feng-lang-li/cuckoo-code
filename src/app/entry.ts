@@ -1117,8 +1117,8 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSo
       }, 5000);
     } catch (_) { /* ignore */ }
 
-    // 11) 关闭限流的源窗口（避免窗口累积）。
-    //     仅在"限流自动切换"时关闭；手动转移对话保留源窗口。
+    // 11) 关闭源窗口（避免窗口累积）。限流自动切换与手动转移**都会**关闭源窗口
+    //     （两处调用 closeSource 均为 true）；差异只在文案（'限流自动切换' vs '手动转移'）。
     //     前置校验：等目标窗口 initProject 成功后才关；失败/超时（60s）则保留源窗口，
     //     避免"目标没接上、源已关"导致对话真丢。
     if (closeSource) {

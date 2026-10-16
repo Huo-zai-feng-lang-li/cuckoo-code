@@ -1473,7 +1473,11 @@
     renderSendQueue();
     // 迁移的待发队列：在清空后恢复（否则被上面的 sendQueue=[] 清掉）
     if (_impQueue && _impQueue.length) { sendQueue = _impQueue; renderSendQueue(); }
-    if (!history.length) { showEmptyState(); return; }
+    if (!history.length) {
+      showEmptyState();
+      showCompactedHintIfAny();
+      return;
+    }
     restoreHist();
     scrollBottom(true);
   }
@@ -2402,6 +2406,8 @@
   var frameworkDriveUntil = 0;
   function onFrameworkSend(tag) {
     var label = FW_LABELS[tag] || tag || '框架指令';
+    // 压缩流程启动：标记 pending，待新会话（空历史）到达时显示"已压缩续接"提示
+    if (tag === '压缩-摘要') compactPending = Date.now();
     // 框架驱动意味着 AI 页面新一轮工作已开始：认领代次，旧的中止尾巴不再压制状态
     clearAbortSuppression();
     frameworkDriveUntil = Date.now() + FRAMEWORK_DRIVE_MS;
@@ -3313,6 +3319,27 @@
     d.innerHTML = '<div class="sys-text">' + esc(text) + '</div>';
     stream.appendChild(d);
     scrollBottom(true);
+  }
+
+  /**
+   * 压缩续接提示：压缩会在分享页开新会话，harness 历史为空 → 界面空白。
+   *
+   * 信号源：压缩段1 通过 sendToChat(..., '压缩-摘要') 投递摘要指令，
+   *   bridge 会上报 framework-send(tag='压缩-摘要') → onFrameworkSend 置 compactPending=true。
+   *   随后新会话到达、历史为空时据此显示提示。
+   * 不能用 localStorage 标记：harness 是 file:// 页面，AI 页面是 https://，两者 localStorage 隔离。
+   * 一次性消费 + 2 分钟有效期（防残留导致之后真·新对话误显示）。
+   */
+  var compactPending = 0; // 压缩开始的时间戳；0 = 无
+  // 有效期 10 分钟：压缩链路（摘要生成 + 清 IDB + 刷新 + 等重建 + 分享 + 跳转）
+  // 在长对话下可能耗时数分钟，过短会漏报"恰恰最需要提示"的场景。
+  var COMPACT_HINT_TTL = 600000;
+  function showCompactedHintIfAny() {
+    if (!compactPending) return;
+    var ts = compactPending;
+    compactPending = 0;
+    if (Date.now() - ts > COMPACT_HINT_TTL) return;
+    appendSystem('上下文已压缩：AI 已携带前情提要无缝续接（原对话保留在网页侧；待发队列 / 目标 / 计划已重置）');
   }
 
   function stop() {
