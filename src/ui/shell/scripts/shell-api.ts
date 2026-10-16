@@ -26,6 +26,8 @@ export interface ShellAPI {
   onWebUrlChanged?: (cb: () => void) => void;
   /** harness 生成中（busy=true → 禁用对话切换） */
   onHarnessBusy?: (cb: (busy: boolean) => void) => void;
+  // 新建对话完成 → 隐藏 loading 遮罩
+  onNewConvDone?: (cb: () => void) => void;
   // 插件市场 / 安装
   pluginMarketList?: (opts?: any) => Promise<any>;
   pluginMarketRemote?: (targets: any) => Promise<any>;
@@ -75,9 +77,7 @@ export interface ShellAPI {
   pluginMarketCurated?: (opts?: any) => Promise<any>;
   /** 临时隐藏 AI 视图（WebContentsView 挡不住 CSS，全屏弹层需要它） */
   setWebViewVisible?: (visible: boolean) => Promise<any>;
-  // 全局 tooltip 独立窗口（壳页面内 tooltip 会被 AI WebContentsView 遮挡）
-  tooltipShow?: (rect: { left: number; top: number; width: number; height: number }, text: string, vpW: number, vpH: number) => void;
-  tooltipHide?: () => void;
+
   pluginMarketStateGet?: () => Promise<any>;
   pluginMarketStateSet?: (payload: any) => Promise<any>;
   pluginMarketCheckUpdates?: (opts?: any) => Promise<any>;

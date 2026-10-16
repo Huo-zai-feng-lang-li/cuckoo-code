@@ -1,4 +1,18 @@
-# 最新接续状态 (2026-10-16 18:33)
+# 最新接续状态 (2026-10-16)
+
+## v0.9.15 本次会话（2026-10-16）——新建loading + 耗时优化 + tooltip回归
+
+### 交付（需求档案 076，直接 master）
+1. **点「+」不弹初始化项目**：该弹窗是"首次使用提示"（首页+无目录即弹），被开新对话误触发。现点「+」写 localStorage 时间标记，overlay 10s 内不弹。
+2. **点「+」显示 loading 遮罩**：居中呼吸图标 + 流光进度条。**坑**：遮罩曾放侧栏 `.ck-panel` 内，收起时 display:none → 不渲染但 modal-guard 仍隐藏 AI 视图 → **黑屏**；已移到 body 顶层。
+3. **新建耗时优化**：`did-finish-load` 后等待 2000ms → 400ms（shell.ts + session.ts），省约 1.6s。依据：initial-prompt 监听器 preload 顶层同步注册、输入框就绪由轮询保证。
+4. **tooltip 回归 DOM**：独立透明窗口方案（v0.9.14）Windows 上闪烁 → 回退 DOM 版（跟手）。删 tooltip-window/preload/html/ipc 4 文件；保留"顶部工具栏不弹 tooltip"。
+5. **设置页图标折叠 + 动态读取**：默认收起、竖排；动态读 DOM（含插件图标）→ Agent 模式可隐藏。
+6. **通知摘要**：2 行 → 3 行；高 118 → 154；底部内边距加大。
+
+### 验证
+- typecheck / test(988) / lint(0 error) / compile 全绿
+- 真机：loading 遮罩显示/隐藏、tooltip 内容随 hover 更新
 
 ## v0.9.14 本次会话（2026-10-16）——tooltip 独立窗口 + Git 布局 + 技能chip
 

@@ -55,9 +55,7 @@ const shellAPI = {
   // 临时隐藏 AI 视图（WebContentsView 是原生视图，CSS z-index 盖不住它）
   // 用途：壳页面开全屏 Lightbox / 模态框时，避免被 AI 页面挡住
   setWebViewVisible: (visible: boolean) => ipcRenderer.invoke('plugin-set-webview-visible', { visible }),
-  // 全局 tooltip 独立窗口（壳页面内的 tooltip 会被 AI WebContentsView 遮挡）
-  tooltipShow: (rect: any, text: string, vpW: number, vpH: number) => ipcRenderer.send('tooltip-show', { rect, text, vpW, vpH }),
-  tooltipHide: () => ipcRenderer.send('tooltip-hide'),
+
   // 侧边栏拖拽调宽（AI 视图会临时移出，鼠标事件全落在壳页面；主进程轮询算宽度后推回）
   startSidebarDrag: () => ipcRenderer.send('shell-sidebar-drag-start'),
   endSidebarDrag: () => ipcRenderer.send('shell-sidebar-drag-end'),
@@ -70,6 +68,8 @@ const shellAPI = {
   newWebConversation: () => ipcRenderer.invoke('web-new-conversation'),
   onWebUrlChanged: (cb: () => void) => { ipcRenderer.on('shell-web-url-changed', () => cb()); },
   onHarnessBusy: (cb: (busy: boolean) => void) => { ipcRenderer.on('shell-harness-busy', (_e: any, d: any) => cb(!!(d && d.busy))); },
+  // 新建对话完成（成功/失败/无项目导航完）→ 隐藏 loading 遮罩
+  onNewConvDone: (cb: () => void) => { ipcRenderer.on('shell-newconv-done', () => cb()); },
   // 纯净对话模式（Harness）切换 + 状态订阅
   toggleHarness: () => ipcRenderer.invoke('shell-toggle-harness'),
   setWebviewHidden: (hidden: boolean) => ipcRenderer.invoke('shell-set-webview-hidden', { hidden }),

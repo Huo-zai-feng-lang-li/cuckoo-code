@@ -414,7 +414,8 @@ function registerSessionIpc(): void {
     if (!homeUrl) return { success: false, error: '当前平台无首页地址' };
     const wc = ctx.view.webContents;
     console.log('[Cuckoo Code] 用项目新建对话 → ' + projectDir);
-    // 页面加载完成后再初始化（等输入框就绪）
+    // 页面加载完成后初始化。initial-prompt 监听器在 preload 顶层同步注册（did-finish-load 时已就绪），
+    // 输入框就绪由 chat-input 轮询保证 → 无需固定等 2s，仅留极短渲染缓冲。
     const onLoad = () => {
       try { wc.off('did-finish-load', onLoad); } catch (_) { /* ignore */ }
       setTimeout(async () => {
@@ -423,7 +424,7 @@ function registerSessionIpc(): void {
         } catch (err: any) {
           console.log('[Cuckoo Code] 新建对话初始化项目失败: ' + (err && err.message));
         }
-      }, 2000);
+      }, 400);
     };
     try { wc.on('did-finish-load', onLoad); } catch (_) { /* ignore */ }
     try { await wc.loadURL(homeUrl); } catch (err: any) { return { success: false, error: err.message }; }

@@ -598,9 +598,14 @@
   }
   .ck-set-field { display: flex; flex-direction: column; gap: 6px; }
   .ck-set-field.ck-set-toggle { flex-direction: row; align-items: center; justify-content: space-between; }
+  /* 活动栏图标开关：两列网格（图标多，单列太长） */
+  /* 活动栏图标：默认折叠收起，展开后竖排 */
+  .ck-ab-toggle-head { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+  .ck-ab-toggle-head:hover { color: var(--ck-text); }
+  .ck-ab-toggle-hint { margin-left: auto; font-size: 11px; font-weight: 400; color: var(--ck-text-dim); }
   .ck-ab-toggle-list { display: flex; flex-direction: column; }
   .ck-ab-toggle-list .ck-set-field { padding: 5px 0; border-bottom: 1px solid var(--ck-border); }
-  .ck-ab-toggle-list .ck-set-field:last-child { border-bottom: none; }
+  .ck-ab-toggle-list .ck-set-key { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ck-set-key { font-size: 12px; color: var(--ck-text-2); }
   .ck-set-input {
     width: 100%; min-height: 32px;
@@ -689,6 +694,47 @@
     padding: 16px;
   }
   .ck-modal-mask.cuckoo-hidden { display: none; }
+  /* ===== 新建对话 loading ===== */
+  .ck-newconv-mask {
+    position: fixed; inset: 0; z-index: 25;
+    background: var(--ck-bg);
+    display: flex; align-items: center; justify-content: center;
+    animation: ck-newconv-fade .18s ease;
+  }
+  @keyframes ck-newconv-fade { from { opacity: 0; } to { opacity: 1; } }
+  .ck-newconv { display: flex; flex-direction: column; align-items: center; gap: 15px; }
+  .ck-newconv-mark {
+    width: 54px; height: 54px; border-radius: 15px;
+    background: linear-gradient(135deg, var(--ck-primary), var(--ck-primary-strong));
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 8px 24px -8px var(--ck-primary);
+    animation: ck-newconv-breathe 1.8s ease-in-out infinite;
+  }
+  .ck-newconv-mark svg { width: 27px; height: 27px; }
+  @keyframes ck-newconv-breathe {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(0.9); opacity: 0.72; }
+  }
+  .ck-newconv-title { font-size: 13px; font-weight: 600; color: var(--ck-text-2); letter-spacing: .2px; }
+  .ck-newconv-bar {
+    width: 132px; height: 3px; border-radius: 3px; overflow: hidden;
+    background: var(--ck-surface); position: relative;
+  }
+  .ck-newconv-bar i {
+    position: absolute; top: 0; bottom: 0; width: 42%;
+    background: linear-gradient(90deg, transparent, var(--ck-primary), transparent);
+    border-radius: 3px;
+    animation: ck-newconv-sweep 1.35s cubic-bezier(.45,.05,.55,.95) infinite;
+  }
+  @keyframes ck-newconv-sweep {
+    0% { transform: translateX(-110%); }
+    100% { transform: translateX(340%); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ck-newconv-mask { animation: none; }
+    .ck-newconv-mark, .ck-newconv-bar i { animation: none; }
+    .ck-newconv-bar i { width: 100%; opacity: .6; transform: none; }
+  }
   .ck-modal {
     width: 100%; max-width: 300px; max-height: 90%; background: var(--ck-bg);
     border: 1px solid var(--ck-border); border-radius: 14px;
@@ -2640,9 +2686,15 @@ paths:            # 可选；省略 = 始终生效
               </div>
 
               <div class="ck-card">
-                <div class="ck-set-group-title">活动栏图标</div>
-                <p class="ck-about-tip">开关控制左侧活动栏显示哪些图标（设置不可隐藏）。</p>
-                <div id="st-ab-list" class="ck-ab-toggle-list"></div>
+                <div class="ck-set-group-title ck-ab-toggle-head" id="st-ab-head">
+                  <span class="ck-git-caret ck-git-caret-c" id="st-ab-caret"></span>
+                  <span>活动栏图标</span>
+                  <span class="ck-ab-toggle-hint" id="st-ab-hint">展开</span>
+                </div>
+                <div id="st-ab-body" class="cuckoo-hidden">
+                  <p class="ck-about-tip">开关控制左侧活动栏显示哪些图标（设置不可隐藏）。</p>
+                  <div id="st-ab-list" class="ck-ab-toggle-list"></div>
+                </div>
               </div>
               <div class="ck-card">
                 <div class="ck-set-group-title">失败自动重试</div>
@@ -2788,6 +2840,16 @@ paths:            # 可选；省略 = 始终生效
 
   </div>
   <div class="ck-ws-tip" id="ws-tip" style="display:none"></div>
+  <!-- 新建对话 loading：放 body 顶层（不能放侧栏 .ck-panel 内——收起时 display:none 会导致遮罩不渲染却仍隐藏 AI 视图 → 黑屏） -->
+  <div class="ck-modal-mask ck-newconv-mask cuckoo-hidden" id="newconv-mask">
+    <div class="ck-newconv">
+      <div class="ck-newconv-mark">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l1.8 4.6L14.5 8l-4.7 2.4L8 15l-1.8-4.6L1.5 8l4.7-2.4z"/></svg>
+      </div>
+      <div class="ck-newconv-title">正在新建对话</div>
+      <div class="ck-newconv-bar"><i></i></div>
+    </div>
+  </div>
 <script>
 "use strict";
 (() => {
@@ -3775,6 +3837,37 @@ paths:            # 可选；省略 = 始终生效
 
   // src/ui/shell/scripts/toolbar.ts
   init_shared();
+
+  // src/ui/shell/scripts/newconv-loading.ts
+  init_shared();
+  var maskEl = null;
+  var safetyTimer = null;
+  function ensure() {
+    if (!maskEl) maskEl = document.getElementById("newconv-mask");
+    return maskEl;
+  }
+  function showNewConvLoading() {
+    const el2 = ensure();
+    if (el2) el2.classList.remove("cuckoo-hidden");
+    if (safetyTimer) clearTimeout(safetyTimer);
+    safetyTimer = setTimeout(hideNewConvLoading, 15e3);
+  }
+  function hideNewConvLoading() {
+    if (safetyTimer) {
+      clearTimeout(safetyTimer);
+      safetyTimer = null;
+    }
+    const el2 = ensure();
+    if (el2) el2.classList.add("cuckoo-hidden");
+  }
+  function initNewConvLoading() {
+    const anyApi = api;
+    if (typeof anyApi.onNewConvDone === "function") {
+      anyApi.onNewConvDone(() => hideNewConvLoading());
+    }
+  }
+
+  // src/ui/shell/scripts/toolbar.ts
   var input = document.getElementById("url-input");
   var btnBack = document.getElementById("btn-back");
   var btnForward = document.getElementById("btn-forward");
@@ -3911,6 +4004,10 @@ paths:            # 可选；省略 = 始终生效
   });
   document.getElementById("btn-home").addEventListener("click", () => {
     if (api.newWebConversation) {
+      try {
+        showNewConvLoading();
+      } catch (_) {
+      }
       api.newWebConversation();
       return;
     }
@@ -6186,6 +6283,10 @@ paths:            # 可选；省略 = 始终生效
     for (const [id, key] of SET_FIELDS) setVal(id, data[key]);
   }
   async function loadSettings() {
+    try {
+      renderActivitybarToggles();
+    } catch (_) {
+    }
     if (!api.getSettings) return;
     try {
       const r = await api.getSettings();
@@ -6300,32 +6401,48 @@ paths:            # 可选；省略 = 始终生效
     refreshThemeValue();
     initThemeListener();
   }
-  var AB_ITEMS = [
-    ["workspaces", "\u5DE5\u4F5C\u533A\uFF08\u4F1A\u8BDD\uFF09"],
-    ["files", "\u9879\u76EE\u6587\u4EF6"],
-    ["git", "\u6E90\u4EE3\u7801\u7BA1\u7406"],
-    ["tasks", "\u4EFB\u52A1"],
-    ["snippets", "\u63D0\u793A\u8BCD"],
-    ["memories", "\u8BB0\u5FC6"],
-    ["skills", "\u6280\u80FD"],
-    ["plugins", "\u63D2\u4EF6\u5E02\u573A"],
-    ["agents", "\u5B50\u4EE3\u7406"],
-    ["rules", "\u5168\u5C40\u89C4\u5219"],
-    ["mcp", "MCP\uFF08\u8FDE\u63A5\u5668\uFF09"],
-    ["windows", "\u7A97\u53E3"],
-    ["token", "Token\uFF08\u8BCD\u5143\uFF09"],
-    ["remote", "\u8FDC\u7A0B\u63A7\u5236\uFF08\u624B\u673A\uFF09"],
-    ["about", "\u5173\u4E8E"],
-    ["settings", "\u8BBE\u7F6E\uFF08\u4E0D\u53EF\u9690\u85CF\uFF09"]
-  ];
+  var AB_LABELS = {
+    workspaces: "\u5DE5\u4F5C\u533A\uFF08\u4F1A\u8BDD\uFF09",
+    files: "\u9879\u76EE\u6587\u4EF6",
+    git: "\u6E90\u4EE3\u7801\u7BA1\u7406",
+    tasks: "\u4EFB\u52A1",
+    snippets: "\u63D0\u793A\u8BCD",
+    memories: "\u8BB0\u5FC6",
+    skills: "\u6280\u80FD",
+    plugins: "\u63D2\u4EF6\u5E02\u573A",
+    agents: "\u5B50\u4EE3\u7406",
+    rules: "\u5168\u5C40\u89C4\u5219",
+    mcp: "MCP\uFF08\u8FDE\u63A5\u5668\uFF09",
+    windows: "\u7A97\u53E3",
+    token: "Token\uFF08\u8BCD\u5143\uFF09",
+    remote: "\u8FDC\u7A0B\u63A7\u5236\uFF08\u624B\u673A\uFF09",
+    about: "\u5173\u4E8E",
+    settings: "\u8BBE\u7F6E"
+  };
+  function collectActivitybarItems() {
+    const bar3 = document.querySelector(".ck-activitybar");
+    const out = [];
+    if (!bar3) return out;
+    bar3.querySelectorAll(".ck-ab-item[data-tab]").forEach((el2) => {
+      const tab = el2.dataset.tab;
+      if (!tab) return;
+      const isPlugin = el2.dataset.pluginTab !== void 0;
+      const label = AB_LABELS[tab] || el2.getAttribute("title") || el2.getAttribute("data-ck-title") || el2.getAttribute("data-tooltip") || el2.textContent || tab;
+      out.push([tab, String(label).trim(), isPlugin]);
+    });
+    return out;
+  }
   function renderActivitybarToggles() {
     const box = document.getElementById("st-ab-list");
     if (!box) return;
+    const items = collectActivitybarItems();
     const hidden = new Set(getHiddenTabs());
-    box.innerHTML = AB_ITEMS.map(([tab, label]) => {
-      const disabled = tab === "settings" ? " disabled" : "";
-      const checked = tab === "settings" || !hidden.has(tab) ? " checked" : "";
-      return '<div class="ck-set-field ck-set-toggle"><span class="ck-set-key">' + label + '</span><label class="ck-switch"><input type="checkbox" data-ab-tab="' + tab + '"' + checked + disabled + ' /><span class="ck-switch-track"></span></label></div>';
+    box.innerHTML = items.map(([tab, label, isPlugin]) => {
+      const isSettings = tab === "settings";
+      const disabled = isSettings ? " disabled" : "";
+      const checked = isSettings || !hidden.has(tab) ? " checked" : "";
+      const title = isPlugin ? ' title="\u63D2\u4EF6\u56FE\u6807"' : "";
+      return '<div class="ck-set-field ck-set-toggle"' + title + '><span class="ck-set-key">' + label + (isPlugin ? "\uFF08\u63D2\u4EF6\uFF09" : "") + '</span><label class="ck-switch"><input type="checkbox" data-ab-tab="' + tab + '"' + checked + disabled + ' /><span class="ck-switch-track"></span></label></div>';
     }).join("");
     box.querySelectorAll("input[data-ab-tab]").forEach((el2) => {
       el2.addEventListener("change", () => {
@@ -6336,6 +6453,25 @@ paths:            # 可选；省略 = 始终生效
   try {
     renderActivitybarToggles();
   } catch (_) {
+  }
+  {
+    const head = document.getElementById("st-ab-head");
+    const body = document.getElementById("st-ab-body");
+    const caret = document.getElementById("st-ab-caret");
+    const hint = document.getElementById("st-ab-hint");
+    if (head && body) {
+      head.addEventListener("click", () => {
+        const collapsed = body.classList.toggle("cuckoo-hidden");
+        if (caret) caret.classList.toggle("ck-git-caret-c", collapsed);
+        if (hint) hint.textContent = collapsed ? "\u5C55\u5F00" : "\u6536\u8D77";
+        if (!collapsed) {
+          try {
+            renderActivitybarToggles();
+          } catch (_) {
+          }
+        }
+      });
+    }
   }
   var zoomSelect = document.getElementById("st-harness-zoom");
   function loadUiPrefs() {
@@ -8609,16 +8745,73 @@ paths:            # 可选；省略 = 始终生效
   }
 
   // src/ui/shell/scripts/tooltip.ts
-  init_shared();
+  var tipEl = null;
   var activeTarget = null;
   var showTimer = 0;
   var lastHideTime = 0;
-  function pickText(el2) {
-    const explicit = (el2.getAttribute("data-tooltip") || "").trim();
-    if (explicit) return explicit;
-    const implicit = (el2.getAttribute("data-ck-title") || "").trim();
-    if (implicit && (isIconLike(el2) || isClipped(el2))) return implicit;
-    return "";
+  function ensureTooltipEl() {
+    if (!tipEl) {
+      tipEl = document.getElementById("ck-tooltip");
+      if (!tipEl) {
+        tipEl = document.createElement("div");
+        tipEl.id = "ck-tooltip";
+        tipEl.className = "ck-tooltip";
+        tipEl.setAttribute("role", "tooltip");
+        document.body.appendChild(tipEl);
+      }
+    }
+    return tipEl;
+  }
+  function renderTooltipContent(container, text) {
+    container.innerHTML = "";
+    const m = text.match(/^(.*?)(?:\s*\((Ctrl|Shift|Alt|Cmd|Meta|Enter|Esc|Tab|F\d+)[^)]*\))$/i);
+    if (m && m[1]) {
+      const labelSpan = document.createElement("span");
+      labelSpan.textContent = m[1].trim();
+      container.appendChild(labelSpan);
+      const kbd = document.createElement("span");
+      kbd.className = "ck-tooltip-kbd";
+      kbd.textContent = text.slice(m[1].length).replace(/^\s*\(/, "").replace(/\)$/, "");
+      container.appendChild(kbd);
+    } else {
+      container.textContent = text;
+    }
+  }
+  function positionTooltip(el2, tip) {
+    const rect = el2.getBoundingClientRect();
+    tip.style.left = "0px";
+    tip.style.top = "0px";
+    tip.classList.add("measuring");
+    const tipW = tip.offsetWidth;
+    const tipH = tip.offsetHeight;
+    tip.classList.remove("measuring");
+    const gap = 6;
+    let top = rect.bottom + gap;
+    let left = rect.left + (rect.width - tipW) / 2;
+    if (top + tipH > window.innerHeight - 8 && rect.top - tipH - gap >= 8) {
+      top = rect.top - tipH - gap;
+    }
+    if (left < 8) left = 8;
+    else if (left + tipW > window.innerWidth - 8) left = window.innerWidth - 8 - tipW;
+    tip.style.left = Math.round(left) + "px";
+    tip.style.top = Math.round(top) + "px";
+  }
+  function showTooltip(el2, text) {
+    const tip = ensureTooltipEl();
+    renderTooltipContent(tip, text);
+    positionTooltip(el2, tip);
+    tip.classList.add("show");
+  }
+  function hideTooltip() {
+    if (showTimer) {
+      clearTimeout(showTimer);
+      showTimer = 0;
+    }
+    activeTarget = null;
+    if (tipEl && tipEl.classList.contains("show")) {
+      tipEl.classList.remove("show");
+      lastHideTime = Date.now();
+    }
   }
   function isClipped(el2) {
     const nodes = [el2, ...Array.from(el2.querySelectorAll("*"))];
@@ -8631,31 +8824,6 @@ paths:            # 可选；省略 = 始终生效
   }
   function isIconLike(el2) {
     return (el2.textContent || "").trim().length <= 2;
-  }
-  function showFor(el2, text) {
-    const r = el2.getBoundingClientRect();
-    if (r.width === 0 && r.height === 0) return;
-    try {
-      api.tooltipShow?.(
-        { left: r.left, top: r.top, width: r.width, height: r.height },
-        text,
-        window.innerWidth,
-        window.innerHeight
-      );
-    } catch (_) {
-    }
-  }
-  function hideTooltip() {
-    if (showTimer) {
-      clearTimeout(showTimer);
-      showTimer = 0;
-    }
-    activeTarget = null;
-    try {
-      api.tooltipHide?.();
-    } catch (_) {
-    }
-    lastHideTime = Date.now();
   }
   function handlePointerOver(e) {
     const target = e.target;
@@ -8670,8 +8838,16 @@ paths:            # 可选；省略 = 始终生效
       el2.setAttribute("data-ck-title", rawTitle);
       el2.removeAttribute("title");
     }
+    if (el2.closest(".toolbar")) {
+      hideTooltip();
+      return;
+    }
     if (activeTarget === el2) return;
-    const text = pickText(el2);
+    let text = (el2.getAttribute("data-tooltip") || "").trim();
+    if (!text) {
+      const implicit = (el2.getAttribute("data-ck-title") || "").trim();
+      if (implicit && (isIconLike(el2) || isClipped(el2))) text = implicit;
+    }
     if (!text) {
       hideTooltip();
       return;
@@ -8679,9 +8855,9 @@ paths:            # 可选；省略 = 始终生效
     if (showTimer) clearTimeout(showTimer);
     activeTarget = el2;
     const isWarm = Date.now() - lastHideTime < 300;
-    const delay = isWarm ? 280 : 700;
+    const delay = isWarm ? 120 : 300;
     showTimer = window.setTimeout(() => {
-      if (activeTarget === el2 && el2.isConnected) showFor(el2, text);
+      if (activeTarget === el2 && el2.isConnected) showTooltip(el2, text);
     }, delay);
   }
   function handlePointerOut(e) {
@@ -9006,6 +9182,10 @@ paths:            # 可选；省略 = 始终生效
   }
   try {
     initWindowSwitchToast();
+  } catch (_) {
+  }
+  try {
+    initNewConvLoading();
   } catch (_) {
   }
   try {

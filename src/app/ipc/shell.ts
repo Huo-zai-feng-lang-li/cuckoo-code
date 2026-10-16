@@ -216,6 +216,10 @@ function registerShellIpc(): void {
     const ctx = windowState.getContextByWebContents(event.sender);
     const view = ctx ? ctx.view : null;
     if (!view) return { success: false };
+    // 新建对话完成 → 通知壳页面隐藏 loading 遮罩（各分支均会触发）
+    const notifyDone = () => {
+      try { if (ctx && ctx.win && !ctx.win.isDestroyed()) ctx.win.webContents.send('shell-newconv-done'); } catch (_) { /* ignore */ }
+    };
     const provider = (ctx && ctx.providerId) ? getProvider(ctx.providerId) : null;
     const url = provider && provider.homeUrl ? provider.homeUrl : '';
     if (!url) return { success: false, error: 'no-home-url' };
@@ -245,22 +249,34 @@ function registerShellIpc(): void {
         try { wc.off('did-finish-load', onLoad!); } catch (_) { /* ignore */ }
         onLoad = null;
         ctxAny.__newConvOnLoad = null;
+        // 页面加载完即可发系统提示词：initial-prompt 监听器在 preload 顶层**同步注册**
+        // （preload 先于页面脚本执行，did-finish-load 时必然已就绪），输入框就绪由
+        // chat-input 的轮询保证（每 500ms 找一次）—— 故无需固定等 2s，仅留极短渲染缓冲。
         ctxAny.__newConvTimer = setTimeout(async () => {
           ctxAny.__newConvTimer = null;
           try { await initProject(false, ctx, currentDir, false, '', false); }
           catch (err: any) { console.log('[Cuckoo Code] 新对话初始化项目失败: ' + (err && err.message)); }
-        }, 2000);
+          finally { notifyDone(); }
+        }, 400);
       };
       ctxAny.__newConvOnLoad = onLoad;
       try { wc.on('did-finish-load', onLoad); } catch (_) { /* ignore */ }
     }
+    // 抑制首页「首次使用」提示：用户在主动开新对话，不该被"初始化项目"弹窗打断。
+    // 标记写入 AI 页面 localStorage（同源，跨 loadURL 导航存活），供 overlay 读取。
+    try {
+      await view.webContents.executeJavaScript('try{localStorage.setItem("cuckoo-new-conv-ts",String(Date.now()))}catch(e){}');
+    } catch (_) { /* ignore */ }
     try {
       await view.webContents.loadURL(url);
+      // 无项目目录分支：不会走 initProject，导航完成即算完成（延迟一点让首页渲染稳定）
+      if (!currentDir) setTimeout(notifyDone, 600);
       return { success: true };
     } catch (err: any) {
       // loadURL 失败：did-finish-load 不会触发，必须显式移除监听器，否则残留累积
       if (onLoad) { try { wc.off('did-finish-load', onLoad); } catch (_) { /* ignore */ } }
       ctxAny.__newConvOnLoad = null;
+      notifyDone();
       return { success: false, error: err.message };
     }
   });

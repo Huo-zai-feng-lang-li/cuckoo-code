@@ -44,6 +44,16 @@
 <!--@include:partials/statusbar.html-->
   </div>
   <div class="ck-ws-tip" id="ws-tip" style="display:none"></div>
+  <!-- 新建对话 loading：放 body 顶层（不能放侧栏 .ck-panel 内——收起时 display:none 会导致遮罩不渲染却仍隐藏 AI 视图 → 黑屏） -->
+  <div class="ck-modal-mask ck-newconv-mask cuckoo-hidden" id="newconv-mask">
+    <div class="ck-newconv">
+      <div class="ck-newconv-mark">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l1.8 4.6L14.5 8l-4.7 2.4L8 15l-1.8-4.6L1.5 8l4.7-2.4z"/></svg>
+      </div>
+      <div class="ck-newconv-title">正在新建对话</div>
+      <div class="ck-newconv-bar"><i></i></div>
+    </div>
+  </div>
 <script>
 //@bundle
 </script>

@@ -2,6 +2,7 @@
  * 地址栏：URL 输入、前进/后退/刷新/主页、项目目录选择器。
  */
 import { api } from './shared.js';
+import { showNewConvLoading } from './newconv-loading.js';
 
 const input = document.getElementById('url-input') as HTMLInputElement;
 const btnBack = document.getElementById('btn-back') as any;
@@ -131,8 +132,13 @@ btnBack.addEventListener('click', () => { if (api.back) api.back(); });
 btnForward.addEventListener('click', () => { if (api.forward) api.forward(); });
 document.getElementById('btn-reload')!.addEventListener('click', () => { if (api.reload) api.reload(); });
 // 加号：新建对话（优先用会清理纯净模式视图的 newWebConversation，否则回退到 home）
+// 新建期间显示 loading 遮罩（导航到首页 + 注入提示词有几秒空白，需明确反馈）
 document.getElementById('btn-home')!.addEventListener('click', () => {
-  if ((api as any).newWebConversation) { (api as any).newWebConversation(); return; }
+  if ((api as any).newWebConversation) {
+    try { showNewConvLoading(); } catch (_) { /* ignore */ }
+    (api as any).newWebConversation();
+    return;
+  }
   if (api.home) api.home();
 });
 

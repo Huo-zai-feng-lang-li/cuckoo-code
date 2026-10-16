@@ -1,30 +1,89 @@
 /**
  * 全局统一自定义 Tooltip 引擎
  *
- * ⚠️ tooltip 本体改由**独立透明置顶窗口**渲染（src/app/tooltip-window.ts）。
- * 原因：AI 页面是 WebContentsView（原生视图），永远压在壳页面 DOM 之上，
- *       壳页面内画的 tooltip 会被 AI 视图遮挡（CSS z-index 无效，真机实测）。
+ * 核心机制：
+ * 1. 拦截原生 title：在 pointerover 捕获阶段拦截带 [title] 的元素，暂存为
+ *    [data-ck-title]，并立即 removeAttribute('title')，杜绝系统原生提示框。
  *
- * 本模块职责：拦截原生 title → 判断是否需要展示 → 计算 anchor 视口矩形 → 通过 IPC
- * 让主进程在屏幕坐标上定位并显示 tooltip 窗口。
+ * 2. 交互：首次悬停延迟展示（防划过误触）；连贯巡视（warm）快速切换；
+ *    点击、离开、滚动、失焦、Esc 立即隐藏。
  *
- * 交互：
- *  - 首次悬停延迟 300ms 展示；连贯巡视（warm）120ms；
- *  - 点击、离开、滚动、失焦、Esc 立即隐藏。
+ * 3. 定位：基于 getBoundingClientRect() 优先下方，空间不足翻上方；水平边界保护。
+ *
+ * 注：DOM tooltip 会被 AI 页面（WebContentsView 原生视图）遮挡其右侧区域 —— 这是旧方案
+ *     的固有局限，但换来的是**跟手、不闪**的体验（独立窗口方案已被弃用）。
  */
-import { api } from './shared.js';
 
+let tipEl: HTMLElement | null = null;
 let activeTarget: HTMLElement | null = null;
 let showTimer = 0;
 let lastHideTime = 0;
 
-/** 计算展示文案（无则不展示） */
-function pickText(el: HTMLElement): string {
-  const explicit = (el.getAttribute('data-tooltip') || '').trim();
-  if (explicit) return explicit;
-  const implicit = (el.getAttribute('data-ck-title') || '').trim();
-  if (implicit && (isIconLike(el) || isClipped(el))) return implicit;
-  return '';
+function ensureTooltipEl(): HTMLElement {
+  if (!tipEl) {
+    tipEl = document.getElementById('ck-tooltip');
+    if (!tipEl) {
+      tipEl = document.createElement('div');
+      tipEl.id = 'ck-tooltip';
+      tipEl.className = 'ck-tooltip';
+      tipEl.setAttribute('role', 'tooltip');
+      document.body.appendChild(tipEl);
+    }
+  }
+  return tipEl;
+}
+
+/** 格式化 tooltip 内容，支持快捷键提取为徽标 */
+function renderTooltipContent(container: HTMLElement, text: string): void {
+  container.innerHTML = '';
+  const m = text.match(/^(.*?)(?:\s*\((Ctrl|Shift|Alt|Cmd|Meta|Enter|Esc|Tab|F\d+)[^)]*\))$/i);
+  if (m && m[1]) {
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = m[1].trim();
+    container.appendChild(labelSpan);
+    const kbd = document.createElement('span');
+    kbd.className = 'ck-tooltip-kbd';
+    kbd.textContent = text.slice(m[1].length).replace(/^\s*\(/, '').replace(/\)$/, '');
+    container.appendChild(kbd);
+  } else {
+    container.textContent = text;
+  }
+}
+
+function positionTooltip(el: HTMLElement, tip: HTMLElement): void {
+  const rect = el.getBoundingClientRect();
+  tip.style.left = '0px';
+  tip.style.top = '0px';
+  tip.classList.add('measuring');
+  const tipW = tip.offsetWidth;
+  const tipH = tip.offsetHeight;
+  tip.classList.remove('measuring');
+  const gap = 6;
+  let top = rect.bottom + gap;
+  let left = rect.left + (rect.width - tipW) / 2;
+  if (top + tipH > window.innerHeight - 8 && rect.top - tipH - gap >= 8) {
+    top = rect.top - tipH - gap;
+  }
+  if (left < 8) left = 8;
+  else if (left + tipW > window.innerWidth - 8) left = window.innerWidth - 8 - tipW;
+  tip.style.left = Math.round(left) + 'px';
+  tip.style.top = Math.round(top) + 'px';
+}
+
+function showTooltip(el: HTMLElement, text: string): void {
+  const tip = ensureTooltipEl();
+  renderTooltipContent(tip, text);
+  positionTooltip(el, tip);
+  tip.classList.add('show');
+}
+
+export function hideTooltip(): void {
+  if (showTimer) { clearTimeout(showTimer); showTimer = 0; }
+  activeTarget = null;
+  if (tipEl && tipEl.classList.contains('show')) {
+    tipEl.classList.remove('show');
+    lastHideTime = Date.now();
+  }
 }
 
 /** 元素（或其后代）内容是否被裁剪（显示不全） */
@@ -41,26 +100,6 @@ function isClipped(el: HTMLElement): boolean {
 /** 元素是否"图标型"（无可视文字或极短缩写）——此时 title 是唯一说明，应展示 */
 function isIconLike(el: HTMLElement): boolean {
   return (el.textContent || '').trim().length <= 2;
-}
-
-function showFor(el: HTMLElement, text: string): void {
-  const r = el.getBoundingClientRect();
-  if (r.width === 0 && r.height === 0) return; // 元素不可见
-  try {
-    api.tooltipShow?.(
-      { left: r.left, top: r.top, width: r.width, height: r.height },
-      text,
-      window.innerWidth,
-      window.innerHeight
-    );
-  } catch (_) { /* ignore */ }
-}
-
-export function hideTooltip(): void {
-  if (showTimer) { clearTimeout(showTimer); showTimer = 0; }
-  activeTarget = null;
-  try { api.tooltipHide?.(); } catch (_) { /* ignore */ }
-  lastHideTime = Date.now();
 }
 
 function handlePointerOver(e: PointerEvent): void {
@@ -80,21 +119,28 @@ function handlePointerOver(e: PointerEvent): void {
     el.removeAttribute('title');
   }
 
-  if (activeTarget === el) return; // 同一元素内移动，忽略
+  // 顶部工具栏：不显示自定义 tooltip（按钮语义直观，提示多余）。
+  // 仍执行上面的 title 转存 → 杜绝浏览器原生提示。
+  if (el.closest('.toolbar')) { hideTooltip(); return; }
 
-  const text = pickText(el);
+  if (activeTarget === el) return;
+
+  let text = (el.getAttribute('data-tooltip') || '').trim();
+  if (!text) {
+    const implicit = (el.getAttribute('data-ck-title') || '').trim();
+    if (implicit && (isIconLike(el) || isClipped(el))) text = implicit;
+  }
   if (!text) { hideTooltip(); return; }
 
   if (showTimer) clearTimeout(showTimer);
   activeTarget = el;
 
-  // 连贯滑动（warm）：300ms 内滑过多个目标时快速响应
   const isWarm = Date.now() - lastHideTime < 300;
-  // 延迟放慢：首次 700ms、连贯巡视 280ms（给用户更从容的阅读节奏，防误触）
-  const delay = isWarm ? 280 : 700;
+  // 延迟：首次 300ms、连贯巡视 120ms（跟手，又不至于划过就弹）
+  const delay = isWarm ? 120 : 300;
 
   showTimer = window.setTimeout(() => {
-    if (activeTarget === el && el.isConnected) showFor(el, text);
+    if (activeTarget === el && el.isConnected) showTooltip(el, text);
   }, delay);
 }
 

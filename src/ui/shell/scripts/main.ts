@@ -35,12 +35,16 @@ import { initActivitybarOverflow } from './activitybar-overflow.js';
 import { initActivitybarVisibility } from './activitybar-visibility.js';
 import { initUpdateProgress } from './update-progress.js';
 import { initWindowSwitchToast } from './window-switch.js';
+import { initNewConvLoading } from './newconv-loading.js';
 
 // 全局统一自定义 Tooltip（接管所有 title，告别系统原生提示）
 try { initGlobalTooltip(); } catch (_) { /* ignore */ }
 
 // 窗口组切换提示 toast
 try { initWindowSwitchToast(); } catch (_) { /* ignore */ }
+
+// 新建对话 loading（点顶部 + 显示；主进程完成时隐藏）
+try { initNewConvLoading(); } catch (_) { /* ignore */ }
 
 // 活动栏图标拖拽排序（顺序持久化）
 try { initActivitybarDrag(); applyActivitybarOrder(); } catch (_) { /* ignore */ }

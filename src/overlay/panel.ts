@@ -395,6 +395,13 @@ function showFirstTimeDialog(): void {
     hideFirstTimeDialog();
     return;
   }
+  // 刚点过顶部"+"（新对话）→ 本次首页导航不弹首次提示。
+  // 语义区分：首次提示用于"全新用户第一次进首页"；点 + 是明确的"开新对话"意图，不该被初始化弹窗打断。
+  // 标记经 localStorage 传递（跨 loadURL 导航存活，同源）。
+  try {
+    const ts = parseInt(localStorage.getItem('cuckoo-new-conv-ts') || '0', 10);
+    if (ts && Date.now() - ts < 10000) { hideFirstTimeDialog(); return; }
+  } catch (_) { /* ignore */ }
   const dialog = document.getElementById('cuckoo-first-time-dialog');
   if (dialog) dialog.classList.remove('cuckoo-hidden');
 }

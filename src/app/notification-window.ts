@@ -38,7 +38,7 @@ export interface SystemNotificationItem {
 
 /** 单张卡片的固定尺寸（内容自适应到固定高度，超长省略） */
 const WIDTH = 400;
-const HEIGHT = 118;
+const HEIGHT = 154; // 文字区基础高（含标题 + 3 行正文 + 进度条留白）
 const PIC_HEIGHT = 180; // 图片轮换区初始高度占位（约 400/2.2）；实际高度由渲染进程按图片比例回传修正
 const GAP = 12;
 const MARGIN = 24;

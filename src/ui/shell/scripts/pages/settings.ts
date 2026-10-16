@@ -38,6 +38,8 @@ function renderSettings(data: any): void {
 }
 
 export async function loadSettings(): Promise<void> {
+  // 每次打开设置页都重渲染图标开关：插件图标是异步挂载的，需读到最新 DOM
+  try { renderActivitybarToggles(); } catch (_) { /* ignore */ }
   if (!api.getSettings) return;
   try {
     const r = await api.getSettings();
@@ -153,35 +155,46 @@ if (themeSelect) {
 }
 
 // ===== 活动栏图标显隐 =====
-/** 活动栏图标清单（tab → 显示名）；与 activitybar.html 的 data-tab 对应 */
-const AB_ITEMS: [string, string][] = [
-  ['workspaces', '工作区（会话）'],
-  ['files', '项目文件'],
-  ['git', '源代码管理'],
-  ['tasks', '任务'],
-  ['snippets', '提示词'],
-  ['memories', '记忆'],
-  ['skills', '技能'],
-  ['plugins', '插件市场'],
-  ['agents', '子代理'],
-  ['rules', '全局规则'],
-  ['mcp', 'MCP（连接器）'],
-  ['windows', '窗口'],
-  ['token', 'Token（词元）'],
-  ['remote', '远程控制（手机）'],
-  ['about', '关于'],
-  ['settings', '设置（不可隐藏）'],
-];
-/** 渲染活动栏显隐开关列表（幂等） */
+/** tab → 显示名（内置图标用固定中文名；插件图标回退用 title） */
+const AB_LABELS: Record<string, string> = {
+  workspaces: '工作区（会话）', files: '项目文件', git: '源代码管理', tasks: '任务',
+  snippets: '提示词', memories: '记忆', skills: '技能', plugins: '插件市场',
+  agents: '子代理', rules: '全局规则', mcp: 'MCP（连接器）', windows: '窗口',
+  token: 'Token（词元）', remote: '远程控制（手机）', about: '关于', settings: '设置',
+};
+/** 从活动栏 DOM 读取当前全部图标（含插件动态挂载的），返回 [tab, label, isPlugin] */
+function collectActivitybarItems(): Array<[string, string, boolean]> {
+  const bar = document.querySelector('.ck-activitybar');
+  const out: Array<[string, string, boolean]> = [];
+  if (!bar) return out;
+  bar.querySelectorAll('.ck-ab-item[data-tab]').forEach((el: any) => {
+    const tab = el.dataset.tab;
+    if (!tab) return;
+    const isPlugin = el.dataset.pluginTab !== undefined;
+    // title 可能已被全局 tooltip 引擎转存为 data-ck-title 并移除 → 一并兜底
+    const label = AB_LABELS[tab]
+      || el.getAttribute('title')
+      || el.getAttribute('data-ck-title')
+      || el.getAttribute('data-tooltip')
+      || el.textContent
+      || tab;
+    out.push([tab, String(label).trim(), isPlugin]);
+  });
+  return out;
+}
+/** 渲染活动栏显隐开关列表（幂等；动态读取 DOM 以覆盖插件图标） */
 export function renderActivitybarToggles(): void {
   const box = document.getElementById('st-ab-list');
   if (!box) return;
+  const items = collectActivitybarItems();
   const hidden = new Set(getHiddenTabs());
-  box.innerHTML = AB_ITEMS.map(([tab, label]) => {
-    const disabled = tab === 'settings' ? ' disabled' : '';
-    const checked = (tab === 'settings' || !hidden.has(tab)) ? ' checked' : '';
-    return '<div class="ck-set-field ck-set-toggle">' +
-      '<span class="ck-set-key">' + label + '</span>' +
+  box.innerHTML = items.map(([tab, label, isPlugin]) => {
+    const isSettings = tab === 'settings';
+    const disabled = isSettings ? ' disabled' : '';
+    const checked = (isSettings || !hidden.has(tab)) ? ' checked' : '';
+    const title = isPlugin ? ' title="插件图标"' : '';
+    return '<div class="ck-set-field ck-set-toggle"' + title + '>' +
+      '<span class="ck-set-key">' + label + (isPlugin ? '（插件）' : '') + '</span>' +
       '<label class="ck-switch">' +
         '<input type="checkbox" data-ab-tab="' + tab + '"' + checked + disabled + ' />' +
         '<span class="ck-switch-track"></span>' +
@@ -196,6 +209,21 @@ export function renderActivitybarToggles(): void {
 }
 // 初始化渲染（模块加载时）
 try { renderActivitybarToggles(); } catch (_) { /* ignore */ }
+// 活动栏图标区：默认收起，点标题展开/收起
+{
+  const head = document.getElementById('st-ab-head');
+  const body = document.getElementById('st-ab-body');
+  const caret = document.getElementById('st-ab-caret');
+  const hint = document.getElementById('st-ab-hint');
+  if (head && body) {
+    head.addEventListener('click', () => {
+      const collapsed = body.classList.toggle('cuckoo-hidden');
+      if (caret) caret.classList.toggle('ck-git-caret-c', collapsed);
+      if (hint) hint.textContent = collapsed ? '展开' : '收起';
+      if (!collapsed) { try { renderActivitybarToggles(); } catch (_) { /* ignore */ } }
+    });
+  }
+}
 
 // ===== 外观：纯净模式字号（缩放，走主进程 ui-prefs，独立于 settings 存取）=====
 const zoomSelect = document.getElementById('st-harness-zoom') as any;
