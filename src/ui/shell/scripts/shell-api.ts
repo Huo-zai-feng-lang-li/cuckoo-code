@@ -75,6 +75,9 @@ export interface ShellAPI {
   pluginMarketCurated?: (opts?: any) => Promise<any>;
   /** 临时隐藏 AI 视图（WebContentsView 挡不住 CSS，全屏弹层需要它） */
   setWebViewVisible?: (visible: boolean) => Promise<any>;
+  // 全局 tooltip 独立窗口（壳页面内 tooltip 会被 AI WebContentsView 遮挡）
+  tooltipShow?: (rect: { left: number; top: number; width: number; height: number }, text: string, vpW: number, vpH: number) => void;
+  tooltipHide?: () => void;
   pluginMarketStateGet?: () => Promise<any>;
   pluginMarketStateSet?: (payload: any) => Promise<any>;
   pluginMarketCheckUpdates?: (opts?: any) => Promise<any>;

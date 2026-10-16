@@ -1643,6 +1643,9 @@
     padding: 6px 10px 4px; font-size: 11px; font-weight: 700;
     color: var(--ck-text-dim); letter-spacing: .3px;
     cursor: pointer; user-select: none;
+    /* 滚动时分组标题吸顶（仿 VSCode）：父级 .ck-list.ck-git 滚动，标题 sticky 不跟随 */
+    position: sticky; top: 0; z-index: 2;
+    background: var(--ck-bg);
   }
   /* 折叠箭头：CSS 三角。展开朝下，折叠（ck-git-caret-c）朝右 */
   .ck-git-caret {
@@ -1689,14 +1692,16 @@
     font-size: 12px; font-weight: 700; color: var(--ck-text-dim); cursor: pointer;
   }
   .ck-git-act:hover { background: var(--ck-primary-soft); color: var(--ck-primary); }
-  /* Git 改动列表：自适应，可收缩（内容多时自身滚动） */
-  .ck-list.ck-git { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  /* Git 改动列表：保证最小可见高度，历史展开时也不会被挤没 */
+  .ck-list.ck-git { flex: 1 1 auto; min-height: 130px; overflow-y: auto; }
   /* ===== 提交历史 ===== */
-  /* 自适应：无改动文件时铺满底部；有改动文件时保留最小高度（min-height）并参与分配 */
+  /* 自适应：无改动文件时铺满底部；有改动文件时与改动列表分配空间 */
   .ck-git-history { border-top: 1px solid var(--ck-border-soft);
     flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
   /* 历史收起（列表 hidden）时，容器只占头部高度，不抢空间 */
   .ck-git-history:has(.ck-git-history-list.ck-hidden) { flex: 0 0 auto; }
+  /* 历史展开时保证最小可见高度（不被改动列表挤没） */
+  .ck-git-history:has(.ck-git-history-list:not(.ck-hidden)) { min-height: 150px; }
   .ck-git-history-head {
     display: flex; align-items: center; gap: 6px;
     padding: 8px 10px; cursor: pointer; user-select: none;
@@ -1704,7 +1709,7 @@
   .ck-git-history-head:hover { background: var(--ck-surface-hover); }
   .ck-git-history-title { flex: 1; font-size: 12px; font-weight: 600; color: var(--ck-text-2); }
   .ck-git-history-count { font-size: 11px; color: var(--ck-text-dim); }
-  .ck-git-history-list { flex: 1 1 auto; min-height: 140px; max-height: none; overflow-y: auto; }
+  .ck-git-history-list { flex: 1 1 auto; min-height: 0; max-height: none; overflow-y: auto; }
   .ck-git-history-list.ck-hidden { display: none; }
   .ck-git-history-empty { padding: 10px; font-size: 12px; color: var(--ck-text-dim); text-align: center; }
   .ck-git-commit-row {
@@ -1946,7 +1951,7 @@ body[data-ck-dark] .ck-stat-item-hl .ck-stat-val { color: #fbbf24; }
             <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
           </button>
           <button class="ck-ab-item" data-tab="token" title="Token（词元）">
-            <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 8v8"/></svg>
+            <span class="ck-ab-text">元</span>
           </button>
           <div class="ck-ab-spacer"></div>
           <button class="ck-ab-item" data-tab="remote" title="远程控制（手机）">
@@ -8604,76 +8609,16 @@ paths:            # 可选；省略 = 始终生效
   }
 
   // src/ui/shell/scripts/tooltip.ts
-  var tipEl = null;
+  init_shared();
   var activeTarget = null;
   var showTimer = 0;
   var lastHideTime = 0;
-  function ensureTooltipEl() {
-    if (!tipEl) {
-      tipEl = document.getElementById("ck-tooltip");
-      if (!tipEl) {
-        tipEl = document.createElement("div");
-        tipEl.id = "ck-tooltip";
-        tipEl.className = "ck-tooltip";
-        tipEl.setAttribute("role", "tooltip");
-        document.body.appendChild(tipEl);
-      }
-    }
-    return tipEl;
-  }
-  function renderTooltipContent(container, text) {
-    container.innerHTML = "";
-    const m = text.match(/^(.*?)(?:\s*\((Ctrl|Shift|Alt|Cmd|Meta|Enter|Esc|Tab|F\d+)[^)]*\))$/i);
-    if (m && m[1]) {
-      const labelSpan = document.createElement("span");
-      labelSpan.textContent = m[1].trim();
-      container.appendChild(labelSpan);
-      const kbd = document.createElement("span");
-      kbd.className = "ck-tooltip-kbd";
-      kbd.textContent = text.slice(m[1].length).replace(/^\s*\(/, "").replace(/\)$/, "");
-      container.appendChild(kbd);
-    } else {
-      container.textContent = text;
-    }
-  }
-  function positionTooltip(el2, tip) {
-    const rect = el2.getBoundingClientRect();
-    tip.style.left = "0px";
-    tip.style.top = "0px";
-    tip.classList.add("measuring");
-    const tipW = tip.offsetWidth;
-    const tipH = tip.offsetHeight;
-    tip.classList.remove("measuring");
-    const gap = 6;
-    let top = rect.bottom + gap;
-    let left = rect.left + (rect.width - tipW) / 2;
-    if (top + tipH > window.innerHeight - 8 && rect.top - tipH - gap >= 8) {
-      top = rect.top - tipH - gap;
-    }
-    if (left < 8) {
-      left = 8;
-    } else if (left + tipW > window.innerWidth - 8) {
-      left = window.innerWidth - 8 - tipW;
-    }
-    tip.style.left = `${Math.round(left)}px`;
-    tip.style.top = `${Math.round(top)}px`;
-  }
-  function showTooltip(el2, text) {
-    const tip = ensureTooltipEl();
-    renderTooltipContent(tip, text);
-    positionTooltip(el2, tip);
-    tip.classList.add("show");
-  }
-  function hideTooltip() {
-    if (showTimer) {
-      clearTimeout(showTimer);
-      showTimer = 0;
-    }
-    activeTarget = null;
-    if (tipEl && tipEl.classList.contains("show")) {
-      tipEl.classList.remove("show");
-      lastHideTime = Date.now();
-    }
+  function pickText(el2) {
+    const explicit = (el2.getAttribute("data-tooltip") || "").trim();
+    if (explicit) return explicit;
+    const implicit = (el2.getAttribute("data-ck-title") || "").trim();
+    if (implicit && (isIconLike(el2) || isClipped(el2))) return implicit;
+    return "";
   }
   function isClipped(el2) {
     const nodes = [el2, ...Array.from(el2.querySelectorAll("*"))];
@@ -8687,14 +8632,37 @@ paths:            # 可选；省略 = 始终生效
   function isIconLike(el2) {
     return (el2.textContent || "").trim().length <= 2;
   }
+  function showFor(el2, text) {
+    const r = el2.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return;
+    try {
+      api.tooltipShow?.(
+        { left: r.left, top: r.top, width: r.width, height: r.height },
+        text,
+        window.innerWidth,
+        window.innerHeight
+      );
+    } catch (_) {
+    }
+  }
+  function hideTooltip() {
+    if (showTimer) {
+      clearTimeout(showTimer);
+      showTimer = 0;
+    }
+    activeTarget = null;
+    try {
+      api.tooltipHide?.();
+    } catch (_) {
+    }
+    lastHideTime = Date.now();
+  }
   function handlePointerOver(e) {
     const target = e.target;
     if (!target) return;
     const el2 = target.closest("[title], [data-tooltip], [data-ck-title]");
     if (!el2) {
-      if (activeTarget && !activeTarget.contains(target)) {
-        hideTooltip();
-      }
+      if (activeTarget && !activeTarget.contains(target)) hideTooltip();
       return;
     }
     const rawTitle = el2.getAttribute("title");
@@ -8703,11 +8671,7 @@ paths:            # 可选；省略 = 始终生效
       el2.removeAttribute("title");
     }
     if (activeTarget === el2) return;
-    let text = (el2.getAttribute("data-tooltip") || "").trim();
-    if (!text) {
-      const implicit = (el2.getAttribute("data-ck-title") || "").trim();
-      if (implicit && (isIconLike(el2) || isClipped(el2))) text = implicit;
-    }
+    const text = pickText(el2);
     if (!text) {
       hideTooltip();
       return;
@@ -8715,19 +8679,15 @@ paths:            # 可选；省略 = 始终生效
     if (showTimer) clearTimeout(showTimer);
     activeTarget = el2;
     const isWarm = Date.now() - lastHideTime < 300;
-    const delay = isWarm ? 120 : 300;
+    const delay = isWarm ? 280 : 700;
     showTimer = window.setTimeout(() => {
-      if (activeTarget === el2 && el2.isConnected) {
-        showTooltip(el2, text);
-      }
+      if (activeTarget === el2 && el2.isConnected) showFor(el2, text);
     }, delay);
   }
   function handlePointerOut(e) {
     if (!activeTarget) return;
     const related = e.relatedTarget;
-    if (related && activeTarget.contains(related)) {
-      return;
-    }
+    if (related && activeTarget.contains(related)) return;
     hideTooltip();
   }
   function initGlobalTooltip() {

@@ -1,5 +1,26 @@
 # 最新接续状态 (2026-10-16 18:33)
 
+## v0.9.14 本次会话（2026-10-16）——tooltip 独立窗口 + Git 布局 + 技能chip
+
+### 背景
+1. UI 评审：tooltip 被 AI 视图遮挡（真机实测 overlap=true）。AI 页面是 WebContentsView（原生层），CSS z-index 无效。
+2. Git 提交历史展开挤掉改动/暂存列表；分组标题滚动跟随（应吸顶，仿 VSCode）。
+3. 纯净模式技能 chip 有文字时被吞（功能正常，界面不显示）。
+4. Token 图标还原为文字「元」。
+
+### 交付（需求档案 074 + 075，分支 fix/075-tooltip-git-token）
+1. **tooltip 独立窗口**：新增 `tooltip-window.ts`（主进程，固定尺寸 360×200 + 屏幕坐标定位 + 鼠标穿透 + 不抢焦点）、`tooltip-preload.ts`、`tooltip.html`、`ipc/tooltip.ts`；`tooltip.ts` 改为发 IPC。**关键：窗口尺寸恒定（setBounds 只改位置）→ 无尺寸重绘 → 不闪**。
+2. **Git 布局**：改动列表 min-height 130px、历史展开 min-height 150px；分组标题 `position: sticky; top: 0` 吸顶。
+3. **技能 chip**：气泡文字与标签分离存储（`histItem.hints`），标签渲染为气泡内 chip；编辑取消/历史恢复正确重现。
+
+### 真机验证（dev 9444）
+- tooltip 独立窗口创建成功、内容随 hover 更新、淡入过渡捕获中间态（opacity 0.71 / 0.16s）✅
+- git 分组 `position: sticky, top: 0` ✅、折叠 rows 3→0 ✅
+- typecheck / test(988) / lint(0 error) / compile 全绿
+
+### 未决（用户说"等一会儿再说"）
+- **队列"立即发送"回填风险**：`sendQueueItemNow` 停任务后只等固定 80ms + 发送前 `clearAbortSuppression()`，旧任务尾部事件可能回填到新对话。建议改为"等 AI 确认停止（ai-state generating=false）+ 超时兜底"再发。
+
 ## v0.9.12 本次会话（2026-10-16）——活动栏显隐 + Token图标 + 通知高度
 
 ### 背景

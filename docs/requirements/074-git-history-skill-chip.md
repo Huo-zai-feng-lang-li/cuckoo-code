@@ -2,7 +2,7 @@
 id: 074
 type: fix
 title: Git 提交历史高度自适应铺满底部 + 技能 chip 有文字时被吞
-status: doing
+status: done
 branch: fix/074-git-history-skill-chip
 created: 2026-10-16
 updated: 2026-10-16

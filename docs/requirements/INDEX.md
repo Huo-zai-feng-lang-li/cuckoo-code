@@ -72,8 +72,9 @@
 | 069 | feature | [压缩续接会话继承/生成标题（消除工作区 UUID 显示）](./069-compaction-title.md) | done | feat/069-compaction-title | 2026-10-16 |
 | 070 | feature | [纯净模式生成中禁用工作区其他会话切换 + package.json 脚本默认折叠](./070-ws-busy-disable.md) | done | feat/070-ws-busy-disable | 2026-10-16 |
 | 071 | fix | [思考阶段 TPS 显示 -- （只估算正文，忽略思考内容）](./071-tps-think.md) | done | fix/071-tps-think | 2026-10-16 |
-| 072 | feature | [活动栏图标显隐设置 + Token 图标统一 + 通知浮窗高度自适应](./072-ui-fixes.md) | doing | fix/072-ui-fixes | 2026-10-16 |
+| 072 | feature | [活动栏图标显隐设置 + Token 图标统一 + 通知浮窗高度自适应](./072-ui-fixes.md) | done | fix/072-ui-fixes | 2026-10-16 |
 | 073 | fix | [通知浮窗图片按真实比例完整显示 + 进度条渐变](./073-notif-pic-progress.md) | done | fix/073-notif-pic-progress | 2026-10-16 |
-| 074 | fix | [Git 提交历史高度自适应铺满底部 + 技能 chip 有文字时被吞](./074-git-history-skill-chip.md) | doing | fix/074-git-history-skill-chip | 2026-10-16 |
+| 074 | fix | [Git 提交历史高度自适应铺满底部 + 技能 chip 有文字时被吞](./074-git-history-skill-chip.md) | done | fix/074-git-history-skill-chip | 2026-10-16 |
+| 075 | fix | [tooltip 改独立窗口（不被 AI 视图遮挡）+ Git 布局 + Token 图标还原](./075-tooltip-git-token.md) | done | fix/075-tooltip-git-token | 2026-10-16 |
 
-共 70 个需求。
+共 71 个需求。
