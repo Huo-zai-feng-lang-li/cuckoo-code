@@ -7,10 +7,12 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
 import updaterPkg from 'electron-updater';
+import { showSystemNotification } from '../app/notification-window.js';
+import { showConfirmDialog } from '../app/confirm-window.js';
 
 // electron 特殊：其 index.js 导出字符串，须用 createRequire（见 P3a 手册 1.5）
 const require = createRequire(import.meta.url);
-const { app, dialog, Notification } = require('electron');
+const { app } = require('electron');
 const { autoUpdater } = updaterPkg;
 
 // ========== 日志配置 ==========
@@ -175,11 +177,11 @@ function sendProgress(data: any): void {
   } catch (_) { /* ignore */ }
 }
 
-/** 显示系统通知（不打断用户） */
+/** 显示系统通知浮窗（自绘，右下角，沿用限流浮窗视觉；不打断用户） */
 function showNotification(title: string, body: string): void {
-  if (Notification.isSupported()) {
-    new Notification({ title, body }).show();
-  }
+  try {
+    showSystemNotification({ kind: 'info', title, body, durationMs: 4200 });
+  } catch (_) { /* ignore */ }
 }
 
 /** 弹出更新失败对话框，提供重试/取消选项 */
@@ -206,42 +208,29 @@ async function showUpdateErrorDialog(error: any, isManual: boolean): Promise<boo
     detail = '发生未知错误。\n\n错误信息：' + (error.message || '');
   }
 
-  const options: any = {
-    type: 'error',
+  // 自绘确认框（取代 dialog.showMessageBox）：主按钮=重试
+  return await showConfirmDialog({
+    kind: 'error',
     title: '更新失败',
-    message,
+    body: message,
     detail,
-    buttons: ['重试', '取消'],
-    defaultId: 0,
-    cancelId: 1,
-  };
-  const parent = mainWindowRef && !mainWindowRef.isDestroyed() ? mainWindowRef : null;
-  // dialog.showMessageBox 在 macOS 上必须使用 parent 参数，否则弹窗可能被隐藏
-
-  const result = parent
-    ? await dialog.showMessageBox(parent, options)
-    : await dialog.showMessageBox(options);
-  return result.response === 0; // 返回 true 表示用户点击了"重试"
+    primaryText: '重试',
+    secondaryText: '取消',
+  });
 }
 
 /** 手动检查更新入口 */
 async function checkForUpdates(): Promise<void> {
   if (updateDownloaded) {
-    // 已有下载完成的更新，直接提示安装
-    const options = {
-      type: 'info',
+    // 已有下载完成的更新，直接提示安装（自绘确认框）
+    const ok = await showConfirmDialog({
+      kind: 'info',
       title: '更新已就绪',
-      message: '新版本已下载完成',
-      detail: '是否立即重启应用并安装更新？',
-      buttons: ['立即重启', '稍后'],
-      defaultId: 0,
-      cancelId: 1,
-    };
-    const parent = mainWindowRef && !mainWindowRef.isDestroyed() ? mainWindowRef : null;
-    const result = parent
-      ? await dialog.showMessageBox(parent, options)
-      : await dialog.showMessageBox(options);
-    if (result.response === 0) {
+      body: '新版本已下载完成，是否立即重启应用并安装？',
+      primaryText: '立即重启',
+      secondaryText: '稍后',
+    });
+    if (ok) {
       // 静默安装（/S 跳过 NSIS 向导）+ 装完自动重启（带并发保护标记）
       installAndRestart(downloadedVersion);
     }
@@ -269,20 +258,14 @@ autoUpdater.on('checking-for-update', () => {
 
 autoUpdater.on('update-available', async (info: any) => {
   console.log('[Updater] 发现新版本:', info.version);
-  const options = {
-    type: 'info',
-    title: '发现新版本',
-    message: '发现新版本 v' + info.version,
-    detail: '是否立即更新？将自动下载并重启安装。',
-    buttons: ['立即更新', '稍后'],
-    defaultId: 0,
-    cancelId: 1,
-  };
-  const parent = mainWindowRef && !mainWindowRef.isDestroyed() ? mainWindowRef : null;
-  const result = parent
-    ? await dialog.showMessageBox(parent, options)
-    : await dialog.showMessageBox(options);
-  if (result.response === 0) {
+  const ok = await showConfirmDialog({
+    kind: 'info',
+    title: '发现新版本 v' + info.version,
+    body: '是否立即更新？将自动下载并重启安装。',
+    primaryText: '立即更新',
+    secondaryText: '稍后',
+  });
+  if (ok) {
     // 用户选「立即更新」→ 自动下载，下载完自动重启安装（见 update-downloaded）
     autoInstallAfterDownload = true;
     showNotification('开始更新', '正在下载 v' + info.version + '…');
@@ -336,25 +319,16 @@ autoUpdater.on('update-downloaded', (info: any) => {
     return;
   }
 
-  // 否则（后台自动检查下载完成）弹窗询问是否立即安装
-  const options = {
-    type: 'info',
+  // 否则（后台自动检查下载完成）弹确认框询问是否立即安装
+  showConfirmDialog({
+    kind: 'info',
     title: '更新已就绪',
-    message: '新版本 v' + info.version + ' 已下载完成',
-    detail: '是否立即重启应用并安装更新？',
-    buttons: ['立即重启', '稍后'],
-    defaultId: 0,
-    cancelId: 1,
-  };
-  const parent = mainWindowRef && !mainWindowRef.isDestroyed() ? mainWindowRef : null;
-
-  const dialogPromise = parent
-    ? dialog.showMessageBox(parent, options)
-    : dialog.showMessageBox(options);
-
-  dialogPromise.then((result: any) => {
+    body: '新版本 v' + info.version + ' 已下载完成，是否立即重启应用并安装？',
+    primaryText: '立即重启',
+    secondaryText: '稍后',
+  }).then((ok) => {
     isManualCheck = false;
-    if (result.response === 0) {
+    if (ok) {
       // 静默安装（/S 跳过 NSIS 向导）+ 装完自动重启
       installAndRestart(info && info.version);
     }

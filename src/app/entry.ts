@@ -15,6 +15,7 @@ import * as mcpClient from '../mcp/client.js';
 import { resolveAsset, resolveSrc } from '../infra/paths.js';
 import { applyHarnessZoom } from './harness-zoom.js';
 import { showSwitchAlert } from './alert-window.js';
+import { showSystemNotification } from './notification-window.js';
 
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, nativeTheme, ipcMain: ipcMainForProfile, Notification } = require('electron');
@@ -943,14 +944,14 @@ function notifyWindowSwitch(reason: string, fromName: string, toName: string, ok
   const body = ok
     ? (reasonText + '：' + fromName + ' → ' + toName + (detail ? '（' + detail + '）' : ''))
     : (reasonText + '：' + (detail || '切换未完成'));
-  // 系统通知（主通道）
+  // 自绘浮窗（主通道，沿用限流浮窗视觉）
   try {
-    if (Notification && Notification.isSupported()) {
-      const n = new Notification({ title, body });
-      n.show();
-      // 保持引用防 GC（Electron 已知坑：局部变量会在 show() 后被回收）
-      setTimeout(() => { try { n.close(); } catch (_) {} }, 8000);
-    }
+    showSystemNotification({
+      kind: ok ? 'success' : 'error',
+      title,
+      body,
+      durationMs: ok ? 4500 : 7000,
+    });
   } catch (_) { /* ignore */ }
   // 壳页面 toast（辅助，广播给所有窗口）
   try {
