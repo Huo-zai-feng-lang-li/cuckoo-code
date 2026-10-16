@@ -626,10 +626,12 @@
 
   // 流式 markdown 渲染节流：每 ~200ms 把累积文本渲染一次 markdown，
   // 让手机端流式期间也有格式（而非"先出现一大坨 md 再变格式"）。
-  // 用 200ms 低频控制性能（每帧全量 renderMd 会累积 O(n²)；200ms 一次可控）。
+  // 用 ~80ms 节流控制性能（逐帧全量 renderMd 会累积 O(n²)；节流一次可控）。
   let streamMdTimer = null;
   let lastStreamMdAt = 0;
-  const STREAM_MD_INTERVAL = 200;
+  // 节流间隔：~80ms 一次全量 markdown 渲染，与电脑端 harness 对齐。
+  // 既保证流式期间始终带格式、肉眼流畅，又把渲染次数较逐帧降约 5 倍（长回复不卡）。
+  const STREAM_MD_INTERVAL = 80;
   function cancelStreamMd() {
     if (streamMdTimer) { clearTimeout(streamMdTimer); streamMdTimer = null; }
   }
@@ -659,9 +661,10 @@
     if (!delta) return;
     if (!streamingEl) startStreaming();
     streamingText += delta;
-    // 正文已出现 → 标记 + 思考块自动折叠（非用户手动）
+    // 正文已出现：标记 sawText（后续 appendThink 不再自动展开，防 think/text 交替抖动）。
+    // 但**不在此处折叠思考块**——否则正文一出思考就消失，用户来不及看。
+    // 折叠统一推迟到收尾（finishThink），流式期间保持思考可见。
     sawText = true;
-    if (thinkEl && !thinkUserToggled) thinkEl.classList.remove('open');
     scheduleStreamMd();
     scroll();
   }

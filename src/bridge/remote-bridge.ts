@@ -97,11 +97,36 @@ export function initRemoteBridge(): void {
     report({ type: 'ai-stop' });
   });
 
-  // 4. AI 请求失败（网络/限流报错）→ 上报收尾
+  // 自动重试感知：电脑端自动重试引擎（retry.ts）会接管"可重试的临时错误"。
+  // 若不感知，同一错误会被立即上报手机 → 手机在电脑倒计时重试时就显示"生成失败/请求失败"，
+  // 而其实电脑端还在重试（用户看到的是"总是失败"）。
+  // retry 引擎在同 tick 同步派发 cuckoo-retry-state；用 setTimeout(0) 延迟判断，避免注册顺序依赖。
+  let retryActive = false;
+  let retryNoticeShown = false;
+  try {
+    window.addEventListener('cuckoo-retry-state', (ev: any) => {
+      const st = ev && ev.detail && ev.detail.state;
+      retryActive = (st === 'pending');
+      if (!retryActive) retryNoticeShown = false; // 重试结束 → 允许下次再提示
+    });
+  } catch (_) { /* ignore */ }
+
+  // 4. AI 请求失败（网络/限流报错）→ 上报收尾（仅当不在自动重试中）
   onAiError((detail: any) => {
     stopStreamThrottle(true); // 同上，保尾
     if (!enabled) return;
-    report({ type: 'ai-error', error: (detail && detail.text) || '请求失败' });
+    setTimeout(() => {
+      if (!enabled) return;
+      if (retryActive) {
+        // 电脑端正在自动重试 → 不报终态，仅首次提示手机"正在重试"，保持执行态
+        if (!retryNoticeShown) {
+          retryNoticeShown = true;
+          report({ type: 'sys', keepBusy: true, text: '请求失败，电脑端正在自动重试…' });
+        }
+        return;
+      }
+      report({ type: 'ai-error', error: (detail && detail.text) || '请求失败' });
+    }, 0);
   });
 
   // 5. 工具调用状态 → 上报（仅状态）
@@ -145,6 +170,8 @@ function stripBlocks(text: string): string {
   if (firstFence !== -1 && out.indexOf('```', firstFence + 3) === -1) {
     if (/```\s*$/i.test(out)) out = out.replace(/```\s*$/i, '');
   }
+  // 流式边界兜底：开标记行未收全（如 ```cuck）→ 也隐藏，避免尾部闪现
+  out = out.replace(/```[a-z]*\s*$/i, '');
   return out.trim();
 }
 

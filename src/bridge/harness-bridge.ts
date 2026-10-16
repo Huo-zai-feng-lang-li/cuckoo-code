@@ -41,6 +41,9 @@ function stripToolBlocks(text: string): string {
   // 流式输出中途：代码块尚未闭合 → 从开标记起全部隐藏，避免 ```cuckoo 内容闪现
   out = out.replace(/```(?:cuckoo|javascript|js)\s*\n[\s\S]*$/gi, '');
   out = out.replace(/```(?:cuckoo|javascript|js)\s*$/gi, '');
+  // 流式边界兜底：开标记行未收全（如 ```cuck / ```cuckoo 尚未换行）→ 也隐藏，
+  // 否则这几个字符会作为普通文本闪现在流式输出尾部。
+  out = out.replace(/```[a-z]*\s*$/i, '');
   return out.trim();
 }
 

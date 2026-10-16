@@ -1020,7 +1020,7 @@ svg { flex-shrink: 0; }
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
-  max-height: 320px;
+  max-height: 45vh;
   overflow-y: auto;
 }
 .msg.think-block.open .think-body { display: block; }

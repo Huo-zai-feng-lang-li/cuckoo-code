@@ -2517,24 +2517,25 @@
   var lastDoneText = '';
   // 去重：已写入历史的最新 assistant 文本
   var lastPushedAssistant = '';
-  // ===== 流式正文增量渲染 =====
-  // onStream 每帧都带「全量正文/思考」，若逐帧 renderMarkdown 全量解析 + innerHTML 重建
-  // → 单轮累计 O(n²)（正文越长每帧越贵）。改为「增量纯文本 append」：
-  //   - 非 finished 帧：只把新增部分 appendChild(createTextNode)，保留光标在末尾；
-  //     不做 markdown 解析、不重建整棵子树。
-  //   - finished 帧：绕过节流，走全量 renderMarkdown 一次，保证收尾正确 + 光标消失。
-  //   - 异常重排（全量不以已渲染为前缀）：清空重来（防御性兜底）。
-  //   - 会话切换 / resetConversation：调用 resetStreamRender 复位渲染标记。
-  var _streamRenderedText = '';   // 已渲染的正文全量（用于计算 delta）
-  var _streamRenderedTextBody = null; // 正文标记归属的 body（换气泡时作废）
-  var _streamRenderedThink = '';  // 已渲染的思考全量
-  var _streamRenderedThinkBody = null; // 思考标记归属的 body
-  var _streamCursorEl = null;     // 光标节点（append 时保持在末尾）
+  // ===== 流式正文渲染：节流全量 markdown =====
+  // onStream 每帧带「全量正文」。两种极端都不好：
+  //   - 逐帧全量 renderMarkdown（marked+KaTeX）+ innerHTML 重建：长回复 O(n²)，
+  //     且每帧强制 reflow（旧版 rAF 合并 = 60fps，长回复收尾巨卡）。
+  //   - 纯文本增量 append（v0.8.89）：流式期间无格式，收尾才"唰"地变格式，观感差。
+  // 折中：节流 ~80ms 做一次全量 markdown 渲染 —— 流式期间始终带格式、肉眼流畅（~12fps），
+  // 渲染次数较 60fps 降约 5 倍，长回复不卡。finished 帧绕过节流立即全量渲染（去掉光标）。
+  // 会话切换 / resetConversation：调用 resetStreamRender 复位节流状态 + 清光标 DOM。
+  var _streamCursorEl = null;      // 流式光标节点（每次渲染后重建，保持在末尾）
+  var _streamRenderTimer = null;   // 节流定时器
+  var _streamRenderBody = null;    // 待渲染的 body
+  var _streamRenderText = '';      // 待渲染的全量正文
+  var _streamLastRenderAt = 0;     // 上次渲染时间戳（节流基准）
+  var STREAM_RENDER_INTERVAL = 80; // 节流间隔（ms）
+
   function resetStreamRender() {
-    _streamRenderedText = '';
-    _streamRenderedTextBody = null;
-    _streamRenderedThink = '';
-    _streamRenderedThinkBody = null;
+    _streamRenderBody = null;
+    _streamRenderText = '';
+    if (_streamRenderTimer) { clearTimeout(_streamRenderTimer); _streamRenderTimer = null; }
     // 若光标仍在 DOM（如 finished 只覆盖 cur.body 未触及 thinkBody），必须移除，
     // 否则会残留在 thinkBody 里（用户展开思考会看到闪烁光标）
     if (_streamCursorEl && _streamCursorEl.parentNode) {
@@ -2542,58 +2543,42 @@
     }
     _streamCursorEl = null;
   }
-  /** 确保 body 里有流式光标节点，且位于末尾 */
-  function ensureStreamCursor(body) {
-    if (!body) return;
-    if (!_streamCursorEl || !_streamCursorEl.isConnected) {
-      _streamCursorEl = document.createElement('span');
-      _streamCursorEl.className = 'streaming-cursor';
+
+  /** 立即把全量正文渲染为 markdown + 光标（节流到点或 finished 时调用） */
+  function _doStreamRender() {
+    _streamRenderTimer = null;
+    _streamLastRenderAt = Date.now();
+    var body = _streamRenderBody, text = _streamRenderText;
+    if (body && body.isConnected && cur && cur.body === body) {
+      body.innerHTML = renderMarkdown(text);
+      var c = document.createElement('span');
+      c.className = 'streaming-cursor';
+      _streamCursorEl = c;
+      try { body.appendChild(c); } catch (_) {}
     }
-    // 始终把光标 append 到末尾（追加新文本后调用本函数）
-    if (body.lastChild !== _streamCursorEl) body.appendChild(_streamCursorEl);
+    scrollBottom(false);
   }
-  /** 把 body 里的纯文本内容替换为新的全量（异常重排时用） */
-  function replaceStreamBody(body, fullText) {
-    body.textContent = '';
-    if (fullText) body.appendChild(document.createTextNode(fullText));
-    ensureStreamCursor(body);
+
+  /** 节流：~80ms 渲染一次；首帧（距上次已超间隔）立即渲染，避免开头延迟 */
+  function scheduleStreamRender(body, text) {
+    _streamRenderBody = body;
+    _streamRenderText = text;
+    if (_streamRenderTimer) return; // 本周期已排，等它到点用最新文本渲染
+    var since = Date.now() - _streamLastRenderAt;
+    if (since >= STREAM_RENDER_INTERVAL) { _doStreamRender(); return; }
+    _streamRenderTimer = setTimeout(_doStreamRender, STREAM_RENDER_INTERVAL - since);
   }
-  /** 追加 text 的新增部分到 body（增量 appendChild）。
-   *  标记与 body 绑定：body 换了 → 旧标记作废（避免新气泡以旧文本为前缀时吞字）。 */
-  function appendStreamBody(body, full, kind) {
-    var rendered;
-    if (kind === 'think') {
-      rendered = (_streamRenderedThinkBody === body) ? _streamRenderedThink : '';
-    } else {
-      rendered = (_streamRenderedTextBody === body) ? _streamRenderedText : '';
-    }
-    // 异常路径：body 换了 / 全量不以已渲染为前缀 → 清空重来
-    if (full.length < rendered.length || !full.startsWith(rendered)) {
-      if (kind === 'think') { body.textContent = ''; _streamRenderedThink = ''; _streamRenderedThinkBody = body; }
-      else { replaceStreamBody(body, ''); _streamRenderedText = ''; _streamRenderedTextBody = body; }
-      rendered = '';
-    }
-    var delta = full.slice(rendered.length);
-    if (!delta) { ensureStreamCursor(body); return; }
-    var node = document.createTextNode(delta);
-    if (kind === 'think') {
-      body.appendChild(node);
-      _streamRenderedThink = full;
-      _streamRenderedThinkBody = body;
-      ensureStreamCursor(body);
-    } else {
-      // 正文：把光标先摘掉，append 文本，再把光标补到末尾
-      if (_streamCursorEl && _streamCursorEl.parentNode === body) body.removeChild(_streamCursorEl);
-      body.appendChild(node);
-      _streamRenderedText = full;
-      _streamRenderedTextBody = body;
-      ensureStreamCursor(body);
-    }
-  }
+
+  // 兼容旧 API（保留函数名，避免其它地方引用报错）
+  function cancelStreamRender() { resetStreamRender(); }
 
   // 流式更新：think/text 均为全量快照
   function onStream(think, text, finished) {
-    if (!think && !text && !finished) return; // 空心跳，忽略
+    if (!think && !text) {
+      if (!finished) return;   // 空心跳，忽略
+      if (!cur) return;        // 纯工具回合（正文被 stripToolBlocks 清空）：无活跃气泡 → 不创建空气泡，
+                               //   否则 finished 帧会建出空白气泡，要等工具执行完 onAssistantDone 才清（期间残留）
+    }
     // 重复的完成事件：文本与最近一次已完成的一致 → 忽略
     if (finished && text && text.trim() === lastDoneText) return;
     lastActivityAt = Date.now();
@@ -2604,7 +2589,7 @@
     if (!cur) cur = createAssistant();
     if (cur.pending && (think || text)) {
       cur.pending = false;
-      // 清掉占位三点：增量 append 不会自动覆盖它，必须显式移除
+      // 清掉占位三点（think-only 场景 textContent 不覆盖它，必须显式移除）
       try {
         var pd = cur.body.querySelector('.pending-dots');
         if (pd && pd.parentNode) pd.parentNode.removeChild(pd);
@@ -2612,8 +2597,8 @@
     }
     if (think) {
       cur.thinkEl.style.display = '';
-      // 思考体：仅更新标签，内容走增量 append
-      appendStreamBody(cur.thinkBody, think, 'think');
+      // 思考体：纯文本（思考内容无需 markdown，textContent 最快）
+      cur.thinkBody.textContent = think;
       cur.thinkLabel.textContent = text ? '已思考 (' + think.length + ' 字)' : '思考中…';
       // 正文尚未出现时，自动展开思考；正文出现后自动折叠
       if (!text) cur.thinkEl.classList.add('open');
@@ -2621,14 +2606,15 @@
     }
     if (text) {
       if (finished) {
-        // 收尾帧：全量 renderMarkdown 一次（去掉光标）
-        cur.body.innerHTML = renderMarkdown(text);
+        // 收尾帧：绕过节流立即全量渲染（去掉光标），保证结束无延迟
         resetStreamRender();
+        cur.body.innerHTML = renderMarkdown(text);
         // 标记已渲染：供 onAssistantDone 的去重分支识别（否则同一条回复会被
         // 全量 renderMarkdown 渲染第二次 = KaTeX+marked+DOM重建 ×2，长回复收尾卡顿主因）
         lastDoneText = text.trim();
       } else {
-        appendStreamBody(cur.body, text, 'text');
+        // 流式帧：节流全量 markdown 渲染（始终带格式）
+        scheduleStreamRender(cur.body, text);
       }
     }
     scrollBottom(false); // 跟随但不打扰往上翻看

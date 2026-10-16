@@ -77,6 +77,13 @@ let count429 = 0;
 let pending: any = null;
 let compacting = false;
 
+/** 派发重试状态事件（供 remote-bridge 等订阅）：
+ *  决定"可自动重试的错误"是否立即当终态上报，避免手机端在重试成功前就显示失败。
+ *  state: 'pending' 进入重试等待 | 'success' 重试成功 | 'exhausted' 达上限 | 'cancelled' 用户取消 */
+function emitRetryState(state: string): void {
+  try { window.dispatchEvent(new CustomEvent('cuckoo-retry-state', { detail: { state } })); } catch (_) { /* ignore */ }
+}
+
 let setCompacting = function setCompacting(v: any): void {
   compacting = !!v;
 };
@@ -94,10 +101,12 @@ let onSuccess = function onSuccess(): void {
   normalCount = 0;
   count429 = 0;
   clearPending();
+  emitRetryState('success');
 };
 
 let cancelPending = function cancelPending(): void {
   clearPending();
+  emitRetryState('cancelled');
   showToast('已取消自动重试', 2000);
 };
 
@@ -159,6 +168,7 @@ let handleError = function handleError(detail: any): void {
     if (cfg.count429 >= 0 && count429 >= cfg.count429) {
       showToast('操作频繁重试已达上限（' + cfg.count429 + ' 次），停止自动重试', 4000);
       clearPending();
+      emitRetryState('exhausted');
       return;
     }
     count429++;
@@ -166,6 +176,7 @@ let handleError = function handleError(detail: any): void {
     if (cfg.count >= 0 && normalCount >= cfg.count) {
       showToast('自动重试已达上限（' + cfg.count + ' 次），停止自动重试', 4000);
       clearPending();
+      emitRetryState('exhausted');
       return;
     }
     normalCount++;
@@ -190,6 +201,7 @@ let handleError = function handleError(detail: any): void {
   }, delay);
 
   pending = { kind: is429 ? '429' : 'normal', timer: timer, countdownTimer: cdTimer, remainMs: delay };
+  emitRetryState('pending');
 };
 
 /** 切换前是否取消过 pending 重试（用于"恢复"时判断） */
