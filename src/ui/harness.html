@@ -405,6 +405,26 @@
     0% { background-position: -60% 0, 0 0, 0 0; }
     100% { background-position: 160% 0, 0 0, 0 0; }
   }
+  /* 增强中·图片模式：整框显示科技图，内部文字/按钮淡出 */
+  .composer-inner.enhancing.image-bg {
+    background-color: var(--bg-elev);
+    background-image: var(--enh-img, none);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    animation: none;
+  }
+  .composer-inner.enhancing.image-bg #input,
+  .composer-inner.enhancing.image-bg .composer-tools,
+  .composer-inner.enhancing.image-bg #send,
+  .composer-inner.enhancing.image-bg .composer-resize {
+    opacity: 0;
+    transition: opacity .3s ease;
+    pointer-events: none;
+  }
+  /* 图片模式：进图淡入 */
+  .composer-inner.enhancing.image-bg { animation: enhImgIn .4s ease both; }
+  @keyframes enhImgIn { from { opacity: .4; } to { opacity: 1; } }
   .composer-inner.enhancing::before {
     content: ''; position: absolute; inset: -1.5px; border-radius: 13.5px; padding: 1.5px;
     background: conic-gradient(from var(--enh-angle),
@@ -426,6 +446,7 @@
   @keyframes enhGlowPulse { 0%, 100% { opacity: .22; } 50% { opacity: .55; } }
   @media (prefers-reduced-motion: reduce) {
     .composer-inner.enhancing { animation: none; }
+    .composer-inner.enhancing.image-bg { animation: none; }
     .composer-inner.enhancing::before { animation: none; }
     .composer-inner.enhancing::after { animation: none; opacity: .4; }
   }
@@ -1008,6 +1029,18 @@
           <label><input type="radio" name="enh-mode" value="gentle" /><span>温和（缺啥补啥）</span></label>
           <label><input type="radio" name="enh-mode" value="strict" /><span>激进（强制结构化）</span></label>
         </div>
+      </div>
+      <div class="enh-field">
+        <label>增强中背景样式</label>
+        <div class="enh-radio">
+          <label><input type="radio" name="enh-bg-style" value="grid" /><span>科技网格</span></label>
+          <label><input type="radio" name="enh-bg-style" value="image" /><span>炫酷图片</span></label>
+        </div>
+      </div>
+      <div class="enh-field" id="enh-bg-image-field">
+        <label>背景图 <span class="enh-hint">（图片模式生效；随机=每次增强随机选一张）</span></label>
+        <select class="enh-input" id="enh-bg-image"><option value="">随机</option></select>
+        <div id="enh-bg-preview" style="display:none;margin-top:8px;height:80px;border-radius:8px;background-size:cover;background-position:center;border:1px solid var(--border);"></div>
       </div>
       <div class="enh-field">
         <label>自定义增强提示词 <span class="enh-hint">（留空用内置模板）</span></label>
@@ -4082,6 +4115,23 @@
   var enhancePrevText = null;    // 增强前的原文（供撤销）
   var enhanceUndoTimer = null;
   var enhConfig = null;          // 当前增强配置（主进程读回）
+  var enhanceImages = [];        // 可用背景图（主进程列出）
+
+  /** 增强中：按配置显示图片背景（image）或科技网格（grid） */
+  function applyEnhanceBackdrop(ci, on) {
+    if (!ci) return;
+    ci.classList.remove('image-bg');
+    ci.style.removeProperty('--enh-img');
+    if (!on) return;
+    if (enhConfig && enhConfig.backgroundStyle === 'image' && enhanceImages.length) {
+      var pick = enhConfig.backgroundImage && enhanceImages.indexOf(enhConfig.backgroundImage) >= 0
+        ? enhConfig.backgroundImage
+        : enhanceImages[Math.floor(Math.random() * enhanceImages.length)];
+      // 图片相对 harness.html 所在目录（src/ui/）
+      ci.style.setProperty('--enh-img', 'url("enhance-images/' + pick + '")');
+      ci.classList.add('image-bg');
+    }
+  }
 
   function setEnhanceBtnBusy(b) {
     enhanceInFlight = !!b;
@@ -4090,8 +4140,9 @@
       if (b) { enhanceBtn.classList.add('busy'); enhanceBtn.disabled = true; }
       else { enhanceBtn.classList.remove('busy'); enhanceBtn.disabled = false; }
     }
-    // 整个输入框"科技流光边框"（与按钮联动，表达框架正在处理）
+    // 整个输入框进入"增强中"态（图片或科技网格，由 applyEnhanceBackdrop 决定）
     if (ci) ci.classList.toggle('enhancing', !!b);
+    applyEnhanceBackdrop(ci, !!b);
     // 开始增强时迸发粒子
     if (b && enhanceBtn) spawnEnhanceParticles(enhanceBtn);
   }
@@ -4196,7 +4247,8 @@
       // 回填（不发送）；记录原文供撤销
       enhancePrevText = prev;
       input.value = r.text;
-      input.style.height = 'auto';
+      inputMinH = 84;
+      autoGrowInput();   // 增强后文字变多 → 重新按内容增高（不滚动）
       input.focus();
       showUndo();
       appendToast('✨ 提示词已增强，可编辑后发送');
@@ -4225,8 +4277,35 @@
     apiKey: document.getElementById('enh-api-key'),
     model: document.getElementById('enh-model'),
     rounds: document.getElementById('enh-rounds'),
-    systemPrompt: document.getElementById('enh-system-prompt')
+    systemPrompt: document.getElementById('enh-system-prompt'),
+    bgImage: document.getElementById('enh-bg-image'),
+    bgPreview: document.getElementById('enh-bg-preview')
   };
+  // 拉取可用背景图，填充选择器 + 预览
+  function loadEnhanceImages() {
+    if (!api.listEnhanceImages) return;
+    Promise.resolve(api.listEnhanceImages()).then(function (r) {
+      if (r && r.success && Array.isArray(r.images)) {
+        enhanceImages = r.images;
+        if (enhEls.bgImage) {
+          var cur = enhEls.bgImage.value;
+          var opts = '<option value="">随机</option>' + enhanceImages.map(function (f) {
+            return '<option value="' + esc(f) + '">' + esc(f) + '</option>';
+          }).join('');
+          enhEls.bgImage.innerHTML = opts;
+          if (cur && enhanceImages.indexOf(cur) >= 0) enhEls.bgImage.value = cur;
+        }
+        renderBgPreview();
+      }
+    }).catch(function () { /* ignore */ });
+  }
+  function renderBgPreview() {
+    if (!enhEls.bgPreview) return;
+    var pick = (enhEls.bgImage && enhEls.bgImage.value) || (enhanceImages[0] || '');
+    if (!pick) { enhEls.bgPreview.style.display = 'none'; return; }
+    enhEls.bgPreview.style.display = 'block';
+    enhEls.bgPreview.style.backgroundImage = 'url("enhance-images/' + pick + '")';
+  }
   // full=true：全量填充（打开弹窗/初始加载）；full=false：保存响应/广播回填，跳过正在聚焦的字段（防覆盖在途编辑）
   function fillEnhancerForm(cfg, full) {
     enhConfig = cfg || enhConfig;
@@ -4248,11 +4327,20 @@
     setVal(enhEls.model, enhConfig.model || '');
     setVal(enhEls.rounds, String(enhConfig.contextRounds != null ? enhConfig.contextRounds : 8));
     setVal(enhEls.systemPrompt, enhConfig.systemPrompt || '');
-    var radios = document.querySelectorAll('input[name="enh-mode"]');
-    for (var i = 0; i < radios.length; i++) {
-      if (!full && radios[i] === ae) continue;
-      radios[i].checked = (radios[i].value === (enhConfig.mode || 'gentle'));
+    // radio 只在 full（打开弹窗/初始加载）时回填；非 full（保存响应/广播）不碰，
+    // 否则异步返回的旧值会覆盖用户刚点选的值（点击瞬间被改回）
+    if (full) {
+      var radios = document.querySelectorAll('input[name="enh-mode"]');
+      for (var i = 0; i < radios.length; i++) {
+        radios[i].checked = (radios[i].value === (enhConfig.mode || 'gentle'));
+      }
+      var bgRadios = document.querySelectorAll('input[name="enh-bg-style"]');
+      for (var j = 0; j < bgRadios.length; j++) {
+        bgRadios[j].checked = (bgRadios[j].value === (enhConfig.backgroundStyle || 'grid'));
+      }
     }
+    setVal(enhEls.bgImage, enhConfig.backgroundImage || '');
+    renderBgPreview();
     applyEnhancerEnabled();
   }
   /** 收集表单 → 保存（即时生效，无保存按钮） */
@@ -4261,6 +4349,9 @@
     var mode = 'gentle';
     var radios = document.querySelectorAll('input[name="enh-mode"]');
     for (var i = 0; i < radios.length; i++) if (radios[i].checked) mode = radios[i].value;
+    var bgStyle = 'grid';
+    var bgRadios = document.querySelectorAll('input[name="enh-bg-style"]');
+    for (var bi = 0; bi < bgRadios.length; bi++) if (bgRadios[bi].checked) bgStyle = bgRadios[bi].value;
     var cfg = {
       enabled: !!(enhEls.enabled && enhEls.enabled.checked),
       apiUrl: (enhEls.apiUrl && enhEls.apiUrl.value.trim()) || '',
@@ -4268,7 +4359,9 @@
       model: (enhEls.model && enhEls.model.value.trim()) || '',
       contextRounds: parseInt((enhEls.rounds && enhEls.rounds.value) || '8', 10),
       mode: mode,
-      systemPrompt: (enhEls.systemPrompt && enhEls.systemPrompt.value) || ''
+      systemPrompt: (enhEls.systemPrompt && enhEls.systemPrompt.value) || '',
+      backgroundStyle: bgStyle,
+      backgroundImage: (enhEls.bgImage && enhEls.bgImage.value) || ''
     };
     if (!Number.isFinite(cfg.contextRounds) || cfg.contextRounds < 0) cfg.contextRounds = 8;
     Promise.resolve(api.setEnhancerConfig(cfg)).then(function (r) {
@@ -4293,7 +4386,7 @@
   // 表单改动即存：change（checkbox/radio/下拉）+ blur 捕获（文本框失焦/关弹窗前兜底）
   var enhBody = enhMask ? enhMask.querySelector('.enh-body') : null;
   if (enhBody) {
-    enhBody.addEventListener('change', saveEnhancerForm);
+    enhBody.addEventListener('change', function () { renderBgPreview(); saveEnhancerForm(); });
     enhBody.addEventListener('blur', saveEnhancerForm, true);
   }
   // 其他窗口改动 → 同步本窗口（不全量覆盖正在编辑的字段）
@@ -4301,6 +4394,7 @@
     api.onEnhancerConfig(function (cfg) { fillEnhancerForm(cfg, false); });
   }
   // 初始加载配置
+  loadEnhanceImages();
   if (api.getEnhancerConfig) {
     Promise.resolve(api.getEnhancerConfig()).then(function (r) {
       if (r && r.success && r.config) fillEnhancerForm(r.config, true);

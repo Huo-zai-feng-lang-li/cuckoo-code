@@ -525,6 +525,20 @@ function registerHarnessIpc(): void {
     }
   });
 
+  // 列出可用的增强背景图（src/ui/enhance-images/*.jpg）
+  ipcMain.handle('harness-list-enhance-images', async () => {
+    try {
+      const { resolveSrc } = await import('../../infra/paths.js');
+      const dir = resolveSrc('ui/enhance-images');
+      const fs2 = await import('node:fs');
+      if (!fs2.existsSync(dir)) return { success: true, images: [] };
+      const files = fs2.readdirSync(dir).filter((f: string) => /\.(jpe?g|png|webp)$/i.test(f)).sort();
+      return { success: true, images: files };
+    } catch (err: any) {
+      return { success: false, error: (err && err.message) || String(err), images: [] };
+    }
+  });
+
   // 读增强配置（不回传 apiKey 明文全量？—— 本地应用，回传以便设置页回显）
   ipcMain.handle('harness-get-enhancer-config', async () => {
     try {

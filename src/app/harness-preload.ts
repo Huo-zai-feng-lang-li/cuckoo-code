@@ -25,6 +25,8 @@ const harnessAPI = {
   enhancePrompt: (payload: { text: string; history?: any[] }) => ipcRenderer.invoke('harness-enhance-prompt', payload),
   /** 读增强配置 */
   getEnhancerConfig: () => ipcRenderer.invoke('harness-get-enhancer-config'),
+  /** 列出可用的增强背景图 */
+  listEnhanceImages: () => ipcRenderer.invoke('harness-list-enhance-images'),
   /** 存增强配置（部分覆盖）→ 全局广播 */
   setEnhancerConfig: (config: any) => ipcRenderer.invoke('harness-set-enhancer-config', { config }),
   /** 订阅增强配置变化（其他窗口改动时同步） */
