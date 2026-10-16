@@ -175,6 +175,10 @@ let electronAPI: any = {
   navigateSession: (sessionId: any) => {
     return ipcRenderer.invoke('navigate-session', { sessionId });
   },
+  // 暂存压缩续接标题（AI 生成）：会话 ID 未出现时先存，出现后自动绑定
+  setPendingSessionTitle: (title: any) => {
+    return ipcRenderer.invoke('set-pending-session-title', { title });
+  },
   createProfileWindow: () => {
     return ipcRenderer.invoke('create-profile-window');
   },

@@ -228,10 +228,12 @@ function createSessionStore(profileId: string, storeDir: string, windowState: an
    * 设置当前会话标题。
    * 若尚无会话 ID（新对话首条消息还没生成 URL），先暂存，等会话 ID 出现后自动绑定。
    */
-  function setSessionTitle(title: string): any {
+  function setSessionTitle(title: string, forceStage: boolean = false): any {
     const t = String(title || '').trim();
     if (!t) return { success: false, error: '标题为空' };
-    if (state.currentSessionId) {
+    // forceStage：压缩续接场景专用——标题属于"即将出现的新会话"，
+    // 即便当前 currentSessionId 仍指向父会话也不能直接写（否则污染父会话），必须暂存。
+    if (!forceStage && state.currentSessionId) {
       updateSessionTitle(state.currentSessionId, t);
       return { success: true };
     }
@@ -257,6 +259,15 @@ function createSessionStore(profileId: string, storeDir: string, windowState: an
     if (lineage.parentId !== undefined) entry.parentId = lineage.parentId || null;
     if (lineage.kind !== undefined) entry.kind = lineage.kind || null;
     if (lineage.agentName !== undefined) entry.agentName = lineage.agentName || null;
+
+    // 压缩续接会话：默认无标题（工作区列表会回退显示 UUID）。
+    // 从父会话继承标题作为兜底；方案 B（AI 生成标题）后续会在会话 ID 出现时覆盖。
+    if (lineage.kind === 'compaction' && lineage.parentId && !entry.title) {
+      const p = store[lineage.parentId];
+      const pTitle = (p && typeof p === 'object') ? (p.title || null) : null;
+      if (pTitle) entry.title = pTitle;
+    }
+
     store[sessionId] = entry;
     // 压缩：旧版（父）标记"被取代"，不再作为当前版展示
     if (lineage.kind === 'compaction' && lineage.parentId) {

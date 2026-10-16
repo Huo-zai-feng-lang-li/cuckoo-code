@@ -31,7 +31,9 @@ const { ipcRenderer } = require('electron');
 const SUMMARY_INSTRUCTION =
   '请把以上对话总结成一份详细的摘要，尽可能完整地保留关键信息、背景上下文、' +
   '已完成的结论和未完成的事项，用中文，一次性输出全部内容，' +
-  '直接输出摘要，不要输出其他解释。';
+  '不要输出其他解释。\n' +
+  '格式要求：第一行单独输出「【标题】xxx」，xxx 为不超过 20 字、概括本次对话主题的中文标题；' +
+  '从第二行开始输出摘要正文。';
 
 const COMPACT_URL_FLAG = 'cuckoo-compact';
 const COMPACT_DIR_KEY = 'cuckoo-compact-project-dir';
@@ -39,6 +41,8 @@ const PENDING_INIT_KEY = 'cuckoo-compact-pending-init';
 const IDB_WAIT_TIMEOUT = 20000;
 // 压缩摘要：段1 生成 → localStorage 跨刷新/跨页传递 → 段3 注入新会话（实现带前情提要的智能续接）
 const COMPACT_SUMMARY_KEY = 'cuckoo-compact-summary';
+// 压缩标题：段1 从摘要首行「【标题】xxx」解析 → 段3 设为续接会话标题（方案 B）
+const COMPACT_TITLE_KEY = 'cuckoo-compact-title';
 /** 注入新会话的摘要长度上限（防 prompt 膨胀） */
 const MAX_SUMMARY_LEN = 8000;
 
@@ -52,6 +56,20 @@ const SWITCH_PENDING_KEY = 'cuckoo-switch-pending';
 
 function logStep(step: string, msg: string): void {
   console.log('[Cuckoo Compact] [' + step + '] ' + msg);
+}
+
+/** 解析摘要首行的「【标题】xxx」，返回 { title, body }（无标题时 title 为空） */
+function parseSummaryTitle(text: string): { title: string; body: string } {
+  const t = String(text || '');
+  // 去掉前导空白（含换行），标题应位于有效内容首行
+  const trimmed = t.replace(/^[\s]+/, '');
+  // 首行是否为「【标题】xxx」；标题内容可为空（此时不把后续正文误当标题）
+  const m = trimmed.match(/^【标题】[ \t]*([^\n]*)/);
+  if (!m) return { title: '', body: t.trim() };
+  const title = m[1].trim().slice(0, 20);
+  // 无论标题是否为空，都剥离首行标签，避免污染正文（extraPrompt）
+  const body = trimmed.replace(/^【标题】[^\n]*\n?/, '').trim();
+  return { title, body };
 }
 
 interface MessageItem {
@@ -266,8 +284,9 @@ async function runCompaction(projectDir?: string): Promise<void> {
 
     // 记下"压缩前的会话ID"（段3 初始化新会话时写入血缘）
     try { localStorage.setItem('cuckoo-compact-parent-session', sessionId); } catch (_) {}
-    // 先清旧摘要，避免上次压缩失败的残留被本次误用
+    // 先清旧摘要/旧标题，避免上次压缩失败的残留被本次误用
     try { localStorage.removeItem(COMPACT_SUMMARY_KEY); } catch (_) {}
+    try { localStorage.removeItem(COMPACT_TITLE_KEY); } catch (_) {}
 
     logStep('summary', '发送摘要指令');
     const waitReply = waitForResponse(120000);
@@ -276,9 +295,12 @@ async function runCompaction(projectDir?: string): Promise<void> {
     logStep('summary', '收到摘要回复，长度=' + (summaryText || '').length);
     // 保存摘要（跨刷新 + 跨页传给新会话）。这是"智能续接"的核心：
     // 原实现只取最近 20% 原文，前 80% 关键信息全丢；现在把摘要注入新会话，模型带前情提要。
+    // 方案 B：首行「【标题】xxx」解析为续接会话标题（正文剔除标题行，避免污染 extraPrompt）。
     try {
-      const s = (summaryText || '').trim();
-      if (s) localStorage.setItem(COMPACT_SUMMARY_KEY, s.slice(0, MAX_SUMMARY_LEN));
+      const parsed = parseSummaryTitle(summaryText || '');
+      if (parsed.body) localStorage.setItem(COMPACT_SUMMARY_KEY, parsed.body.slice(0, MAX_SUMMARY_LEN));
+      if (parsed.title) localStorage.setItem(COMPACT_TITLE_KEY, parsed.title);
+      else localStorage.removeItem(COMPACT_TITLE_KEY);
     } catch (_) { /* ignore */ }
 
     // 清当前会话 IDB 记录，触发刷新后 DeepSeek 重新拉取完整历史
@@ -355,8 +377,9 @@ async function checkPendingCompact(): Promise<boolean> {
     return true;
   } catch (err: any) {
     console.error('[Cuckoo Compact] 段2失败:', err);
-    // 段2 失败：清掉已存的摘要（避免长期占用 localStorage；下次压缩会重新生成）
+    // 段2 失败：清掉已存的摘要/标题（避免长期占用 localStorage；下次压缩会重新生成）
     try { localStorage.removeItem(COMPACT_SUMMARY_KEY); } catch (_) { /* ignore */ }
+    try { localStorage.removeItem(COMPACT_TITLE_KEY); } catch (_) { /* ignore */ }
     showToast('压缩失败: ' + err.message, 5000);
     return false;
   }
@@ -381,10 +404,24 @@ function checkPendingInit(): void {
   let compactSummary = '';
   try { compactSummary = localStorage.getItem(COMPACT_SUMMARY_KEY) || ''; } catch (_) {}
   try { localStorage.removeItem(COMPACT_SUMMARY_KEY); } catch (_) {}
+  // 方案 B：读取段1 解析出的续接标题，暂存为新会话标题（等会话 ID 出现时绑定）
+  let compactTitle = '';
+  try { compactTitle = localStorage.getItem(COMPACT_TITLE_KEY) || ''; } catch (_) {}
+  try { localStorage.removeItem(COMPACT_TITLE_KEY); } catch (_) {}
   const extraPrompt = compactSummary
     ? '以下是上一段对话（因上下文接近上限而被压缩）的摘要，请基于它无缝续接，不要重复已完成的工作：\n\n' + compactSummary
     : '';
-  console.log('[Cuckoo Compact] 检测到压缩后待初始化，3 秒后执行；项目目录=' + (projectDir || '(无)') + '，压缩前会话=' + (parentSessionId || '(无)') + '，摘要长度=' + compactSummary.length);
+  console.log('[Cuckoo Compact] 检测到压缩后待初始化，3 秒后执行；项目目录=' + (projectDir || '(无)') + '，压缩前会话=' + (parentSessionId || '(无)') + '，摘要长度=' + compactSummary.length + '，标题=' + (compactTitle || '(无)'));
+  // 标题暂存：会话 ID 未出现时先存 pendingTitle，待 initProject 后新会话 ID 出现时绑定（覆盖方案 A 继承的父标题）
+  if (compactTitle) {
+    try {
+      const api: any = (window as any).electronAPI;
+      if (api && typeof api.setPendingSessionTitle === 'function') {
+        const p = api.setPendingSessionTitle(compactTitle);
+        if (p && typeof p.catch === 'function') p.catch(() => { /* ignore */ });
+      }
+    } catch (_) { /* ignore */ }
+  }
   setTimeout(() => {
     try {
       (window as any).electronAPI.initProject(projectDir || null, true, extraPrompt, false, parentSessionId);
@@ -600,4 +637,4 @@ async function checkPendingSwitchShare(): Promise<boolean> {
 
 export { runCompaction, checkPendingCompact, checkPendingInit, prepareSwitchShare, checkPendingSwitchShare, prepareTruncate, checkPendingTruncate };
 // 纯函数导出（测试用）
-export { pickRecentPairedIds as _pickRecentPairedIds, sliceChainUpTo as _sliceChainUpTo };
+export { pickRecentPairedIds as _pickRecentPairedIds, sliceChainUpTo as _sliceChainUpTo, parseSummaryTitle as _parseSummaryTitle };

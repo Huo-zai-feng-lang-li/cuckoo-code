@@ -69,5 +69,6 @@
 | 065 | fix | [工具结果回传偶发丢失（模型停下）—— observer 层重试 + 发送校验](./065-tool-result-retry.md) | done | fix/065-tool-result-retry | 2026-10-16 |
 | 066 | fix | [子代理审计：完成通知隔离 + tools 白名单生效 + 通知精确化](./066-subagent-audit.md) | done | fix/066-subagent-audit | 2026-10-16 |
 | 067 | fix | [用户记忆稳健性 + 上下文耗尽续接智能化](./067-memory-compact-audit.md) | done | fix/067-memory-compact-audit | 2026-10-16 |
+| 069 | feature | [压缩续接会话继承/生成标题（消除工作区 UUID 显示）](./069-compaction-title.md) | done | feat/069-compaction-title | 2026-10-16 |
 
-共 64 个需求。
+共 65 个需求。
