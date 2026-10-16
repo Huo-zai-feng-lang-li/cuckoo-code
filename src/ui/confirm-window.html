@@ -7,6 +7,7 @@
 <style>
   :root {
     color-scheme: light dark;
+    /* 通用 */
     --bg: #ffffff; --bg-2: #fafbfd;
     --hairline: rgba(255,255,255,.9);
     --border: rgba(16,24,40,.08);
@@ -18,6 +19,13 @@
     --surface: #f5f6f8; --surface-hover: #eef0f4;
     --shadow: 0 12px 40px rgba(16,24,40,.18), 0 2px 8px rgba(16,24,40,.08);
     --accent: var(--info); --accent-soft: var(--info-soft);
+
+    /* update 版式专用 token */
+    --u-bg: #fcfcfd; --u-bg-2: #f7f8fa;
+    --u-ink: #0d1015; --u-ink-2: #525a6a; --u-ink-3: #8b92a3;
+    --u-line: rgba(13,16,21,.09); --u-line-soft: rgba(13,16,21,.05);
+    --u-track: rgba(13,16,21,.07);
+    --u-shadow: 0 1px 2px rgba(20,24,40,.05), 0 22px 52px -20px rgba(20,24,40,.26);
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -31,6 +39,12 @@
       --danger: #ff6369; --danger-soft: rgba(255,99,105,.17);
       --surface: rgba(255,255,255,.05); --surface-hover: rgba(255,255,255,.09);
       --shadow: 0 12px 40px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3);
+
+      --u-bg: #17191e; --u-bg-2: #121418;
+      --u-ink: #eff1f5; --u-ink-2: #a9b0bf; --u-ink-3: #6d7484;
+      --u-line: rgba(255,255,255,.09); --u-line-soft: rgba(255,255,255,.05);
+      --u-track: rgba(255,255,255,.09);
+      --u-shadow: 0 1px 2px rgba(0,0,0,.4), 0 26px 60px -22px rgba(0,0,0,.7);
     }
   }
   * { margin:0; padding:0; box-sizing:border-box; }
@@ -54,6 +68,7 @@
     pointer-events:none; z-index:2; }
   @keyframes slideIn { from{opacity:0;transform:translateY(12px) scale(.98)} to{opacity:1;transform:translateY(0) scale(1)} }
 
+  /* ================= 通用（plain）版式 ================= */
   .head { display:flex; align-items:flex-start; gap:10px; margin-bottom:12px; position:relative; z-index:1; }
   .icon-wrap { width:34px; height:34px; border-radius:10px;
     background:var(--accent);
@@ -93,22 +108,217 @@
   .card[data-kind="error"]   { --accent:var(--danger);  --accent-soft:var(--danger-soft); }
   .card[data-kind="info"]    { --accent:var(--info);    --accent-soft:var(--info-soft); }
   .card[data-kind="update"]  { --accent:var(--info);    --accent-soft:var(--info-soft); }
+
+  /* ================= update 专属版式 ================= */
+  .u-top { display:none; }
+  .u-hero { display:none; }
+  .u-rule { display:none; }
+  .u-notes-label { display:none; }
+  .u-notes { display:none; }
+  .u-foot { display:none; }
+  .u-dl { display:none; }
+
+  .card[data-layout="update"] {
+    padding:22px;
+    background:linear-gradient(180deg, var(--u-bg), var(--u-bg-2));
+    border-color:var(--u-line);
+    box-shadow:var(--u-shadow);
+  }
+  .card[data-layout="update"]::before { display:none; }
+  /* 隐藏 plain 元素 */
+  .card[data-layout="update"] .head,
+  .card[data-layout="update"] .foot { display:none; }
+
+  /* update 显示对应块 */
+  .card[data-layout="update"] .u-top { display:flex; }
+  .card[data-layout="update"][data-has-version="1"] .u-hero { display:block; }
+  .card[data-layout="update"][data-has-version="1"] .u-rule { display:block; }
+  .card[data-layout="update"][data-has-notes="1"] .u-notes-label { display:block; }
+  .card[data-layout="update"][data-has-notes="1"] .u-notes { display:block; }
+  .card[data-layout="update"] .u-foot { display:flex; }
+
+  /* —— 品牌头 —— */
+  .u-top { align-items:center; justify-content:space-between; margin-bottom:22px; position:relative; z-index:2; }
+  .u-brand { display:flex; align-items:center; gap:8px; }
+  .u-mark { width:18px; height:18px; border-radius:5px;
+    background:var(--info); display:flex; align-items:center; justify-content:center; }
+  .u-mark svg { width:11px; height:11px; color:#fff; }
+  .u-name { font-family:"SF Mono","JetBrains Mono","Cascadia Mono","Consolas",monospace;
+    font-size:11px; font-weight:600; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--u-ink-3); }
+  .u-x { width:28px; height:28px; margin:-6px -6px -6px 0;
+    border:none; border-radius:8px; cursor:pointer;
+    background:transparent; color:var(--u-ink-3);
+    display:flex; align-items:center; justify-content:center;
+    transition:background .15s, color .15s; }
+  .u-x:hover { background:rgba(13,16,21,.05); color:var(--u-ink); }
+  @media (prefers-color-scheme: dark) { .u-x:hover { background:rgba(255,255,255,.08); } }
+  .u-x:active { transform:scale(.94); }
+  .u-x svg { width:14px; height:14px; }
+
+  /* —— 版本区 —— */
+  .u-hero { margin-bottom:20px; position:relative; z-index:2; }
+  .u-eyebrow { display:flex; align-items:center; gap:7px;
+    font-size:12.5px; font-weight:600; color:var(--u-ink-2); margin-bottom:10px; }
+  .u-dot { width:6px; height:6px; border-radius:50%; background:var(--info); }
+  .u-versions { display:flex; align-items:baseline; gap:10px; }
+  .u-v-old { font-family:"SF Mono","JetBrains Mono","Cascadia Mono","Consolas",monospace;
+    font-size:15px; font-weight:500; color:var(--u-ink-3); }
+  .u-v-arrow { align-self:center; color:var(--u-ink-3); display:flex; margin-top:1px; }
+  .u-v-arrow svg { width:14px; height:14px; }
+  .u-v-new { font-family:"SF Mono","JetBrains Mono","Cascadia Mono","Consolas",monospace;
+    font-size:27px; font-weight:700; letter-spacing:-.02em; line-height:1;
+    color:var(--u-ink); }
+  .u-v-new sup { font-size:11px; font-weight:600; color:var(--info);
+    letter-spacing:.04em; margin-left:6px; vertical-align:super;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif; }
+
+  /* —— 标题（无版本时使用）—— */
+  .u-title { display:none; }
+  .card[data-layout="update"][data-has-version="0"] .u-title { display:block; }
+  .u-title { font-size:19px; font-weight:700; color:var(--u-ink); letter-spacing:-.015em; line-height:1.2; margin-bottom:6px; position:relative; z-index:2; }
+  .u-body { font-size:13px; line-height:1.55; color:var(--u-ink-2); margin-bottom:16px; position:relative; z-index:2; }
+  .u-body:empty { display:none; }
+
+  /* —— 分隔线 —— */
+  .u-rule { height:1px; margin:0 0 18px; background:var(--u-line); position:relative; z-index:2; }
+
+  /* —— 日志 —— */
+  .u-notes-label { font-family:"SF Mono","JetBrains Mono","Cascadia Mono","Consolas",monospace;
+    font-size:10.5px; font-weight:600; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--u-ink-3); margin-bottom:2px; position:relative; z-index:2; }
+  .u-notes { list-style:none; margin-bottom:8px; position:relative; z-index:2; }
+  .u-notes li { font-size:13px; line-height:1.55; color:var(--u-ink-2);
+    padding:11px 0; border-bottom:1px solid var(--u-line-soft); }
+  .u-notes li:last-child { border-bottom:none; padding-bottom:4px; }
+  .u-notes li b { color:var(--u-ink); font-weight:600; }
+
+  /* —— 页脚 —— */
+  .u-foot { margin-top:14px; padding-top:16px;
+    border-top:1px solid var(--u-line);
+    align-items:center; justify-content:space-between; gap:12px;
+    position:relative; z-index:2; }
+  .u-hint { font-size:11.5px; line-height:1.45; color:var(--u-ink-3); }
+  .u-hint .mono { font-family:"SF Mono","JetBrains Mono","Cascadia Mono","Consolas",monospace;
+    font-variant-numeric:tabular-nums; }
+  .u-actions { display:flex; gap:8px; flex-shrink:0; }
+
+  .u-btn { height:36px; padding:0 16px; border-radius:10px;
+    font-family:inherit; font-size:13px; font-weight:600;
+    cursor:pointer; border:1px solid transparent;
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    transition:background .15s, color .15s, border-color .15s, box-shadow .18s, transform .1s; }
+  .u-btn:active { transform:scale(.975); }
+  .u-btn-ghost { background:transparent; border-color:var(--u-line); color:var(--u-ink-2); }
+  .u-btn-ghost:hover { background:rgba(13,16,21,.045); color:var(--u-ink); border-color:transparent; }
+  @media (prefers-color-scheme: dark) { .u-btn-ghost:hover { background:rgba(255,255,255,.07); } }
+  .u-btn-primary { color:#fff; background:var(--info);
+    box-shadow:0 6px 16px -8px rgba(77,107,254,.6); }
+  .u-btn-primary:hover { filter:brightness(1.06); }
+
+  /* —— update 下载态 —— */
+  .u-dl { margin-top:14px; position:relative; z-index:2; }
+  .card[data-layout="update"][data-state="dl"] .u-hero,
+  .card[data-layout="update"][data-state="dl"] .u-rule,
+  .card[data-layout="update"][data-state="dl"] .u-notes-label,
+  .card[data-layout="update"][data-state="dl"] .u-notes,
+  .card[data-layout="update"][data-state="dl"] .u-foot,
+  .card[data-layout="update"][data-state="dl"] .u-title,
+  .card[data-layout="update"][data-state="dl"] .u-body { display:none; }
+  .card[data-layout="update"][data-state="dl"] .u-dl { display:block; }
+  .u-dl-top { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:10px; }
+  .u-dl-label { font-size:13px; font-weight:600; color:var(--u-ink); }
+  .u-dl-pct { font-family:"SF Mono","JetBrains Mono","Cascadia Mono","Consolas",monospace;
+    font-size:13px; font-weight:700; color:var(--info); font-variant-numeric:tabular-nums; }
+  .u-track { height:5px; border-radius:99px; background:var(--u-track); overflow:hidden; }
+  .u-fill { height:100%; width:0%; border-radius:99px; background:var(--info);
+    transition:width .32s cubic-bezier(.4,0,.2,1); }
+  .u-dl-note { margin-top:10px; font-size:11.5px; color:var(--u-ink-3); }
+
+  /* —— update 里也显示 detail（可选）—— */
+  .card[data-layout="update"] .detail { margin-top:10px; margin-bottom:0; font-size:12px;
+    background:rgba(13,16,21,.03); border-left-color:rgba(77,107,254,.2); }
+  @media (prefers-color-scheme: dark) {
+    .card[data-layout="update"] .detail { background:rgba(255,255,255,.04); }
+  }
 </style>
 </head>
 <body>
-  <div class="card" id="card" data-kind="info">
-    <div class="head">
+  <div class="card" id="card" data-kind="info" data-layout="plain" data-state="idle">
+
+    <!-- ============ plain 头部 ============ -->
+    <div class="head" id="head-plain">
       <div class="icon-wrap" id="icon"></div>
       <div class="head-text">
         <div class="title" id="title">确认</div>
         <div class="body" id="body"></div>
       </div>
     </div>
+
+    <!-- ============ update 版式：品牌头 ============ -->
+    <div class="u-top">
+      <div class="u-brand">
+        <span class="u-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 19c3.2 0 5-1.5 6-4 1.2-3 3.1-4.9 6-4.9 1.2 0 2 .3 2.7.8C19.2 7.4 16.6 5 13 5c-2.4 0-4.3 1.2-5.4 2.9L5.2 9.4l1.4 1.7C5.8 13.5 5.3 16.2 5 19Z"/>
+          </svg>
+        </span>
+        <span class="u-name">Cuckoo Code</span>
+      </div>
+      <button class="u-x" id="u-x" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <!-- ============ update 版式：版本区 ============ -->
+    <div class="u-hero">
+      <div class="u-eyebrow"><span class="u-dot"></span>有可用更新</div>
+      <div class="u-versions">
+        <span class="u-v-old" id="u-v-old">0.9.17</span>
+        <span class="u-v-arrow">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </span>
+        <span class="u-v-new" id="u-v-new">0.9.18<sup>NEW</sup></span>
+      </div>
+    </div>
+
+    <!-- ============ update 版式：无版本时的降级标题 ============ -->
+    <div class="u-title" id="u-title"></div>
+    <div class="u-body" id="u-body"></div>
+
+    <div class="u-rule"></div>
+
+    <div class="u-notes-label">本次更新</div>
+    <ul class="u-notes" id="u-notes"></ul>
+
+    <!-- ============ 通用 detail（可选） ============ -->
     <div class="detail" id="detail"></div>
-    <div class="foot">
+
+    <!-- ============ update 版式：页脚 ============ -->
+    <div class="u-foot">
+      <span class="u-hint" id="u-hint"></span>
+      <div class="u-actions">
+        <button class="u-btn u-btn-ghost" id="u-later">稍后</button>
+        <button class="u-btn u-btn-primary" id="u-go">立即更新</button>
+      </div>
+    </div>
+
+    <!-- ============ plain 页脚 ============ -->
+    <div class="foot" id="foot-plain">
       <button class="btn btn-secondary" id="btn-secondary">稍后</button>
       <button class="btn btn-primary" id="btn-primary">确定</button>
     </div>
+
+    <!-- ============ update 下载态 ============ -->
+    <div class="u-dl">
+      <div class="u-dl-top">
+        <span class="u-dl-label">正在下载更新</span>
+        <span class="u-dl-pct" id="u-pct">0%</span>
+      </div>
+      <div class="u-track"><div class="u-fill" id="u-fill"></div></div>
+      <div class="u-dl-note">下载完成后将自动重启并安装，请勿关闭应用</div>
+    </div>
+
   </div>
 
   <script>
@@ -122,6 +332,20 @@
       var elDetail = document.getElementById('detail');
       var btnPrimary = document.getElementById('btn-primary');
       var btnSecondary = document.getElementById('btn-secondary');
+
+      // update 版式元素
+      var uTitle = document.getElementById('u-title');
+      var uBody = document.getElementById('u-body');
+      var uVOld = document.getElementById('u-v-old');
+      var uVNew = document.getElementById('u-v-new');
+      var uNotes = document.getElementById('u-notes');
+      var uHint = document.getElementById('u-hint');
+      var uGo = document.getElementById('u-go');
+      var uLater = document.getElementById('u-later');
+      var uX = document.getElementById('u-x');
+      var uFill = document.getElementById('u-fill');
+      var uPct = document.getElementById('u-pct');
+
       var ICONS = {
         success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
         info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
@@ -129,27 +353,95 @@
         error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
         update: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>'
       };
+
       function act(a) { try { api && api.action(a); } catch (_) {} }
+
       btnPrimary.addEventListener('click', function () { act('primary'); });
       btnSecondary.addEventListener('click', function () { act('secondary'); });
+      uGo.addEventListener('click', function () {
+        // 切到下载态，然后回传 primary 让主进程开始下载
+        card.setAttribute('data-state', 'dl');
+        act('primary');
+      });
+      uLater.addEventListener('click', function () { act('secondary'); });
+      uX.addEventListener('click', function () { act('secondary'); });
+
+      // 更新进度（主进程推送）
+      if (api && api.onProgress) {
+        api.onProgress(function (data) {
+          if (!data) return;
+          card.setAttribute('data-state', 'dl');
+          var p = Math.max(0, Math.min(100, Number(data.percent) || 0));
+          uFill.style.width = p + '%';
+          uPct.textContent = Math.round(p) + '%';
+        });
+      }
+
       document.addEventListener('keydown', function (e) {
-        // 聚焦到按钮时按 Enter 交给按钮自身 click，避免与全局处理双触发
         if (e.target && e.target.tagName === 'BUTTON') return;
         if (e.key === 'Escape') act('secondary');
         else if (e.key === 'Enter') act('primary');
       });
+
+      // 转义
+      function esc(s) {
+        return String(s == null ? '' : s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+
       if (api && api.onInit) {
         api.onInit(function (data) {
           if (!data) return;
           var kind = data.kind || 'info';
           card.setAttribute('data-kind', kind);
-          elIcon.innerHTML = ICONS[kind] || ICONS.info;
-          elTitle.textContent = data.title || '';
-          elBody.textContent = data.body || '';
+
+          var hasVersion = !!(data.version && data.newVersion);
+          var hasNotes = !!(data.notes && data.notes.length);
+          var isUpdateLayout = (kind === 'update') && (hasVersion || hasNotes || !!data.sizeText);
+
+          if (isUpdateLayout) {
+            card.setAttribute('data-layout', 'update');
+            card.setAttribute('data-has-version', hasVersion ? '1' : '0');
+            card.setAttribute('data-has-notes', hasNotes ? '1' : '0');
+
+            // 版本
+            if (hasVersion) {
+              uVOld.textContent = data.version;
+              uVNew.innerHTML = esc(data.newVersion) + '<sup>NEW</sup>';
+            }
+            // 标题/文案（无版本时降级）
+            uTitle.textContent = data.title || '发现新版本';
+            uBody.textContent = data.body || '';
+
+            // 日志
+            if (hasNotes) {
+              uNotes.innerHTML = '';
+              data.notes.forEach(function (n) {
+                var li = document.createElement('li');
+                li.innerHTML = String(n);   // 允许调用方提供 <b> 高亮
+                uNotes.appendChild(li);
+              });
+            }
+            // 页脚提示
+            uHint.innerHTML = data.sizeText
+              ? ('约 <span class="mono">' + esc(data.sizeText) + '</span> · 安装后自动重启')
+              : '';
+            // 按钮文案
+            uGo.textContent = data.primaryText || '立即更新';
+            uLater.textContent = data.secondaryText || '稍后';
+            // 初始状态
+            if (data.state === 'downloading') card.setAttribute('data-state', 'dl');
+          } else {
+            card.setAttribute('data-layout', 'plain');
+            elIcon.innerHTML = ICONS[kind] || ICONS.info;
+            elTitle.textContent = data.title || '';
+            elBody.textContent = data.body || '';
+            btnPrimary.textContent = data.primaryText || '确定';
+            if (data.secondaryText) { btnSecondary.textContent = data.secondaryText; btnSecondary.style.display = ''; }
+            else { btnSecondary.style.display = 'none'; }
+          }
+          // detail 两种版式通用
           elDetail.textContent = data.detail || '';
-          btnPrimary.textContent = data.primaryText || '确定';
-          if (data.secondaryText) { btnSecondary.textContent = data.secondaryText; btnSecondary.style.display = ''; }
-          else { btnSecondary.style.display = 'none'; }
         });
       }
     })();
