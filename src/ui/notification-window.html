@@ -188,6 +188,21 @@
             IMAGES = data.images.slice();
             startPic();
           }
+          // 内容就绪后测量自然高度回传主进程（贴合窗口，消除底部空白）。
+          // 双 rAF 等布局稳定（字体/换行计算完成）。
+          try {
+            requestAnimationFrame(function () {
+              requestAnimationFrame(function () {
+                try {
+                  var prev = card.style.height;
+                  card.style.height = 'auto';
+                  var h = Math.ceil(card.getBoundingClientRect().height);
+                  card.style.height = prev;
+                  if (h > 0 && api && typeof api.resize === 'function') api.resize(h);
+                } catch (_) {}
+              });
+            });
+          } catch (_) {}
           totalMs = Number(data.durationMs) || 0;
           if (totalMs > 0) { endAt = Date.now() + totalMs; elTimer.style.display = ''; tick(); }
           else { elTimer.style.display = 'none'; }

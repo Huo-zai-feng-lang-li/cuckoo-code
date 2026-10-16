@@ -244,6 +244,9 @@
   }
   .ck-set-field { display: flex; flex-direction: column; gap: 6px; }
   .ck-set-field.ck-set-toggle { flex-direction: row; align-items: center; justify-content: space-between; }
+  .ck-ab-toggle-list { display: flex; flex-direction: column; }
+  .ck-ab-toggle-list .ck-set-field { padding: 5px 0; border-bottom: 1px solid var(--ck-border); }
+  .ck-ab-toggle-list .ck-set-field:last-child { border-bottom: none; }
   .ck-set-key { font-size: 12px; color: var(--ck-text-2); }
   .ck-set-input {
     width: 100%; min-height: 32px;

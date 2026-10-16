@@ -225,6 +225,8 @@
   .ck-ab-spacer { flex: 1; }
   /* 活动栏溢出：隐藏项 + 「⋯」按钮 + hover 弹框 */
   .ck-ab-of-hidden { display: none !important; }
+  /* 用户手动隐藏（设置页开关）：不进「⋯」弹框，彻底不显示 */
+  .ck-ab-user-hidden { display: none !important; }
   .ck-ab-more { cursor: default; }
   .ck-ab-overflow-pop {
     position: fixed; z-index: 9998; display: none;

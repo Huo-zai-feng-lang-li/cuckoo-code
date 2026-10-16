@@ -153,6 +153,8 @@ export function initActivitybarDrag(): void {
   b.addEventListener('mousedown', (e: any) => {
     const item = e.target && e.target.closest ? e.target.closest('.ck-ab-item') : null;
     if (!item || !b.contains(item)) return;
+    // 用户手动隐藏的项不可拖拽（不可见，但保险起见）
+    if (item.classList.contains('ck-ab-user-hidden')) return;
     // 底部固定区（_spacer 之后）不可拖拽：保持"关于/远程/设置"沉底
     const spacer = b.querySelector('.ck-ab-spacer');
     if (spacer && (spacer.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING)) return;

@@ -14,6 +14,8 @@ const notificationAPI = {
   },
   /** 回传用户操作：'click'（点击卡片）| 'close'（关闭） */
   action: (a: string) => ipcRenderer.send('notification-action', a),
+  /** 回传内容自然高度（渲染完成后测量），主进程据此贴合窗口高度，消除底部空白 */
+  resize: (h: number) => ipcRenderer.send('notification-resize', h),
 };
 
 contextBridge.exposeInMainWorld('notificationAPI', notificationAPI);
