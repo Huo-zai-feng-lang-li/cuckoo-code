@@ -26,6 +26,8 @@ export interface EnhanceInput {
   history?: EnhanceHistoryItem[];
   /** 项目目录（读 package.json 提取技术栈） */
   projectDir?: string | null;
+  /** 外部取消信号（用户点"停止增强"时 abort） */
+  signal?: AbortSignal;
 }
 
 export interface EnhanceResult {
@@ -34,6 +36,8 @@ export interface EnhanceResult {
   text?: string;
   /** 错误信息（失败时） */
   error?: string;
+  /** 是否被用户主动取消 */
+  canceled?: boolean;
 }
 
 const MAX_MSG_CHARS = 1000;   // 单条历史截断上限
@@ -137,6 +141,13 @@ export async function enhancePrompt(input: EnhanceInput, cfgOverride?: PromptEnh
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  // 外部取消信号（用户点"停止增强"）→ 转发到内部 controller
+  const ext = input.signal;
+  const onExtAbort = () => controller.abort();
+  if (ext) {
+    if (ext.aborted) controller.abort();
+    else ext.addEventListener('abort', onExtAbort, { once: true });
+  }
   try {
     const resp = await fetch(endpoint, {
       method: 'POST',
@@ -165,9 +176,14 @@ export async function enhancePrompt(input: EnhanceInput, cfgOverride?: PromptEnh
     if (!out) return { success: false, error: 'API 返回为空' };
     return { success: true, text: out };
   } catch (err: any) {
-    if (err && err.name === 'AbortError') return { success: false, error: '增强超时（30 秒）' };
+    if (err && err.name === 'AbortError') {
+      // 区分"用户主动取消"与"超时"
+      if (ext && ext.aborted) return { success: false, error: '已取消增强', canceled: true };
+      return { success: false, error: '增强超时（30 秒）' };
+    }
     return { success: false, error: '请求失败: ' + ((err && err.message) || String(err)) };
   } finally {
     clearTimeout(timer);
+    if (ext) { try { ext.removeEventListener('abort', onExtAbort); } catch (_) { /* ignore */ } }
   }
 }

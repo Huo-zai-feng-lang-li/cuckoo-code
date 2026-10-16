@@ -98,6 +98,21 @@ test('连接被拒 → 失败（不抛异常）', async () => {
   assert.ok(/失败/.test(r.error));
 });
 
+test('外部 signal 取消 → 返回 canceled=true', async () => {
+  // 服务端故意慢响应，等外部 abort
+  const { srv, base } = await startServer((_req, res) => {
+    setTimeout(() => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ choices: [{ message: { content: 'ok' } }] })); }, 3000);
+  });
+  try {
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 150);
+    const r = await enh.enhancePrompt({ text: '写个登录页', signal: ac.signal }, { ...baseCfg, apiUrl: base });
+    assert.strictEqual(r.success, false);
+    assert.strictEqual(r.canceled, true, '应标记为已取消');
+    assert.ok(/取消/.test(r.error));
+  } finally { srv.close(); }
+});
+
 // ===== 成功路径 =====
 
 test('成功：回填增强文本，请求体含 model + messages', async () => {

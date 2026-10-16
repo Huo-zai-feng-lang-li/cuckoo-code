@@ -23,6 +23,8 @@ const harnessAPI = {
   reload: () => ipcRenderer.invoke('harness-reload'),
   /** 提示词增强：{ text, history } → { success, text, error } */
   enhancePrompt: (payload: { text: string; history?: any[] }) => ipcRenderer.invoke('harness-enhance-prompt', payload),
+  /** 停止增强（abort 在途请求） */
+  cancelEnhance: () => ipcRenderer.invoke('harness-cancel-enhance'),
   /** 读增强配置 */
   getEnhancerConfig: () => ipcRenderer.invoke('harness-get-enhancer-config'),
   /** 列出可用的增强背景图 */

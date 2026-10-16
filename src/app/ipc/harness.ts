@@ -511,18 +511,32 @@ function registerHarnessIpc(): void {
   // ========== 提示词增强（独立 API 旁路调用，不占对话轮次）==========
 
   // 增强：读当前草稿 + 最近 N 轮历史 + 项目技术栈 → 调 API → 回填
+  // 单飞：同一时刻只允许一个在途增强（增强本就是单用户串行操作），可被"停止增强"中止
+  let activeEnhanceAbort: AbortController | null = null;
   ipcMain.handle('harness-enhance-prompt', async (event: any, payload: any) => {
     const text = (payload && payload.text) || '';
     if (!text.trim()) return { success: false, error: '输入为空' };
     const ctx = findContext(event.sender);
     const projectDir = ctx && ctx.sessionStore ? ctx.sessionStore.state.selectedProjectDir : null;
     const history = Array.isArray(payload && payload.history) ? payload.history : [];
+    // 已有在途：拒绝并发（前端也有 enhanceInFlight 挡，此为兜底）
+    if (activeEnhanceAbort) return { success: false, error: '已有增强在进行中' };
+    const ac = new AbortController();
+    activeEnhanceAbort = ac;
     try {
-      const r = await enhancePrompt({ text, history, projectDir });
+      const r = await enhancePrompt({ text, history, projectDir, signal: ac.signal });
       return r;
     } catch (err: any) {
       return { success: false, error: (err && err.message) || String(err) };
+    } finally {
+      if (activeEnhanceAbort === ac) activeEnhanceAbort = null;
     }
+  });
+
+  // 停止增强：abort 在途 fetch
+  ipcMain.handle('harness-cancel-enhance', async () => {
+    if (activeEnhanceAbort) { try { activeEnhanceAbort.abort(); } catch (_) { /* ignore */ } return { success: true }; }
+    return { success: false, error: 'no-active-enhance' };
   });
 
   // 列出可用的增强背景图（src/ui/enhance-images/*.jpg）
