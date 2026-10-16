@@ -13,6 +13,7 @@ import { resolveAsset } from '../../infra/paths.js';
 import * as updater from '../../updater/index.js';
 // 新对话要让 harness 视图一起重置 —— 两个入口共用同一段逻辑，避免行为分叉
 import { prepareNewConversation } from './harness.js';
+import { initProject } from '../../session/project-context.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain, app, shell, BrowserWindow } = require('electron');
@@ -210,7 +211,7 @@ function registerShellIpc(): void {
     try { await view.webContents.loadURL(url); return { success: true }; }
     catch (err: any) { return { success: false, error: err.message }; }
   });
-  // 新对话：导航到平台首页（开新会话）
+  // 新对话：在当前项目中开新会话（导航到平台首页 + 沿用当前项目目录自动初始化）
   ipcMain.handle('web-new-conversation', async (event: any) => {
     const ctx = windowState.getContextByWebContents(event.sender);
     const view = ctx ? ctx.view : null;
@@ -218,14 +219,50 @@ function registerShellIpc(): void {
     const provider = (ctx && ctx.providerId) ? getProvider(ctx.providerId) : null;
     const url = provider && provider.homeUrl ? provider.homeUrl : '';
     if (!url) return { success: false, error: 'no-home-url' };
+    // 沿用当前项目目录：新对话仍绑定同一个项目，无需用户重新选择。
+    // 取不到（未初始化项目）则退化为纯新会话，与旧行为一致。
+    const currentDir = (ctx && ctx.sessionStore && ctx.sessionStore.state)
+      ? (ctx.sessionStore.state.selectedProjectDir || null) : null;
+    // 这里曾只做 loadURL —— AI 网页换了新会话，但 harness 视图完全不知道，
+    // 于是消息流/计划/目标/附件全留在屏幕上（"新对话"后满屏残留）。
+    prepareNewConversation(ctx);
+    // 防快速双击「新对话」：清理上一次未完成的 did-finish-load 监听与定时器。
+    // 否则两次导航合并为一次 did-finish-load 事件 → 两个监听器都触发 → initProject 重复执行。
+    const wc = view.webContents;
+    const ctxAny = ctx as any;
+    if (ctxAny.__newConvOnLoad) {
+      try { wc.off('did-finish-load', ctxAny.__newConvOnLoad); } catch (_) { /* ignore */ }
+      ctxAny.__newConvOnLoad = null;
+    }
+    if (ctxAny.__newConvTimer) {
+      try { clearTimeout(ctxAny.__newConvTimer); } catch (_) { /* ignore */ }
+      ctxAny.__newConvTimer = null;
+    }
+    let onLoad: (() => void) | null = null;
+    if (currentDir) {
+      // 有当前项目 → 等页面加载完自动注入系统提示词（不弹目录框，复用 new-conversation-for-project 的加载等待逻辑）
+      onLoad = () => {
+        try { wc.off('did-finish-load', onLoad!); } catch (_) { /* ignore */ }
+        onLoad = null;
+        ctxAny.__newConvOnLoad = null;
+        ctxAny.__newConvTimer = setTimeout(async () => {
+          ctxAny.__newConvTimer = null;
+          try { await initProject(false, ctx, currentDir, false, '', false); }
+          catch (err: any) { console.log('[Cuckoo Code] 新对话初始化项目失败: ' + (err && err.message)); }
+        }, 2000);
+      };
+      ctxAny.__newConvOnLoad = onLoad;
+      try { wc.on('did-finish-load', onLoad); } catch (_) { /* ignore */ }
+    }
     try {
-      // 这里曾只做 loadURL —— AI 网页换了新会话，但 harness 视图完全不知道，
-      // 于是消息流/计划/目标/附件全留在屏幕上（"新对话"后满屏残留）。
-      prepareNewConversation(ctx);
       await view.webContents.loadURL(url);
       return { success: true };
+    } catch (err: any) {
+      // loadURL 失败：did-finish-load 不会触发，必须显式移除监听器，否则残留累积
+      if (onLoad) { try { wc.off('did-finish-load', onLoad); } catch (_) { /* ignore */ } }
+      ctxAny.__newConvOnLoad = null;
+      return { success: false, error: err.message };
     }
-    catch (err: any) { return { success: false, error: err.message }; }
   });
 
   ipcMain.handle('shell-navigate', async (event: any, { url }: any) => {
