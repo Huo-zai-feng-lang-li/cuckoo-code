@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-16
+
+### Added
+- **自绘系统通知浮窗**（取代 Electron 原生通知）：新增 `src/app/notification-window.ts` + `src/ui/notification-window.html` + `src/app/notification-preload.ts`。右下角无边框卡片、深/浅色自适应、多条垂直堆叠、hover 暂停倒计时、点击聚焦对应窗口，视觉与"限流切换浮窗"统一。改造 3 处调用：AI 任务完成（`ipc/renderer.ts`）、窗口组切换（`entry.ts`）、更新提示（`updater/index.ts`）。
+- **自绘确认对话框**（取代 `dialog.showMessageBox`）：新增 `src/app/confirm-window.ts` + `src/ui/confirm-window.html` + `src/app/confirm-preload.ts`。右下角卡片 + 主/次按钮 + Esc/Enter 快捷键，错误细节可滚动。替换更新流程 4 处原生对话框（发现新版本 / 更新已就绪 ×2 / 更新失败重试）。
+- 需求档案 `docs/requirements/068-notification-window.md`。
+
+### Performance
+- **纯净模式流式渲染改回"节流全量 markdown"**（80ms）：v0.8.89 为消除 O(n²) 改成纯文本增量，代价是流式期间无格式、收尾才"唰"地变格式。现折中为节流全量 markdown 渲染——流式期间始终带格式、肉眼流畅（~12fps），渲染次数较旧版 60fps 降约 5 倍。
+- **手机端流式 markdown 节流 200ms → 80ms**，与电脑端对齐。
+- **TPS 口径改滑动窗口（4s）**：原为"整轮平均"（思考阶段计入分母 → 出字飞快却显示低速）。改为窗口内 token 增量 / 时间增量，反映近期真实速度；同时区分"acc 曾增长"与"从未增长"，避免跨量纲混用污染窗口。
+
+### Fixed
+- **手机端"总是生成失败/请求失败"（根因）**：DeepSeek 偶发空正文 → 电脑端自动重试引擎静默重试，但 `remote-bridge` 把同一可重试错误立即上报手机 → 手机在电脑倒计时重试时就显示"生成失败"。修复：新增 `cuckoo-retry-state` 事件，重试期间不上报终态、仅提示"正在自动重试"。
+- **流式尾部泄漏 ```cuck ```**：AI 刚输出围栏前缀（未换行）时正则不匹配，半截围栏作为普通文本闪现。`harness-bridge`/`remote-bridge` 加兜底正则。
+- **空白气泡**：`onStream` 无条件创建气泡，纯工具回合（正文被 strip 清空）会建出空气泡。改为空内容且无活跃气泡时不创建。
+- **`+` 新对话未沿用当前项目**：`web-new-conversation` 只 `loadURL`，不重新注入项目上下文 → 新对话丢失项目。改为沿用当前 `selectedProjectDir` 自动初始化；并修复快速双击导致的监听器重复（`initProject` 跑两次）与 loadURL 失败的监听器泄漏。
+- **手机端思考块太矮/易提前折叠**：`.think-body` `max-height` 320px → 45vh；正文出现时不再立即折叠思考块（收尾才折叠），避免"思考一闪而过"。
+
 ## [0.8.99] - 2026-10-16
 
 ### Performance

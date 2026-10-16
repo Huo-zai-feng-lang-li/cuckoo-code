@@ -1,11 +1,38 @@
-# 最新接续状态 (2026-10-16 03:38)
+# 最新接续状态 (2026-10-16)
 
 ## 核心进展
+- **自绘通知/确认浮窗 + 流式体验回归修复** → v0.9.0（详见下）
 - **手机远程流式渲染优化** → v0.8.99（`src/remote/pwa/app.js` + `style.css` + `remote-bridge.ts` + `manager.ts`）：流式期间改低频 markdown 渲染（~200ms），端到端延迟 240→120ms。
 - **Harness 流式体验优化** → v0.8.98（`src/providers/hooks/{deepseek,claude,chatgpt}.ts` 节流 80→40ms + `harness.html` scrollBottom rAF 合并）。
 - **Harness 流式收尾卡顿修复** → v0.8.97（`harness.html`：finished 帧渲染后设 `lastDoneText`，让 assistant-done 去重、跳过第二次 renderMarkdown）。
 - **记忆稳健性 + 压缩摘要注入** → v0.8.95/96（`src/infra/memories.ts` 原子写+保留最新；`src/session/compaction.ts` 摘要注入新会话）。
 - **子代理通知隔离 + tools 白名单** → v0.8.94（`src/app/ipc/renderer.ts` + `src/bridge/subagent.ts`）。
+
+## v0.9.0 本次会话（2026-10-16）
+
+### 交付内容
+1. **自绘系统通知浮窗**（新增 `notification-window.ts`/`.html`/`preload.ts`）：右下角无边框卡片、堆叠、hover 暂停、点击聚焦。替换 AI完成 / 窗口组切换 / 更新提示 3 处原生通知。
+2. **自绘确认对话框**（新增 `confirm-window.ts`/`.html`/`preload.ts`）：主/次按钮 + Esc/Enter。替换更新流程 4 处 `dialog.showMessageBox`。
+3. **纯净模式流式渲染改回节流全量 markdown（80ms）** —— 修复"先一大坨 md 后变格式"。
+4. **手机端节流 200→80ms** + 思考块高度 320px→45vh + 不提前折叠。
+5. **手机端"总是生成失败"根因修复**：新增 `cuckoo-retry-state` 事件，重试期间不误报终态。
+6. **流式尾部 ```cuck` 泄漏** + **空气泡** 修复。
+7. **`+` 新对话沿用当前项目**（含防双击、失败清理监听）。
+8. **TPS 改滑动窗口（4s）**。
+
+### 真机验证（dev 实例 9444，源码直载）
+- 纯净模式发 markdown 消息：DOM 含 `<h1><h2><ul><strong><code>`，`hasStrong:true` —— **markdown 正确渲染**（不再是字面 `**`）。
+- 4 条 assistant 消息均有内容、**无空气泡**；流式进行中即带格式。
+- confirm-window.html 结构完整、无 JS 错误。
+- ⚠️ **未验证**：更新弹窗/通知浮窗的**实际弹出效果**（`app.isPackaged` 才触发，开发版测不了）——需打包版真机验证。
+
+### 验证
+typecheck / test（981）/ lint（0 error）/ compile 全绿。
+
+### 待办
+- [ ] **打包版真机验证**：更新确认框（发现新版本/更新已就绪/更新失败）、系统通知浮窗、窗口组切换通知的实际显示与交互。
+- [ ] 通知/确认浮窗的**视觉润色**（按 impeccable 流程截图自检，尚未做）。
+- [ ] 若通知浮窗在打包版有多屏/DPI 定位问题，需实机排查。
 
 ## 核心动机与背景 (Motivation & Background)
 
