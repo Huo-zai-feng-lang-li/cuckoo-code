@@ -162,6 +162,9 @@
     border: 1px solid var(--border-soft); position: relative;
   }
   .msg.user .bubble:has(.ck-mledit) { width: 80%; }
+  /* 气泡内"技能/工具"标签（chip 样式，无删除按钮） */
+  .bubble-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+  .msg.user .bubble .hint-chip { cursor: default; font-size: 11px; }
 
   /* 气泡编辑动作按钮 */
   .msg-edit-bar { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
@@ -1063,7 +1066,7 @@
     try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) { /* ignore */ }
 
     function cancel() {
-      bubbleEl.innerHTML = esc(origText);
+      bubbleEl.innerHTML = esc(origText) + renderBubbleChips(msgEl.__ckChips);
     }
     function doSubmitLatest() {
       var newText = ta.value.trim();
@@ -1253,13 +1256,22 @@
     }
   }
 
+  /** 渲染气泡内"技能/工具"标签（chip 样式；无删除按钮） */
+  function renderBubbleChips(labels) {
+    if (!labels || !labels.length) return '';
+    return '<div class="bubble-chips">' + labels.map(function (l) {
+      return '<span class="hint-chip"><span class="hc-label">' + esc(l) + '</span></span>';
+    }).join('') + '</div>';
+  }
   function addUser(text, histItem) {
     clearEmpty();
     var d = document.createElement('div');
     d.className = 'msg user';
     var bubble = document.createElement('div');
     bubble.className = 'bubble';
-    bubble.innerHTML = esc(text);
+    var chips = (histItem && histItem.hints) ? histItem.hints : null;
+    d.__ckChips = chips; // 供编辑取消时恢复
+    bubble.innerHTML = esc(text) + renderBubbleChips(chips);
     d.appendChild(bubble);
     attachUserActions(d, bubble, function () { return text; }, histItem);
     stream.appendChild(d);
@@ -3230,13 +3242,14 @@
     var hintText = hints.length ? hints.filter(function (h) { return !h.isGoal && !h.isPlan; }).map(function (h) { return h.text; }).join('\n') : '';
     if (hintText) sendText = (hintText + '\n' + sendText).trim();
     var attachNote = files.length ? ('[附件 ' + files.length + ' 个] ') : '';
-    // 气泡：/goal 显示"[目标] xxx"；正常显示用户文字；仅选 chip 时显示"[指令] 标签"
+    // 气泡：文字与"技能/工具标签"分离存储 —— 文字进 text，标签进 hints（渲染为 chip）
+    var chipLabels = hints.filter(function (h) { return !h.isGoal && !h.isPlan; }).map(function (h) { return h.label; });
     var bubbleText;
     if (displayText !== text) bubbleText = displayText;
     else if (text) bubbleText = text;
-    else if (hints.length) bubbleText = '[指令] ' + hints.map(function (h) { return h.label; }).join('、');
     else bubbleText = '';
     var userHistItem = { t: 'user', text: attachNote + bubbleText };
+    if (chipLabels.length) userHistItem.hints = chipLabels;
     pushHist(userHistItem);
     addUser(attachNote + bubbleText, userHistItem);
     pendingFiles = [];

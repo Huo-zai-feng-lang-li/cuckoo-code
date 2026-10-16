@@ -22,6 +22,7 @@ import { registerSnapshotIpc } from './snapshot.js';
 import { registerRulesIpc } from './rules.js';
 import { registerGitIpc } from './git.js';
 import { registerTaskIpc } from './task.js';
+import { registerTooltipIpc } from './tooltip.js';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -52,6 +53,7 @@ function registerIpcHandlers(): void {
   registerRulesIpc();
   registerGitIpc();
   registerTaskIpc();
+  registerTooltipIpc();
 }
 
 export { registerIpcHandlers };

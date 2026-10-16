@@ -2,7 +2,7 @@
 id: 072
 type: feature
 title: 活动栏图标显隐设置 + Token 图标统一 + 通知浮窗高度自适应
-status: doing
+status: done
 branch: fix/072-ui-fixes
 created: 2026-10-16
 updated: 2026-10-16

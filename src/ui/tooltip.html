@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="color-scheme" content="light dark" />
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { background:transparent; overflow:hidden; -webkit-user-select:none; user-select:none;
+    width:100%; height:100%;
+    /* flex 居中：内容贴顶、水平居中；width:max-content 让内容按自然宽度布局（不受窗口约束换行） */
+    display:flex; justify-content:center; align-items:flex-start;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+  #tip {
+    width: max-content;
+    padding: 5px 9px;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: #f3f4f6;
+    background: rgba(24, 24, 27, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.32), 0 1px 3px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    max-width: 320px;
+    word-break: break-word;
+    white-space: pre-line;
+    /* 淡入 + 轻微上滑：轻快的入场动画（.16s），迅速出现又不突兀；
+       出场不设过渡（瞬间消失，避免鼠标移开后还滞留）。 */
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity .16s cubic-bezier(.22, 1, .36, 1), transform .16s cubic-bezier(.22, 1, .36, 1);
+  }
+  #tip.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  /* 隐藏（无 show）时：不淡出，直接消失 —— 避免悬停结束后的滞影 */
+  #tip:not(.show) {
+    transition: none;
+  }
+  #tip .kbd {
+    display: inline-block; margin-left: 6px; padding: 1px 5px;
+    font-size: 10px; font-family: inherit;
+    color: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+  <span id="tip"></span>
+  <script>
+    (function () {
+      'use strict';
+      var api = window.tooltipAPI;
+      var tip = document.getElementById('tip');
+      var currentGen = 0;
+      function render(text) {
+        tip.innerHTML = '';
+        var m = String(text || '').match(/^(.*?)(?:\s*\((Ctrl|Shift|Alt|Cmd|Meta|Enter|Esc|Tab|F\d+)[^)]*\))$/i);
+        if (m && m[1]) {
+          tip.appendChild(document.createTextNode(m[1].trim()));
+          var kbd = document.createElement('span');
+          kbd.className = 'kbd';
+          kbd.textContent = String(text).slice(m[1].length).replace(/^\s*\(/, '').replace(/\)$/, '');
+          tip.appendChild(kbd);
+        } else {
+          tip.textContent = text || '';
+        }
+      }
+      function measure() {
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            var r = tip.getBoundingClientRect();
+            try { api && api.measure(currentGen, Math.ceil(r.width), Math.ceil(r.height)); } catch (_) {}
+          });
+        });
+      }
+      if (api && api.onContent) {
+        api.onContent(function (data) {
+          if (data && typeof data.gen === 'number') currentGen = data.gen;
+          // 重置为隐藏态 → 渲染 → 双 rAF 后加 .show，触发淡入（每次 hover 都有入场动画）
+          tip.classList.remove('show');
+          render(data && data.text);
+          measure();
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () { tip.classList.add('show'); });
+          });
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

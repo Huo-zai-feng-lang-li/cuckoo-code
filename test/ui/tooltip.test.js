@@ -43,7 +43,7 @@ test('原生 title 仅在内容被裁剪时才弹提示（data-tooltip 显式声
   assert.ok(/scrollWidth > .*clientWidth/.test(src), 'isClipped 应用 scrollWidth/clientWidth 判定');
   // 原生 title 转存为 data-ck-title，且只在裁剪时展示
   assert.ok(src.includes("setAttribute('data-ck-title'"), '原生 title 应转存为 data-ck-title');
-  assert.ok(/if \(implicit && \(isIconLike\(el\) \|\| isClipped\(el\)\)\) text = implicit/.test(src), '原生 title 应在图标型或裁剪时作为提示');
+  assert.ok(/implicit && \(isIconLike\(el\) \|\| isClipped\(el\)\)/.test(src), '原生 title 应在图标型或裁剪时作为提示');
   assert.ok(/function isIconLike\(/.test(src), '应有 isIconLike 判定（图标/极短缩写应展示）');
   // data-tooltip 显式声明仍优先、总是展示
   assert.ok(src.includes("getAttribute('data-tooltip')"), 'data-tooltip 显式声明应始终被读取');
@@ -56,14 +56,17 @@ test('原生 title 仅在内容被裁剪时才弹提示（data-tooltip 显式声
   assert.ok(/function isClipped\(el\)/.test(platform), 'platform-select 版应有 isClipped');
 });
 
-test('tooltip.ts 具备防溢出与快捷键标签识别', () => {
+test('tooltip 独立窗口具备防溢出与快捷键标签识别', () => {
+  // 边界判定/定位已移至主进程 tooltip-window.ts（壳页面内 tooltip 会被 AI 视图遮挡）
+  const winSrc = fs.readFileSync(path.join(import.meta.dirname, '../../src/app/tooltip-window.ts'), 'utf8');
+  assert.ok(winSrc.includes('EDGE'), '主进程定位应有屏幕边缘留白常量');
+  assert.ok(/wa\.x \+ wa\.width - EDGE/.test(winSrc), '应有水平右边界防溢出保护');
+  assert.ok(/y \+ contentH > wa\.y \+ wa\.height/.test(winSrc), '应有垂直下边界翻转保护');
+  // 快捷键解析：渲染在 tooltip.html（独立窗口页面）
+  const html = fs.readFileSync(path.join(import.meta.dirname, '../../src/ui/tooltip.html'), 'utf8');
+  assert.ok(html.includes('kbd'), '应将快捷键渲染为 kbd 徽标');
+  // tooltip.ts 仍负责逃生/失焦关闭
   const src = fs.readFileSync(TOOLTIP_TS, 'utf8');
-  // 视口安全边界保护
-  assert.ok(src.includes('window.innerWidth - 8'), '应有水平右边界防溢出保护');
-  assert.ok(src.includes('window.innerHeight - 8'), '应有垂直下边界翻转保护');
-  // 快捷键解析
-  assert.ok(src.includes('ck-tooltip-kbd'), '应将快捷键渲染为 ck-tooltip-kbd');
-  // 逃生与失焦关闭
   assert.ok(src.includes("e.key === 'Escape'"), 'Esc 键应隐藏 tooltip');
   assert.ok(src.includes("'blur'"), '失焦应隐藏 tooltip');
 });

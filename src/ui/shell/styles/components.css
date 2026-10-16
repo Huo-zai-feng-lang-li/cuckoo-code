@@ -578,6 +578,8 @@
   .ck-ft-hl { background: var(--ck-primary-soft); color: var(--ck-primary); border-radius: 2px; }
   /* 文件页：树撑满面板剩余高度、内部滚动（横向滚动条固定可见区底部，不用把垂直滚到底） */
   .ck-tab[data-panel="files"] { flex: 1; min-height: 0; }
+  /* Git 面板：撑满侧栏高度，让改动列表/提交历史自适应分配空间 */
+  .ck-tab[data-panel="git"] { flex: 1; min-height: 0; }
   .ck-ft { padding: 2px 0; overflow: auto; flex: 1; min-height: 0; }
   /* 滚动条：与侧边栏一致（4px、圆角 2px、透明轨道） */
   .ck-ft-row {

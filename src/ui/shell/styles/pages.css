@@ -252,6 +252,9 @@
     padding: 6px 10px 4px; font-size: 11px; font-weight: 700;
     color: var(--ck-text-dim); letter-spacing: .3px;
     cursor: pointer; user-select: none;
+    /* 滚动时分组标题吸顶（仿 VSCode）：父级 .ck-list.ck-git 滚动，标题 sticky 不跟随 */
+    position: sticky; top: 0; z-index: 2;
+    background: var(--ck-bg);
   }
   /* 折叠箭头：CSS 三角。展开朝下，折叠（ck-git-caret-c）朝右 */
   .ck-git-caret {
@@ -298,8 +301,16 @@
     font-size: 12px; font-weight: 700; color: var(--ck-text-dim); cursor: pointer;
   }
   .ck-git-act:hover { background: var(--ck-primary-soft); color: var(--ck-primary); }
+  /* Git 改动列表：保证最小可见高度，历史展开时也不会被挤没 */
+  .ck-list.ck-git { flex: 1 1 auto; min-height: 130px; overflow-y: auto; }
   /* ===== 提交历史 ===== */
-  .ck-git-history { border-top: 1px solid var(--ck-border-soft); flex-shrink: 0; }
+  /* 自适应：无改动文件时铺满底部；有改动文件时与改动列表分配空间 */
+  .ck-git-history { border-top: 1px solid var(--ck-border-soft);
+    flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  /* 历史收起（列表 hidden）时，容器只占头部高度，不抢空间 */
+  .ck-git-history:has(.ck-git-history-list.ck-hidden) { flex: 0 0 auto; }
+  /* 历史展开时保证最小可见高度（不被改动列表挤没） */
+  .ck-git-history:has(.ck-git-history-list:not(.ck-hidden)) { min-height: 150px; }
   .ck-git-history-head {
     display: flex; align-items: center; gap: 6px;
     padding: 8px 10px; cursor: pointer; user-select: none;
@@ -307,7 +318,7 @@
   .ck-git-history-head:hover { background: var(--ck-surface-hover); }
   .ck-git-history-title { flex: 1; font-size: 12px; font-weight: 600; color: var(--ck-text-2); }
   .ck-git-history-count { font-size: 11px; color: var(--ck-text-dim); }
-  .ck-git-history-list { max-height: 320px; overflow-y: auto; }
+  .ck-git-history-list { flex: 1 1 auto; min-height: 0; max-height: none; overflow-y: auto; }
   .ck-git-history-list.ck-hidden { display: none; }
   .ck-git-history-empty { padding: 10px; font-size: 12px; color: var(--ck-text-dim); text-align: center; }
   .ck-git-commit-row {
