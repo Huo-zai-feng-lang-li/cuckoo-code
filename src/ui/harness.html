@@ -422,14 +422,17 @@
     background-repeat: no-repeat;
     animation: none;
   }
+  /* 图片模式：淡出输入区/附件/发送/拖拽柄，但保留增强(停止)按钮可见可点 */
   .composer-inner.enhancing.image-bg #input,
-  .composer-inner.enhancing.image-bg .composer-tools,
+  .composer-inner.enhancing.image-bg .attach-btn,
   .composer-inner.enhancing.image-bg #send,
   .composer-inner.enhancing.image-bg .composer-resize {
     opacity: 0;
     transition: opacity .3s ease;
     pointer-events: none;
   }
+  /* 图片模式下增强/停止按钮置顶可见（停止态红色底由 .busy 提供，z-index 保证在图上） */
+  .composer-inner.enhancing.image-bg .enhance-btn { z-index: 5; }
   /* 图片模式：进图淡入 */
   .composer-inner.enhancing.image-bg { animation: enhImgIn .4s ease both; }
   @keyframes enhImgIn { from { opacity: .4; } to { opacity: 1; } }
@@ -536,25 +539,23 @@
     opacity: 0; transition: opacity .2s ease; pointer-events: none;
   }
   .enhance-btn:hover::after { opacity: 1; }
-  .enhance-btn.busy { color: var(--accent); cursor: pointer; }
-  /* 增强中：图标能量脉冲 + 扩散环（停止态：方块图标不做脉冲，更稳） */
-  .enhance-btn.busy svg { animation: enhPulseIcon 1.6s ease-in-out infinite; }
-  @keyframes enhPulseIcon {
-    0%, 100% { opacity: .55; transform: scale(.94); }
-    50% { opacity: 1; transform: scale(1.06); }
+  /* 增强中 = 停止按钮：红色醒目（实心红底 + 白图标 + 呼吸脉冲） */
+  .enhance-btn.busy {
+    color: #fff; cursor: pointer;
+    background: var(--red, #e5484d);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--red, #e5484d) 22%, transparent);
+    animation: enhStopPulse 1.4s ease-in-out infinite;
   }
-  .enhance-btn.busy::before {
-    content: ''; position: absolute; inset: 2px; border-radius: 7px;
-    border: 1.5px solid var(--accent);
-    animation: enhRing 1.6s cubic-bezier(.16, 1, .3, 1) infinite;
-    pointer-events: none;
+  .enhance-btn.busy:hover { background: color-mix(in srgb, var(--red, #e5484d) 88%, #000); }
+  .enhance-btn.busy:active { transform: scale(.9); }
+  @keyframes enhStopPulse {
+    0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--red, #e5484d) 22%, transparent); }
+    50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--red, #e5484d) 30%, transparent); }
   }
-  @keyframes enhRing {
-    0% { transform: scale(.7); opacity: .8; }
-    100% { transform: scale(1.5); opacity: 0; }
-  }
+  /* 停止态不要 hover 能量环 / 扩散环（那是增强态的东西） */
+  .enhance-btn.busy::before, .enhance-btn.busy::after { display: none; }
   @media (prefers-reduced-motion: reduce) {
-    .enhance-btn.busy svg, .enhance-btn.busy::before { animation: none; }
+    .enhance-btn.busy { animation: none; }
   }
   .enhance-btn:disabled { opacity: .4; cursor: default; }
   /* 增强后撤销条 */
