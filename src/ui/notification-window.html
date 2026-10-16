@@ -7,182 +7,95 @@
 <style>
   :root {
     color-scheme: light dark;
-    --bg: #ffffff;
-    --border: rgba(16, 24, 40, 0.08);
-    --text: #16181d;
-    --text-2: #545a67;
-    --text-dim: #8a8f9b;
-    --success: #2f9e6b;
-    --success-soft: rgba(47, 158, 107, 0.10);
-    --info: #4d6bfe;
-    --info-soft: rgba(77, 107, 254, 0.10);
-    --warn: #e6a23c;
-    --warn-soft: rgba(230, 162, 60, 0.10);
-    --danger: #e5484d;
-    --danger-soft: rgba(229, 72, 77, 0.10);
+    --bg: #ffffff; --bg-2: #fafbfd;
+    --hairline: rgba(255,255,255,.95);
+    --border: rgba(16,24,40,.09);
+    --text: #14161b; --text-2: #5a6070; --text-dim: #8a8f9b;
+    --success: #2f9e6b; --success-soft: rgba(47,158,107,.13);
+    --info: #4d6bfe; --info-soft: rgba(77,107,254,.13);
+    --warn: #e6a23c; --warn-soft: rgba(230,162,60,.13);
+    --danger: #e5484d; --danger-soft: rgba(229,72,77,.13);
     --surface-hover: #eef0f4;
-    --shadow: 0 12px 40px rgba(16, 24, 40, 0.16), 0 2px 8px rgba(16, 24, 40, 0.08);
-    --accent: var(--info);
-    --accent-soft: var(--info-soft);
+    --shadow: 0 12px 40px rgba(16,24,40,.16), 0 2px 8px rgba(16,24,40,.08);
+    --accent: var(--info); --accent-soft: var(--info-soft);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #16181d;
-      --border: rgba(255, 255, 255, 0.10);
-      --text: #eef1f6;
-      --text-2: #c0c6d2;
-      --text-dim: #8a90a0;
-      --success: #4ecb8d;
-      --success-soft: rgba(78, 203, 141, 0.14);
-      --info: #7b8fff;
-      --info-soft: rgba(123, 143, 255, 0.16);
-      --warn: #f0b95a;
-      --warn-soft: rgba(240, 185, 90, 0.14);
-      --danger: #ff6369;
-      --danger-soft: rgba(255, 99, 105, 0.14);
-      --surface-hover: rgba(255, 255, 255, 0.09);
-      --shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
+      --bg: #17191f; --bg-2: #1b1e25;
+      --hairline: rgba(255,255,255,.07);
+      --border: rgba(255,255,255,.10);
+      --text: #eef1f6; --text-2: #c0c6d2; --text-dim: #8a90a0;
+      --success: #4ecb8d; --success-soft: rgba(78,203,141,.17);
+      --info: #7b8fff; --info-soft: rgba(123,143,255,.19);
+      --warn: #f0b95a; --warn-soft: rgba(240,185,90,.17);
+      --danger: #ff6369; --danger-soft: rgba(255,99,105,.17);
+      --surface-hover: rgba(255,255,255,.09);
+      --shadow: 0 12px 40px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3);
     }
   }
-
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body {
-    width: 100%; height: 100%;
-    background: transparent;
-    overflow: hidden;
-    -webkit-user-select: none;
-    user-select: none;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
-  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; background:transparent; overflow:hidden;
+    -webkit-user-select:none; user-select:none;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,sans-serif; }
 
   .card {
-    width: 100%; height: 100%;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 13px;
-    box-shadow: var(--shadow);
-    display: flex;
-    align-items: stretch;
-    overflow: hidden;
-    cursor: pointer;
-    animation: slideIn .26s cubic-bezier(.22, .61, .36, 1);
-    transition: transform .18s cubic-bezier(.22, .61, .36, 1), box-shadow .18s;
+    width:100%; height:100%;
+    background:linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+    border:1px solid var(--border);
+    border-radius:14px;
+    box-shadow:var(--shadow);
+    display:flex; flex-direction:column; overflow:hidden;
+    cursor:pointer; position:relative;
+    animation:slideIn .26s cubic-bezier(.22,.61,.36,1);
+    transition:transform .18s cubic-bezier(.22,.61,.36,1);
   }
-  .card:hover { transform: translateY(-1px); }
+  .card:hover { transform:translateY(-1px); }
+  /* 顶部高光发丝线（静态，零成本） */
+  .card::before { content:""; position:absolute; top:0; left:14px; right:14px; height:1px;
+    background:linear-gradient(90deg,transparent,var(--hairline) 25%,var(--hairline) 75%,transparent);
+    pointer-events:none; z-index:2; }
 
-  @keyframes slideIn {
-    from { opacity: 0; transform: translateX(18px) scale(.97); }
-    to { opacity: 1; transform: translateX(0) scale(1); }
-  }
-  .card.closing { animation: slideOut .2s ease forwards; }
-  @keyframes slideOut {
-    to { opacity: 0; transform: translateX(18px) scale(.97); }
-  }
+  @keyframes slideIn { from{opacity:0;transform:translateX(18px) scale(.97)} to{opacity:1;transform:translateX(0) scale(1)} }
+  .card.closing { animation:slideOut .2s ease forwards; }
+  @keyframes slideOut { to{opacity:0;transform:translateX(18px) scale(.97)} }
 
-  /* 左侧强调色条 */
-  .accent {
-    width: 3px;
-    flex-shrink: 0;
-    background: var(--accent);
-  }
+  .inner { flex:1; min-width:0; display:flex; align-items:flex-start; gap:12px;
+    padding:15px 16px 14px; position:relative; z-index:1; }
 
-  .inner {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: flex-start;
-    gap: 11px;
-    padding: 13px 14px 12px 14px;
-  }
+  /* 实心渐变图标块：小卡片的视觉锚点 */
+  .icon-wrap { width:34px; height:34px; border-radius:10px;
+    background:var(--accent);
+    color:#fff; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 4px 12px -4px var(--accent); }
+  .icon-wrap svg { width:18px; height:18px; }
 
-  .icon-wrap {
-    width: 30px; height: 30px;
-    border-radius: 9px;
-    background: var(--accent-soft);
-    color: var(--accent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    margin-top: 1px;
-  }
-  .icon-wrap svg { width: 17px; height: 17px; }
+  .text { flex:1; min-width:0; padding-top:1px; }
+  .title { font-size:15.5px; font-weight:700; color:var(--text); line-height:1.3;
+    letter-spacing:-.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .body { font-size:13px; color:var(--text-2); line-height:1.5; margin-top:3px;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .body:empty { display:none; }
 
-  .text { flex: 1; min-width: 0; padding-top: 1px; }
-  .title {
-    font-size: 13.5px;
-    font-weight: 650;
-    color: var(--text);
-    line-height: 1.35;
-    letter-spacing: -.005em;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .body {
-    font-size: 12.5px;
-    color: var(--text-2);
-    line-height: 1.45;
-    margin-top: 3px;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .body:empty { display: none; }
+  /* 底部自动消失进度条：3px 渐变（左实右淡，指示流向） */
+  .timer { position:absolute; left:0; bottom:0; height:3px; width:100%;
+    background:linear-gradient(90deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 45%, transparent) 100%);
+    transform-origin:left center; transform:scaleX(1);
+    transition:transform .1s linear; will-change:transform; z-index:2; }
 
-  .close {
-    width: 22px; height: 22px;
-    border: none;
-    background: transparent;
-    color: var(--text-dim);
-    border-radius: 6px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    opacity: 0;
-    transition: opacity .15s, background .15s, color .15s;
-  }
-  .card:hover .close { opacity: 1; }
-  .close:hover { background: var(--surface-hover); color: var(--text); }
-  .close svg { width: 13px; height: 13px; }
-
-  /* 底部自动消失进度条 */
-  .timer {
-    position: absolute;
-    left: 0; bottom: 0;
-    height: 2px;
-    width: 100%;
-    background: var(--accent);
-    opacity: .35;
-    transform-origin: left center;
-    transform: scaleX(1);
-  }
-  .card { position: relative; }
-
-  /* 类型配色（由 JS 设置 data-kind） */
-  .card[data-kind="success"] { --accent: var(--success); --accent-soft: var(--success-soft); }
-  .card[data-kind="warn"]    { --accent: var(--warn);    --accent-soft: var(--warn-soft); }
-  .card[data-kind="error"]   { --accent: var(--danger);  --accent-soft: var(--danger-soft); }
-  .card[data-kind="info"]    { --accent: var(--info);    --accent-soft: var(--info-soft); }
+  .card[data-kind="success"] { --accent:var(--success); --accent-soft:var(--success-soft); }
+  .card[data-kind="warn"]    { --accent:var(--warn);    --accent-soft:var(--warn-soft); }
+  .card[data-kind="error"]   { --accent:var(--danger);  --accent-soft:var(--danger-soft); }
+  .card[data-kind="info"]    { --accent:var(--info);    --accent-soft:var(--info-soft); }
 </style>
 </head>
 <body>
   <div class="card" id="card" data-kind="info">
-    <div class="accent"></div>
     <div class="inner">
       <div class="icon-wrap" id="icon"></div>
       <div class="text">
         <div class="title" id="title">通知</div>
         <div class="body" id="body"></div>
       </div>
-      <button class="close" id="btn-close" aria-label="关闭" title="关闭">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </button>
     </div>
     <div class="timer" id="timer"></div>
   </div>
@@ -196,48 +109,25 @@
       var elTitle = document.getElementById('title');
       var elBody = document.getElementById('body');
       var elTimer = document.getElementById('timer');
-
       var ICONS = {
-        success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
-        info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
-        warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
-        error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>'
+        success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+        info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+        warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+        error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>'
       };
-
-      var endAt = 0;
-      var totalMs = 0;
-      var rafId = null;
-      var paused = false;
-      var pausedAt = 0;
-
-      function act(action) {
-        try { api && api.action(action); } catch (_) {}
-      }
-
+      var endAt = 0, totalMs = 0, rafId = null, paused = false, pausedAt = 0;
+      function act(a) { try { api && api.action(a); } catch (_) {} }
       function tick() {
         if (!paused) {
           var remain = Math.max(0, endAt - Date.now());
           if (totalMs > 0) elTimer.style.transform = 'scaleX(' + (remain / totalMs) + ')';
-          if (remain <= 0) { return; }
+          if (remain <= 0) return;
         }
         rafId = requestAnimationFrame(tick);
       }
-      function stop() { if (rafId) { cancelAnimationFrame(rafId); rafId = null; } }
-
-      card.addEventListener('click', function (e) {
-        if (e.target && e.target.closest && e.target.closest('#btn-close')) return;
-        act('click');
-      });
-      document.getElementById('btn-close').addEventListener('click', function (e) {
-        e.stopPropagation();
-        act('close');
-      });
-      // hover 暂停倒计时（进度条停在当前位置）
+      card.addEventListener('click', function () { act('click'); });
       card.addEventListener('mouseenter', function () { paused = true; pausedAt = Date.now(); });
-      card.addEventListener('mouseleave', function () {
-        if (paused) { endAt += (Date.now() - pausedAt); paused = false; }
-      });
-
+      card.addEventListener('mouseleave', function () { if (paused) { endAt += (Date.now() - pausedAt); paused = false; } });
       if (api && api.onInit) {
         api.onInit(function (data) {
           if (!data) return;
@@ -247,13 +137,8 @@
           elTitle.textContent = data.title || '';
           elBody.textContent = data.body || '';
           totalMs = Number(data.durationMs) || 0;
-          if (totalMs > 0) {
-            endAt = Date.now() + totalMs;
-            elTimer.style.display = '';
-            tick();
-          } else {
-            elTimer.style.display = 'none';
-          }
+          if (totalMs > 0) { endAt = Date.now() + totalMs; elTimer.style.display = ''; tick(); }
+          else { elTimer.style.display = 'none'; }
         });
       }
     })();

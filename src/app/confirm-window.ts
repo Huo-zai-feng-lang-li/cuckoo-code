@@ -70,7 +70,9 @@ function showConfirmDialog(opts: ConfirmDialogOptions): Promise<boolean> {
     current = null;
   }
   const W = 420;
-  const H = 228;
+  // 有 detail（错误细节等）时给更高空间；否则紧凑高度，避免大片留白
+  const hasDetail = !!(opts.detail && opts.detail.trim());
+  const H = hasDetail ? 232 : 168;
   const bounds = computeBounds(W, H);
 
   return new Promise((resolve) => {

@@ -2896,6 +2896,7 @@
 
   // ===== 发送队列（运行中排队待发消息，任务空闲自动发下一条）=====
   var sendQueue = []; // { text, files, hints }
+  var autoFlushPaused = false; // 手动插队发送后暂停"任务结束自动排空"（用户明确只发那一条）
   var sendQueueEl = document.getElementById('send-queue');
   function doSendQueueItem(it) {
     clearAbortSuppression();
@@ -2915,11 +2916,13 @@
     renderHints();
   }
 
-  /** 立即发送队列中的某一项：移出队列并立刻发出；若当前正忙则中止当前任务后发出 */
+  /** 立即发送队列中的某一项：移出队列并立刻发出；若当前正忙则中止当前任务后发出。
+   *  手动插队后暂停"任务结束自动排空"，避免剩余队列被连带发出去（用户明确只发这一条）。 */
   function sendQueueItemNow(it) {
     var at = sendQueue.indexOf(it);
     if (at < 0) return;
     sendQueue.splice(at, 1);
+    autoFlushPaused = true; // 只发这一条；剩余队列原地保留（须在 render 前设置，头标签才显示"已暂停"）
     renderSendQueue();
     clearAbortSuppression();
     if (isBusy()) {
@@ -2939,7 +2942,12 @@
     sendQueueEl.classList.add('show');
     var head = document.createElement('div');
     head.className = 'sq-head';
-    head.innerHTML = '<span>待发队列</span><span class="sq-count">' + sendQueue.length + '</span><span>条 · 当前任务结束后自动发送</span>';
+    head.innerHTML = '<span>待发队列</span><span class="sq-count">' + sendQueue.length + '</span>'
+      + (autoFlushPaused
+          ? '<span>条 · 自动发送已暂停</span><button class="sq-btn sq-resume" title="恢复自动发送" style="width:auto;padding:0 8px;font-size:10.5px;height:20px;">恢复</button>'
+          : '<span>条 · 当前任务结束后自动发送</span>');
+    var resumeBtn = head.querySelector('.sq-resume');
+    if (resumeBtn) resumeBtn.addEventListener('click', function () { autoFlushPaused = false; renderSendQueue(); try { maybeFlushQueue(); } catch (e) { /* ignore */ } });
     sendQueueEl.appendChild(head);
     for (var i = 0; i < sendQueue.length; i++) {
       (function (idx) {
@@ -3013,6 +3021,7 @@
     }
     // goal/plan 指令：保持原行为（运行中忽略，不排队）
     if (hasGoalChip || hasPlanChip || /^\/goal(\s|$)/.test(text) || /^\/plan(\s|$)/.test(text)) return false;
+    autoFlushPaused = false; // 用户重新入队 → 恢复正常自动排空
     sendQueue.push({ text: text, files: files, hints: hints });
     input.value = '';
     input.style.height = 'auto';
@@ -3025,6 +3034,8 @@
   }
   /** 空闲时取出队列首条并发送；返回是否确实发送了 */
   function maybeFlushQueue() {
+    // 手动插队发送后暂停自动排空（用户明确只发那一条）；用户再次入队时恢复
+    if (autoFlushPaused) return false;
     // 用户主动停止（aborted）后不自动发，保留队列等用户决定
     if (isBusy() || aborted() || !sendQueue.length) return false;
     var item = sendQueue.shift();

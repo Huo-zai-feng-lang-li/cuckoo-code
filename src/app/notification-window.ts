@@ -35,8 +35,8 @@ export interface SystemNotificationItem {
 }
 
 /** 单张卡片的固定尺寸（内容自适应到固定高度，超长省略） */
-const WIDTH = 360;
-const HEIGHT = 124;
+const WIDTH = 400;
+const HEIGHT = 118;
 const GAP = 12;
 const MARGIN = 24;
 /** 同时最多显示的通知条数（超出关闭最旧的） */
