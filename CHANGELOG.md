@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-10-16
+
+### Fixed
+- **子代理运行完成误弹"任务完成"通知**：子代理窗口跑完整 bridge，完成时 `observer.ts` 无条件发通知 IPC。主进程虽有 `ctx.isSubagent` 兜底，但存在销毁竞态——子代理 `subagent-response` IPC 先到触发 `ctx.win.destroy()`，等通知 IPC 到达时窗口已销毁、`getContextByWebContents` 返回 null 并回退到主窗口，导致误弹。现于 bridge 源头抑制：子代理/网关窗口 (`setSuppressAiNotification`) 直接不发通知。
+
 ## [0.9.2] - 2026-10-16
 
 ### Changed
