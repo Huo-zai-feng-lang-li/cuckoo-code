@@ -21,6 +21,16 @@ const harnessAPI = {
   attach: (files: any) => ipcRenderer.invoke('harness-attach', { files }),
   /** 重载 harness 页面（加载最新 HTML） */
   reload: () => ipcRenderer.invoke('harness-reload'),
+  /** 提示词增强：{ text, history } → { success, text, error } */
+  enhancePrompt: (payload: { text: string; history?: any[] }) => ipcRenderer.invoke('harness-enhance-prompt', payload),
+  /** 读增强配置 */
+  getEnhancerConfig: () => ipcRenderer.invoke('harness-get-enhancer-config'),
+  /** 存增强配置（部分覆盖）→ 全局广播 */
+  setEnhancerConfig: (config: any) => ipcRenderer.invoke('harness-set-enhancer-config', { config }),
+  /** 订阅增强配置变化（其他窗口改动时同步） */
+  onEnhancerConfig: (cb: (config: any) => void) => {
+    ipcRenderer.on('harness-enhancer-config', (_e: any, cfg: any) => cb(cfg));
+  },
   /** 新对话：在 AI 网页中开新会话 */
   newConversation: () => ipcRenderer.invoke('harness-new-conversation'),
   /** 真截断：从指定网页消息处开新会话（{ webMsgId, newText }） */

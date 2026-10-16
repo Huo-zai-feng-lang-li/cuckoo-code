@@ -19,7 +19,7 @@ import { loadAbout } from './pages/about.js';
 import { loadRemote } from './pages/remote.js';
 import { renderWindowList } from './pages/windows.js';
 import { loadSettings } from './pages/settings.js';
-import { renderRecent } from './recent.js';
+import { refreshRecent } from './recent.js';
 import { loadConversations } from './pages/conversations.js';
 import { loadPlugins } from './pages/plugins.js';
 import { loadRules } from './pages/rules.js';
@@ -87,8 +87,10 @@ try { loadWorkspaces(); } catch (_) { /* ignore */ }
 try { loadSnippets(); } catch (_) { /* ignore */ }
 try { loadAutoCompact(); } catch (_) { /* ignore */ }
 
-// 渲染底部状态栏「最近使用」
-try { renderRecent(); } catch (_) { /* ignore */ }
+// 渲染底部状态栏「最近使用」（主进程全局存储）
+try { refreshRecent(); } catch (_) { /* ignore */ }
+// 其他窗口改动 → 同步刷新
+try { (api as any).onRecentChanged && (api as any).onRecentChanged(() => { try { refreshRecent(); } catch (_) {} }); } catch (_) { /* ignore */ }
 
 // 预加载 Git 改动数（活动栏 badge）
 try { loadGit(); } catch (_) { /* ignore */ }

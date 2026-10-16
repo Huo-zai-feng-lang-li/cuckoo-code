@@ -150,6 +150,11 @@ export interface ShellAPI {
   saveSnippets?: (list: any[]) => Promise<any>;
   triggerSnippet?: (content: string, autoSend?: boolean) => Promise<any>;
   appendSnippet?: (text: string) => Promise<any>;
+  // 底部「最近使用」（全局存储，跨窗口同步）
+  recentList?: () => Promise<any>;
+  recentAdd?: (type: string, name: string, extra?: { payload?: string; autoSend?: boolean }) => Promise<any>;
+  recentRemove?: (type: string, name: string) => Promise<any>;
+  onRecentChanged?: (cb: () => void) => void;
   onSnippetsChanged?: (cb: () => void) => void;
   // 技能 / 子代理
   listSkills?: () => Promise<any>;

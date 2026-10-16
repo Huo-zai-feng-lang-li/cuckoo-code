@@ -418,6 +418,33 @@
   }
   .attach-btn:hover { background: var(--surface); color: var(--text); }
   .attach-btn svg { width: 17px; height: 17px; }
+  /* 提示词增强按钮 */
+  .enhance-btn {
+    flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px; border: none;
+    background: transparent; color: var(--text-dim); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; transition: all .14s;
+  }
+  .enhance-btn:hover { background: var(--surface); color: var(--accent); }
+  .enhance-btn svg { width: 16px; height: 16px; }
+  .enhance-btn.busy { color: var(--accent); cursor: default; }
+  .enhance-btn.busy svg { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .enhance-btn:disabled { opacity: .4; cursor: default; }
+  /* 增强后撤销条 */
+  .enhance-undo {
+    display: none; align-items: center; gap: 8px;
+    margin: 0 0 6px; padding: 5px 10px; border-radius: 8px;
+    background: var(--accent-soft); border: 1px solid var(--border);
+    font-size: 11.5px; color: var(--text-2);
+  }
+  .enhance-undo.show { display: flex; }
+  .enhance-undo .eu-text { flex: 1; }
+  .enhance-undo .eu-btn {
+    border: none; background: transparent; color: var(--accent);
+    cursor: pointer; font-family: inherit; font-size: 11.5px; padding: 2px 6px;
+    border-radius: 5px; font-weight: 600;
+  }
+  .enhance-undo .eu-btn:hover { background: var(--hover-soft); }
   .drop-overlay {
     position: absolute; inset: 0; z-index: 50; border: 2px dashed var(--accent);
     border-radius: 12px; background: var(--accent-soft);
@@ -425,6 +452,48 @@
     color: var(--accent); font-size: 13px; font-weight: 600; pointer-events: none;
   }
   .drop-overlay.show { display: flex; }
+
+  /* ===== 增强设置弹窗（无保存按钮：改动即存 + 全局广播）===== */
+  .enh-mask {
+    position: fixed; inset: 0; z-index: 200; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, 0.42);
+  }
+  .enh-mask.show { display: flex; }
+  .enh-modal {
+    width: 480px; max-width: calc(100vw - 40px); max-height: calc(100vh - 80px);
+    display: flex; flex-direction: column;
+    background: var(--bg); border: 1px solid var(--border-strong);
+    border-radius: 14px; box-shadow: 0 20px 60px var(--shadow-color);
+    overflow: hidden;
+  }
+  .enh-head { display: flex; align-items: center; gap: 8px; padding: 14px 18px; border-bottom: 1px solid var(--border-soft); font-size: 13px; font-weight: 600; color: var(--text); }
+  .enh-head .enh-close { margin-left: auto; border: none; background: transparent; color: var(--text-dim); cursor: pointer; width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center; padding: 0; }
+  .enh-head .enh-close:hover { background: var(--surface-hover); color: var(--text); }
+  .enh-body { padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+  .enh-field { display: flex; flex-direction: column; gap: 6px; }
+  .enh-field > label { font-size: 12px; color: var(--text-2); font-weight: 600; }
+  .enh-field .enh-hint { font-size: 10.5px; color: var(--text-dim); font-weight: 400; }
+  .enh-input {
+    width: 100%; box-sizing: border-box; height: 32px; padding: 0 10px;
+    border: 1px solid var(--border); border-radius: 7px;
+    background: var(--bg-elev); color: var(--text); font-family: inherit; font-size: 12.5px; outline: none;
+  }
+  .enh-input:focus { border-color: var(--accent); }
+  textarea.enh-input { height: auto; padding: 8px 10px; resize: vertical; min-height: 60px; line-height: 1.6; }
+  .enh-row { display: flex; gap: 10px; }
+  .enh-row > .enh-field { flex: 1; }
+  .enh-radio { display: flex; gap: 8px; }
+  .enh-radio label {
+    flex: 1; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 12px; color: var(--text-2); cursor: pointer; text-align: center; user-select: none;
+  }
+  .enh-radio input { display: none; }
+  .enh-radio input:checked + span { color: var(--accent); font-weight: 600; }
+  .enh-radio label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+  .enh-switch { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+  .enh-switch input { width: 16px; height: 16px; accent-color: var(--accent); }
+  .enh-foot { padding: 10px 18px; border-top: 1px solid var(--border-soft); font-size: 11px; color: var(--text-dim); }
 
   /* 滚动到底部按钮（紧贴输入框顶部居中悬浮）*/
   .scroll-bottom {
@@ -738,6 +807,7 @@
     </div>
     <div class="spacer"></div>
     <div class="status ready" id="status"><span class="dot"></span><span id="status-text">就绪</span></div>
+    <button class="tb-btn" id="btn-enh-settings" title="提示词增强设置">增强设置</button>
     <button class="tb-btn" id="btn-web" title="返回网页模式 (Ctrl+Shift+H)">网页模式</button>
   </div>
   <div class="goalbar" id="goalbar">
@@ -781,6 +851,10 @@
   </div>
   <div class="composer">
     <div class="hint-row" id="hint-row"></div>
+    <div class="enhance-undo" id="enhance-undo">
+      <span class="eu-text">✨ 已增强提示词</span>
+      <button class="eu-btn" id="enhance-undo-btn">撤销</button>
+    </div>
     <div class="attach-row" id="attach-row"></div>
     <div class="send-queue" id="send-queue"></div>
     <div class="switch-countdown cuckoo-hidden" id="switch-countdown">
@@ -792,12 +866,54 @@
       <button class="scroll-bottom" id="scroll-bottom" title="回到底部"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M8 13l-4-4M8 13l4-4"/></svg></button>
       <div class="slash-menu" id="slash-menu"></div>
       <button class="attach-btn" id="attach-btn" title="添加附件（图片/文件）"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 4.5l-5 5a2 2 0 0 0 2.8 2.8l5-5a3.5 3.5 0 0 0-5-5l-4.5 4.5a5 5 0 0 0 7 7l4-4"/></svg></button>
+      <button class="enhance-btn" id="enhance-btn" title="增强提示词（Ctrl+E）"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l1.6 4.1 4.4 1.6-4.4 1.6L8 12.9l-1.6-4.1L2 7.2l4.4-1.6z"/><path d="M12.5 11l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z"/></svg></button>
       <textarea id="input" rows="3" placeholder="输入消息…  / 查看技能与工具"></textarea>
       <button id="send" title="发送"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M8 3l-4 4M8 3l4 4"/></svg></button>
       <input type="file" id="file-input" multiple style="display:none" />
     </div>
     <div class="composer-hint">Enter 发送 · Shift+Enter 换行 · / 技能工具（↑↓ 选择） · /goal 目标 自动多轮推进 · 可粘贴/拖拽图片</div>
     <div class="drop-overlay" id="drop-overlay">松开以添加文件</div>
+  </div>
+</div>
+<div class="enh-mask" id="enh-mask">
+  <div class="enh-modal">
+    <div class="enh-head">
+      提示词增强设置
+      <button class="enh-close" id="enh-close" title="关闭"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+    </div>
+    <div class="enh-body">
+      <label class="enh-switch"><input type="checkbox" id="enh-enabled" /> 启用提示词增强（显示输入框旁的 ✨ 按钮）</label>
+      <div class="enh-field">
+        <label>API 地址 <span class="enh-hint">（OpenAI 兼容，不含 /chat/completions）</span></label>
+        <input class="enh-input" id="enh-api-url" placeholder="https://apihub.agnes-ai.com/v1" spellcheck="false" />
+      </div>
+      <div class="enh-field">
+        <label>API Key <span class="enh-hint">（仅存本地 ~/.cuckoo/ui-prefs.json，不进仓库）</span></label>
+        <input class="enh-input" id="enh-api-key" type="password" placeholder="sk-..." spellcheck="false" />
+      </div>
+      <div class="enh-row">
+        <div class="enh-field">
+          <label>模型</label>
+          <input class="enh-input" id="enh-model" placeholder="agnes-2.5-flash" spellcheck="false" />
+        </div>
+        <div class="enh-field" style="max-width:120px">
+          <label>上下文轮数</label>
+          <input class="enh-input" id="enh-rounds" type="number" min="0" max="20" />
+        </div>
+      </div>
+      <div class="enh-field">
+        <label>增强力度</label>
+        <div class="enh-radio">
+          <label><input type="radio" name="enh-mode" value="gentle" /><span>温和（缺啥补啥）</span></label>
+          <label><input type="radio" name="enh-mode" value="strict" /><span>激进（强制结构化）</span></label>
+        </div>
+      </div>
+      <div class="enh-field">
+        <label>自定义增强提示词 <span class="enh-hint">（留空用内置模板）</span></label>
+        <textarea class="enh-input" id="enh-system-prompt" placeholder="留空使用内置模板；填写则完全替换" spellcheck="false"></textarea>
+      </div>
+    </div>
+    <div class="enh-foot">改动即时生效并同步到所有窗口 · 无需保存</div>
   </div>
 </div>
 <script src="vendor/marked.umd.js"></script>
@@ -1345,6 +1461,15 @@
     generating = false;
     clearAbortSuppression();
     frameworkDriveUntil = 0;
+    // 作废在途的"立即发送"等待：切会话/新对话后，那条消息不应再被发出（否则会串到新会话）
+    manualSendToken++;
+    manualSendInFlight = false;
+    flushingSuppressed = false;
+    // 作废在途的提示词增强：切会话/新对话后回填就串台了，直接丢弃
+    enhanceToken++;
+    enhanceInFlight = false;
+    setEnhanceBtnBusy(false);
+    hideUndo(); // 清撤销条 + enhancePrevText + 停 timer，防跨会话从撤销入口串台
     lastDoneText = '';
     lastPushedAssistant = '';
     lastActivityAt = Date.now();
@@ -2926,6 +3051,9 @@
   var sendQueue = []; // { text, files, hints }
   var flushingSuppressed = false; // "立即发送某条"操作期间临时抑制自动排空（挡住 stop() 引发的连带 flush）；操作结束即恢复
   var manualSendInFlight = false; // 手动"立即发送"在途：stop() 会同步复位状态使 isBusy() 变 false，须靠此标志防连点误走"空闲直发"分支
+  // "立即发送"等待令牌：切会话 / 新对话（clearTransientState）时自增，使在途的 waitForAiIdleThenSend 作废，
+  // 避免其到点把旧消息发进刚切换/刚清空的新会话（同"回填串台"性质）。
+  var manualSendToken = 0;
   var sendQueueEl = document.getElementById('send-queue');
   function doSendQueueItem(it) {
     manualSendInFlight = true;
@@ -2961,10 +3089,15 @@
    *      lastActivityAt 由 onEvent 每次刷新，旧任务真在吐内容时静默期不会满足；
    *   2) 网页生成状态已停（!aiPageGenerating）——叠加兜底；
    *   3) 超时 AI_STOP_WAIT_MAX_MS —— 网页异常不停时照常发出，避免卡死。
+   * 已知残留边界：本判据靠"事件驱动"，无法覆盖"间隔 > 静默期(300ms) 的孤立慢尾事件"
+   *   （如 stop 后 >300ms 才到的单个 tool-end）。这类极少数情况仍可能回填；属启发式固有权衡。
+   * 在途等待用 manualSendToken 认领：切会话/新对话会自增令牌使其作废，避免发进新会话。
    */
   function waitForAiIdleThenSend(it) {
     var stopAt = Date.now();
+    var myToken = ++manualSendToken; // 认领本次等待；切会话/新对话会自增使本次作废
     function tick() {
+      if (myToken !== manualSendToken) return; // 已切会话/新对话：放弃发送（该消息不应进入新会话）
       var quiet = Date.now() - Math.max(stopAt, lastActivityAt);
       if ((!aiPageGenerating && quiet >= AI_STOP_QUIET_MS) || Date.now() - stopAt >= AI_STOP_WAIT_MAX_MS) {
         clearAbortSuppression();
@@ -2994,8 +3127,15 @@
     // isBusy() 会因 stop() 同步复位而变 false；先置 manualSendInFlight 挡住"停→发"之间的连点
     if (isBusy()) {
       manualSendInFlight = true;
-      stop();
-      waitForAiIdleThenSend(it);
+      try {
+        stop();
+        waitForAiIdleThenSend(it);
+      } catch (e) {
+        // stop() 异常兜底：复位标志，避免队列被永久冻结（消息仍尝试发出，不静默丢失）
+        manualSendInFlight = false;
+        flushingSuppressed = false;
+        doSendQueueItem(it);
+      }
     } else {
       doSendQueueItem(it);
     }
@@ -3788,6 +3928,184 @@
     appendSystem('设置已保存：最大迭代次数 = ' + v);
   });
   if (settingsMask) settingsMask.addEventListener('click', function (e) { if (e.target === settingsMask) closeSettings(); });
+
+  // ===== 提示词增强 =====
+  var enhanceBtn = document.getElementById('enhance-btn');
+  var enhanceUndo = document.getElementById('enhance-undo');
+  var enhanceUndoBtn = document.getElementById('enhance-undo-btn');
+  var enhanceToken = 0;          // 在途增强认领令牌：切会话/新对话自增使其作废
+  var enhanceInFlight = false;   // 增强进行中（防连点）
+  var enhancePrevText = null;    // 增强前的原文（供撤销）
+  var enhanceUndoTimer = null;
+  var enhConfig = null;          // 当前增强配置（主进程读回）
+
+  function setEnhanceBtnBusy(b) {
+    if (!enhanceBtn) return;
+    enhanceInFlight = !!b;
+    if (b) { enhanceBtn.classList.add('busy'); enhanceBtn.disabled = true; }
+    else { enhanceBtn.classList.remove('busy'); enhanceBtn.disabled = false; }
+  }
+  function applyEnhancerEnabled() {
+    if (!enhanceBtn) return;
+    var on = !!(enhConfig && enhConfig.enabled);
+    enhanceBtn.style.display = on ? '' : 'none';
+  }
+  function showUndo() {
+    if (!enhanceUndo) return;
+    enhanceUndo.classList.add('show');
+    if (enhanceUndoTimer) clearTimeout(enhanceUndoTimer);
+    enhanceUndoTimer = setTimeout(function () {
+      enhanceUndo.classList.remove('show');
+      enhancePrevText = null;
+    }, 8000);
+  }
+  function hideUndo() {
+    if (!enhanceUndo) return;
+    enhanceUndo.classList.remove('show');
+    if (enhanceUndoTimer) { clearTimeout(enhanceUndoTimer); enhanceUndoTimer = null; }
+    enhancePrevText = null;
+  }
+  /** 收集最近 N 轮历史（供增强上下文） */
+  function collectEnhanceHistory() {
+    var rounds = (enhConfig && enhConfig.contextRounds) || 0;
+    if (rounds <= 0) return [];
+    var out = [];
+    for (var i = 0; i < history.length; i++) {
+      var e = history[i];
+      if (!e) continue;
+      if (e.t === 'user') out.push({ role: 'user', content: e.text || '' });
+      else if (e.t === 'assistant' && e.text) out.push({ role: 'assistant', content: e.text });
+    }
+    return out.slice(-rounds * 2);
+  }
+  function runEnhance() {
+    if (!enhanceBtn || enhanceInFlight) return;
+    if (!enhConfig) { appendSystem('增强配置尚未加载，请稍候重试'); return; }
+    if (!enhConfig.enabled) { appendSystem('提示词增强已关闭（可在"增强设置"里启用）'); return; }
+    var text = (input.value || '').trim();
+    if (!text) { appendSystem('请先输入内容再增强'); return; }
+    var myToken = ++enhanceToken;
+    var prev = input.value;
+    setEnhanceBtnBusy(true);
+    setStatus('增强中…', 'busy');
+    var hist = collectEnhanceHistory();
+    // 函数式延迟调用：api.enhancePrompt 同步抛错也落到 catch，避免按钮永久 busy
+    Promise.resolve().then(function () {
+      return api.enhancePrompt({ text: text, history: hist });
+    }).then(function (r) {
+      if (myToken !== enhanceToken) return; // 已切会话/新对话：丢弃
+      setEnhanceBtnBusy(false);
+      setStatus('就绪', 'ready');
+      if (!r || !r.success) {
+        appendSystem('增强失败：' + ((r && r.error) || '未知错误'));
+        return;
+      }
+      // 回填（不发送）；记录原文供撤销
+      enhancePrevText = prev;
+      input.value = r.text;
+      input.style.height = 'auto';
+      input.focus();
+      showUndo();
+      appendSystem('✨ 提示词已增强，可编辑后发送');
+    }).catch(function (e) {
+      if (myToken !== enhanceToken) return;
+      setEnhanceBtnBusy(false);
+      setStatus('就绪', 'ready');
+      appendSystem('增强异常：' + ((e && e.message) || '未知错误'));
+    });
+  }
+  if (enhanceBtn) enhanceBtn.addEventListener('click', runEnhance);
+  if (enhanceUndoBtn) enhanceUndoBtn.addEventListener('click', function () {
+    if (enhancePrevText == null) return;
+    input.value = enhancePrevText;
+    input.style.height = 'auto';
+    input.focus();
+    hideUndo();
+    appendSystem('已撤销增强');
+  });
+
+  // ===== 增强设置弹窗（无保存按钮：改动即存 + 全局广播）=====
+  var enhMask = document.getElementById('enh-mask');
+  var enhEls = {
+    enabled: document.getElementById('enh-enabled'),
+    apiUrl: document.getElementById('enh-api-url'),
+    apiKey: document.getElementById('enh-api-key'),
+    model: document.getElementById('enh-model'),
+    rounds: document.getElementById('enh-rounds'),
+    systemPrompt: document.getElementById('enh-system-prompt')
+  };
+  function fillEnhancerForm(cfg) {
+    enhConfig = cfg || enhConfig;
+    if (!enhConfig) return;
+    if (enhEls.enabled) enhEls.enabled.checked = !!enhConfig.enabled;
+    if (enhEls.apiUrl) enhEls.apiUrl.value = enhConfig.apiUrl || '';
+    if (enhEls.apiKey) enhEls.apiKey.value = enhConfig.apiKey || '';
+    if (enhEls.model) enhEls.model.value = enhConfig.model || '';
+    if (enhEls.rounds) enhEls.rounds.value = String(enhConfig.contextRounds != null ? enhConfig.contextRounds : 8);
+    if (enhEls.systemPrompt) enhEls.systemPrompt.value = enhConfig.systemPrompt || '';
+    var radios = document.querySelectorAll('input[name="enh-mode"]');
+    for (var i = 0; i < radios.length; i++) radios[i].checked = (radios[i].value === (enhConfig.mode || 'gentle'));
+    applyEnhancerEnabled();
+  }
+  /** 收集表单 → 保存（即时生效，无保存按钮） */
+  function saveEnhancerForm() {
+    if (!api.setEnhancerConfig) return;
+    var mode = 'gentle';
+    var radios = document.querySelectorAll('input[name="enh-mode"]');
+    for (var i = 0; i < radios.length; i++) if (radios[i].checked) mode = radios[i].value;
+    var cfg = {
+      enabled: !!(enhEls.enabled && enhEls.enabled.checked),
+      apiUrl: (enhEls.apiUrl && enhEls.apiUrl.value.trim()) || '',
+      apiKey: (enhEls.apiKey && enhEls.apiKey.value.trim()) || '',
+      model: (enhEls.model && enhEls.model.value.trim()) || '',
+      contextRounds: parseInt((enhEls.rounds && enhEls.rounds.value) || '8', 10),
+      mode: mode,
+      systemPrompt: (enhEls.systemPrompt && enhEls.systemPrompt.value) || ''
+    };
+    if (!Number.isFinite(cfg.contextRounds) || cfg.contextRounds < 0) cfg.contextRounds = 8;
+    Promise.resolve(api.setEnhancerConfig(cfg)).then(function (r) {
+      if (r && r.success && r.config) fillEnhancerForm(r.config);
+    }).catch(function () { /* ignore */ });
+  }
+  function openEnhSettings() {
+    if (!enhMask) return;
+    if (api.getEnhancerConfig) {
+      Promise.resolve(api.getEnhancerConfig()).then(function (r) {
+        if (r && r.success && r.config) fillEnhancerForm(r.config);
+      }).catch(function () { /* ignore */ });
+    }
+    enhMask.classList.add('show');
+  }
+  function closeEnhSettings() { if (enhMask) enhMask.classList.remove('show'); }
+  var btnEnhSettings = document.getElementById('btn-enh-settings');
+  if (btnEnhSettings) btnEnhSettings.addEventListener('click', openEnhSettings);
+  var enhClose = document.getElementById('enh-close');
+  if (enhClose) enhClose.addEventListener('click', closeEnhSettings);
+  if (enhMask) enhMask.addEventListener('click', function (e) { if (e.target === enhMask) closeEnhSettings(); });
+  // 表单改动即存（input/change 都接；change 覆盖 checkbox/radio/失焦）
+  var enhBody = enhMask ? enhMask.querySelector('.enh-body') : null;
+  if (enhBody) {
+    enhBody.addEventListener('change', saveEnhancerForm);
+    enhBody.addEventListener('blur', saveEnhancerForm, true);
+  }
+  // 其他窗口改动 → 同步本窗口
+  if (api.onEnhancerConfig) {
+    api.onEnhancerConfig(function (cfg) { fillEnhancerForm(cfg); });
+  }
+  // 初始加载配置
+  if (api.getEnhancerConfig) {
+    Promise.resolve(api.getEnhancerConfig()).then(function (r) {
+      if (r && r.success && r.config) fillEnhancerForm(r.config);
+    }).catch(function () { /* ignore */ });
+  }
+
+  // Ctrl+E 触发增强
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey && !e.shiftKey && (e.key === 'e' || e.key === 'E')) {
+      e.preventDefault();
+      runEnhance();
+    }
+  });
 
   // Ctrl+R 重载页面（加载最新 HTML）
   document.addEventListener('keydown', function (e) {

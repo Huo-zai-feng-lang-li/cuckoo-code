@@ -221,6 +221,13 @@ const shellAPI = {
   enableMcpServer: (name: string) => ipcRenderer.invoke('enable-mcp-server', { name }),
   disableMcpServer: (name: string) => ipcRenderer.invoke('disable-mcp-server', { name }),
   appendSnippet: (text: string) => ipcRenderer.invoke('append-to-input', { text }),
+  // ========== 底部「最近使用」（全局存储，跨窗口同步）==========
+  recentList: () => ipcRenderer.invoke('recent-list'),
+  recentAdd: (type: string, name: string, extra?: { payload?: string; autoSend?: boolean }) => ipcRenderer.invoke('recent-add', { type, name, payload: extra && extra.payload, autoSend: extra && extra.autoSend }),
+  recentRemove: (type: string, name: string) => ipcRenderer.invoke('recent-remove', { type, name }),
+  onRecentChanged: (cb: () => void) => {
+    ipcRenderer.on('shell-recent-changed', () => cb());
+  },
   // ========== 插件 ==========
   // 市场列表（topic:cuckoo-plugin；force=true 跳过本地缓存）。
   // 返回 { items, installed }，installed 为 repo → 已安装摘要（用于隐藏安装按钮 / 显示更新）

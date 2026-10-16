@@ -78,5 +78,6 @@
 | 075 | fix | [tooltip 改独立窗口（不被 AI 视图遮挡）+ Git 布局 + Token 图标还原](./075-tooltip-git-token.md) | done | fix/075-tooltip-git-token | 2026-10-16 |
 | 076 | feature | [新建对话 loading 遮罩 + 新建耗时优化 + tooltip 回归 DOM + 设置页图标折叠 + 通知摘要优化](./076-newconv-loading-and-optimize.md) | done | master（直接主分支） | 2026-10-16 |
 | 077 | feature | [更新弹窗重设计（版本号 + 更新日志 + 品牌化浮窗）](./077-update-popup-redesign.md) | done | feat/077-update-popup-redesign | 2026-10-17 |
+| 078 | feature | [纯净模式提示词增强](./078-prompt-enhancer.md) | doing | (直接主分支) | 2026-10-17 |
 
-共 73 个需求。
+共 74 个需求。

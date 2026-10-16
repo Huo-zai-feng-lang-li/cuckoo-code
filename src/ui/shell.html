@@ -4849,8 +4849,6 @@ paths:            # 可选；省略 = 始终生效
 
   // src/ui/shell/scripts/recent.ts
   init_shared();
-  var KEY = "cuckoo-shell-recent-tools";
-  var MAX = 5;
   function snippetText(type, name) {
     if (type === "skill") return "\u8BF7\u4F7F\u7528 " + name + " \u6280\u80FD";
     if (type === "mcp") return "\u8BF7\u4F7F\u7528 " + name + " \u8FD9\u4E2A MCP";
@@ -4863,44 +4861,43 @@ paths:            # 可选；省略 = 始终生效
     if (type === "agent") return "\u5B50\u4EE3\u7406";
     return "\u63D0\u793A\u8BCD";
   }
-  function loadRecent() {
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (!raw) return [];
-      const arr = JSON.parse(raw);
-      if (!Array.isArray(arr)) return [];
-      return arr.filter((x) => x && (x.type === "skill" || x.type === "mcp" || x.type === "agent" || x.type === "snippet") && typeof x.name === "string");
-    } catch (_) {
-      return [];
-    }
-  }
-  function saveRecent(list) {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(list));
-    } catch (_) {
-    }
-  }
+  var _cache = [];
   function addRecent(type, name, extra) {
     if (!name) return;
-    let list = loadRecent().filter((x) => !(x.type === type && x.name === name));
-    const item = { type, name, ts: Date.now() };
-    if (extra && typeof extra.payload === "string") item.payload = extra.payload;
-    if (extra && typeof extra.autoSend === "boolean") item.autoSend = extra.autoSend;
-    list.unshift(item);
-    if (list.length > MAX) list = list.slice(0, MAX);
-    saveRecent(list);
-    renderRecent();
+    try {
+      const p = api.recentAdd ? api.recentAdd(type, name, extra) : null;
+      if (p && typeof p.then === "function") {
+        p.then((r) => {
+          if (r && r.success) {
+            _cache = r.list || [];
+            renderRecent();
+          }
+        }).catch(() => {
+        });
+      }
+    } catch (_) {
+    }
   }
   function removeRecent(type, name) {
     if (!name) return;
-    const list = loadRecent().filter((x) => !(x.type === type && x.name === name));
-    saveRecent(list);
-    renderRecent();
+    try {
+      const p = api.recentRemove ? api.recentRemove(type, name) : null;
+      if (p && typeof p.then === "function") {
+        p.then((r) => {
+          if (r && r.success) {
+            _cache = r.list || [];
+            renderRecent();
+          }
+        }).catch(() => {
+        });
+      }
+    } catch (_) {
+    }
   }
   function renderRecent() {
     const box = document.getElementById("sb-recent");
     if (!box) return;
-    const list = loadRecent();
+    const list = _cache;
     if (list.length === 0) {
       box.innerHTML = "";
       return;
@@ -4946,6 +4943,21 @@ paths:            # 可选；省略 = 始终生效
         }
       });
     });
+  }
+  function refreshRecent() {
+    try {
+      const p = api.recentList ? api.recentList() : null;
+      if (p && typeof p.then === "function") {
+        p.then((r) => {
+          if (r && r.success) {
+            _cache = r.list || [];
+            renderRecent();
+          }
+        }).catch(() => {
+        });
+      }
+    } catch (_) {
+    }
   }
 
   // src/ui/shell/scripts/pages/snippets.ts
@@ -9239,7 +9251,16 @@ paths:            # 可选；省略 = 始终生效
   } catch (_) {
   }
   try {
-    renderRecent();
+    refreshRecent();
+  } catch (_) {
+  }
+  try {
+    api.onRecentChanged && api.onRecentChanged(() => {
+      try {
+        refreshRecent();
+      } catch (_) {
+      }
+    });
   } catch (_) {
   }
   try {

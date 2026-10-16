@@ -21,6 +21,8 @@ import { resetTodosCache } from './tool.js';
 import { cdpAttach } from './cdp-attach.js';
 import { initProject } from '../../session/project-context.js';
 import { onHarnessReady } from './window-groups.js';
+import { readPrefs, writePrefs, type PromptEnhancerConfig } from '../ui-prefs.js';
+import { enhancePrompt } from '../prompt-enhancer.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -504,6 +506,51 @@ function registerHarnessIpc(): void {
       // 页面就绪 → 若有暂存状态则推送
       if (winId != null) onHarnessReady(winId);
     } catch (_) { /* ignore */ }
+  });
+
+  // ========== 提示词增强（独立 API 旁路调用，不占对话轮次）==========
+
+  // 增强：读当前草稿 + 最近 N 轮历史 + 项目技术栈 → 调 API → 回填
+  ipcMain.handle('harness-enhance-prompt', async (event: any, payload: any) => {
+    const text = (payload && payload.text) || '';
+    if (!text.trim()) return { success: false, error: '输入为空' };
+    const ctx = findContext(event.sender);
+    const projectDir = ctx && ctx.sessionStore ? ctx.sessionStore.state.selectedProjectDir : null;
+    const history = Array.isArray(payload && payload.history) ? payload.history : [];
+    try {
+      const r = await enhancePrompt({ text, history, projectDir });
+      return r;
+    } catch (err: any) {
+      return { success: false, error: (err && err.message) || String(err) };
+    }
+  });
+
+  // 读增强配置（不回传 apiKey 明文全量？—— 本地应用，回传以便设置页回显）
+  ipcMain.handle('harness-get-enhancer-config', async () => {
+    try {
+      return { success: true, config: readPrefs().promptEnhancer };
+    } catch (err: any) {
+      return { success: false, error: (err && err.message) || String(err) };
+    }
+  });
+
+  // 存增强配置（部分字段覆盖）→ 广播给所有窗口，全局即时生效（无需保存按钮）
+  ipcMain.handle('harness-set-enhancer-config', async (_event: any, payload: any) => {
+    try {
+      const patch: Partial<PromptEnhancerConfig> = (payload && payload.config) || {};
+      const next = writePrefs({ promptEnhancer: patch as any }).promptEnhancer;
+      for (const ctx of windowState.getAllContexts()) {
+        try {
+          const hv = (ctx as any).harnessView;
+          if (hv && hv.webContents && !hv.webContents.isDestroyed()) {
+            hv.webContents.send('harness-enhancer-config', next);
+          }
+        } catch (_) { /* ignore */ }
+      }
+      return { success: true, config: next };
+    } catch (err: any) {
+      return { success: false, error: (err && err.message) || String(err) };
+    }
   });
 }
 

@@ -1,7 +1,7 @@
 /**
  * 底部状态栏「最近使用」快捷工具。
- * 记录最近点击的 技能/MCP/子代理（最多 5 条），点击效果与对应页面卡片一致。
- * 存 localStorage（本窗口独立持久化）。
+ * 记录最近点击的 技能/MCP/子代理/提示词（最多 5 条），点击效果与对应页面卡片一致。
+ * 存储：主进程全局（跨窗口共享，见 src/app/recent-tools.ts）。
  */
 import { api, escapeHtml } from './shared.js';
 
@@ -18,9 +18,6 @@ export interface RecentItem {
   autoSend?: boolean;
 }
 
-const KEY = 'cuckoo-shell-recent-tools';
-const MAX = 5;
-
 /** 追加到输入框的文案（与各页面一致） */
 function snippetText(type: RecentType, name: string): string {
   if (type === 'skill') return '请使用 ' + name + ' 技能';
@@ -36,48 +33,40 @@ function typeLabel(type: RecentType): string {
   return '提示词';
 }
 
+// 内存缓存：渲染用（主进程为真相源）
+let _cache: RecentItem[] = [];
+
 export function loadRecent(): RecentItem[] {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return [];
-    return arr.filter((x: any) => x && (x.type === 'skill' || x.type === 'mcp' || x.type === 'agent' || x.type === 'snippet') && typeof x.name === 'string');
-  } catch (_) {
-    return [];
-  }
+  return _cache;
 }
 
-function saveRecent(list: RecentItem[]): void {
-  try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (_) { /* ignore */ }
-}
-
-/** 记录一次使用（同类型同名去重后置顶），最多 MAX 条 */
+/** 记录一次使用（异步走主进程，主进程广播后由 onRecentChanged 触发重渲染） */
 export function addRecent(type: RecentType, name: string, extra?: { payload?: string; autoSend?: boolean }): void {
   if (!name) return;
-  let list = loadRecent().filter((x) => !(x.type === type && x.name === name));
-  const item: RecentItem = { type, name, ts: Date.now() };
-  if (extra && typeof extra.payload === 'string') item.payload = extra.payload;
-  if (extra && typeof extra.autoSend === 'boolean') item.autoSend = extra.autoSend;
-  list.unshift(item);
-  if (list.length > MAX) list = list.slice(0, MAX);
-  saveRecent(list);
-  renderRecent();
+  try {
+    const p = (api as any).recentAdd ? (api as any).recentAdd(type, name, extra) : null;
+    if (p && typeof p.then === 'function') {
+      p.then((r: any) => { if (r && r.success) { _cache = r.list || []; renderRecent(); } }).catch(() => {});
+    }
+  } catch (_) { /* ignore */ }
 }
 
 /** 从最近列表中移除某项 */
 export function removeRecent(type: RecentType, name: string): void {
   if (!name) return;
-  const list = loadRecent().filter((x) => !(x.type === type && x.name === name));
-  saveRecent(list);
-  renderRecent();
+  try {
+    const p = (api as any).recentRemove ? (api as any).recentRemove(type, name) : null;
+    if (p && typeof p.then === 'function') {
+      p.then((r: any) => { if (r && r.success) { _cache = r.list || []; renderRecent(); } }).catch(() => {});
+    }
+  } catch (_) { /* ignore */ }
 }
 
 /** 渲染底部状态栏的最近使用条 */
 export function renderRecent(): void {
   const box = document.getElementById('sb-recent');
   if (!box) return;
-  const list = loadRecent();
+  const list = _cache;
   if (list.length === 0) {
     box.innerHTML = '';
     return;
@@ -130,4 +119,14 @@ export function renderRecent(): void {
       }
     });
   });
+}
+
+/** 从主进程拉取最近列表并渲染（初始化 / 变化时调用） */
+export function refreshRecent(): void {
+  try {
+    const p = (api as any).recentList ? (api as any).recentList() : null;
+    if (p && typeof p.then === 'function') {
+      p.then((r: any) => { if (r && r.success) { _cache = r.list || []; renderRecent(); } }).catch(() => {});
+    }
+  } catch (_) { /* ignore */ }
 }
