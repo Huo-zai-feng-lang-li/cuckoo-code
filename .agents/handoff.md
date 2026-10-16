@@ -1,6 +1,7 @@
 # 最新接续状态 (2026-10-16)
 
 ## 核心进展
+- **手机端进入显示电脑对话历史** → v0.9.1（`remote/server.ts` 新增 sendToClient；`remote/manager.ts` 新增 pushHistoryToNewClient，**先补历史再补活跃流**；`pwa/app.js` 新增 renderHistory）。真机验证：手机 WS 连入收到 history len=8、PWA 正确渲染。
 - **自绘通知/确认浮窗 + 流式体验回归修复** → v0.9.0（详见下）
 - **手机远程流式渲染优化** → v0.8.99（`src/remote/pwa/app.js` + `style.css` + `remote-bridge.ts` + `manager.ts`）：流式期间改低频 markdown 渲染（~200ms），端到端延迟 240→120ms。
 - **Harness 流式体验优化** → v0.8.98（`src/providers/hooks/{deepseek,claude,chatgpt}.ts` 节流 80→40ms + `harness.html` scrollBottom rAF 合并）。
