@@ -1,5 +1,29 @@
 # 最新接续状态 (2026-10-16)
 
+## v0.9.10 本次会话（2026-10-16）——生成中禁用切换 + 脚本折叠
+
+### 背景
+用户问："纯净模式下 AI 正在回复时，切换到其他会话/子对话会怎样？"——查证结论：
+- 纯文本生成中切换：页面导航中断流（基本无害）。
+- **工具执行中切换**：工具在后台跑完但结果回传上下文随导航销毁 → **工具白跑、AI 卡住**（真问题）。
+- 待发队列被清空（用户消息队列，切不同会话不应迁移，属正确行为——用户已确认不修）。
+- 子代理是独立窗口，不受影响。
+「对话」页已有 harnessBusy 置灰禁用；「工作区」页缺失。
+
+### 交付（需求档案 070）
+1. **工作区页生成中禁用其他会话切换**：新增模块级 `harnessBusy`，订阅既有 `api.onHarnessBusy`（无需新增 IPC）；`renderItem` 对非当前会话加 `ck-ws-disabled`；点击处理双保险早退；CSS 降透明 + not-allowed。
+2. **任务页 package.json 脚本默认折叠**：`tasks.html` caret 加 `ck-git-caret-c`、列表加 `cuckoo-hidden`。
+
+### 真机验证（dev 9444）
+- 壳页面：onHarnessBusy=function、10 个会话项、初始 disabled=0 ✅
+- typecheck / test(988) / lint(0 error) / compile 全绿
+- ⚠️ 未做端到端"真实生成中观察置灰"（需完整纯净模式跑一轮生成，成本高）；已验证 API 挂载 + 生成物含逻辑
+
+### 关键文件
+- `src/ui/shell/scripts/pages/workspaces.ts`（harnessBusy + renderItem + 点击拦截 + 订阅）
+- `src/ui/shell/styles/components.css`（ck-ws-disabled）
+- `src/ui/shell/partials/pages/tasks.html`（默认折叠）
+
 ## v0.9.9 本次会话（2026-10-16）——压缩续接会话标题
 
 ### 背景

@@ -701,6 +701,10 @@
   }
   .ck-ws-item:hover { background: var(--ck-surface-hover); }
   .ck-ws-item:active { transform: scale(.99); }
+  /* harness 生成中：非当前会话置灰禁用切换（运行安全，防止打断工具执行/丢失结果） */
+  .ck-ws-item.ck-ws-disabled { opacity: .4; }
+  .ck-ws-item.ck-ws-disabled:hover { background: transparent; cursor: not-allowed; }
+  .ck-ws-item.ck-ws-disabled:active { transform: none; }
   .ck-ws-name {
     flex: 1; min-width: 0; font-size: 12px; color: var(--ck-text-2);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
