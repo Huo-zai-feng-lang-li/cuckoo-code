@@ -41,6 +41,8 @@ const archivedProjectsOpen = { v: false };
 const expandedNodes = new Set<string>();
 /** 已展开的子分组（key = sessionId + ':sub' | ':hist'）——默认收起 */
 const expandedSubgroups = new Set<string>();
+/** harness 生成中（AI 正在回复/跑工具）：禁用"切换到其他会话"，防止打断任务/丢失工具结果 */
+let harnessBusy = false;
 
 /** 找某对话的"压缩历史"（沿 parentId 往上追，返回 [上一版, 上上版, ...]） */
 function collectCompactionHistory(byId: Record<string, any>, session: any): any[] {
@@ -103,7 +105,9 @@ function renderItem(s: any, currentSessionId: string | null, archived: boolean =
         '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>' +
       '</span>'
     : (sub ? '<span class="ck-ws-expand ck-ws-expand-hidden"></span>' : '<span class="ck-ws-expand ck-ws-expand-hidden"></span>');
-  return '<div class="ck-ws-item' + (isCur ? ' current' : '') + (sub ? ' sub' : '') + '" data-session-id="' + escapeAttr(s.sessionId) + '" data-name="' + escapeAttr(label) + '" title="' + escapeAttr(s.sessionId) + '">' +
+  // 生成中且非当前会话 → 置灰禁用切换（重命名/归档/删除仍可用）
+  const disabled = (harnessBusy && !isCur) ? ' ck-ws-disabled' : '';
+  return '<div class="ck-ws-item' + (isCur ? ' current' : '') + (sub ? ' sub' : '') + disabled + '" data-session-id="' + escapeAttr(s.sessionId) + '" data-name="' + escapeAttr(label) + '" title="' + escapeAttr(s.sessionId) + '">' +
     caret +
     '<span class="ck-ws-name">' + escapeHtml(label) + '</span>' +
     (time ? '<span class="ck-ws-time">' + escapeHtml(time) + '</span>' : '') +
@@ -301,6 +305,8 @@ function bindWorkspaceEvents(listEl: HTMLElement): void {
       }
       const id = el.dataset.sessionId;
       if (!id || !api.navigateSession) return;
+      // 生成中：禁止切换到其他会话（当前会话除外，点了是空操作）
+      if (harnessBusy && !el.classList.contains('current')) return;
       try { await api.navigateSession(id); } catch (_) { /* ignore */ }
     });
   });
@@ -472,4 +478,9 @@ if (api.onUrlUpdated) {
 // 会话标题/归档变化（如 AI 命名对话）→ 立即刷新
 if (api.onSessionsChanged) {
   api.onSessionsChanged(() => { loadWorkspaces(); });
+}
+
+// harness 生成中 → 禁用"切换到其他会话"（重渲染列表以套用/解除置灰）
+if (api.onHarnessBusy) {
+  api.onHarnessBusy((busy: boolean) => { harnessBusy = busy; loadWorkspaces(); });
 }

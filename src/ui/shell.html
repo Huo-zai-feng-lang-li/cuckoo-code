@@ -1053,6 +1053,10 @@
   }
   .ck-ws-item:hover { background: var(--ck-surface-hover); }
   .ck-ws-item:active { transform: scale(.99); }
+  /* harness 生成中：非当前会话置灰禁用切换（运行安全，防止打断工具执行/丢失结果） */
+  .ck-ws-item.ck-ws-disabled { opacity: .4; }
+  .ck-ws-item.ck-ws-disabled:hover { background: transparent; cursor: not-allowed; }
+  .ck-ws-item.ck-ws-disabled:active { transform: none; }
   .ck-ws-name {
     flex: 1; min-width: 0; font-size: 12px; color: var(--ck-text-2);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -2199,11 +2203,11 @@ body[data-ck-dark] .ck-stat-item-hl .ck-stat-val { color: #fbbf24; }
 
               <!-- package.json scripts -->
               <div class="ck-task-scripts-head" id="task-scripts-head">
-                <span class="ck-git-caret" id="task-scripts-caret"></span>
+                <span class="ck-git-caret ck-git-caret-c" id="task-scripts-caret"></span>
                 <span class="ck-task-scripts-title">package.json 脚本</span>
                 <span class="ck-task-scripts-count" id="task-scripts-count"></span>
               </div>
-              <div class="ck-task-scripts" id="task-scripts"></div>
+              <div class="ck-task-scripts cuckoo-hidden" id="task-scripts"></div>
 
               <!-- 运行中的任务 -->
               <div class="ck-task-list-head">
@@ -3956,6 +3960,7 @@ paths:            # 可选；省略 = 始终生效
   var archivedProjectsOpen = { v: false };
   var expandedNodes = /* @__PURE__ */ new Set();
   var expandedSubgroups = /* @__PURE__ */ new Set();
+  var harnessBusy = false;
   function collectCompactionHistory(byId2, session) {
     const out = [];
     let cur = session && session.parentId;
@@ -3991,7 +3996,8 @@ paths:            # 可选；省略 = 始终生效
     const delBtn = '<span class="ck-ws-act ck-ws-act-danger" data-act="delete" aria-label="\u5220\u9664\u5BF9\u8BDD"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></span>';
     const open = hasChildren && expandedNodes.has(s.sessionId);
     const caret = hasChildren ? '<span class="ck-ws-expand' + (open ? " open" : "") + '"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg></span>' : sub ? '<span class="ck-ws-expand ck-ws-expand-hidden"></span>' : '<span class="ck-ws-expand ck-ws-expand-hidden"></span>';
-    return '<div class="ck-ws-item' + (isCur ? " current" : "") + (sub ? " sub" : "") + '" data-session-id="' + escapeAttr(s.sessionId) + '" data-name="' + escapeAttr(label) + '" title="' + escapeAttr(s.sessionId) + '">' + caret + '<span class="ck-ws-name">' + escapeHtml(label) + "</span>" + (time ? '<span class="ck-ws-time">' + escapeHtml(time) + "</span>" : "") + '<span class="ck-ws-acts">' + renameBtn + act + delBtn + "</span></div>";
+    const disabled = harnessBusy && !isCur ? " ck-ws-disabled" : "";
+    return '<div class="ck-ws-item' + (isCur ? " current" : "") + (sub ? " sub" : "") + disabled + '" data-session-id="' + escapeAttr(s.sessionId) + '" data-name="' + escapeAttr(label) + '" title="' + escapeAttr(s.sessionId) + '">' + caret + '<span class="ck-ws-name">' + escapeHtml(label) + "</span>" + (time ? '<span class="ck-ws-time">' + escapeHtml(time) + "</span>" : "") + '<span class="ck-ws-acts">' + renameBtn + act + delBtn + "</span></div>";
   }
   function fmtCreatedAt(iso) {
     if (!iso) return "";
@@ -4193,6 +4199,7 @@ paths:            # 可选；省略 = 始终生效
         }
         const id = el2.dataset.sessionId;
         if (!id || !api.navigateSession) return;
+        if (harnessBusy && !el2.classList.contains("current")) return;
         try {
           await api.navigateSession(id);
         } catch (_) {
@@ -4317,6 +4324,12 @@ paths:            # 可选；省略 = 始终生效
   }
   if (api.onSessionsChanged) {
     api.onSessionsChanged(() => {
+      loadWorkspaces();
+    });
+  }
+  if (api.onHarnessBusy) {
+    api.onHarnessBusy((busy) => {
+      harnessBusy = busy;
       loadWorkspaces();
     });
   }
@@ -6107,12 +6120,12 @@ paths:            # 可选；省略 = 始终生效
 
   // src/ui/shell/scripts/pages/conversations.ts
   init_shared();
-  var harnessBusy = false;
+  var harnessBusy2 = false;
   function applyBusyState() {
     const listEl2 = document.getElementById("conv-list");
     if (!listEl2) return;
     listEl2.querySelectorAll(".ck-conv-item").forEach((el2) => {
-      el2.classList.toggle("ck-conv-disabled", harnessBusy);
+      el2.classList.toggle("ck-conv-disabled", harnessBusy2);
     });
   }
   async function loadConversations(retainOnEmpty) {
@@ -6138,7 +6151,7 @@ paths:            # 可选；省略 = 始终生效
     }).join("");
     listEl2.querySelectorAll(".ck-conv-item").forEach((el2) => {
       el2.addEventListener("click", () => {
-        if (harnessBusy) return;
+        if (harnessBusy2) return;
         const url = el2.getAttribute("data-url");
         if (url && api.navigateWebSession) {
           api.navigateWebSession(url);
@@ -6160,7 +6173,7 @@ paths:            # 可选；省略 = 始终生效
     if (api.newWebConversation) api.newWebConversation().then(() => reloadConversationsAfterNav());
   });
   if (api.onHarnessBusy) api.onHarnessBusy((busy) => {
-    harnessBusy = busy;
+    harnessBusy2 = busy;
     applyBusyState();
   });
   if (api.onWebUrlChanged) api.onWebUrlChanged(() => {
