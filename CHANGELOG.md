@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-16
+
+### Added
+- **手机端进入显示电脑对话历史**：此前手机连入只补发"活跃流"（正在生成的内容），电脑空闲时进入为空白。现改为：新客户端连入时，从目标窗口的 harness 拉取结构化历史（复用窗口组切换的 `requestHarnessExport`），过滤出 user/assistant/system 可渲染条目、取最近 40 条补发；手机端 `renderHistory` 渲染。
+  - `src/remote/server.ts`：新增 `sendToClient(ws, payload)`（只发单个客户端）；`onNewClient` 回调透传 ws。
+  - `src/remote/manager.ts`：新增 `pushHistoryToNewClient`；`pushActiveStreamsToNewClient` 改为**先补历史、再补活跃流**（顺序关键——若先发活跃流，客户端先建出流式气泡，历史到达时会被"已有消息则跳过"判据拦下 → 历史永不显示）。
+  - `src/remote/pwa/app.js`：新增 `renderHistory`。
+  - ⚠️ 依赖纯净模式（harness）历史；从未进过纯净模式的窗口无历史可补，静默降级为空态。
+
 ## [0.9.0] - 2026-10-16
 
 ### Added

@@ -331,6 +331,10 @@
         hideExec();
         setExecuting(false);
         break;
+      case 'history':
+        if (!isMyProfile(msg.profileId)) break;
+        renderHistory(msg.history || []);
+        break;
       case 'ai-error':
         if (!isMyProfile(msg.profileId)) break;
         finishStreaming(streamingText);
@@ -372,6 +376,27 @@
     hideExec();
     setExecuting(false);
     checkEmptyState();
+  }
+
+  /** 渲染电脑端补发的对话历史（新客户端连入时）。
+   *  若页面已有消息（说明正在实时收流），则跳过，避免覆盖实时内容。
+   *  只渲染 user/assistant/system 三类文本消息；tool/plan 在手机端无对应卡片，跳过。 */
+  function renderHistory(entries) {
+    if (!Array.isArray(entries) || !entries.length) return;
+    if (messages.querySelector('.msg')) return; // 已有实时消息 → 不覆盖
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      if (!e || typeof e !== 'object') continue;
+      if (e.t === 'user') {
+        if (e.text) addUser(e.text);
+      } else if (e.t === 'assistant') {
+        if (e.text) addAi(e.text);
+      } else if (e.t === 'system') {
+        if (e.text) addSystem(e.text);
+      }
+      // tool / plan：跳过（手机端无工具卡）
+    }
+    scroll(true);
   }
 
   function syncProfileLabel() {

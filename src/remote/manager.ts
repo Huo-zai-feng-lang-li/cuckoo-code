@@ -18,6 +18,7 @@ import { readConfig } from './config.js';
 import { stopGeneration } from '../app/ipc/harness.js';
 import { cdpAttach } from '../app/ipc/cdp-attach.js';
 import { startTunnel, stopTunnel, getTunnelStatus } from './tunnel.js';
+import { requestHarnessExport } from '../app/ipc/window-groups.js';
 
 /** 流式节流：60ms 推送一次。注意 onStream 的 text 是「全量累积文本」，故直接覆盖。 */
 const STREAM_FLUSH_MS = 60;
@@ -199,22 +200,59 @@ function onAiStream(text: string, think: string, profileId: string): void {
   if (!s.timer) s.timer = setTimeout(() => flushStream(pid), STREAM_FLUSH_MS);
 }
 
-/** 新客户端连入：把每个活跃流的当前全量以 reset=true 补发，避免重连后缺消息 */
-function pushActiveStreamsToNewClient(): void {
+/** 新客户端连入：先补发对话历史（异步拉取 harness），再补活跃流。
+ *  ⚠️ 顺序关键：若先发活跃流，客户端会先建出流式气泡，随后历史到达时会被
+ *  PWA 的"已有消息则跳过"判据拦下 → 历史永不显示（电脑正在生成时进入即踩中）。 */
+function pushActiveStreamsToNewClient(ws: any): void {
   if (!remoteServer.isRunning()) return;
-  for (const [pid, s] of streamStates) {
-    if (!s.active) continue;
-    remoteServer.broadcast({
-      type: 'ai-stream',
-      profileId: pid,
-      thinkDelta: s.think,
-      textDelta: s.text,
-      reset: true,
-    });
-    // 关键：补发即把当前全量标记为"已送达"，否则下一轮 flush 会重复发尾部
-    s.sent = s.text;
-    s.thinkSent = s.think;
-  }
+  const pushActive = () => {
+    for (const [pid, s] of streamStates) {
+      if (!s.active) continue;
+      remoteServer.sendToClient(ws, {
+        type: 'ai-stream',
+        profileId: pid,
+        thinkDelta: s.think,
+        textDelta: s.text,
+        reset: true,
+      });
+      // 补发即把当前全量标记为"已送达"，否则下一轮 flush 会重复发尾部
+      s.sent = s.text;
+      s.thinkSent = s.think;
+    }
+  };
+  pushHistoryToNewClient(ws).then(pushActive, pushActive);
+}
+
+/** 新客户端连入：把目标窗口的 harness 历史发给它（只发该客户端）。
+ *  复用窗口组切换用的 requestHarnessExport（取 harness 页面的结构化历史）。
+ *  harness 未创建（从未进纯净模式）→ 立即 resolve，静默降级（手机端保持空态）。
+ *  @returns Promise，在历史发送完成（或降级）后 resolve，供调用方在其后补发活跃流。 */
+function pushHistoryToNewClient(ws: any): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      const ctx = getTargetContext();
+      if (!ctx || !ctx.win || ctx.win.isDestroyed()) { resolve(); return; }
+      requestHarnessExport(ctx.win.id, 3000).then((state: any) => {
+        if (state && Array.isArray(state.history) && state.history.length) {
+          // 先过滤出手机端可渲染的条目（user/assistant/system），再取最近 40 条。
+          // 直接 slice(-40) 会因历史里夹杂大量 tool/plan 条目而挤占，实际可见对话极少。
+          const renderable = state.history.filter((e: any) =>
+            e && typeof e === 'object' &&
+            (e.t === 'user' || e.t === 'assistant' || e.t === 'system') &&
+            typeof e.text === 'string' && e.text.trim()
+          );
+          if (renderable.length) {
+            remoteServer.sendToClient(ws, {
+              type: 'history',
+              profileId: ctx.profileId || '',
+              history: renderable.slice(-40),
+            });
+          }
+        }
+        resolve();
+      }).catch(() => resolve());
+    } catch (_) { resolve(); }
+  });
 }
 
 /** 收到完整回复 */
