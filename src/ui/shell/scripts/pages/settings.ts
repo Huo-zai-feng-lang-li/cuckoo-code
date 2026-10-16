@@ -2,6 +2,7 @@
  * 设置页：失败重试 / 发送延迟 / 附件间隔。
  */
 import { api, ckAlert, ckConfirm } from '../shared.js';
+import { getHiddenTabs, toggleTab } from '../activitybar-visibility.js';
 
 const SET_FIELDS: [string, string][] = [
   ['retry-delay-min', 'retryDelayMin'],
@@ -89,6 +90,7 @@ document.getElementById('st-refresh')?.addEventListener('click', () => {
   loadSettings();
   loadUiPrefs();
   refreshThemeValue();
+  renderActivitybarToggles();
 });
 document.getElementById('st-reset')?.addEventListener('click', async () => {
   if (!api.resetSettings) return;
@@ -149,6 +151,51 @@ if (themeSelect) {
   refreshThemeValue();
   initThemeListener();
 }
+
+// ===== 活动栏图标显隐 =====
+/** 活动栏图标清单（tab → 显示名）；与 activitybar.html 的 data-tab 对应 */
+const AB_ITEMS: [string, string][] = [
+  ['workspaces', '工作区（会话）'],
+  ['files', '项目文件'],
+  ['git', '源代码管理'],
+  ['tasks', '任务'],
+  ['snippets', '提示词'],
+  ['memories', '记忆'],
+  ['skills', '技能'],
+  ['plugins', '插件市场'],
+  ['agents', '子代理'],
+  ['rules', '全局规则'],
+  ['mcp', 'MCP（连接器）'],
+  ['windows', '窗口'],
+  ['token', 'Token（词元）'],
+  ['remote', '远程控制（手机）'],
+  ['about', '关于'],
+  ['settings', '设置（不可隐藏）'],
+];
+/** 渲染活动栏显隐开关列表（幂等） */
+export function renderActivitybarToggles(): void {
+  const box = document.getElementById('st-ab-list');
+  if (!box) return;
+  const hidden = new Set(getHiddenTabs());
+  box.innerHTML = AB_ITEMS.map(([tab, label]) => {
+    const disabled = tab === 'settings' ? ' disabled' : '';
+    const checked = (tab === 'settings' || !hidden.has(tab)) ? ' checked' : '';
+    return '<div class="ck-set-field ck-set-toggle">' +
+      '<span class="ck-set-key">' + label + '</span>' +
+      '<label class="ck-switch">' +
+        '<input type="checkbox" data-ab-tab="' + tab + '"' + checked + disabled + ' />' +
+        '<span class="ck-switch-track"></span>' +
+      '</label>' +
+    '</div>';
+  }).join('');
+  box.querySelectorAll('input[data-ab-tab]').forEach((el: any) => {
+    el.addEventListener('change', () => {
+      toggleTab(el.dataset.abTab, el.checked);
+    });
+  });
+}
+// 初始化渲染（模块加载时）
+try { renderActivitybarToggles(); } catch (_) { /* ignore */ }
 
 // ===== 外观：纯净模式字号（缩放，走主进程 ui-prefs，独立于 settings 存取）=====
 const zoomSelect = document.getElementById('st-harness-zoom') as any;

@@ -26,6 +26,8 @@ function mainIcons(): HTMLElement[] {
     if (el === spacer) break;
     if (!el.classList.contains('ck-ab-item')) continue;
     if (el.id === BTN_ID) continue;
+    // 用户手动隐藏的项不占主区名额（设置页开关控制）
+    if (el.classList.contains('ck-ab-user-hidden')) continue;
     out.push(el);
   }
   return out;

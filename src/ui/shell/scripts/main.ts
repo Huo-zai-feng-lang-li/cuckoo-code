@@ -32,6 +32,7 @@ import { initThemePresenter } from './theme-presenter.js';
 import { initGlobalTooltip } from './tooltip.js';
 import { initActivitybarDrag, applyActivitybarOrder } from './activitybar-drag.js';
 import { initActivitybarOverflow } from './activitybar-overflow.js';
+import { initActivitybarVisibility } from './activitybar-visibility.js';
 import { initUpdateProgress } from './update-progress.js';
 import { initWindowSwitchToast } from './window-switch.js';
 
@@ -43,6 +44,9 @@ try { initWindowSwitchToast(); } catch (_) { /* ignore */ }
 
 // 活动栏图标拖拽排序（顺序持久化）
 try { initActivitybarDrag(); applyActivitybarOrder(); } catch (_) { /* ignore */ }
+
+// 活动栏用户显隐（设置页开关控制）
+try { initActivitybarVisibility(); } catch (_) { /* ignore */ }
 
 // 活动栏溢出（主区超 14 个 → 「⋯」hover 弹框）
 try { initActivitybarOverflow(); } catch (_) { /* ignore */ }
