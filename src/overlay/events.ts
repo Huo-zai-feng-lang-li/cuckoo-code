@@ -410,11 +410,14 @@ function startTokenCounter() {
   });
   updateConversationTokenDisplay();
 
-  // 输出速度（TPS）：订阅流式正文增量，实时计算并推送。
+  // 输出速度（TPS）：订阅流式增量（思考 + 正文），实时计算并推送。
   // 生成中实时更新；finished 后测速器冻结最终值，pushTps 保留显示（不清零）。
   hooks.onStream?.((ev: any) => {
     try {
-      const text = (ev && ev.text) || '';
+      // 思考阶段正文为空、只有 think；若只用 text 估算则思考时永远算不出速度（显示 -- t/s）。
+      // 拼接 think + text：长度单调递增，不会误触发"新一轮"检测；estimateTokens 只看字符构成。
+      // 注：平台提供 accumulatedTokens（精确路径）时本参数被忽略，故不受影响。
+      const text = ((ev && ev.text) || '') + ((ev && ev.think) || '');
       const finished = !!(ev && ev.finished);
       // DeepSeek 提供 accumulatedTokens（权威）；其余平台为 null，回退估算
       const acc = ev && typeof ev.accumulatedTokens === 'number' ? ev.accumulatedTokens : null;
