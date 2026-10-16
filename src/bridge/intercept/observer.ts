@@ -10,6 +10,11 @@ import { sendCombinedJsResultsToChat, sendMessageToChat, cancelPendingSend } fro
 import { showToolMask, hideToolMask } from '../../overlay/panel.js';
 import * as watchdog from '../loop/watchdog.js';
 
+/** 子代理/网关窗口抑制"任务完成"通知（它们的完成属内部过程；主进程侧有 ctx.isSubagent 兜底，
+ *  但窗口销毁存在竞态——IPC 到达时 ctx 可能已失效回退主窗口，故在源头就拦住）。 */
+let suppressAiNotification = false;
+function setSuppressAiNotification(v: boolean): void { suppressAiNotification = !!v; }
+
 // 正文标记：AI 回复里输出 [记忆]xxx / [快照]名称，软件据此自动创建
 // 中文全角/半角方括号都支持；只匹配行首（可含前导空白），避免误伤正文中引用的字样
 const MEMORY_MARKER_RE = /^[ \t]*[\[【]记忆[\]】]\s*([^\n]+)/gm;
@@ -250,9 +255,11 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
 
   // 4. 普通文本回复：任务完成，退出工具循环
   console.log('[Cuckoo Code][拦截] 正常文本回复，未检测到工具调用');
-  try {
-    (window as any).electronAPI.showAiNotification().catch(() => {});
-  } catch (e) { /* ignore */ }
+  if (!suppressAiNotification) {
+    try {
+      (window as any).electronAPI.showAiNotification().catch(() => {});
+    } catch (e) { /* ignore */ }
+  }
   // 任务空闲信号（工具循环结束 = AI 给出普通文本回复）——供自动压缩等"任务边界"逻辑使用
   emitTaskIdle();
 }
@@ -418,4 +425,4 @@ function getLastInterceptedText(): string {
   return lastInterceptedText;
 }
 
-export { startInterceptObserver, processInterceptedResponse, processInlineMarkers, getLastInterceptedText, onInterceptedResponse, onAiError, onToolCall, onStream, onTaskIdle, onUserStop, requestAbort, clearAbort };
+export { startInterceptObserver, processInterceptedResponse, processInlineMarkers, getLastInterceptedText, onInterceptedResponse, onAiError, onToolCall, onStream, onTaskIdle, onUserStop, requestAbort, clearAbort, setSuppressAiNotification };
