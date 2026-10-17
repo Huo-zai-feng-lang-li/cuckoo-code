@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-10-17
+
+### Performance
+
+- **修复"Git / 对话列表"页切 tab 卡顿**（`src/ui/shell/scripts/pages/git.ts` + `conversations.ts`）：
+  - **Git 页**：原每次切回都会重新走 `gitStatus` IPC 拉取改动并重建列表 DOM。现新增 `loadGit({ force })`，默认走缓存直接渲染（`lastItems`），只有 watcher 变更、项目切换、手动操作才 `force: true` 拉取。
+  - **对话列表页**：原每次切回都会跨进程扫描 AI 网页 DOM 取会话列表。现新增 `force` 参数，非强制且已有列表节点时跳过 IPC，仅刷新禁用态。导航/新建/刷新仍强制拉取。
+
+### Verified
+
+- typecheck 0 / vitest 128 文件 1190 用例全过 / lint 0 error / compile 无漂移
+
 ## [0.10.3] - 2026-10-17
 
 ### Performance
