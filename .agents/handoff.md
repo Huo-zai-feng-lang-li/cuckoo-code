@@ -47,7 +47,12 @@
 - 最终验证：typecheck 0、vitest **127 文件 / 1184 用例**、lint 0 error、compile 0 无漂移。
 - 待办：**合并/发版由用户决定**（当前不 tag/push/发版）。真机待验项见上（尤其 A-005 打包环境 fork、D-005 手机浏览器握手、CSP file:// 放行、D-008 Electron net.request）。
 
-## v0.10.8：右侧对话导航悬停滚到底（本版本）
+## v0.10.9：修复思考字数统计（本版本）
+
+- `harness.html` 新增 `countThinkChars()`：中文按字、英文/数字按单词、忽略标点空白。
+- 替换四处 `think.length`，解决纯英文思考（如 15 个单词显示 78 字）的统计虚高问题。
+
+## v0.10.8：右侧对话导航悬停滚到底
 
 - `harness.html` 的 `#conv-nav` 区域监听 `mouseover` 代理，鼠标一进入就触发 `scrollBottom(true)` 强制滚到底部。
 

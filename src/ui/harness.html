@@ -1536,7 +1536,7 @@
     d.className = 'msg assistant';
     var thinkHtml = '';
     if (think && think.trim()) {
-      thinkHtml = '<div class="think"><div class="think-head"><svg class="caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg><span class="think-label">已思考 (' + think.length + ' 字)</span></div><div class="think-body">' + esc(think) + '</div></div>';
+      thinkHtml = '<div class="think"><div class="think-head"><svg class="caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg><span class="think-label">已思考 (' + countThinkChars(think) + ' 字)</span></div><div class="think-body">' + esc(think) + '</div></div>';
     }
     d.innerHTML = '<div class="prefix">' + PREFIX_SVG + 'Cuckoo</div>' + thinkHtml + '<div class="body">' + renderMarkdown(text) + '</div>';
     var thinkEl = d.querySelector('.think');
@@ -2899,7 +2899,7 @@
       cur.thinkEl.style.display = '';
       // 思考体：纯文本（思考内容无需 markdown，textContent 最快）
       cur.thinkBody.textContent = think;
-      cur.thinkLabel.textContent = text ? '已思考 (' + think.length + ' 字)' : '思考中…';
+      cur.thinkLabel.textContent = text ? '已思考 (' + countThinkChars(think) + ' 字)' : '思考中…';
       // 正文尚未出现时，自动展开思考；正文出现后自动折叠
       if (!text) cur.thinkEl.classList.add('open');
       else if (cur.thinkEl.classList.contains('open') && !cur.userToggled) cur.thinkEl.classList.remove('open');
@@ -2937,7 +2937,7 @@
         // 并清掉残留三点（有思考则保留气泡，无内容则整块移除）
         try {
           var tl = cur.thinkBody ? cur.thinkBody.textContent : '';
-          if (tl && cur.thinkLabel) cur.thinkLabel.textContent = '已思考 (' + tl.length + ' 字)';
+          if (tl && cur.thinkLabel) cur.thinkLabel.textContent = '已思考 (' + countThinkChars(tl) + ' 字)';
         } catch (e) { /* ignore */ }
         clearPendingBubble();
       }
@@ -3120,7 +3120,7 @@
           // 中止后、尚未开始新任务时到达的工具开始事件：只渲染卡片，不重新置忙
           if (!aborted()) { toolRunningCount++; syncBusyIndicators(); }
           // 工具调用开始 = 当前助手回合结束：收尾思考块并关闭当前气泡，避免"思考中…"悬留
-          if (cur) { try { var tl0 = cur.thinkBody ? cur.thinkBody.textContent : ''; if (tl0 && cur.thinkLabel) cur.thinkLabel.textContent = '已思考 (' + tl0.length + ' 字)'; } catch (e) { /* ignore */ } clearPendingBubble(); }
+          if (cur) { try { var tl0 = cur.thinkBody ? cur.thinkBody.textContent : ''; if (tl0 && cur.thinkLabel) cur.thinkLabel.textContent = '已思考 (' + countThinkChars(tl0) + ' 字)'; } catch (e) { /* ignore */ } clearPendingBubble(); }
           addToolStart(payload.code); setStatus('工具运行中…', 'busy'); pushHist({ t: 'tool', code: payload.code, success: null, output: '', error: '' }); break;
         case 'tool-end': if (toolRunningCount > 0) toolRunningCount--; addToolEnd(payload.success, payload.output, payload.error);
           // 工具结束不等于任务结束，但也不等于"仍在生成"：
@@ -3429,6 +3429,13 @@
       convNavHovered = false;
     }
   });
+  /** 统计字数：中文按字算，英文/数字按单词算，忽略空白和标点 */
+  function countThinkChars(text) {
+    if (!text) return 0;
+    var chinese = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+    var english = (text.match(/[a-zA-Z0-9_]+/g) || []).length;
+    return chinese + english;
+  }
   /** 快速平滑滚动：约 180ms 缓动到目标（比浏览器原生 smooth 快很多） */
   var fastScrollToken = 0;
   function fastScrollTo(el) {
