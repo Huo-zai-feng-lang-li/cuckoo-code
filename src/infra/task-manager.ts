@@ -254,6 +254,17 @@ function toInfo(rec: TaskRecord): TaskInfo {
 }
 
 /**
+ * 停止特定来源的所有运行中任务（如用户点停止时强杀所有 AI 启动的后台任务）。
+ */
+export function stopBySource(source: TaskSource): void {
+  for (const [id, rec] of tasks) {
+    if (rec.source === source && rec.status === 'running') {
+      stop(id);
+    }
+  }
+}
+
+/**
  * 杀整个进程树（后台任务 + 前台命令共用，修 A-006）。
  * Windows：taskkill /T /F 连带子孙进程；Unix：杀整个进程组（spawn 时 detached 成为组长）。
  *

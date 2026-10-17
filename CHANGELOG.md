@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.10.15] - 2026-10-18
+
+### Changed
+
+- **停止/发消息时，彻底清理所有相关后台任务**：
+  - `abortWindowWork` 中增加了 `stopBySource('ai')`。这意味着，当你点击停止或发送新消息时，AI 之前通过 `bash background:true` 拉起的后台长驻任务（如 dev server、watch 等）也会被全部强制终止。
+
 ## [0.10.14] - 2026-10-18
 
 ### Fixed
