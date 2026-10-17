@@ -47,7 +47,12 @@
 - 最终验证：typecheck 0、vitest **127 文件 / 1184 用例**、lint 0 error、compile 0 无漂移。
 - 待办：**合并/发版由用户决定**（当前不 tag/push/发版）。真机待验项见上（尤其 A-005 打包环境 fork、D-005 手机浏览器握手、CSP file:// 放行、D-008 Electron net.request）。
 
-## v0.10.5：Git / 对话列表页切 tab 性能修复（本版本，纠正 v0.10.4 空版本）
+## v0.10.7：任务页切 tab 性能修复 + Git 页缓存缺陷修复（本版本）
+
+- **任务页**：`loadTasks({ force })` + `tasksLoaded` 标志。切 tab 跳过 `taskList` + `taskReadScripts`（读 package.json）+ 脚本按钮全量重建。事件/操作走 force。
+- **Git 页缺陷**：原 `lastItems.length > 0` 判断缓存，无改动时失效；改用独立 `gitLoaded` 标志。
+
+## v0.10.5：Git / 对话列表页切 tab 性能修复（纠正 v0.10.4 空版本）
 
 - **Git 页**：`loadGit({ force })` 支持缓存。切 tab 不再重走 `gitStatus` IPC + 重建列表；watcher 变更/项目切换/手动操作时 `force: true`。
 - **对话列表页**：`loadConversations(retainOnEmpty, force)` 支持跳过跨进程 DOM 扫描。切 tab 不再重扫网页会话；导航/新建/刷新时 `force: true`。

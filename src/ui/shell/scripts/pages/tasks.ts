@@ -69,7 +69,7 @@ function renderScripts(scripts: Array<{ name: string; command: string }>): void 
         if (r && !r.success) { alert('启动失败：' + (r.error || '未知错误')); return; }
         // 新任务自动展开输出
         if (r && r.task && r.task.id) { expanded.set(r.task.id, 0); lastListSig = ''; }
-        await loadTasks();
+        await loadTasks({ force: true });
         scrollToTask(r && r.task && r.task.id);
       } catch (err: any) {
         alert('启动失败：' + (err.message || String(err)));
@@ -143,7 +143,7 @@ function renderTasks(tasks: any[]): void {
       // 不手改按钮：主进程 stop() 会置 stopping=true 并推送变更，
       // 渲染层据 TaskInfo.stopping 显示"停止中…"，进程退出后自动恢复。
       try { await api.taskStop?.(id); } catch (_) { /* ignore */ }
-      loadTasks();
+      loadTasks({ force: true });
     });
   });
 
@@ -153,7 +153,7 @@ function renderTasks(tasks: any[]): void {
       e.stopPropagation();
       try { await api.taskRemove?.(btn.dataset.id); } catch (_) { /* ignore */ }
       expanded.delete(btn.dataset.id);
-      loadTasks();
+      loadTasks({ force: true });
     });
   });
 }
@@ -194,13 +194,23 @@ function updateBadge(tasks: any[]): void {
   else badge.style.display = 'none';
 }
 
-/** 主加载：任务列表 + scripts */
-export async function loadTasks(): Promise<void> {
+/** 是否已成功加载过（切 tab 走缓存用） */
+let tasksLoaded = false;
+
+/**
+ * 主加载：任务列表 + scripts。
+ * @param opts.force true=强制走 IPC（任务变更事件/启动/停止/刷新）；
+ *                   默认 false=有缓存直接跳过（切 tab 用，避免读 package.json + 重建脚本按钮）。
+ */
+export async function loadTasks(opts?: { force?: boolean }): Promise<void> {
+  // 切 tab 且已加载过 → 直接返回，不重拉 IPC、不重建 DOM
+  if (!opts?.force && tasksLoaded) return;
   try {
     const [listRes, scriptsRes] = await Promise.all([
       api.taskList?.(),
       api.taskReadScripts?.(),
     ]);
+    tasksLoaded = true;
     const tasks = (listRes && listRes.success) ? (listRes.tasks || []) : [];
     renderTasks(tasks);
     updateBadge(tasks);
@@ -212,14 +222,14 @@ export async function loadTasks(): Promise<void> {
 }
 
 // ===== 事件绑定（模块加载时一次） =====
-document.getElementById('task-refresh')?.addEventListener('click', () => loadTasks());
+document.getElementById('task-refresh')?.addEventListener('click', () => loadTasks({ force: true }));
 document.getElementById('task-clear')?.addEventListener('click', async () => {
   try { await api.taskClearExited?.(); } catch (_) { /* ignore */ }
   // 清空已退出任务后，同步裁剪 expanded，防长会话无界累积
   const listRes = await api.taskList?.();
   const ids = new Set(((listRes && listRes.tasks) || []).map((t: any) => t.id));
   for (const k of [...expanded.keys()]) if (!ids.has(k)) expanded.delete(k);
-  loadTasks();
+  loadTasks({ force: true });
 });
 const runBtn = document.getElementById('task-run-btn');
 const cmdInput = document.getElementById('task-cmd-input') as any;
@@ -232,7 +242,7 @@ const doRun = async () => {
     if (cmdInput) cmdInput.value = '';
     // 新任务自动展开输出
     if (r && r.task && r.task.id) { expanded.set(r.task.id, 0); lastListSig = ''; }
-    await loadTasks();
+    await loadTasks({ force: true });
     scrollToTask(r && r.task && r.task.id);
   } catch (err: any) {
     alert('启动失败：' + (err.message || String(err)));
@@ -252,5 +262,5 @@ document.getElementById('task-scripts-head')?.addEventListener('click', () => {
 
 // 订阅任务变更（自动刷新列表；renderTasks 内部按签名决定是否重绘 + 刷输出）
 if (api.onTasksChanged) {
-  api.onTasksChanged(() => { loadTasks(); });
+  api.onTasksChanged(() => { loadTasks({ force: true }); });
 }

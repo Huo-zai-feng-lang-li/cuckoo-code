@@ -7957,10 +7957,11 @@ paths:            # 可选；省略 = 始终生效
     const hasMsg = !!(msgEl && String(msgEl.value || "").trim());
     btn.disabled = !(hasMsg && hasStagedFiles);
   }
+  var gitLoaded = false;
   async function loadGit(opts) {
     const listEl2 = document.getElementById("git-list");
     if (!listEl2) return;
-    if (!opts?.force && lastItems.length > 0) return;
+    if (!opts?.force && gitLoaded) return;
     if (!gitWatcherStarted && api.gitWatchStart) {
       api.gitWatchStart().then((r) => {
         gitWatcherStarted = !!(r && r.success);
@@ -7981,6 +7982,7 @@ paths:            # 可选；省略 = 始终生效
         return;
       }
       const items = r.items || [];
+      gitLoaded = true;
       refreshBadge(items.length);
       renderList4(items);
       if (historyOpen && !historyLoaded) {
@@ -8460,6 +8462,7 @@ paths:            # 可选；省略 = 始终生效
       lastHistorySig = "";
       gitWatcherStarted = false;
       lastItems = [];
+      gitLoaded = false;
       loadGit({ force: true });
       if (historyOpen) loadHistory();
     });
@@ -8510,7 +8513,7 @@ paths:            # 可选；省略 = 始终生效
             expanded2.set(r.task.id, 0);
             lastListSig = "";
           }
-          await loadTasks();
+          await loadTasks({ force: true });
           scrollToTask(r && r.task && r.task.id);
         } catch (err) {
           alert("\u542F\u52A8\u5931\u8D25\uFF1A" + (err.message || String(err)));
@@ -8574,7 +8577,7 @@ paths:            # 可选；省略 = 始终生效
           await api.taskStop?.(id);
         } catch (_) {
         }
-        loadTasks();
+        loadTasks({ force: true });
       });
     });
     el2.querySelectorAll(".ck-task-remove").forEach((btn) => {
@@ -8585,7 +8588,7 @@ paths:            # 可选；省略 = 始终生效
         } catch (_) {
         }
         expanded2.delete(btn.dataset.id);
-        loadTasks();
+        loadTasks({ force: true });
       });
     });
   }
@@ -8619,12 +8622,15 @@ paths:            # 可选；省略 = 始终生效
       badge.style.display = "";
     } else badge.style.display = "none";
   }
-  async function loadTasks() {
+  var tasksLoaded = false;
+  async function loadTasks(opts) {
+    if (!opts?.force && tasksLoaded) return;
     try {
       const [listRes, scriptsRes] = await Promise.all([
         api.taskList?.(),
         api.taskReadScripts?.()
       ]);
+      tasksLoaded = true;
       const tasks = listRes && listRes.success ? listRes.tasks || [] : [];
       renderTasks(tasks);
       updateBadge(tasks);
@@ -8635,7 +8641,7 @@ paths:            # 可选；省略 = 始终生效
     } catch (_) {
     }
   }
-  document.getElementById("task-refresh")?.addEventListener("click", () => loadTasks());
+  document.getElementById("task-refresh")?.addEventListener("click", () => loadTasks({ force: true }));
   document.getElementById("task-clear")?.addEventListener("click", async () => {
     try {
       await api.taskClearExited?.();
@@ -8644,7 +8650,7 @@ paths:            # 可选；省略 = 始终生效
     const listRes = await api.taskList?.();
     const ids = new Set((listRes && listRes.tasks || []).map((t) => t.id));
     for (const k of [...expanded2.keys()]) if (!ids.has(k)) expanded2.delete(k);
-    loadTasks();
+    loadTasks({ force: true });
   });
   var runBtn = document.getElementById("task-run-btn");
   var cmdInput = document.getElementById("task-cmd-input");
@@ -8662,7 +8668,7 @@ paths:            # 可选；省略 = 始终生效
         expanded2.set(r.task.id, 0);
         lastListSig = "";
       }
-      await loadTasks();
+      await loadTasks({ force: true });
       scrollToTask(r && r.task && r.task.id);
     } catch (err) {
       alert("\u542F\u52A8\u5931\u8D25\uFF1A" + (err.message || String(err)));
@@ -8684,7 +8690,7 @@ paths:            # 可选；省略 = 始终生效
   });
   if (api.onTasksChanged) {
     api.onTasksChanged(() => {
-      loadTasks();
+      loadTasks({ force: true });
     });
   }
 

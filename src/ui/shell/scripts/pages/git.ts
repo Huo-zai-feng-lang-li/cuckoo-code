@@ -100,11 +100,14 @@ function updateCommitBtn(): void {
  * @param opts.force true=强制走 IPC（watcher 变更/项目切换/手动操作后）；
  *                   默认 false=有缓存直接复用（切 tab 用）。
  */
+let gitLoaded = false;
+
 export async function loadGit(opts?: { force?: boolean }): Promise<void> {
   const listEl = document.getElementById('git-list');
   if (!listEl) return;
-  // 有缓存且不强制 → 跳过 IPC 和 DOM 重建
-  if (!opts?.force && lastItems.length > 0) return;
+  // 已加载过且不强制 → 跳过 IPC 和 DOM 重建（用独立标志，不依赖 lastItems.length：
+  // 项目无改动时 lastItems 为空，用 length>0 判断会漏掉"无改动"场景）
+  if (!opts?.force && gitLoaded) return;
   // 首次加载时启动项目目录 watcher（自动刷新用）。
   // 注意：只在成功后才置 flag——未选目录等失败情况保持 false，下次 loadGit 可重试。
   if (!gitWatcherStarted && api.gitWatchStart) {
@@ -122,6 +125,7 @@ export async function loadGit(opts?: { force?: boolean }): Promise<void> {
       return;
     }
     const items: GitItem[] = (r.items || []) as GitItem[];
+    gitLoaded = true;
     refreshBadge(items.length);
     renderList(items);
     // 提交历史默认展开：首次进入且未加载时拉取
@@ -613,7 +617,8 @@ if (api.onProjectDir) {
   api.onProjectDir(() => {
     historyLoaded = false; lastHistorySig = ''; // 目录变了，历史需重拉
     gitWatcherStarted = false; // 目录变了，watcher 需重新启动监听新目录（start 会清理旧 watcher）
-    lastItems = []; // 清空缓存，强制重拉
+    lastItems = [];
+    gitLoaded = false; // 清缓存标志，强制重拉
     loadGit({ force: true });
     if (historyOpen) loadHistory();
   });

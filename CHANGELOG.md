@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.10.7] - 2026-10-17
+
+### Performance
+
+- **修复"任务页切 tab 卡顿"**（`src/ui/shell/scripts/pages/tasks.ts`）：原每次切回都会重走 `taskList` + `taskReadScripts`（读 package.json 解析）+ 全量重建脚本按钮 DOM 并逐个 addEventListener。现新增 `loadTasks({ force })` + `tasksLoaded` 标志，切 tab 直接跳过；任务变更事件 / 启动 / 停止 / 移除 / 刷新 / 清空走 `force: true`。
+
+### Fixed
+
+- **Git 页缓存判断缺陷**（`src/ui/shell/scripts/pages/git.ts`）：原用 `lastItems.length > 0` 判断缓存，项目无改动时 `lastItems` 为空，会漏掉缓存直接重走 IPC。改用独立 `gitLoaded` 标志位，覆盖"无改动"场景。
+
+### Verified
+
+- typecheck 0 / vitest 128 文件 1190 用例全过 / lint 0 error / compile 无漂移
+
 ## [0.10.6] - 2026-10-17
 
 ### Fixed
