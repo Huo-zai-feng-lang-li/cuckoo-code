@@ -3729,6 +3729,27 @@
     if (hadGoal) stopGoal('已停止生成，目标自动推进已一并退出（可 /goal 重新设定）');
     // 清理未完成的助手气泡（含 pending 加载动画 / 流式光标）
     clearPendingBubble();
+    // 把所有还处于"运行中"的工具卡片标记为"已停止"
+    // （此前只清了 toolRunningCount，没清理 DOM 卡片，导致卡片永远卡在运行中）
+    try {
+      var runningBadges = stream.querySelectorAll('.tool-badge.run');
+      for (var rbi = 0; rbi < runningBadges.length; rbi++) {
+        var rb = runningBadges[rbi];
+        rb.className = 'tool-badge err';
+        rb.textContent = '已停止';
+        var rcard = rb.closest ? rb.closest('.tool-card') : rb.parentElement.parentElement;
+        if (rcard) {
+          var routSec = rcard.querySelector('.out-sec');
+          var routPre = rcard.querySelector('.out-pre');
+          if (routSec && routPre) {
+            routSec.style.display = '';
+            routPre.textContent = '(用户手动中止)';
+            routPre.classList.add('err');
+          }
+          rcard.classList.remove('open');
+        }
+      }
+    } catch (_) { /* ignore */ }
     appendSystem('已停止生成');
     pushHist({ t: 'system', text: '已停止生成' });
     // 后台请求停止 AI 页面（失败也无妨）
