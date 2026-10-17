@@ -202,7 +202,7 @@ class JsRunner {
 
     const killWorker = () => {
       this.activeChildren.delete(child);
-      if (this.activeWorkerPid === child.pid) this.activeWorkerPid = null;
+      // 保留 activeWorkerPid（最近一次 pid，供测试探活和诊断），不在此清空
       try { child.kill('SIGKILL'); } catch (_) { /* 已退出 */ }
     };
 
@@ -287,7 +287,6 @@ class JsRunner {
 
     child.on('exit', (code: number | null) => {
       this.activeChildren.delete(child);
-      if (this.activeWorkerPid === child.pid) this.activeWorkerPid = null;
       if (!settled) {
         finish({ success: false, error: '沙箱进程意外退出 (code=' + code + ')' }, 'exit', []);
       }

@@ -47,7 +47,13 @@
 - 最终验证：typecheck 0、vitest **127 文件 / 1184 用例**、lint 0 error、compile 0 无漂移。
 - 待办：**合并/发版由用户决定**（当前不 tag/push/发版）。真机待验项见上（尤其 A-005 打包环境 fork、D-005 手机浏览器握手、CSP file:// 放行、D-008 Electron net.request）。
 
-## v0.10.11：彻底修复停止后工具仍在后台执行（本版本）
+## v0.10.12：纠正 v0.10.11 的探活字段回归（本版本）
+
+- **v0.10.11 的失误**：在 killWorker/exit 里加了 `activeWorkerPid = null`，破坏了 `JsRunner.Process.test.js` 的探活断言。该字段语义是"最近一次 run 的 pid"，用于 `process.kill(pid, 0)` 验证进程真死，不应清空。
+- **教训**：改完跑全量测试后必须先看结果再提交，v0.10.11 是没检查测试输出就发版的。
+- 本版本已恢复字段保留语义，全量测试通过。
+
+## v0.10.11：彻底修复停止后工具仍在后台执行
 
 - **JsRunner**：新增 `abortAll(windowId)` 支持按窗口强杀 worker（Windows 下用 `execFile('taskkill', ['/PID', pid, '/T', '/F'])` 树杀），同时修复了并发覆盖、PID 复用误杀、全局杀导致误伤其他窗口、taskkill 失败无兜底等问题。
 - **harness.ts**：`stopGeneration` 中调用 `jsRunner.abortAll(ctx.win.id)`；顶部静态 import `jsRunner`，补全 `loadURL` 的 catch。

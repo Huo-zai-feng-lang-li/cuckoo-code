@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.10.12] - 2026-10-18
+
+### Fixed
+
+- **纠正 v0.10.11 的回归**：v0.10.11 在 `killWorker` 和 `child.on('exit')` 中误清了 `activeWorkerPid`，破坏了 `JsRunner.Process.test.js` 的探活断言（`activeWorkerPid` 的语义是"最近一次 run 的 pid"，用于测试和诊断，不应在结束时清空）。本版本恢复该字段的保留语义。
+
+### Note
+
+- v0.10.11 已推送但测试未通过（1 例失败），请使用 v0.10.12。
+
 ## [0.10.11] - 2026-10-18
 
 ### Fixed
