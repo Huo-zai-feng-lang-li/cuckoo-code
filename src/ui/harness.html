@@ -3418,6 +3418,17 @@
     if (!convNavEl) convNavEl = document.getElementById('conv-nav');
     return convNavEl;
   }
+  // 鼠标 hover 到右侧导航区域时，自动平滑滚动到底部，方便快速查看最新消息
+  var convNavHovered = false;
+  document.addEventListener('mouseover', function (e) {
+    var isInNav = e.target && e.target.closest && !!e.target.closest('.conv-nav');
+    if (isInNav && !convNavHovered) {
+      convNavHovered = true;
+      scrollBottom(true); // true = 强制滚到底
+    } else if (!isInNav && convNavHovered) {
+      convNavHovered = false;
+    }
+  });
   /** 快速平滑滚动：约 180ms 缓动到目标（比浏览器原生 smooth 快很多） */
   var fastScrollToken = 0;
   function fastScrollTo(el) {
