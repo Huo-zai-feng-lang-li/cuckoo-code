@@ -11,7 +11,7 @@ import { initProject } from '../../session/project-context.js';
 import { assertSenderOk } from '../ipc-guard.js';
 
 const require = createRequire(import.meta.url);
-const { ipcMain, shell } = require('electron');
+const { ipcMain, shell, dialog } = require('electron');
 
 // 文件树：忽略的目录 + 节点上限（防超大项目）
 const TREE_IGNORE_DIRS = new Set(['node_modules', '.git', 'dist', 'out', 'build', 'coverage', '.cuckooCode', '.playwright-mcp', '.idea', '.vscode', 'wyp', 'release', 'dist-verify']);
@@ -439,8 +439,7 @@ function registerSessionIpc(): void {
   });
 
   // 用指定项目新建对话：导航到首页 + 自动初始化该项目（发系统提示词，不弹目录框）
-  ipcMain.handle('new-conversation-for-project', async (event: any, { projectDir }: any) => {
-    const ctx = windowState.getContextByWebContents(event.sender);
+  async function startNewConversationForProject(ctx: any, projectDir: string): Promise<any> {
     if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) return { success: false, error: 'no-view' };
     const provider = ctx.providerId ? getProvider(ctx.providerId) : null;
     const homeUrl = provider && provider.homeUrl ? provider.homeUrl : null;
@@ -454,7 +453,16 @@ function registerSessionIpc(): void {
     if (ctxAny.__newConvTimer) { try { clearTimeout(ctxAny.__newConvTimer); } catch (_) { /* ignore */ } ctxAny.__newConvTimer = null; }
     // 页面加载完成后初始化。initial-prompt 监听器在 preload 顶层同步注册（did-finish-load 时已就绪），
     // 输入框就绪由 chat-input 轮询保证 → 无需固定等 2s，仅留极短渲染缓冲。
+    // 新建对话完成 → 通知壳页面收起 loading 遮罩（各分支都要触发，否则残留到 15s 兜底）
+    const notifyDone = () => {
+      try { if (ctx && ctx.win && !ctx.win.isDestroyed()) ctx.win.webContents.send('shell-newconv-done'); } catch (_) { /* ignore */ }
+    };
+    // 防重入：同 URL 短路（setTimeout）与 did-finish-load 可能都触发 onLoad，
+    // 不加守卫会导致 initProject 与 notifyDone 各跑两次。
+    let onLoadFired = false;
     const onLoad = () => {
+      if (onLoadFired) return;
+      onLoadFired = true;
       try { wc.off('did-finish-load', onLoad); } catch (_) { /* ignore */ }
       ctxAny.__newConvOnLoad = null;
       ctxAny.__newConvTimer = setTimeout(async () => {
@@ -463,20 +471,58 @@ function registerSessionIpc(): void {
           await initProject(false, ctx, projectDir, false, '', false);
         } catch (err: any) {
           console.log('[Cuckoo Code] 新建对话初始化项目失败: ' + (err && err.message));
+        } finally {
+          notifyDone();
         }
       }, 400);
     };
+    // 记录导航前 URL：若目标与当前相同（用户已在首页点项目选择器 / Ctrl+Shift+N），
+    // Electron 可能不派发 did-finish-load → onLoad 不执行 → 项目未初始化 + 遮罩滞留 15s。
+    // 与 web-new-conversation 保持同一防御（shell.ts 的同名短路）。
+    const beforeUrl = (() => { try { return wc.getURL(); } catch (_) { return ''; } })();
     ctxAny.__newConvOnLoad = onLoad;
     try { wc.on('did-finish-load', onLoad); } catch (_) { /* ignore */ }
     try {
       await wc.loadURL(homeUrl);
+      // 同 URL 导航：did-finish-load 可能不触发 → 手动触发 onLoad（走 initProject + notifyDone）
+      if (beforeUrl === homeUrl) setTimeout(onLoad, 100);
     } catch (err: any) {
-      // 导航失败：did-finish-load 不会触发 → 必须显式移除监听器，否则残留累积，
+      // 导航失败：did-finish-load 不会触发 → 必须显式移除监听器并清字段，否则残留累积，
       // 下次任意导航都会误触发 initProject（给非目标会话注入系统提示词）。
       try { wc.off('did-finish-load', onLoad); } catch (_) { /* ignore */ }
+      ctxAny.__newConvOnLoad = null;
+      notifyDone();
       return { success: false, error: err.message };
     }
     return { success: true };
+  }
+
+  ipcMain.handle('new-conversation-for-project', async (event: any, { projectDir }: any) => {
+    if (!assertSenderOk(event).ok) return { success: false, error: '来源校验失败' };
+    const ctx = windowState.getContextByWebContents(event.sender);
+    return startNewConversationForProject(ctx, projectDir);
+  });
+
+  // 左上角项目选择器：弹目录选择框，选定后【新开对话】（不在当前对话里改绑）
+  ipcMain.handle('pick-dir-and-new-conversation', async (event: any) => {
+    if (!assertSenderOk(event).ok) return { success: false, error: '来源校验失败' };
+    const ctx = windowState.getContextByWebContents(event.sender);
+    if (!ctx || !ctx.win || ctx.win.isDestroyed()) return { success: false, error: 'no-window' };
+    // 默认定位：本窗口当前项目目录（存在且有效才用）
+    let defaultPath: string | undefined;
+    try {
+      const cur = ctx.sessionStore && ctx.sessionStore.state ? ctx.sessionStore.state.selectedProjectDir : null;
+      if (cur && fs.existsSync(cur)) defaultPath = cur;
+    } catch (_) { /* ignore */ }
+    const picked = dialog.showOpenDialogSync(ctx.win, {
+      properties: ['openDirectory'],
+      buttonLabel: '选择目录',
+      title: '选择项目目录（将新建对话）',
+      defaultPath,
+    });
+    try { ctx.win.focus(); } catch (_) { /* ignore */ }
+    if (!picked || picked.length === 0) return { success: false, canceled: true };
+    return startNewConversationForProject(ctx, picked[0]);
   });
 
   // 导航到会话

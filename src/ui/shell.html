@@ -602,10 +602,37 @@
   .ck-set-field { display: flex; flex-direction: column; gap: 6px; }
   .ck-set-field.ck-set-toggle { flex-direction: row; align-items: center; justify-content: space-between; }
   /* 活动栏图标开关：两列网格（图标多，单列太长） */
-  /* 活动栏图标：默认折叠收起，展开后竖排 */
-  .ck-ab-toggle-head { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
-  .ck-ab-toggle-head:hover { color: var(--ck-text); }
-  .ck-ab-toggle-hint { margin-left: auto; font-size: 11px; font-weight: 400; color: var(--ck-text-dim); }
+  /* ===== 通用可折叠卡片（设置页分组） ===== */
+  /* 头部：整行可点，左侧箭头 + 标题，右侧可选摘要/提示 */
+  .ck-collapse-head {
+    display: flex; align-items: center; gap: 8px;
+    cursor: pointer; user-select: none;
+    padding: 2px 0; border-radius: 8px;
+    transition: color .15s;
+  }
+  .ck-collapse-head:hover { color: var(--ck-text); }
+  .ck-collapse-caret {
+    flex: 0 0 auto; width: 14px; height: 14px; color: var(--ck-text-dim);
+    transition: transform .2s ease;
+  }
+  .ck-collapse-head[aria-expanded="true"] .ck-collapse-caret { transform: rotate(90deg); }
+  .ck-collapse-title { font-size: 12.5px; font-weight: 700; color: var(--ck-text); letter-spacing: .2px; }
+  .ck-collapse-summary { margin-left: auto; font-size: 11px; font-weight: 400; color: var(--ck-text-dim); }
+  /* 内容区：折叠时隐藏；展开时纵向排布，与头部留出间距 */
+  .ck-collapse-body { display: flex; flex-direction: column; gap: 11px; }
+  .ck-collapse-body.cuckoo-hidden { display: none; }
+  /* 折叠头与内容之间的间距由 .ck-card 的 gap 提供，无需额外处理 */
+  /* 折叠内容内的子分组标题（用于合并组，如"安全与信任"内部三段） */
+  .ck-collapse-body > .ck-set-subgroup { display: flex; flex-direction: column; gap: 11px; }
+  .ck-collapse-body > .ck-set-subgroup + .ck-set-subgroup {
+    padding-top: 12px; border-top: 1px solid var(--ck-border);
+  }
+  .ck-set-subtitle {
+    font-size: 11px; font-weight: 600; color: var(--ck-text-dim);
+    letter-spacing: .4px; margin-bottom: 2px;
+  }
+
+  /* 活动栏图标列表：竖排 */
   .ck-ab-toggle-list { display: flex; flex-direction: column; }
   .ck-ab-toggle-list .ck-set-field { padding: 5px 0; border-bottom: 1px solid var(--ck-border); }
   .ck-ab-toggle-list .ck-set-key { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2677,158 +2704,184 @@ paths:            # 可选；省略 = 始终生效
 
             <!-- ===== 设置 ===== -->
             <div class="ck-tab" data-panel="settings">
+              <!-- 外观（默认展开） -->
               <div class="ck-card">
-                <div class="ck-set-group-title">外观</div>
-                <div class="ck-set-field">
-                  <span class="ck-set-key">主题</span>
-                  <select class="ck-set-input" id="st-theme-select">
-                    <option value="system">跟随系统</option>
-                    <option value="light">浅色</option>
-                    <option value="dark">深色</option>
-                  </select>
+                <div class="ck-collapse-head" data-collapse="appearance" aria-expanded="true">
+                  <svg class="ck-collapse-caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>
+                  <span class="ck-collapse-title">外观</span>
+                  <span class="ck-collapse-summary">主题 · 字号</span>
                 </div>
-                <div class="ck-set-field">
-                  <span class="ck-set-key">纯净模式字号</span>
-                  <select class="ck-set-input" id="st-harness-zoom">
-                    <option value="0.85">小 (85%)</option>
-                    <option value="1">标准 (100%)</option>
-                    <option value="1.15">大 (115%)</option>
-                    <option value="1.26">特大 (126%)</option>
-                    <option value="1.5">超大 (150%)</option>
-                  </select>
+                <div class="ck-collapse-body" data-collapse-body="appearance">
+                  <div class="ck-set-field">
+                    <span class="ck-set-key">主题</span>
+                    <select class="ck-set-input" id="st-theme-select">
+                      <option value="system">跟随系统</option>
+                      <option value="light">浅色</option>
+                      <option value="dark">深色</option>
+                    </select>
+                  </div>
+                  <div class="ck-set-field">
+                    <span class="ck-set-key">纯净模式字号</span>
+                    <select class="ck-set-input" id="st-harness-zoom">
+                      <option value="0.85">小 (85%)</option>
+                      <option value="1">标准 (100%)</option>
+                      <option value="1.15">大 (115%)</option>
+                      <option value="1.26">特大 (126%)</option>
+                      <option value="1.5">超大 (150%)</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
+              <!-- 活动栏图标（默认折叠） -->
               <div class="ck-card">
-                <div class="ck-set-group-title ck-ab-toggle-head" id="st-ab-head">
-                  <span class="ck-git-caret ck-git-caret-c" id="st-ab-caret"></span>
-                  <span>活动栏图标</span>
-                  <span class="ck-ab-toggle-hint" id="st-ab-hint">展开</span>
+                <div class="ck-collapse-head" data-collapse="activitybar" aria-expanded="false">
+                  <svg class="ck-collapse-caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>
+                  <span class="ck-collapse-title">活动栏图标</span>
+                  <span class="ck-collapse-summary">显示 / 隐藏</span>
                 </div>
-                <div id="st-ab-body" class="cuckoo-hidden">
+                <div class="ck-collapse-body cuckoo-hidden" data-collapse-body="activitybar">
                   <p class="ck-about-tip">开关控制左侧活动栏显示哪些图标（设置不可隐藏）。</p>
                   <div id="st-ab-list" class="ck-ab-toggle-list"></div>
                 </div>
               </div>
-              <div class="ck-card">
-                <div class="ck-set-group-title">失败自动重试</div>
-                <div class="ck-set-field ck-set-toggle">
-                  <span class="ck-set-key">启用自动重试</span>
-                  <label class="ck-switch">
-                    <input type="checkbox" id="st-retry-enabled" />
-                    <span class="ck-switch-track"></span>
-                  </label>
-                </div>
-                <div class="ck-set-field">
-                  <span class="ck-set-key">普通失败间隔（秒）</span>
-                  <div class="ck-set-inline">
-                    <input type="number" class="ck-set-input" id="st-retry-delay-min" min="0" step="1" />
-                    <span class="ck-set-sep">至</span>
-                    <input type="number" class="ck-set-input" id="st-retry-delay-max" min="0" step="1" />
-                  </div>
-                </div>
-                <div class="ck-set-field">
-                  <span class="ck-set-key">普通失败重试次数（负数=无限）</span>
-                  <input type="number" class="ck-set-input" id="st-retry-count" step="1" />
-                </div>
-                <div class="ck-set-field">
-                  <span class="ck-set-key">操作频繁重试间隔（秒）</span>
-                  <input type="number" class="ck-set-input" id="st-retry-429-delay" min="0" step="1" />
-                </div>
-                <div class="ck-set-field">
-                  <span class="ck-set-key">操作频繁重试次数（负数=无限）</span>
-                  <input type="number" class="ck-set-input" id="st-retry-429-count" step="1" />
-                </div>
-                <div class="ck-set-field">
-                  <span class="ck-set-key">重试提示词</span>
-                  <textarea class="ck-set-textarea" id="st-retry-prompt" rows="3"></textarea>
-                </div>
-                <div class="ck-set-field">
-                  <span class="ck-set-key">AI 回复超时后重试（秒）</span>
-                  <input type="number" class="ck-set-input" id="st-xhr-idle-timeout" min="0" step="1" />
-                </div>
-                <div class="ck-set-field">
-                  <span class="ck-set-key">超时重试提示词</span>
-                  <input type="text" class="ck-set-input" id="st-watchdog-prompt" />
-                </div>
-                <div class="ck-set-field">
-                  <span class="ck-set-key">超时重试次数（负数=无限）</span>
-                  <input type="number" class="ck-set-input" id="st-watchdog-count" step="1" />
-                </div>
-              </div>
 
+              <!-- 失败自动重试（默认折叠） -->
               <div class="ck-card">
-                <div class="ck-set-group-title">发送延迟</div>
-                <div class="ck-set-field">
-                  <span class="ck-set-key">延迟区间（秒）</span>
-                  <div class="ck-set-inline">
-                    <input type="number" class="ck-set-input" id="st-send-delay-min" min="0" step="0.1" />
-                    <span class="ck-set-sep">至</span>
-                    <input type="number" class="ck-set-input" id="st-send-delay-max" min="0" step="0.1" />
+                <div class="ck-collapse-head" data-collapse="retry" aria-expanded="false">
+                  <svg class="ck-collapse-caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>
+                  <span class="ck-collapse-title">失败自动重试</span>
+                  <span class="ck-collapse-summary">间隔 · 次数 · 提示词</span>
+                </div>
+                <div class="ck-collapse-body cuckoo-hidden" data-collapse-body="retry">
+                  <div class="ck-set-field ck-set-toggle">
+                    <span class="ck-set-key">启用自动重试</span>
+                    <label class="ck-switch">
+                      <input type="checkbox" id="st-retry-enabled" />
+                      <span class="ck-switch-track"></span>
+                    </label>
+                  </div>
+                  <div class="ck-set-field">
+                    <span class="ck-set-key">普通失败间隔（秒）</span>
+                    <div class="ck-set-inline">
+                      <input type="number" class="ck-set-input" id="st-retry-delay-min" min="0" step="1" />
+                      <span class="ck-set-sep">至</span>
+                      <input type="number" class="ck-set-input" id="st-retry-delay-max" min="0" step="1" />
+                    </div>
+                  </div>
+                  <div class="ck-set-field">
+                    <span class="ck-set-key">普通失败重试次数（负数=无限）</span>
+                    <input type="number" class="ck-set-input" id="st-retry-count" step="1" />
+                  </div>
+                  <div class="ck-set-field">
+                    <span class="ck-set-key">操作频繁重试间隔（秒）</span>
+                    <input type="number" class="ck-set-input" id="st-retry-429-delay" min="0" step="1" />
+                  </div>
+                  <div class="ck-set-field">
+                    <span class="ck-set-key">操作频繁重试次数（负数=无限）</span>
+                    <input type="number" class="ck-set-input" id="st-retry-429-count" step="1" />
+                  </div>
+                  <div class="ck-set-field">
+                    <span class="ck-set-key">重试提示词</span>
+                    <textarea class="ck-set-textarea" id="st-retry-prompt" rows="3"></textarea>
+                  </div>
+                  <div class="ck-set-field">
+                    <span class="ck-set-key">AI 回复超时后重试（秒）</span>
+                    <input type="number" class="ck-set-input" id="st-xhr-idle-timeout" min="0" step="1" />
+                  </div>
+                  <div class="ck-set-field">
+                    <span class="ck-set-key">超时重试提示词</span>
+                    <input type="text" class="ck-set-input" id="st-watchdog-prompt" />
+                  </div>
+                  <div class="ck-set-field">
+                    <span class="ck-set-key">超时重试次数（负数=无限）</span>
+                    <input type="number" class="ck-set-input" id="st-watchdog-count" step="1" />
                   </div>
                 </div>
               </div>
 
+              <!-- 发送与上传节奏（默认折叠） -->
               <div class="ck-card">
-                <div class="ck-set-group-title">附件上传间隔</div>
-                <div class="ck-set-field">
-                  <span class="ck-set-key">上传后检测等待（秒）</span>
-                  <div class="ck-set-inline">
-                    <input type="number" class="ck-set-input" id="st-attach-delay-min" min="0" step="0.1" />
-                    <span class="ck-set-sep">至</span>
-                    <input type="number" class="ck-set-input" id="st-attach-delay-max" min="0" step="0.1" />
+                <div class="ck-collapse-head" data-collapse="timing" aria-expanded="false">
+                  <svg class="ck-collapse-caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>
+                  <span class="ck-collapse-title">发送与上传节奏</span>
+                  <span class="ck-collapse-summary">延迟 · 间隔</span>
+                </div>
+                <div class="ck-collapse-body cuckoo-hidden" data-collapse-body="timing">
+                  <div class="ck-set-field">
+                    <span class="ck-set-key">发送延迟区间（秒）</span>
+                    <div class="ck-set-inline">
+                      <input type="number" class="ck-set-input" id="st-send-delay-min" min="0" step="0.1" />
+                      <span class="ck-set-sep">至</span>
+                      <input type="number" class="ck-set-input" id="st-send-delay-max" min="0" step="0.1" />
+                    </div>
+                  </div>
+                  <div class="ck-set-field">
+                    <span class="ck-set-key">附件上传后检测等待（秒）</span>
+                    <div class="ck-set-inline">
+                      <input type="number" class="ck-set-input" id="st-attach-delay-min" min="0" step="0.1" />
+                      <span class="ck-set-sep">至</span>
+                      <input type="number" class="ck-set-input" id="st-attach-delay-max" min="0" step="0.1" />
+                    </div>
                   </div>
                 </div>
               </div>
 
+              <!-- 安全与信任（默认折叠，三段合一） -->
               <div class="ck-card">
-                <div class="ck-set-group-title">网络安全</div>
-                <div class="ck-set-field ck-set-toggle">
-                  <span class="ck-set-key">拒绝 webFetch 访问内网/本地地址</span>
-                  <label class="ck-switch">
-                    <input type="checkbox" id="st-ssrf-guard" />
-                    <span class="ck-switch-track"></span>
-                  </label>
+                <div class="ck-collapse-head" data-collapse="security" aria-expanded="false">
+                  <svg class="ck-collapse-caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>
+                  <span class="ck-collapse-title">安全与信任</span>
+                  <span class="ck-collapse-summary">执行策略 · 网络 · 工作区</span>
                 </div>
-                <p class="ck-about-tip">开启后，webFetch 将拒绝访问内网、回环、保留地址（防 SSRF）。默认关闭（可访问本地项目）。</p>
-              </div>
-
-              <div class="ck-card">
-                <div class="ck-set-group-title">安全 · 执行策略</div>
-                <p class="ck-about-tip">控制 AI 执行命令与写入文件时的确认时机，切换后立即生效并持久化。</p>
-                <div class="ck-set-field">
-                  <label class="ck-radio-row">
-                    <input type="radio" name="st-exec-policy" value="smart" />
-                    <span>
-                      <span class="ck-radio-name">智能（默认）</span>
-                      <span class="ck-radio-desc">只读工具与项目内写入自动执行；仅当命令命中高危投递/反弹/持久化特征时才弹确认。</span>
-                    </span>
-                  </label>
-                  <label class="ck-radio-row">
-                    <input type="radio" name="st-exec-policy" value="workspace" />
-                    <span>
-                      <span class="ck-radio-name">工作区信任</span>
-                      <span class="ck-radio-desc">按项目信任状态放行；未信任项目的命令执行与项目外写入需确认。</span>
-                    </span>
-                  </label>
-                  <label class="ck-radio-row">
-                    <input type="radio" name="st-exec-policy" value="strict" />
-                    <span>
-                      <span class="ck-radio-name">严格</span>
-                      <span class="ck-radio-desc">每次执行命令或写入都要确认。</span>
-                    </span>
-                  </label>
+                <div class="ck-collapse-body cuckoo-hidden" data-collapse-body="security">
+                  <div class="ck-set-subgroup">
+                    <div class="ck-set-subtitle">执行策略</div>
+                    <p class="ck-about-tip">控制 AI 执行命令与写入文件时的确认时机，切换后立即生效并持久化。</p>
+                    <div class="ck-set-field">
+                      <label class="ck-radio-row">
+                        <input type="radio" name="st-exec-policy" value="smart" />
+                        <span>
+                          <span class="ck-radio-name">智能（默认）</span>
+                          <span class="ck-radio-desc">只读工具与项目内写入自动执行；仅当命令命中高危投递/反弹/持久化特征时才弹确认。</span>
+                        </span>
+                      </label>
+                      <label class="ck-radio-row">
+                        <input type="radio" name="st-exec-policy" value="workspace" />
+                        <span>
+                          <span class="ck-radio-name">工作区信任</span>
+                          <span class="ck-radio-desc">按项目信任状态放行；未信任项目的命令执行与项目外写入需确认。</span>
+                        </span>
+                      </label>
+                      <label class="ck-radio-row">
+                        <input type="radio" name="st-exec-policy" value="strict" />
+                        <span>
+                          <span class="ck-radio-name">严格</span>
+                          <span class="ck-radio-desc">每次执行命令或写入都要确认。</span>
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="ck-set-subgroup">
+                    <div class="ck-set-subtitle">网络安全</div>
+                    <div class="ck-set-field ck-set-toggle">
+                      <span class="ck-set-key">拒绝 webFetch 访问内网/本地地址</span>
+                      <label class="ck-switch">
+                        <input type="checkbox" id="st-ssrf-guard" />
+                        <span class="ck-switch-track"></span>
+                      </label>
+                    </div>
+                    <p class="ck-about-tip">开启后，webFetch 将拒绝访问内网、回环、保留地址（防 SSRF）。默认关闭（可访问本地项目）。</p>
+                  </div>
+                  <div class="ck-set-subgroup">
+                    <div class="ck-set-subtitle">受信任的工作区</div>
+                    <p class="ck-about-tip">已信任的项目目录按"工作区信任"策略自动放行；撤销后该目录恢复为需确认。</p>
+                    <div id="st-trusted-ws-list"></div>
+                  </div>
                 </div>
-              </div>
-
-              <div class="ck-card">
-                <div class="ck-set-group-title">受信任的工作区</div>
-                <p class="ck-about-tip">已信任的项目目录按"工作区信任"策略自动放行；撤销后该目录恢复为需确认。</p>
-                <div id="st-trusted-ws-list"></div>
               </div>
 
               <div class="ck-actions">
-                <button class="ck-btn ck-btn-primary" id="st-save">保存设置</button>
                 <button class="ck-btn ck-btn-secondary" id="st-reset">恢复默认</button>
                 <button class="ck-icon-btn" id="st-refresh" title="刷新（重新读取当前设置）">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
@@ -3972,8 +4025,20 @@ paths:            # 可选；省略 = 始终生效
   }
   var pickerEl = document.getElementById("project-picker");
   if (pickerEl) {
-    pickerEl.addEventListener("click", () => {
-      if (api.initProject) api.initProject();
+    pickerEl.addEventListener("click", async () => {
+      const anyApi = api;
+      if (typeof anyApi.pickDirAndNewConversation !== "function") {
+        if (api.initProject) api.initProject();
+        return;
+      }
+      showNewConvLoading();
+      try {
+        const r = await anyApi.pickDirAndNewConversation();
+        if (r && r.canceled) hideNewConvLoading();
+        else if (r && r.success === false) hideNewConvLoading();
+      } catch (_) {
+        hideNewConvLoading();
+      }
     });
   }
   if (api.onProjectDir) api.onProjectDir((dir) => renderProjectDir(dir));
@@ -4057,7 +4122,7 @@ paths:            # 可选；省略 = 始终生效
   document.getElementById("btn-reload").addEventListener("click", () => {
     if (api.reload) api.reload();
   });
-  document.getElementById("btn-home").addEventListener("click", () => {
+  function startNewConversation() {
     if (api.newWebConversation) {
       try {
         showNewConvLoading();
@@ -4067,7 +4132,32 @@ paths:            # 可选；省略 = 始终生效
       return;
     }
     if (api.home) api.home();
+  }
+  async function startPickDirNewConversation() {
+    const anyApi = api;
+    if (typeof anyApi.pickDirAndNewConversation !== "function") {
+      if (api.initProject) api.initProject();
+      return;
+    }
+    showNewConvLoading();
+    try {
+      const r = await anyApi.pickDirAndNewConversation();
+      if (r && (r.canceled || r.success === false)) hideNewConvLoading();
+    } catch (_) {
+      hideNewConvLoading();
+    }
+  }
+  document.getElementById("btn-home").addEventListener("click", () => {
+    startNewConversation();
   });
+  if (api.onMenuAction) {
+    api.onMenuAction((d) => {
+      const action = d && d.action;
+      if (action === "new-conversation") startNewConversation();
+      else if (action === "pick-dir-new-conversation") startPickDirNewConversation().catch(() => {
+      });
+    });
+  }
   var isMac = api.platform === "darwin";
   if (isMac) {
     const wc = document.querySelector(".ck-win-controls");
@@ -4164,7 +4254,8 @@ paths:            # 可选；省略 = 始终生效
     return tb - ta;
   }
   function renderItem(s, currentSessionId, archived = false, hasChildren = false, sub = false) {
-    const label = s.kind === "subagent" && s.agentName ? "\u5B50\u4EE3\u7406: " + s.agentName : s.title || s.sessionId;
+    const fallbackLabel = s.createdAt ? fmtCreatedAt(s.createdAt) : "\u5BF9\u8BDD " + String(s.sessionId || "").slice(0, 8);
+    const label = s.kind === "subagent" && s.agentName ? "\u5B50\u4EE3\u7406: " + s.agentName : s.title || fallbackLabel;
     const time = relTime(s.updatedAt);
     const isCur = s.sessionId === currentSessionId;
     const renameBtn = '<span class="ck-ws-act" data-act="rename" aria-label="\u91CD\u547D\u540D"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span>';
@@ -4173,7 +4264,8 @@ paths:            # 可选；省略 = 始终生效
     const open = hasChildren && expandedNodes.has(s.sessionId);
     const caret = hasChildren ? '<span class="ck-ws-expand' + (open ? " open" : "") + '"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg></span>' : sub ? '<span class="ck-ws-expand ck-ws-expand-hidden"></span>' : '<span class="ck-ws-expand ck-ws-expand-hidden"></span>';
     const disabled = harnessBusy && !isCur ? " ck-ws-disabled" : "";
-    return '<div class="ck-ws-item' + (isCur ? " current" : "") + (sub ? " sub" : "") + disabled + '" data-session-id="' + escapeAttr(s.sessionId) + '" data-name="' + escapeAttr(label) + '" title="' + escapeAttr(s.sessionId) + '">' + caret + '<span class="ck-ws-name">' + escapeHtml(label) + "</span>" + (time ? '<span class="ck-ws-time">' + escapeHtml(time) + "</span>" : "") + '<span class="ck-ws-acts">' + renameBtn + act + delBtn + "</span></div>";
+    const hasTitle = !!(s.title && String(s.title).trim());
+    return '<div class="ck-ws-item' + (isCur ? " current" : "") + (sub ? " sub" : "") + disabled + '" data-session-id="' + escapeAttr(s.sessionId) + '" data-name="' + escapeAttr(label) + '" data-has-title="' + (hasTitle ? "1" : "0") + '" title="' + escapeAttr(label) + '">' + caret + '<span class="ck-ws-name">' + escapeHtml(label) + "</span>" + (time ? '<span class="ck-ws-time">' + escapeHtml(time) + "</span>" : "") + '<span class="ck-ws-acts">' + renameBtn + act + delBtn + "</span></div>";
   }
   function fmtCreatedAt(iso) {
     if (!iso) return "";
@@ -4321,8 +4413,8 @@ paths:            # 可选；省略 = 始终生效
           e.stopPropagation();
           const id2 = el2.dataset.sessionId;
           if (!id2 || !api.setSessionTitle) return;
-          const cur = el2.dataset.name || "";
-          const name = await ckPrompt({ title: "\u91CD\u547D\u540D\u5BF9\u8BDD", placeholder: "\u8F93\u5165\u5BF9\u8BDD\u540D\u79F0", value: cur === id2 ? "" : cur });
+          const cur = el2.dataset.hasTitle === "1" ? el2.dataset.name || "" : "";
+          const name = await ckPrompt({ title: "\u91CD\u547D\u540D\u5BF9\u8BDD", placeholder: "\u8F93\u5165\u5BF9\u8BDD\u540D\u79F0", value: cur });
           if (!name) return;
           try {
             await api.setSessionTitle(id2, name);
@@ -4356,7 +4448,7 @@ paths:            # 可选；省略 = 始终生效
         if (e.target.closest('[data-act="delete"]')) {
           e.stopPropagation();
           const id2 = el2.dataset.sessionId;
-          const name = el2.dataset.name || "\u8BE5\u5BF9\u8BDD";
+          const name = el2.dataset.hasTitle === "1" ? el2.dataset.name || "\u8BE5\u5BF9\u8BDD" : "\u672A\u547D\u540D\u5BF9\u8BDD";
           if (!id2 || !api.deleteSession) return;
           const ok = await ckConfirm("\u786E\u5B9A\u8981\u5220\u9664\u5BF9\u8BDD\u201C" + name + "\u201D\u5417\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u64A4\u9500\u3002", "\u5220\u9664\u5BF9\u8BDD");
           if (!ok) return;
@@ -6379,25 +6471,44 @@ paths:            # 可选；省略 = 始终生效
       attachDelayMax: num("attach-delay-max")
     };
   }
-  var stSaveBtn = document.getElementById("st-save");
-  if (stSaveBtn) stSaveBtn.addEventListener("click", async () => {
-    if (!api.saveSettings) return;
-    stSaveBtn.disabled = true;
-    try {
-      const r = await api.saveSettings(collectSettings());
-      if (r && r.success) {
-        if (r.data) renderSettings(r.data);
-        stSaveBtn.textContent = "\u5DF2\u4FDD\u5B58";
-        setTimeout(() => {
-          stSaveBtn.textContent = "\u4FDD\u5B58\u8BBE\u7F6E";
-        }, 1200);
-      } else {
-        await ckAlert(r && r.error || "\u4FDD\u5B58\u5931\u8D25");
-      }
-    } catch (e) {
-      await ckAlert("\u4FDD\u5B58\u5931\u8D25: " + (e.message || e));
+  var saving2 = false;
+  var savePending = false;
+  var resetting = false;
+  async function saveNow() {
+    if (!api.saveSettings || resetting) return;
+    if (saving2) {
+      savePending = true;
+      return;
     }
-    stSaveBtn.disabled = false;
+    saving2 = true;
+    for (; ; ) {
+      savePending = false;
+      try {
+        const r = await api.saveSettings(collectSettings());
+        if (!(r && r.success)) {
+          await ckAlert(r && r.error || "\u4FDD\u5B58\u5931\u8D25");
+          await loadSettings();
+          break;
+        }
+      } catch (e) {
+        await ckAlert("\u4FDD\u5B58\u5931\u8D25: " + (e.message || e));
+        await loadSettings();
+        break;
+      }
+      if (!savePending) break;
+    }
+    saving2 = false;
+  }
+  for (const [id] of SET_FIELDS) {
+    document.getElementById("st-" + id)?.addEventListener("change", () => {
+      saveNow();
+    });
+  }
+  document.getElementById("st-retry-enabled")?.addEventListener("change", () => {
+    saveNow();
+  });
+  document.getElementById("st-ssrf-guard")?.addEventListener("change", () => {
+    saveNow();
   });
   document.getElementById("st-refresh")?.addEventListener("click", () => {
     loadSettings();
@@ -6406,12 +6517,54 @@ paths:            # 可选；省略 = 始终生效
     renderActivitybarToggles();
   });
   document.getElementById("st-reset")?.addEventListener("click", async () => {
-    if (!api.resetSettings) return;
     if (!await ckConfirm("\u786E\u5B9A\u6062\u590D\u9ED8\u8BA4\u8BBE\u7F6E\uFF1F")) return;
+    const anyApi = api;
+    resetting = true;
+    saving2 = false;
+    savePending = false;
     try {
-      const r = await api.resetSettings();
-      if (r && r.success && r.data) renderSettings(r.data);
-    } catch (_) {
+      if (api.resetSettings) {
+        try {
+          const r = await api.resetSettings();
+          if (r && r.success && r.data) renderSettings(r.data);
+        } catch (_) {
+        }
+      }
+      if (typeof anyApi.themeSet === "function") {
+        try {
+          await anyApi.themeSet("dark");
+        } catch (_) {
+        }
+      }
+      if (typeof anyApi.setUiPrefs === "function") {
+        try {
+          await anyApi.setUiPrefs({ harnessZoom: 1 });
+        } catch (_) {
+        }
+      }
+      try {
+        const bar3 = document.querySelector(".ck-activitybar");
+        bar3?.querySelectorAll(".ck-ab-item[data-tab]").forEach((el2) => {
+          if (el2.dataset.tab) toggleTab(el2.dataset.tab, true);
+        });
+      } catch (_) {
+      }
+      if (typeof api.setExecutionPolicy === "function") {
+        try {
+          const r2 = await api.setExecutionPolicy("smart");
+          if (r2 && r2.success) setExecPolicyUI(r2.mode || "smart");
+        } catch (_) {
+        }
+      }
+      try {
+        await loadSettings();
+      } catch (_) {
+      }
+      loadUiPrefs();
+      refreshThemeValue();
+      renderActivitybarToggles();
+    } finally {
+      resetting = false;
     }
   });
   var themeSelect = document.getElementById("st-theme-select");
@@ -6520,25 +6673,21 @@ paths:            # 可选；省略 = 始终生效
     } catch (_) {
     }
   });
-  {
-    const head = document.getElementById("st-ab-head");
-    const body = document.getElementById("st-ab-body");
-    const caret = document.getElementById("st-ab-caret");
-    const hint = document.getElementById("st-ab-hint");
-    if (head && body) {
-      head.addEventListener("click", () => {
-        const collapsed = body.classList.toggle("cuckoo-hidden");
-        if (caret) caret.classList.toggle("ck-git-caret-c", collapsed);
-        if (hint) hint.textContent = collapsed ? "\u5C55\u5F00" : "\u6536\u8D77";
-        if (!collapsed) {
-          try {
-            renderActivitybarToggles();
-          } catch (_) {
-          }
+  document.querySelectorAll(".ck-collapse-head[data-collapse]").forEach((head) => {
+    const key = head.dataset.collapse;
+    const body = document.querySelector('.ck-collapse-body[data-collapse-body="' + key + '"]');
+    if (!body) return;
+    head.addEventListener("click", () => {
+      const collapsed = body.classList.toggle("cuckoo-hidden");
+      head.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      if (!collapsed && key === "activitybar") {
+        try {
+          renderActivitybarToggles();
+        } catch (_) {
         }
-      });
-    }
-  }
+      }
+    });
+  });
   var zoomSelect = document.getElementById("st-harness-zoom");
   function loadUiPrefs() {
     if (!zoomSelect) return;

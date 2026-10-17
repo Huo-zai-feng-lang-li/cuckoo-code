@@ -80,7 +80,9 @@ function byTimeDesc(a: any, b: any): number {
  *  hasChildren=true 时前面显示"展开三角"（子代理/压缩历史）
  *  sub=true 表示这是子节点（缩进、无归档按钮、显示"返回当前"）*/
 function renderItem(s: any, currentSessionId: string | null, archived: boolean = false, hasChildren: boolean = false, sub: boolean = false): string {
-  const label = (s.kind === 'subagent' && s.agentName) ? ('子代理: ' + s.agentName) : (s.title || s.sessionId);
+  // 无标题兜底：优先显示创建时间（有可读语义），否则用短 ID，避免裸露完整 UUID
+  const fallbackLabel = s.createdAt ? fmtCreatedAt(s.createdAt) : ('对话 ' + String(s.sessionId || '').slice(0, 8));
+  const label = (s.kind === 'subagent' && s.agentName) ? ('子代理: ' + s.agentName) : (s.title || fallbackLabel);
   const time = relTime(s.updatedAt);
   const isCur = s.sessionId === currentSessionId;
   const renameBtn = '<span class="ck-ws-act" data-act="rename" aria-label="重命名">' +
@@ -107,7 +109,9 @@ function renderItem(s: any, currentSessionId: string | null, archived: boolean =
     : (sub ? '<span class="ck-ws-expand ck-ws-expand-hidden"></span>' : '<span class="ck-ws-expand ck-ws-expand-hidden"></span>');
   // 生成中且非当前会话 → 置灰禁用切换（重命名/归档/删除仍可用）
   const disabled = (harnessBusy && !isCur) ? ' ck-ws-disabled' : '';
-  return '<div class="ck-ws-item' + (isCur ? ' current' : '') + (sub ? ' sub' : '') + disabled + '" data-session-id="' + escapeAttr(s.sessionId) + '" data-name="' + escapeAttr(label) + '" title="' + escapeAttr(s.sessionId) + '">' +
+  const hasTitle = !!(s.title && String(s.title).trim());
+  // tooltip 用 label（不再裸露完整 UUID），与列表文字一致
+  return '<div class="ck-ws-item' + (isCur ? ' current' : '') + (sub ? ' sub' : '') + disabled + '" data-session-id="' + escapeAttr(s.sessionId) + '" data-name="' + escapeAttr(label) + '" data-has-title="' + (hasTitle ? '1' : '0') + '" title="' + escapeAttr(label) + '">' +
     caret +
     '<span class="ck-ws-name">' + escapeHtml(label) + '</span>' +
     (time ? '<span class="ck-ws-time">' + escapeHtml(time) + '</span>' : '') +
@@ -260,8 +264,9 @@ function bindWorkspaceEvents(listEl: HTMLElement): void {
         e.stopPropagation();
         const id = el.dataset.sessionId;
         if (!id || !api.setSessionTitle) return;
-        const cur = el.dataset.name || '';
-        const name = await ckPrompt({ title: '重命名对话', placeholder: '输入对话名称', value: cur === id ? '' : cur });
+        // 仅当存在真实标题时预填；无标题（兜底显示时间/短ID）时留空，避免把兜底值当原标题
+        const cur = el.dataset.hasTitle === '1' ? (el.dataset.name || '') : '';
+        const name = await ckPrompt({ title: '重命名对话', placeholder: '输入对话名称', value: cur });
         if (!name) return;
         try { await api.setSessionTitle(id, name); } catch (_) { /* ignore */ }
         loadWorkspaces();
@@ -288,7 +293,8 @@ function bindWorkspaceEvents(listEl: HTMLElement): void {
       if (e.target.closest('[data-act="delete"]')) {
         e.stopPropagation();
         const id = el.dataset.sessionId;
-        const name = el.dataset.name || '该对话';
+        // 无真实标题时 data-name 是兜底（创建时间/短ID），删除弹窗用"未命名对话"更清晰
+        const name = el.dataset.hasTitle === '1' ? (el.dataset.name || '该对话') : '未命名对话';
         if (!id || !api.deleteSession) return;
         const ok = await ckConfirm('确定要删除对话“' + name + '”吗？此操作不可撤销。', '删除对话');
         if (!ok) return;

@@ -2,7 +2,7 @@
  * 地址栏：URL 输入、前进/后退/刷新/主页、项目目录选择器。
  */
 import { api } from './shared.js';
-import { showNewConvLoading } from './newconv-loading.js';
+import { showNewConvLoading, hideNewConvLoading } from './newconv-loading.js';
 
 const input = document.getElementById('url-input') as HTMLInputElement;
 const btnBack = document.getElementById('btn-back') as any;
@@ -59,7 +59,24 @@ export function renderProjectDir(dirPath: string | null): void {
 
 const pickerEl = document.getElementById('project-picker');
 if (pickerEl) {
-  pickerEl.addEventListener('click', () => { if (api.initProject) api.initProject(); });
+  // 左上角项目选择器：选目录后【新开对话】，不在当前对话里改绑项目
+  pickerEl.addEventListener('click', async () => {
+    const anyApi = api as any;
+    if (typeof anyApi.pickDirAndNewConversation !== 'function') {
+      // 兼容旧版：无新通道时退回原行为
+      if (api.initProject) api.initProject();
+      return;
+    }
+    showNewConvLoading();
+    try {
+      const r = await anyApi.pickDirAndNewConversation();
+      // 用户取消选目录：立即收起遮罩（其余分支由主进程 shell-newconv-done 收起）
+      if (r && r.canceled) hideNewConvLoading();
+      else if (r && r.success === false) hideNewConvLoading();
+    } catch (_) {
+      hideNewConvLoading();
+    }
+  });
 }
 if (api.onProjectDir) api.onProjectDir((dir: string | null) => renderProjectDir(dir));
 if (api.getProjectDir) {
@@ -131,16 +148,44 @@ if (btnAddress && urlWrap) {
 btnBack.addEventListener('click', () => { if (api.back) api.back(); });
 btnForward.addEventListener('click', () => { if (api.forward) api.forward(); });
 document.getElementById('btn-reload')!.addEventListener('click', () => { if (api.reload) api.reload(); });
-// 加号：新建对话（优先用会清理纯净模式视图的 newWebConversation，否则回退到 home）
-// 新建期间显示 loading 遮罩（导航到首页 + 注入提示词有几秒空白，需明确反馈）
-document.getElementById('btn-home')!.addEventListener('click', () => {
+/** 新开对话：优先用会清理纯净模式视图的 newWebConversation，否则回退到 home */
+export function startNewConversation(): void {
   if ((api as any).newWebConversation) {
     try { showNewConvLoading(); } catch (_) { /* ignore */ }
     (api as any).newWebConversation();
     return;
   }
   if (api.home) api.home();
-});
+}
+
+/** 选择项目目录并新开对话（弹目录框 → 新会话） */
+export async function startPickDirNewConversation(): Promise<void> {
+  const anyApi = api as any;
+  if (typeof anyApi.pickDirAndNewConversation !== 'function') {
+    // 兼容旧版：无新通道时退回原行为
+    if (api.initProject) api.initProject();
+    return;
+  }
+  showNewConvLoading();
+  try {
+    const r = await anyApi.pickDirAndNewConversation();
+    if (r && (r.canceled || r.success === false)) hideNewConvLoading();
+  } catch (_) {
+    hideNewConvLoading();
+  }
+}
+
+// 加号：新建对话
+document.getElementById('btn-home')!.addEventListener('click', () => { startNewConversation(); });
+
+// 应用菜单动作：Ctrl+N 新开对话 / Ctrl+Shift+N 选目录新开对话
+if ((api as any).onMenuAction) {
+  (api as any).onMenuAction((d: any) => {
+    const action = d && d.action;
+    if (action === 'new-conversation') startNewConversation();
+    else if (action === 'pick-dir-new-conversation') startPickDirNewConversation().catch(() => { /* ignore */ });
+  });
+}
 
 // ===== 自绘标题栏：窗口控制按钮（mac 用系统红绿灯，隐藏自绘按钮）=====
 const isMac = (api as any).platform === 'darwin';

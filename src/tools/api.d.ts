@@ -344,7 +344,7 @@ declare function mcpCall(server: string, tool: string, args?: Record<string, unk
 // ================= 会话 =================
 
 /**
- * 给当前对话起一个简短标题（用于工作区列表识别）。对话主题明确后调用一次即可。
+ * 给当前对话起一个简短标题（用于工作区列表识别）。对话主题明确时调用；若对话主题发生实质切换，需再次调用覆盖旧标题。
  * @param title 对话标题（简短，建议不超过 20 字）
  * @returns { message: string }
  * @throws 缺少窗口上下文、当前无会话或标题为空时抛出异常

@@ -11,8 +11,8 @@ import type { ThemeService, ThemeSnapshot, ThemeDefinition, ThemeTokenOverrides 
 
 /** 兜底快照（主进程首个快照到达前用） */
 const FALLBACK_SNAPSHOT: ThemeSnapshot = Object.freeze({
-  preference: 'system',
-  active: Object.freeze({ id: 'light', colorScheme: 'light' as const, tokens: Object.freeze({}) }),
+  preference: 'dark',
+  active: Object.freeze({ id: 'dark', colorScheme: 'dark' as const, tokens: Object.freeze({}) }),
   themes: Object.freeze([
     Object.freeze({ id: 'light', colorScheme: 'light' as const, tokens: Object.freeze({}) }),
     Object.freeze({ id: 'dark', colorScheme: 'dark' as const, tokens: Object.freeze({}) }),

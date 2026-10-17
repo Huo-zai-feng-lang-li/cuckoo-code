@@ -36,6 +36,10 @@
 - **设置页新增"安全·执行策略"与"受信任的工作区"两个卡片**：三档策略——**智能（默认，保持自动体验，仅高危投递特征弹确认）/ 工作区信任（按项目信任放行自动执行）/ 严格（每次执行都问）**；受信任工作区可查看与一键撤销。
 - **A-005（P1）JsRunner 迁出主进程到独立 OS 进程**：AI 脚本改用 `child_process.fork` 在独立 worker（`src/tools/runtime/js-sandbox-worker.mjs`）的 vm 中执行，**异步微任务死循环不再饿死主进程**——主进程看门狗到点直接 `SIGKILL` worker 进程（PoC 实测：异步死循环 ~2.4s 返回超时、worker pid 探活 ESRCH 真死、主事件循环全程响应；同步死循环由 vm timeout 处理）。工具仍在主进程执行（worker 经 IPC 桥接），`currentWindowId`/项目目录/设置/长任务看门狗暂停语义全部保留；对外 `run()` 签名不变。
 - **webFetch 内网守卫默认更严**：重定向、IPv6、进制写法全部归一化判定（见 A-001~A-003）。
+- **Ctrl+N / Ctrl+Shift+N 快捷键新开对话**：Ctrl+N 新开对话，Ctrl+Shift+N 弹目录框选项目后新开对话。菜单 accelerator 在原生视图聚焦时不触发，故在 harness / AI 页面 `before-input-event` 双重拦截转给壳页面（`src/app/entry.ts`）。
+- **左上角项目选择器改为"选目录 → 新开对话"**：不再在当前对话里改绑项目。新增 IPC `pick-dir-and-new-conversation`（带 `assertSenderOk` 来源校验），选目录期间显示 loading 遮罩，取消立即收起（`src/app/ipc/session.ts` / `src/ui/shell/scripts/toolbar.ts`）。
+- **设置页去掉"保存设置"按钮，改即时保存**：任一表单项 change 即写入；带并发保护（保存期间再变更 → pending 补存），reset 期间屏蔽即时保存避免污染。设置项分组折叠（`src/ui/shell/scripts/pages/settings.ts`）。
+- **默认启动进纯净模式 + 默认主题 dark**：平台已确定且非子代理窗口时创建后立即切 harness；主题默认值 runtime / proxy / harness 首帧三处对齐 dark（`src/app/entry.ts` / `src/plugins/runtime/theme-*.ts`）。
 
 ### Changed
 

@@ -70,6 +70,10 @@ const shellAPI = {
   onHarnessBusy: (cb: (busy: boolean) => void) => { ipcRenderer.on('shell-harness-busy', (_e: any, d: any) => cb(!!(d && d.busy))); },
   // 新建对话完成（成功/失败/无项目导航完）→ 隐藏 loading 遮罩
   onNewConvDone: (cb: () => void) => { ipcRenderer.on('shell-newconv-done', () => cb()); },
+  // 应用菜单动作（新对话 / 选目录新对话）
+  onMenuAction: (cb: (data: { action: string }) => void) => {
+    ipcRenderer.on('shell-menu-action', (_e: any, data: any) => cb(data || {}));
+  },
   // 纯净对话模式（Harness）切换 + 状态订阅
   toggleHarness: () => ipcRenderer.invoke('shell-toggle-harness'),
   setWebviewHidden: (hidden: boolean) => ipcRenderer.invoke('shell-set-webview-hidden', { hidden }),
@@ -177,6 +181,8 @@ const shellAPI = {
   deleteProjectWorkspace: (dir: string) => ipcRenderer.invoke('delete-project-workspace', { dir }),
   setSessionTitle: (sessionId: string, title: string) => ipcRenderer.invoke('set-session-title', { sessionId, title }),
   newConversationForProject: (projectDir: string) => ipcRenderer.invoke('new-conversation-for-project', { projectDir }),
+  // 左上角项目选择器：弹目录选择框，选定后新开对话（不在当前对话里改绑）
+  pickDirAndNewConversation: () => ipcRenderer.invoke('pick-dir-and-new-conversation'),
   // ========== 快捷提示词 ==========
   listSnippets: () => ipcRenderer.invoke('list-snippets'),
   saveSnippets: (snippets: any) => ipcRenderer.invoke('save-snippets', { snippets }),

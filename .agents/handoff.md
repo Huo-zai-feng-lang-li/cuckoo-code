@@ -47,6 +47,18 @@
 - 最终验证：typecheck 0、vitest **127 文件 / 1184 用例**、lint 0 error、compile 0 无漂移。
 - 待办：**合并/发版由用户决定**（当前不 tag/push/发版）。真机待验项见上（尤其 A-005 打包环境 fork、D-005 手机浏览器握手、CSP file:// 放行、D-008 Electron net.request）。
 
+## v0.10.0 后续 UI 功能线（同一分支，未 tag / 未 push）
+
+在 0.10.0 安全修复基础上追加以下功能（独立审计见 `.agents/快捷键新对话与设置即时生效-审计.md`，裁决 PASS）：
+
+- **Ctrl+N / Ctrl+Shift+N** 新开对话 / 选目录新开对话（菜单 + harness/AI 页 before-input-event 双拦截）
+- **左上角项目选择器**改为"选目录 → 新开对话"（新 IPC `pick-dir-and-new-conversation` + assertSenderOk）
+- **设置页即时保存**（去掉保存按钮；并发保护 + reset 期间屏蔽）
+- **默认纯净模式 + 默认 dark 主题**（runtime/proxy/harness 三处对齐）
+- **打包排除** `scripts/.agents/test/docs/.github/.githooks/vitest.config.mjs/eslint.config.js`（安装包瘦身，源码不进包）
+- 新增 IPC 来源校验（new-conversation-for-project / pick-dir-and-new-conversation）
+- session.ts 同 URL 导航短路 + onLoadFired 防重入（修"点项目选择器后不初始化/遮罩滞留"）
+
 ## 核心进展
 - **最新版本 v0.9.24**（修复图片模式停止按钮不可见 + 停止按钮改红，typecheck/lint(0)/test(1012)/compile 全绿）。
 - **v0.9.23**：提示词增强加「停止」按钮（增强中 ✨ 变停止图标，可取消在途请求）；未聚焦输入框加柔和抬升阴影美化。

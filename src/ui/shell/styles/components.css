@@ -245,10 +245,37 @@
   .ck-set-field { display: flex; flex-direction: column; gap: 6px; }
   .ck-set-field.ck-set-toggle { flex-direction: row; align-items: center; justify-content: space-between; }
   /* 活动栏图标开关：两列网格（图标多，单列太长） */
-  /* 活动栏图标：默认折叠收起，展开后竖排 */
-  .ck-ab-toggle-head { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
-  .ck-ab-toggle-head:hover { color: var(--ck-text); }
-  .ck-ab-toggle-hint { margin-left: auto; font-size: 11px; font-weight: 400; color: var(--ck-text-dim); }
+  /* ===== 通用可折叠卡片（设置页分组） ===== */
+  /* 头部：整行可点，左侧箭头 + 标题，右侧可选摘要/提示 */
+  .ck-collapse-head {
+    display: flex; align-items: center; gap: 8px;
+    cursor: pointer; user-select: none;
+    padding: 2px 0; border-radius: 8px;
+    transition: color .15s;
+  }
+  .ck-collapse-head:hover { color: var(--ck-text); }
+  .ck-collapse-caret {
+    flex: 0 0 auto; width: 14px; height: 14px; color: var(--ck-text-dim);
+    transition: transform .2s ease;
+  }
+  .ck-collapse-head[aria-expanded="true"] .ck-collapse-caret { transform: rotate(90deg); }
+  .ck-collapse-title { font-size: 12.5px; font-weight: 700; color: var(--ck-text); letter-spacing: .2px; }
+  .ck-collapse-summary { margin-left: auto; font-size: 11px; font-weight: 400; color: var(--ck-text-dim); }
+  /* 内容区：折叠时隐藏；展开时纵向排布，与头部留出间距 */
+  .ck-collapse-body { display: flex; flex-direction: column; gap: 11px; }
+  .ck-collapse-body.cuckoo-hidden { display: none; }
+  /* 折叠头与内容之间的间距由 .ck-card 的 gap 提供，无需额外处理 */
+  /* 折叠内容内的子分组标题（用于合并组，如"安全与信任"内部三段） */
+  .ck-collapse-body > .ck-set-subgroup { display: flex; flex-direction: column; gap: 11px; }
+  .ck-collapse-body > .ck-set-subgroup + .ck-set-subgroup {
+    padding-top: 12px; border-top: 1px solid var(--ck-border);
+  }
+  .ck-set-subtitle {
+    font-size: 11px; font-weight: 600; color: var(--ck-text-dim);
+    letter-spacing: .4px; margin-bottom: 2px;
+  }
+
+  /* 活动栏图标列表：竖排 */
   .ck-ab-toggle-list { display: flex; flex-direction: column; }
   .ck-ab-toggle-list .ck-set-field { padding: 5px 0; border-bottom: 1px solid var(--ck-border); }
   .ck-ab-toggle-list .ck-set-key { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

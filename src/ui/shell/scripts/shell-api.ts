@@ -28,6 +28,8 @@ export interface ShellAPI {
   onHarnessBusy?: (cb: (busy: boolean) => void) => void;
   // 新建对话完成 → 隐藏 loading 遮罩
   onNewConvDone?: (cb: () => void) => void;
+  /** 应用菜单动作：new-conversation / pick-dir-new-conversation */
+  onMenuAction?: (cb: (data: { action: string }) => void) => void;
   // 插件市场 / 安装
   pluginMarketList?: (opts?: any) => Promise<any>;
   pluginMarketRemote?: (targets: any) => Promise<any>;
@@ -144,6 +146,8 @@ export interface ShellAPI {
   deleteProjectWorkspace?: (dir: string) => Promise<any>;
   setSessionTitle?: (sessionId: string, title: string) => Promise<any>;
   newConversationForProject?: (projectDir: string) => Promise<any>;
+  /** 左上角项目选择器：弹目录框，选定后新开对话（不改绑当前对话） */
+  pickDirAndNewConversation?: () => Promise<any>;
   // 提示词
   listSnippets?: () => Promise<any>;
   getSnippets?: () => Promise<any>;

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="dark light">
 <!-- E-009：自有窗口 CSP。harness 有内联脚本块与 vendor 本地脚本，保留 'unsafe-inline'；
      真正的 XSS 兜底是 renderMarkdown 的白名单 sanitizer。禁止 object/frame/base 劫持。 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-src 'none'">
@@ -561,21 +561,6 @@
     .enhance-btn.busy { animation: none; }
   }
   .enhance-btn:disabled { opacity: .4; cursor: default; }
-  /* 增强后撤销条 */
-  .enhance-undo {
-    display: none; align-items: center; gap: 8px;
-    margin: 0 0 6px; padding: 5px 10px; border-radius: 8px;
-    background: var(--accent-soft); border: 1px solid var(--border);
-    font-size: 11.5px; color: var(--text-2);
-  }
-  .enhance-undo.show { display: flex; }
-  .enhance-undo .eu-text { flex: 1; }
-  .enhance-undo .eu-btn {
-    border: none; background: transparent; color: var(--accent);
-    cursor: pointer; font-family: inherit; font-size: 11.5px; padding: 2px 6px;
-    border-radius: 5px; font-weight: 600;
-  }
-  .enhance-undo .eu-btn:hover { background: var(--hover-soft); }
   .drop-overlay {
     position: absolute; inset: 0; z-index: 50; border: 2px dashed var(--accent);
     border-radius: 12px; background: var(--accent-soft);
@@ -817,6 +802,12 @@
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
     overflow: hidden;
   }
+  /* 队列项内的技能/工具 chip：与待发区 chip 同款，稍紧凑；不占满剩余宽度 */
+  .sq-item .sq-hints { display: flex; flex-wrap: wrap; gap: 5px; flex-shrink: 0; max-width: 55%; align-items: center; }
+  .sq-item .sq-hints .hint-chip { font-size: 10.5px; padding: 2px 6px 2px 7px; gap: 0; }
+  .sq-item .sq-hints .hint-chip .hc-label { max-width: 140px; }
+  /* 只有 chip、无正文时：文本区保留小点击区（点击可补写正文），不留空白大块 */
+  .sq-item .sq-text:empty { flex: 0 1 auto; min-width: 16px; }
   /* 就地编辑统一用多行文本域（隐藏滚动条，靠自动增高） */
   .ck-mledit {
     width: 100%; box-sizing: border-box; flex: 1;
@@ -928,7 +919,7 @@
 
 </style>
 </head>
-<body>
+<body data-ck-dark>
 <div class="app">
   <div class="topbar">
     <div class="brand">
@@ -982,10 +973,6 @@
   </div>
   <div class="composer">
     <div class="hint-row" id="hint-row"></div>
-    <div class="enhance-undo" id="enhance-undo">
-      <span class="eu-text">✨ 已增强提示词</span>
-      <button class="eu-btn" id="enhance-undo-btn">撤销</button>
-    </div>
     <div class="attach-row" id="attach-row"></div>
     <div class="send-queue" id="send-queue"></div>
     <div class="switch-countdown cuckoo-hidden" id="switch-countdown">
@@ -3316,13 +3303,19 @@
         row.className = 'sq-item';
         var preview = it.text || '';
         if (it.files && it.files.length) preview = '[附件 ' + it.files.length + '] ' + preview;
-        if (!preview) preview = '[空消息]';
+        // 技能/工具等隐藏指令：以 chip 形式在预览前展示（只有 hint、没有正文时不再显示"[空消息]"）
+        var hintLabels = (it.hints || []).filter(function (h) { return !h.isGoal && !h.isPlan && h.label; }).map(function (h) { return h.label; });
+        var hintChipsHtml = hintLabels.length
+          ? '<span class="sq-hints">' + hintLabels.map(function (l) { return '<span class="hint-chip"><span class="hc-label">' + esc(l) + '</span></span>'; }).join('') + '</span>'
+          : '';
+        if (!preview && !hintLabels.length && !(it.files && it.files.length)) preview = '[空消息]';
         row.innerHTML =
           '<div class="sq-actions">' +
             '<button class="sq-btn sq-edit-btn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2.5l2.5 2.5-8 8L2 14l1-3.5z"/></svg></button>' +
             '<button class="sq-btn sq-send-btn" title="立即发送"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M8 3l-4 4M8 3l4 4"/></svg></button>' +
             '<button class="sq-btn sq-del"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>' +
           '</div>' +
+          hintChipsHtml +
           '<span class="sq-text"></span>';
         var textEl = row.querySelector('.sq-text');
         textEl.textContent = preview;
@@ -3729,6 +3722,10 @@
     if (isBusy()) stop(); else send();
   });
   input.addEventListener('keydown', function (e) {
+    // Ctrl/Cmd+Z 撤销增强：把输入框恢复成增强前原文（仅当增强后未被手动编辑过）
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+      if (enhancePrevText != null) { e.preventDefault(); undoEnhance(); return; }
+    }
     if (e.key === 'Escape') { hideSlashMenu(); return; }
     if (slashMenu.classList.contains('show')) {
       var items = slashMenu.querySelectorAll('.slash-item');
@@ -3797,6 +3794,8 @@
   })();
   input.addEventListener('input', function () {
     autoGrowInput();
+    // 用户手动编辑：增强撤销点失效（此后 Ctrl+Z 交还原生撤销，不覆盖新输入）
+    enhancePrevText = null;
     var v = input.value;
     if (v.length > 0 && v.charAt(v.length - 1) === '/') { openSlashMenu(); return; }
     // 菜单已打开且正在输入过滤词（"/" 后跟非空白字符）
@@ -4134,12 +4133,9 @@
 
   // ===== 提示词增强 =====
   var enhanceBtn = document.getElementById('enhance-btn');
-  var enhanceUndo = document.getElementById('enhance-undo');
-  var enhanceUndoBtn = document.getElementById('enhance-undo-btn');
   var enhanceToken = 0;          // 在途增强认领令牌：切会话/新对话自增使其作废
   var enhanceInFlight = false;   // 增强进行中（防连点）
-  var enhancePrevText = null;    // 增强前的原文（供撤销）
-  var enhanceUndoTimer = null;
+  var enhancePrevText = null;    // 增强前的原文（供 Ctrl+Z 撤销）
   var enhConfig = null;          // 当前增强配置（主进程读回）
   var enhanceImages = [];        // 可用背景图（主进程列出）
   // 按钮图标：星形（增强）/ 方块（停止）
@@ -4232,19 +4228,8 @@
     var on = !!(enhConfig && enhConfig.enabled);
     enhanceBtn.style.display = on ? '' : 'none';
   }
-  function showUndo() {
-    if (!enhanceUndo) return;
-    enhanceUndo.classList.add('show');
-    if (enhanceUndoTimer) clearTimeout(enhanceUndoTimer);
-    enhanceUndoTimer = setTimeout(function () {
-      enhanceUndo.classList.remove('show');
-      enhancePrevText = null;
-    }, 8000);
-  }
+  /** 清掉增强撤销状态（切会话/新对话/已撤销时调用，防串台） */
   function hideUndo() {
-    if (!enhanceUndo) return;
-    enhanceUndo.classList.remove('show');
-    if (enhanceUndoTimer) { clearTimeout(enhanceUndoTimer); enhanceUndoTimer = null; }
     enhancePrevText = null;
   }
   /** 收集最近 N 轮历史（供增强上下文） */
@@ -4295,8 +4280,7 @@
       inputMinH = 84;
       autoGrowInput();   // 增强后文字变多 → 重新按内容增高（不滚动）
       input.focus();
-      showUndo();
-      appendToast('✨ 提示词已增强，可编辑后发送');
+      appendToast('✨ 提示词已增强，可 Ctrl+Z 撤销');
     }).catch(function (e) {
       if (myToken !== enhanceToken) return;
       setEnhanceBtnBusy(false);
@@ -4308,14 +4292,17 @@
     if (enhanceInFlight) { cancelEnhance(); return; }
     runEnhance();
   });
-  if (enhanceUndoBtn) enhanceUndoBtn.addEventListener('click', function () {
-    if (enhancePrevText == null) return;
+  /** 撤销增强：恢复增强前原文（仅当输入框内容仍是增强结果、未被用户改动时） */
+  function undoEnhance() {
+    if (enhancePrevText == null) return false;
     input.value = enhancePrevText;
+    enhancePrevText = null;
     input.style.height = 'auto';
+    autoGrowInput();
     input.focus();
-    hideUndo();
     appendToast('已撤销增强');
-  });
+    return true;
+  }
 
   // ===== 增强设置弹窗（无保存按钮：改动即存 + 全局广播）=====
   var enhMask = document.getElementById('enh-mask');

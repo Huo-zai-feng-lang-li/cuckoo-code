@@ -297,7 +297,15 @@ function createWindow(profile: any) {
       console.log('[Harness Console] ' + msg);
     });
     // harness 页面内快捷键：Ctrl+R 重载页面（加载最新 HTML，无需重启）
-    hv.webContents.on('before-input-event', (_event: any, input: any) => {
+    hv.webContents.on('before-input-event', (event: any, input: any) => {
+      // Ctrl+N 新开对话 / Ctrl+Shift+N 选目录新开对话：View 聚焦时菜单 accelerator 不触发，
+      // 必须在此拦截并转给壳页面执行（与菜单同一通道）。
+      if (input.type === 'keyDown' && (input.control || input.meta) && (input.key === 'n' || input.key === 'N')) {
+        if (event && typeof event.preventDefault === 'function') event.preventDefault();
+        const action = input.shift ? 'pick-dir-new-conversation' : 'new-conversation';
+        try { mainWindow.webContents.send('shell-menu-action', { action }); } catch (_) { /* ignore */ }
+        return;
+      }
       if (input.control && !input.shift && (input.key === 'r' || input.key === 'R')) {
         hv.webContents.reloadIgnoringCache();
       }
@@ -431,6 +439,8 @@ function createWindow(profile: any) {
     pushUrlState(view);
     // 平台未选择：通知壳页面隐藏侧边栏 + 项目选择器
     try { mainWindow.webContents.send('shell-platform-mode', { selecting: !providerChosen }); } catch (_) {}
+    // 补推纯净模式状态：默认启动即纯净模式时，壳页面顶栏按钮需同步为"原"（否则显示"净"）
+    try { mainWindow.webContents.send('shell-harness-mode', { harness: !!(mainWindow as any).__ckHarnessVisible }); } catch (_) {}
     // 壳就绪后重排（此时尺寸才准，修首次空白）
     try { (mainWindow as any).__ckLayout && (mainWindow as any).__ckLayout(); } catch (_) {}
   });
@@ -497,6 +507,13 @@ function createWindow(profile: any) {
     // 通知 AI 页面（插件运行处）→ 广播 harness/change 给插件
     try { view.webContents.send('harness-mode-changed', { harness: next }); } catch (_) {}
   };
+
+  // 启动默认进入纯净模式（产品默认）：平台已确定、非子代理窗口时，创建后立即切到 harness。
+  // 平台未确定时仍显示平台选择页，不进入；子代理窗口是隐藏临时窗口，不进入。
+  // 懒加载视图由 __ckToggleHarness → ensureHarnessView 内部创建，此处只触发。
+  if (providerChosen && !profileData.isSubagent) {
+    try { (mainWindow as any).__ckToggleHarness(true); } catch (_) { /* ignore */ }
+  }
 
   // 更新主窗口引用
   windowState.setMainWindow(mainWindow);
@@ -611,7 +628,14 @@ function createWindow(profile: any) {
     autoConnectMcp();
   });
 
-  view.webContents.on('before-input-event', (_event: any, input: any) => {
+  view.webContents.on('before-input-event', (event: any, input: any) => {
+    // Ctrl+N 新开对话 / Ctrl+Shift+N 选目录新开对话：AI 页面聚焦时菜单 accelerator 不触发
+    if (input.type === 'keyDown' && (input.control || input.meta) && (input.key === 'n' || input.key === 'N')) {
+      if (event && typeof event.preventDefault === 'function') event.preventDefault();
+      const action = input.shift ? 'pick-dir-new-conversation' : 'new-conversation';
+      try { mainWindow.webContents.send('shell-menu-action', { action }); } catch (_) { /* ignore */ }
+      return;
+    }
     if (input.type === 'keyDown' && input.key === 'F12') {
       // 独立窗口：docked DevTools 与 layoutView 的 setBounds 冲突，必须 detach。
       const wc = view.webContents;
@@ -673,8 +697,22 @@ function setupAppMenu() {
       label: '文件',
       submenu: [
         {
-          label: '新建窗口',
+          label: '新对话',
           accelerator: 'CmdOrCtrl+N',
+          click: (_item: any, focusedWindow: any) => {
+            try { focusedWindow && focusedWindow.webContents.send('shell-menu-action', { action: 'new-conversation' }); } catch (_) { /* ignore */ }
+          }
+        },
+        {
+          label: '选择项目目录并新对话',
+          accelerator: 'CmdOrCtrl+Shift+N',
+          click: (_item: any, focusedWindow: any) => {
+            try { focusedWindow && focusedWindow.webContents.send('shell-menu-action', { action: 'pick-dir-new-conversation' }); } catch (_) { /* ignore */ }
+          }
+        },
+        { type: 'separator' },
+        {
+          label: '新建窗口',
           click: () => {
             const profiles = profileManager.readProfiles();
             createWindow(profileManager.createProfile('窗口' + (profiles.length + 1), ''));

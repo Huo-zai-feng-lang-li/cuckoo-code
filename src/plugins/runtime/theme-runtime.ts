@@ -74,7 +74,7 @@ const BUILTIN_THEMES: readonly ThemeDefinition[] = Object.freeze([
   Object.freeze({ id: 'dark', colorScheme: 'dark' as const, tokens: Object.freeze({}) }),
 ]);
 
-const DEFAULT_PREFERENCE: ThemePreference = 'system';
+const DEFAULT_PREFERENCE: ThemePreference = 'dark';
 
 /**
  * 主题运行时：注册表 + 偏好 + 覆盖层。

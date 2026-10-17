@@ -72,22 +72,43 @@ function collectSettings(): any {
   };
 }
 
-const stSaveBtn = document.getElementById('st-save') as any;
-if (stSaveBtn) stSaveBtn.addEventListener('click', async () => {
-  if (!api.saveSettings) return;
-  stSaveBtn.disabled = true;
-  try {
-    const r = await api.saveSettings(collectSettings());
-    if (r && r.success) {
-      if (r.data) renderSettings(r.data);
-      stSaveBtn.textContent = '已保存';
-      setTimeout(() => { stSaveBtn.textContent = '保存设置'; }, 1200);
-    } else {
-      await ckAlert((r && r.error) || '保存失败');
+// ===== 即时保存：任一表单项变更后立即写入（不再需要"保存设置"按钮）=====
+// 并发保护：保存期间若再次变更，标记 pending，当前保存完成后再补存一次（不丢最后修改）
+let saving = false;
+let savePending = false;
+/** reset 进行中：屏蔽即时保存，避免把用户改动写回、污染 reset 结果 */
+let resetting = false;
+async function saveNow(): Promise<void> {
+  if (!api.saveSettings || resetting) return;
+  if (saving) { savePending = true; return; }
+  saving = true;
+  // 循环到 pending 清空为止：每轮 await 让出事件循环，期间新增的 change 会置 savePending
+  for (;;) {
+    savePending = false;
+    try {
+      const r = await api.saveSettings(collectSettings());
+      if (!(r && r.success)) {
+        // 校验失败（如区间 min>max）：提示并回滚到已保存值，丢弃期间的 pending
+        await ckAlert((r && r.error) || '保存失败');
+        await loadSettings();
+        break;
+      }
+    } catch (e: any) {
+      await ckAlert('保存失败: ' + (e.message || e));
+      await loadSettings();
+      break;
     }
-  } catch (e: any) { await ckAlert('保存失败: ' + (e.message || e)); }
-  stSaveBtn.disabled = false;
-});
+    if (!savePending) break;
+  }
+  saving = false;
+}
+// 数字/文本字段：change（失焦或回车）时保存
+for (const [id] of SET_FIELDS) {
+  document.getElementById('st-' + id)?.addEventListener('change', () => { saveNow(); });
+}
+// 开关项：切换即保存
+document.getElementById('st-retry-enabled')?.addEventListener('change', () => { saveNow(); });
+document.getElementById('st-ssrf-guard')?.addEventListener('change', () => { saveNow(); });
 // 刷新：重新读取全部设置（失败重试 + 纯净模式字号 + 主题）
 // 注意：只调用"取值"函数，不调用 initThemeListener，避免重复注册监听器。
 document.getElementById('st-refresh')?.addEventListener('click', () => {
@@ -96,13 +117,52 @@ document.getElementById('st-refresh')?.addEventListener('click', () => {
   refreshThemeValue();
   renderActivitybarToggles();
 });
+// 恢复默认：覆盖本页全部设置（表单组 + 主题 + 字号 + 活动栏图标 + 执行策略）
 document.getElementById('st-reset')?.addEventListener('click', async () => {
-  if (!api.resetSettings) return;
   if (!(await ckConfirm('确定恢复默认设置？'))) return;
+  const anyApi = api as any;
+  // 门控：reset 期间屏蔽即时保存，避免竞态把用户改动写回污染 reset 结果
+  resetting = true;
+  saving = false;
+  savePending = false;
   try {
-    const r = await api.resetSettings();
-    if (r && r.success && r.data) renderSettings(r.data);
-  } catch (_) { /* ignore */ }
+    // 1) 表单组（重试/延迟/超时/SSRF）
+    if (api.resetSettings) {
+      try {
+        const r = await api.resetSettings();
+        if (r && r.success && r.data) renderSettings(r.data);
+      } catch (_) { /* 单项失败不中断后续 */ }
+    }
+    // 2) 主题回默认 dark（独立 try，非 Promise 或抛错都不影响后续步骤）
+    if (typeof anyApi.themeSet === 'function') {
+      try { await anyApi.themeSet('dark'); } catch (_) { /* ignore */ }
+    }
+    // 3) 纯净模式字号回默认（1.0）
+    if (typeof anyApi.setUiPrefs === 'function') {
+      try { await anyApi.setUiPrefs({ harnessZoom: 1.0 }); } catch (_) { /* ignore */ }
+    }
+    // 4) 活动栏图标全部显示
+    try {
+      const bar = document.querySelector('.ck-activitybar');
+      bar?.querySelectorAll('.ck-ab-item[data-tab]').forEach((el: any) => {
+        if (el.dataset.tab) toggleTab(el.dataset.tab, true);
+      });
+    } catch (_) { /* ignore */ }
+    // 5) 执行策略回"智能"
+    if (typeof api.setExecutionPolicy === 'function') {
+      try {
+        const r2 = await api.setExecutionPolicy('smart');
+        if (r2 && r2.success) setExecPolicyUI(r2.mode || 'smart');
+      } catch (_) { /* ignore */ }
+    }
+    // 6) 重新载入全部 UI 回显
+    try { await loadSettings(); } catch (_) { /* ignore */ }
+    loadUiPrefs();
+    refreshThemeValue();
+    renderActivitybarToggles();
+  } finally {
+    resetting = false;
+  }
 });
 
 // ===== 外观：主题下拉（走主进程 theme API，不归 settings 存取）=====
@@ -215,21 +275,19 @@ try { renderActivitybarToggles(); } catch (_) { /* ignore */ }
 window.addEventListener('cuckoo-activitybar-mounted', () => {
   try { renderActivitybarToggles(); } catch (_) { /* ignore */ }
 });
-// 活动栏图标区：默认收起，点标题展开/收起
-{
-  const head = document.getElementById('st-ab-head');
-  const body = document.getElementById('st-ab-body');
-  const caret = document.getElementById('st-ab-caret');
-  const hint = document.getElementById('st-ab-hint');
-  if (head && body) {
-    head.addEventListener('click', () => {
-      const collapsed = body.classList.toggle('cuckoo-hidden');
-      if (caret) caret.classList.toggle('ck-git-caret-c', collapsed);
-      if (hint) hint.textContent = collapsed ? '展开' : '收起';
-      if (!collapsed) { try { renderActivitybarToggles(); } catch (_) { /* ignore */ } }
-    });
-  }
-}
+// 通用折叠分组：点标题展开/收起。展开活动栏分组时刷新图标列表（插件图标异步挂载）
+document.querySelectorAll<HTMLElement>('.ck-collapse-head[data-collapse]').forEach((head) => {
+  const key = head.dataset.collapse;
+  const body = document.querySelector<HTMLElement>('.ck-collapse-body[data-collapse-body="' + key + '"]');
+  if (!body) return;
+  head.addEventListener('click', () => {
+    const collapsed = body.classList.toggle('cuckoo-hidden');
+    head.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    if (!collapsed && key === 'activitybar') {
+      try { renderActivitybarToggles(); } catch (_) { /* ignore */ }
+    }
+  });
+});
 
 // ===== 外观：纯净模式字号（缩放，走主进程 ui-prefs，独立于 settings 存取）=====
 const zoomSelect = document.getElementById('st-harness-zoom') as any;
