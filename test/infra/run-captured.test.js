@@ -36,7 +36,7 @@ test('超时后孙进程被连带杀死（A-006）', async () => {
   let alive = true;
   try {
     process.kill(pid, 0);
-  } catch (_) {
+  } catch {
     alive = false;
   }
   expect(alive).toBe(false);
