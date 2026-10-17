@@ -46,6 +46,25 @@ const READ_MAX_LINE_LENGTH = 2000;
 const READ_MAX_BYTES = 50 * 1024;
 
 /**
+ * 单文件读入上限（修 A-007）：read 会 readFileSync 全量读入内存，
+ * 2GB+ 文件会直接把主进程 V8 堆打爆。超此大小拒绝并提示用 offset/分页或 shell 流式。
+ * 测试可用 CUCKOO_READ_MAX_BYTES 覆盖为小值。
+ */
+const READ_MAX_FILE_BYTES = Number(process.env.CUCKOO_READ_MAX_BYTES) > 0
+  ? Number(process.env.CUCKOO_READ_MAX_BYTES)
+  : 200 * 1024 * 1024;
+
+/** 文件是否超过读入上限；超限返回错误文案，否则 null */
+function checkReadableSize(size: number): string | null {
+  if (size > READ_MAX_FILE_BYTES) {
+    return '文件过大（' + Math.round(size / (1024 * 1024)) + 'MB，单文件上限 ' +
+      Math.round(READ_MAX_FILE_BYTES / (1024 * 1024)) + 'MB）：read 会全量读入内存；' +
+      '请用 offset/limit 分段读取，或用 shell 流式处理（如 PowerShell Get-Content -Tail）。';
+  }
+  return null;
+}
+
+/**
  * 校验并归一化 read 参数。
  * offset/limit 必须是正整数，limit 不能超过 READ_LIMIT。
  */
@@ -221,6 +240,12 @@ class ReadTool extends Tool {
         return ToolResult.error('不是文件: ' + resolvedPath);
       }
 
+      // 大小上限（修 A-007）：readFileSync 全量读入前拦掉超大文件，防主进程 OOM
+      const tooLarge = checkReadableSize(stat.size);
+      if (tooLarge) {
+        return ToolResult.error(tooLarge);
+      }
+
       // 读取整个文件内容（当前实现与 dsh 流式不同，但保证 totalLines 精确）
       const content = fs.readFileSync(resolvedPath, 'utf-8');
       const request: WindowRequest = {
@@ -254,4 +279,4 @@ export function bootstrap(__call: any): void {
   };
 }
 
-export { ReadTool, READ_LIMIT, READ_MAX_LINE_LENGTH, READ_MAX_BYTES, parseReadArgs, buildWindow, formatReadOutput };
+export { ReadTool, READ_LIMIT, READ_MAX_LINE_LENGTH, READ_MAX_BYTES, READ_MAX_FILE_BYTES, parseReadArgs, buildWindow, formatReadOutput, checkReadableSize };

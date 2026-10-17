@@ -3,7 +3,7 @@ import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
 import fs from 'node:fs';
 import path from 'node:path';
-import { READ_LIMIT, parseReadArgs, buildWindow } from './read.js';
+import { READ_LIMIT, parseReadArgs, buildWindow, checkReadableSize } from './read.js';
 
 // ========== D12：API 契约元数据（构建期生成 api.d.ts）==========
 export const apiMetas: ToolApiMeta[] = [
@@ -107,6 +107,12 @@ class ReadLinesTool extends Tool {
       const stat = fs.statSync(resolvedPath);
       if (!stat.isFile()) {
         return ToolResult.error('不是文件: ' + resolvedPath);
+      }
+
+      // 大小上限（修 A-007）：与 read 同一阈值
+      const tooLarge = checkReadableSize(stat.size);
+      if (tooLarge) {
+        return ToolResult.error(tooLarge);
       }
 
       // 读取整个文件内容

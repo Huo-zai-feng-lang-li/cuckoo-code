@@ -3,6 +3,7 @@ import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
 import { normalizeLineEndings, detectLineEndings } from '../../infra/eol.js';
 import { isProtectedPath } from '../../infra/protected-paths.js';
+import { checkReadableSize } from './read.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -238,6 +239,12 @@ class EditTool extends Tool {
       const stat = fs.statSync(resolvedPath);
       if (!stat.isFile()) {
         return ToolResult.error('不是文件: ' + resolvedPath);
+      }
+
+      // 大小上限（修 A-007）：edit 同样全量读入，超限拒绝
+      const tooLarge = checkReadableSize(stat.size);
+      if (tooLarge) {
+        return ToolResult.error('编辑失败: ' + tooLarge);
       }
 
       // 读取原始内容，在 LF 世界匹配（oldString / newString 归一成 LF）
