@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-17
+
+### Changed
+
+- **更新弹窗改回系统原生对话框**：需求 077 曾把更新确认从 `dialog.showMessageBox` 改为自绘浮窗（品牌头/版本跃迁/日志列表/实时进度条），但需求 068 已明确划定边界——**模态决策对话框保持系统原生，自绘仅用于被动通知**。本次回退到原生（屏幕中央、跟随父窗口），符合 068 原始设计：
+  - `update-available`（发现新版本）、`update-downloaded`（更新已就绪）、`checkForUpdates`（已下载待安装）、`showUpdateErrorDialog`（更新失败重试）四处全部恢复原生对话框
+  - 下载进度仍由**壳页面状态栏**实时展示，弹窗内不再渲染进度条
+  - 新增 `showNativeDialog()` 统一封装（含 macOS 必须传 parent 的处理）
+
+### Removed
+
+- **删除自绘确认框遗留三件套**（无调用方后清理）：`src/app/confirm-window.ts`、`src/app/confirm-preload.ts`、`src/ui/confirm-window.html`（约 32 KB）
+- **删除 `src/updater/index.ts` 中 4 个死函数**：`escapeHtml`、`htmlToText`、`extractReleaseNotes`、`formatSize`（原本仅供自绘弹窗渲染版本号/更新日志/体积）
+
+- **安装包体积从 344.61 MB 降至 182.04 MB（-47%，省 162.57 MB）**：
+  - `!node_modules/monaco-editor/**`（97.09 MB）：monaco 只通过 `src/ui/vendor/monaco/vs`（AMD loader 加载）使用，npm 包本体从未被 `require`（grep `out/src` 零引用）。
+  - `!out/src/ui/vendor/monaco/**`（54.89 MB）：**死代码**。无任何构建脚本生成、无任何代码/HTML 引用（`findstr` 全仓零命中），且与 `src/ui/vendor/monaco` 内容 hash 不同（旧残留）。`src/ui/vendor/monaco`（24.38 MB，139 个文件）完整保留，是 shell.html `vendor/monaco/vs/loader.js` 的实际来源。
+  - `!out/**/*.map`（27.78 MB）+ `!node_modules/**/*.map`（6.13 MB）：sourcemap 仅调试用，运行时不需要。
+  - `!node_modules/**/*.ts|mts|cts`（3.71 MB）：第三方包的 TypeScript 源码，运行时只用编译后的 .js。
+
+### Verified
+
+- asar 关键运行时资源逐项核对：monaco loader/editor.main/editor.worker、marked.umd.js、cuckoo-sanitize.js、shell/harness.html、entry.js、js-sandbox-worker.mjs、prompt md、assets/icon.png、katex 62 个、notif-images 27 个、enhance-images 9 个、remote/pwa 6 个、resources/runtime 16 个 —— **全部保留**。
+- 打包版实测启动：platform-select / shell / harness 页面均从 `app.asar` 正常加载，CDP 可访问。
+- typecheck 0 / vitest 128 文件 1190 用例全过 / lint 0 error / compile 无漂移。
+
 ## [0.10.1] - 2026-10-17
 
 ### Fixed

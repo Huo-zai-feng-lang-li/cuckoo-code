@@ -57,26 +57,10 @@ export function renderProjectDir(dirPath: string | null): void {
   if (pickerEl) pickerEl.title = dirPath || '未选择项目目录（点击初始化）';
 }
 
+// 左上角项目选择器：选目录后【新开对话】，不在当前对话里改绑项目（逻辑见文件末尾统一函数）
 const pickerEl = document.getElementById('project-picker');
 if (pickerEl) {
-  // 左上角项目选择器：选目录后【新开对话】，不在当前对话里改绑项目
-  pickerEl.addEventListener('click', async () => {
-    const anyApi = api as any;
-    if (typeof anyApi.pickDirAndNewConversation !== 'function') {
-      // 兼容旧版：无新通道时退回原行为
-      if (api.initProject) api.initProject();
-      return;
-    }
-    showNewConvLoading();
-    try {
-      const r = await anyApi.pickDirAndNewConversation();
-      // 用户取消选目录：立即收起遮罩（其余分支由主进程 shell-newconv-done 收起）
-      if (r && r.canceled) hideNewConvLoading();
-      else if (r && r.success === false) hideNewConvLoading();
-    } catch (_) {
-      hideNewConvLoading();
-    }
-  });
+  pickerEl.addEventListener('click', () => { startPickDirNewConversation().catch(() => { /* ignore */ }); });
 }
 if (api.onProjectDir) api.onProjectDir((dir: string | null) => renderProjectDir(dir));
 if (api.getProjectDir) {

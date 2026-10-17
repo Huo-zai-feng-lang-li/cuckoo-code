@@ -8,11 +8,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import updaterPkg from 'electron-updater';
 import { showSystemNotification } from '../app/notification-window.js';
-import { showConfirmDialog, updateConfirmProgress, closeConfirmDialog } from '../app/confirm-window.js';
-
 // electron 特殊：其 index.js 导出字符串，须用 createRequire（见 P3a 手册 1.5）
 const require = createRequire(import.meta.url);
-const { app } = require('electron');
+const { app, dialog } = require('electron');
 const { autoUpdater } = updaterPkg;
 
 // ========== 日志配置 ==========
@@ -168,72 +166,6 @@ function isGitHubAccessError(error: any): boolean {
   return githubKeywords.some((kw) => msg.includes(kw));
 }
 
-/** HTML 转义（渲染端用 innerHTML 显示日志，防注入） */
-function escapeHtml(s: string): string {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-/**
- * GitHub 的 releaseNotes 实为 HTML 片段（atom feed 的 content 字段），
- * 也可能被替换为纯 Markdown。统一转纯文本：
- * 块级标签 → 换行，剥其余标签，解码常见实体（&amp; 放最后，防二次解码）。
- */
-function htmlToText(html: string): string {
-  return String(html || '')
-    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
-    .replace(/<\s*\/?\s*(p|div|li|ul|ol|h[1-6]|tr|section|article|blockquote)\b[^>]*>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&(?:#0*39|#x27|apos);/gi, "'")
-    .replace(/&mdash;/gi, '—')
-    .replace(/&ndash;/gi, '–')
-    .replace(/&hellip;/gi, '…')
-    .replace(/&amp;/gi, '&');
-}
-
-/** 从 UpdateInfo 提取更新日志条目（最多 5 条；兼容 HTML/Markdown，剥前缀、截断过长行） */
-function extractReleaseNotes(info: any): string[] {
-  const out: string[] = [];
-  const push = (raw: string) => {
-    const t = String(raw || '')
-      .replace(/^\s*[-*+]\s+/, '')
-      .replace(/^\s*#{1,6}\s+/, '')
-      .replace(/\*\*(.+?)\*\*/g, '$1')
-      .trim();
-    if (t) out.push(escapeHtml(t));
-  };
-  try {
-    const rn = info && info.releaseNotes;
-    if (typeof rn === 'string') {
-      htmlToText(rn).split(/\r?\n/).forEach(push);
-    } else if (Array.isArray(rn)) {
-      rn.forEach((item) => {
-        const note = item && item.note;
-        if (typeof note === 'string') htmlToText(note).split(/\r?\n/).forEach(push);
-      });
-    }
-  } catch (_) { /* ignore */ }
-  return out.slice(0, 5).map((s) => (s.length > 80 ? s.slice(0, 78) + '…' : s));
-}
-
-/** 从 UpdateInfo 的文件列表算总体积（MB）；拿不到返回空串 */
-function formatSize(info: any): string {
-  try {
-    const files = (info && info.files) || [];
-    let total = 0;
-    files.forEach((f: any) => { if (f && typeof f.size === 'number') total += f.size; });
-    if (total <= 0) return '';
-    const mb = total / (1024 * 1024);
-    return mb >= 100 ? Math.round(mb) + ' MB' : mb.toFixed(1) + ' MB';
-  } catch (_) { return ''; }
-}
-
 /** 把更新进度推送给壳页面（状态栏进度条） */
 function sendProgress(data: any): void {
   try {
@@ -248,6 +180,39 @@ function showNotification(title: string, body: string, kind: 'info' | 'update' =
   try {
     showSystemNotification({ kind, title, body, durationMs: 4200 });
   } catch (_) { /* ignore */ }
+}
+
+/**
+ * 弹出原生模态对话框（屏幕中央，跟随父窗口）。
+ *
+ * 需求 068 已定边界：dialog.showMessageBox 属"要求用户选择的模态决策"，
+ * 保持系统原生，不做自绘（自绘只用于被动通知）。需求 077 曾把它一并改成
+ * 自绘浮窗，此处回退到原生，符合 068 原始设计。
+ *
+ * @returns 用户点击的按钮索引（0 = 主按钮）
+ */
+async function showNativeDialog(opts: {
+  type?: 'none' | 'info' | 'error' | 'question' | 'warning';
+  title: string;
+  message: string;
+  detail?: string;
+  buttons: string[];
+  defaultId?: number;
+  cancelId?: number;
+}): Promise<number> {
+  const parent = mainWindowRef && !mainWindowRef.isDestroyed() ? mainWindowRef : null;
+  const options = {
+    type: opts.type || 'info',
+    title: opts.title,
+    message: opts.message,
+    detail: opts.detail,
+    buttons: opts.buttons,
+    defaultId: opts.defaultId ?? 0,
+    cancelId: opts.cancelId ?? opts.buttons.length - 1,
+  };
+  // macOS 上必须传 parent，否则弹窗可能被隐藏
+  const res = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
+  return typeof res === 'object' && res ? res.response : (opts.cancelId ?? opts.buttons.length - 1);
 }
 
 /** 弹出更新失败对话框，提供重试/取消选项 */
@@ -274,29 +239,33 @@ async function showUpdateErrorDialog(error: any, isManual: boolean): Promise<boo
     detail = '发生未知错误。\n\n错误信息：' + (error.message || '');
   }
 
-  // 自绘确认框（取代 dialog.showMessageBox）：主按钮=重试
-  return await showConfirmDialog({
-    kind: 'error',
+  // 原生模态对话框：主按钮=重试
+  const idx = await showNativeDialog({
+    type: 'error',
     title: '更新失败',
-    body: message,
+    message,
     detail,
-    primaryText: '重试',
-    secondaryText: '取消',
+    buttons: ['重试', '取消'],
+    defaultId: 0,
+    cancelId: 1,
   });
+  return idx === 0;
 }
 
 /** 手动检查更新入口 */
 async function checkForUpdates(): Promise<void> {
   if (updateDownloaded) {
-    // 已有下载完成的更新，直接提示安装（自绘确认框）
-    const ok = await showConfirmDialog({
-      kind: 'update',
+    // 已有下载完成的更新，直接提示安装（原生模态对话框）
+    const idx = await showNativeDialog({
+      type: 'info',
       title: '更新已就绪',
-      body: '新版本已下载完成，是否立即重启应用并安装？',
-      primaryText: '立即重启',
-      secondaryText: '稍后',
+      message: '新版本已下载完成',
+      detail: '是否立即重启应用并安装更新？',
+      buttons: ['立即重启', '稍后'],
+      defaultId: 0,
+      cancelId: 1,
     });
-    if (ok) {
+    if (idx === 0) {
       // 静默安装（/S 跳过 NSIS 向导）+ 装完自动重启（带并发保护标记）
       installAndRestart(downloadedVersion);
     }
@@ -324,22 +293,17 @@ autoUpdater.on('checking-for-update', () => {
 
 autoUpdater.on('update-available', async (info: any) => {
   console.log('[Updater] 发现新版本:', info.version);
-  const curVersion = app.getVersion();
-  const notes = extractReleaseNotes(info);
-  const sizeText = formatSize(info);
-  const ok = await showConfirmDialog({
-    kind: 'update',
-    title: '发现新版本 v' + info.version,
-    body: '是否立即更新？将自动下载并重启安装。',
-    primaryText: '立即更新',
-    secondaryText: '稍后',
-    version: curVersion,
-    newVersion: info.version,
-    notes,
-    sizeText,
-    keepOpenOnPrimary: true,   // 点「立即更新」后保留窗口实时显示下载进度
+  // 原生模态对话框（屏幕中央）。下载进度由壳页面状态栏展示，不在此弹窗内。
+  const idx = await showNativeDialog({
+    type: 'info',
+    title: '发现新版本',
+    message: '发现新版本 v' + info.version,
+    detail: '是否立即更新？将自动下载并重启安装。',
+    buttons: ['立即更新', '稍后'],
+    defaultId: 0,
+    cancelId: 1,
   });
-  if (ok) {
+  if (idx === 0) {
     // 用户选「立即更新」→ 自动下载，下载完自动重启安装（见 update-downloaded）
     autoInstallAfterDownload = true;
     showNotification('开始更新', '正在下载 v' + info.version + '…', 'update');
@@ -347,7 +311,6 @@ autoUpdater.on('update-available', async (info: any) => {
     autoUpdater.downloadUpdate().catch((err) => {
       console.error('[Updater] 下载失败:', err);
       autoInstallAfterDownload = false;
-      try { closeConfirmDialog(); } catch (_) { /* ignore */ }
     });
   } else {
     // 用户选「稍后」→ 不下载
@@ -375,8 +338,6 @@ autoUpdater.on('download-progress', (progressObj: any) => {
     total: progressObj.total || 0,
     bytesPerSecond: progressObj.bytesPerSecond || 0,
   });
-  // 同步到更新确认弹窗（如果窗口还开着）
-  updateConfirmProgress(percent);
 });
 
 autoUpdater.on('update-downloaded', (info: any) => {
@@ -389,7 +350,6 @@ autoUpdater.on('update-downloaded', (info: any) => {
   if (autoInstallAfterDownload) {
     autoInstallAfterDownload = false;
     console.log('[Updater] 自动安装并重启');
-    try { closeConfirmDialog(); } catch (_) { /* ignore */ }
     setTimeout(() => {
       // 静默安装（/S 跳过 NSIS 向导）+ 装完自动重启
       installAndRestart(info && info.version);
@@ -397,16 +357,18 @@ autoUpdater.on('update-downloaded', (info: any) => {
     return;
   }
 
-  // 否则（后台自动检查下载完成）弹确认框询问是否立即安装
-  showConfirmDialog({
-    kind: 'update',
+  // 否则（后台自动检查下载完成）弹原生对话框询问是否立即安装
+  showNativeDialog({
+    type: 'info',
     title: '更新已就绪',
-    body: '新版本 v' + info.version + ' 已下载完成，是否立即重启应用并安装？',
-    primaryText: '立即重启',
-    secondaryText: '稍后',
-  }).then((ok) => {
+    message: '新版本 v' + info.version + ' 已下载完成',
+    detail: '是否立即重启应用并安装更新？',
+    buttons: ['立即重启', '稍后'],
+    defaultId: 0,
+    cancelId: 1,
+  }).then((idx) => {
     isManualCheck = false;
-    if (ok) {
+    if (idx === 0) {
       // 静默安装（/S 跳过 NSIS 向导）+ 装完自动重启
       installAndRestart(info && info.version);
     }

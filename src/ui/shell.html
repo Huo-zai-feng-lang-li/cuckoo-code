@@ -4025,20 +4025,9 @@ paths:            # 可选；省略 = 始终生效
   }
   var pickerEl = document.getElementById("project-picker");
   if (pickerEl) {
-    pickerEl.addEventListener("click", async () => {
-      const anyApi = api;
-      if (typeof anyApi.pickDirAndNewConversation !== "function") {
-        if (api.initProject) api.initProject();
-        return;
-      }
-      showNewConvLoading();
-      try {
-        const r = await anyApi.pickDirAndNewConversation();
-        if (r && r.canceled) hideNewConvLoading();
-        else if (r && r.success === false) hideNewConvLoading();
-      } catch (_) {
-        hideNewConvLoading();
-      }
+    pickerEl.addEventListener("click", () => {
+      startPickDirNewConversation().catch(() => {
+      });
     });
   }
   if (api.onProjectDir) api.onProjectDir((dir) => renderProjectDir(dir));

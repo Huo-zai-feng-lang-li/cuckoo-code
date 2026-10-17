@@ -47,6 +47,29 @@
 - 最终验证：typecheck 0、vitest **127 文件 / 1184 用例**、lint 0 error、compile 0 无漂移。
 - 待办：**合并/发版由用户决定**（当前不 tag/push/发版）。真机待验项见上（尤其 A-005 打包环境 fork、D-005 手机浏览器握手、CSP file:// 放行、D-008 Electron net.request）。
 
+## v0.10.2：安装包瘦身 + 更新弹窗回退原生（本版本）
+
+### 更新弹窗回退系统原生
+需求 068 已划定边界：模态决策对话框（dialog.showMessageBox）保持系统原生，自绘只用于被动通知。需求 077 越界把更新确认也改成自绘浮窗，本次回退：
+- 4 处更新对话框全部恢复 `dialog.showMessageBox`（发现新版本/更新已就绪/已下载待安装/更新失败重试），新增 `showNativeDialog()` 统一封装
+- 下载进度仍由壳页面状态栏展示，弹窗内不再渲染
+- 删除无调用方的自绘三件套：`src/app/confirm-window.ts`、`confirm-preload.ts`、`src/ui/confirm-window.html`（32 KB）
+- 删除 updater 里 4 个死函数：`escapeHtml`/`htmlToText`/`extractReleaseNotes`/`formatSize`
+
+**回退快照**：`snap-1792246335763-d4nmht`（删除三件套前，988 文件）
+
+### 安装包瘦身（344.61 MB → 182.04 MB，-47%）
+
+四处纯冗余（全部经 grep/findstr 零引用验证）：
+1. `node_modules/monaco-editor/` 97.09 MB —— monaco 只走 `src/ui/vendor/monaco/vs` AMD loader，npm 包从未被 require
+2. `out/src/ui/vendor/monaco/` 54.89 MB —— **死代码**（无脚本生成、零引用、hash 与 src 版不同，属旧残留）
+3. `out/**/*.map` 27.78 MB + `node_modules/**/*.map` 6.13 MB —— sourcemap 运行时不需
+4. `node_modules/**/*.ts` 3.71 MB —— 第三方源码，运行时只用 .js
+
+**必须保留**：`src/ui/vendor/monaco`（24.38 MB，shell.html 的 `vendor/monaco/vs/loader.js` 实际来源）、`resources/runtime`（130.53 MB 自带 Node/uv）。
+
+验证：asar 逐项核对关键资源全在、打包版启动正常（页面从 app.asar 加载）、四件套全绿。
+
 ## v0.10.1：修复 v0.10.0 打包阻塞 bug（已发）
 
 **根因**：A-005 的 worker 打进 app.asar，`child_process.fork` 是原生进程，OS 不认 asar 路径 → 打包版 AI 执行 JS 代码块 100% MODULE_NOT_FOUND。
