@@ -19,14 +19,24 @@ function getUserDir(): string {
 
 /**
  * 判断绝对路径是否属于受保护路径。
+ *
+ * Windows NTFS 默认大小写不敏感，而 JS 字符串 === / startsWith 是大小写敏感的——
+ * 不修的话 `Snapshots\evil.txt`、`Memories.json`（大写）能绕过守卫实际命中受保护对象（A-003）。
+ * 修复：win32 上比较前两侧统一小写；大小写敏感平台（Linux/mac）保持原样。
+ *
  * @param absPath 已解析的绝对路径
  * @returns 命中时返回原因（中文），否则 null
  */
 function isProtectedPath(absPath: string): string | null {
   if (!absPath || typeof absPath !== 'string') return null;
-  const normalized = path.resolve(absPath);
-  const snapshotsDir = path.resolve(path.join(getUserDir(), 'snapshots'));
-  const memoriesFile = path.resolve(path.join(getUserDir(), 'memories.json'));
+  // win32 大小写不敏感文件系统：比较键统一小写（不改变对外返回的路径语义）
+  const normalizeKey = process.platform === 'win32'
+    ? (p: string) => p.toLowerCase()
+    : (p: string) => p;
+
+  const normalized = normalizeKey(path.resolve(absPath));
+  const snapshotsDir = normalizeKey(path.resolve(path.join(getUserDir(), 'snapshots')));
+  const memoriesFile = normalizeKey(path.resolve(path.join(getUserDir(), 'memories.json')));
 
   if (normalized === snapshotsDir || normalized.startsWith(snapshotsDir + path.sep)) {
     return '快照存档目录（受保护，禁止通过文件工具修改或删除；请用快照管理功能）';
