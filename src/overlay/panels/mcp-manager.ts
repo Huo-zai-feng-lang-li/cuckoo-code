@@ -3,6 +3,7 @@
  * 由 events.ts 拆分而来（P4.5），逻辑保持不变。
  */
 import { showToast, showConfirmDialog } from '../panel.js';
+import { escapeHtml, escapeAttr } from '../sanitizer.js';
 
 /** 加载配置到 JSON 框（只显示用户级，不混项目级） */
 async function loadMcpConfigToJson() {
@@ -43,8 +44,8 @@ async function renderMcpList() {
       // 来源标记：项目级 / 用户级
       const srcLabel = s.source === 'project' ? '项目' : '用户';
       const srcColor = s.source === 'project' ? '#8b93ff' : '#5d6280';
-      return '<div class="cuckoo-window-item cuckoo-mcp-item" data-mcp-name="' + s.name + '">' +
-        '<span class="cuckoo-window-name">' + s.name + '</span>' +
+      return '<div class="cuckoo-window-item cuckoo-mcp-item" data-mcp-name="' + escapeAttr(s.name) + '">' +
+        '<span class="cuckoo-window-name">' + escapeHtml(s.name) + '</span>' +
         '<span style="font-size:10px;padding:1px 5px;border-radius:4px;background:' + srcColor + '33;color:' + srcColor + ';flex-shrink:0;margin-left:6px;">' + srcLabel + '</span>' +
         '<span class="cuckoo-mcp-dot" style="width:8px;height:8px;border-radius:50%;background:' + statusColor + ';flex-shrink:0;margin-left:auto;" title="' + status + '"></span>' +
       '</div>';

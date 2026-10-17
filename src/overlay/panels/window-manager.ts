@@ -3,6 +3,7 @@
  * 由 events.ts 拆分而来（P4.5），逻辑保持不变。
  */
 import { showToast } from '../panel.js';
+import { escapeHtml, escapeAttr } from '../sanitizer.js';
 
 /**
  * 渲染窗口列表（浮动管理面板内）
@@ -29,17 +30,18 @@ async function renderWindowList() {
     list.innerHTML = profiles.map((p: any) => {
       const pname = providerMap[p.providerId] || '平台';
       const checked = p.autoOpen === true ? ' checked' : '';
-      return '<div class="cuckoo-window-item" data-profile-id="' + p.id + '">' +
+      const pidAttr = escapeAttr(p.id);
+      return '<div class="cuckoo-window-item" data-profile-id="' + pidAttr + '">' +
         '<label class="cuckoo-window-auto" title="启动时默认打开此窗口">' +
-          '<input type="checkbox" data-profile-id="' + p.id + '"' + checked + ' />' +
+          '<input type="checkbox" data-profile-id="' + pidAttr + '"' + checked + ' />' +
           '默认' +
         '</label>' +
         '<span class="cuckoo-window-left">' +
-          '<span class="cuckoo-window-name">' + p.name + '</span>' +
+          '<span class="cuckoo-window-name">' + escapeHtml(p.name) + '</span>' +
           '<span class="cuckoo-window-sep">|</span>' +
-          '<span class="cuckoo-window-status">' + pname + '</span>' +
+          '<span class="cuckoo-window-status">' + escapeHtml(pname) + '</span>' +
         '</span>' +
-        '<span class="cuckoo-window-del" data-profile-id="' + p.id + '" title="删除窗口">删除</span>' +
+        '<span class="cuckoo-window-del" data-profile-id="' + pidAttr + '" title="删除窗口">删除</span>' +
       '</div>';
     }).join('');
     // 绑定"默认打开"复选框
