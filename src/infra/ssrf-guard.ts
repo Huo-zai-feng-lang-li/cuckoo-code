@@ -7,9 +7,15 @@
  * 策略：解析 hostname，若是 IP 字面量直接校验；否则 DNS 解析出全部地址后逐一校验
  * （fail-closed：解析失败即拒绝）。
  *
- * 局限：本模块在「解析校验」与「实际 fetch」之间存在 TOCTOU 窗口，DNS rebinding
- * 理论上可利用。彻底防御需将已解析 IP 固定到连接层（自定义 dispatcher），
- * 属于后续增强；当前实现对直接/内网访问已足够。
+ * 局限（A-008，已回源核实，本批次不做彻底修复，理由如下）：
+ *  - 本模块在「dns.lookup 校验」与「fetch 实际连接」之间存在毫秒级 TOCTOU 窗口，
+ *    恶意域名 TTL=0 时可在窗口内 rebinding 到内网地址。
+ *  - 彻底防御需把已解析 IP 固定到连接层（undici custom dispatcher / pinned lookup），
+ *    而 undici 不是本项目直接依赖（当前用 Node 内置 fetch），引入新依赖与双连接路径
+ *    的回归风险超过收益（利用门槛：需控制权威 DNS），计划已明确列为后续增强。
+ *  - 既有缓解：① 每个 URL 都走 dns.lookup 全量地址校验，解析失败 fail-closed；
+ *    ② web-fetch 在守卫开启时逐跳手动跟随重定向，每跳都重新过本校验（A-001），
+ *       攻击面从"单次校验"收窄到"每跳一次 lookup→connect 窗口"。
  */
 import dns from 'node:dns';
 import net from 'node:net';
