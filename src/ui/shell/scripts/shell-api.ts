@@ -203,4 +203,13 @@ export interface ShellAPI {
   saveRemoteConfig?: (data: any) => Promise<any>;
   resetRemoteToken?: () => Promise<any>;
   restartRemote?: () => Promise<any>;
+  // ===== 安全：执行策略 / 工作区信任（仅 own-window 可调）=====
+  /** 读取当前执行策略：smart=智能 / workspace=工作区信任 / strict=严格 */
+  getExecutionPolicy?: () => Promise<{ success: boolean; mode?: 'smart' | 'workspace' | 'strict' }>;
+  /** 设置执行策略（非法值主进程回退 smart） */
+  setExecutionPolicy?: (mode: 'smart' | 'workspace' | 'strict') => Promise<{ success: boolean; mode?: string; error?: string }>;
+  /** 列出受信任工作区（path 绝对路径，since 为 ISO 时间串） */
+  getTrustedWorkspaces?: () => Promise<{ success: boolean; workspaces?: Array<{ path: string; since?: string }> }>;
+  /** 撤销某工作区信任 */
+  revokeWorkspaceTrust?: (dir: string) => Promise<{ success: boolean; error?: string }>;
 }

@@ -657,6 +657,17 @@
   .ck-about-qr { width: 100%; max-width: 220px; align-self: center; border-radius: 10px; display: block; }
   .ck-about-link { font-size: 12px; color: var(--ck-primary); cursor: pointer; word-break: break-all; text-decoration: none; }
   .ck-about-link:hover { text-decoration: underline; }
+  /* 执行策略单选行 */
+  .ck-radio-row { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; padding: 5px 0; }
+  .ck-radio-row input[type="radio"] { margin: 2px 0 0; flex-shrink: 0; accent-color: var(--ck-primary); }
+  .ck-radio-name { font-size: 12.5px; color: var(--ck-text); display: block; }
+  .ck-radio-desc { font-size: 11px; color: var(--ck-text-dim); line-height: 1.5; display: block; margin-top: 1px; }
+  /* 受信任工作区列表 */
+  .ck-ws-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--ck-border); }
+  .ck-ws-row:last-child { border-bottom: none; }
+  .ck-ws-path { flex: 1; font-size: 12px; color: var(--ck-text-2); word-break: break-all; line-height: 1.4; }
+  .ck-ws-since { font-size: 11px; color: var(--ck-text-dim); flex-shrink: 0; }
+  .ck-ws-empty { font-size: 11.5px; color: var(--ck-text-dim); padding: 6px 0; }
   /* 提示词卡片（无边�?+ 分割�?+ 悬停浅底�?*/
   .ck-snip-item {
     display: flex; flex-direction: column; gap: 6px;
@@ -2780,6 +2791,40 @@ paths:            # 可选；省略 = 始终生效
                   </label>
                 </div>
                 <p class="ck-about-tip">开启后，webFetch 将拒绝访问内网、回环、保留地址（防 SSRF）。默认关闭（可访问本地项目）。</p>
+              </div>
+
+              <div class="ck-card">
+                <div class="ck-set-group-title">安全 · 执行策略</div>
+                <p class="ck-about-tip">控制 AI 执行命令与写入文件时的确认时机，切换后立即生效并持久化。</p>
+                <div class="ck-set-field">
+                  <label class="ck-radio-row">
+                    <input type="radio" name="st-exec-policy" value="smart" />
+                    <span>
+                      <span class="ck-radio-name">智能（默认）</span>
+                      <span class="ck-radio-desc">只读工具与项目内写入自动执行；仅当命令命中高危投递/反弹/持久化特征时才弹确认。</span>
+                    </span>
+                  </label>
+                  <label class="ck-radio-row">
+                    <input type="radio" name="st-exec-policy" value="workspace" />
+                    <span>
+                      <span class="ck-radio-name">工作区信任</span>
+                      <span class="ck-radio-desc">按项目信任状态放行；未信任项目的命令执行与项目外写入需确认。</span>
+                    </span>
+                  </label>
+                  <label class="ck-radio-row">
+                    <input type="radio" name="st-exec-policy" value="strict" />
+                    <span>
+                      <span class="ck-radio-name">严格</span>
+                      <span class="ck-radio-desc">每次执行命令或写入都要确认。</span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="ck-card">
+                <div class="ck-set-group-title">受信任的工作区</div>
+                <p class="ck-about-tip">已信任的项目目录按"工作区信任"策略自动放行；撤销后该目录恢复为需确认。</p>
+                <div id="st-trusted-ws-list"></div>
               </div>
 
               <div class="ck-actions">
@@ -6300,6 +6345,8 @@ paths:            # 可选；省略 = 始终生效
       renderActivitybarToggles();
     } catch (_) {
     }
+    loadExecutionPolicy();
+    loadTrustedWorkspaces();
     if (!api.getSettings) return;
     try {
       const r = await api.getSettings();
@@ -6515,6 +6562,98 @@ paths:            # 可选；省略 = 始终生效
         anyApi.setUiPrefs({ harnessZoom: z }).catch(() => {
         });
       }
+    });
+  }
+  var EXEC_MODES = ["smart", "workspace", "strict"];
+  var currentExecMode = "smart";
+  function setExecPolicyUI(mode) {
+    const m = EXEC_MODES.includes(mode) ? mode : "smart";
+    currentExecMode = m;
+    document.querySelectorAll('input[name="st-exec-policy"]').forEach((el2) => {
+      el2.checked = el2.value === m;
+    });
+  }
+  function loadExecutionPolicy() {
+    if (typeof api.getExecutionPolicy !== "function") return;
+    api.getExecutionPolicy().then((r) => {
+      if (r && r.success) setExecPolicyUI(r.mode || "smart");
+    }).catch(() => {
+    });
+  }
+  document.querySelectorAll('input[name="st-exec-policy"]').forEach((el2) => {
+    el2.addEventListener("change", async () => {
+      if (!el2.checked || typeof api.setExecutionPolicy !== "function") return;
+      const next = el2.value;
+      try {
+        const r = await api.setExecutionPolicy(next);
+        if (r && r.success) {
+          setExecPolicyUI(r.mode || next);
+        } else {
+          setExecPolicyUI(currentExecMode);
+          await ckAlert(r && r.error || "\u5207\u6362\u6267\u884C\u7B56\u7565\u5931\u8D25");
+        }
+      } catch (e) {
+        setExecPolicyUI(currentExecMode);
+        await ckAlert("\u5207\u6362\u6267\u884C\u7B56\u7565\u5931\u8D25: " + (e.message || e));
+      }
+    });
+  });
+  function renderTrustedWorkspaces(list) {
+    const box = document.getElementById("st-trusted-ws-list");
+    if (!box) return;
+    box.textContent = "";
+    if (!list || list.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "ck-ws-empty";
+      empty.textContent = "\u6682\u65E0\u53D7\u4FE1\u4EFB\u7684\u5DE5\u4F5C\u533A";
+      box.appendChild(empty);
+      return;
+    }
+    for (const ws of list) {
+      if (!ws || !ws.path) continue;
+      const row = document.createElement("div");
+      row.className = "ck-ws-row";
+      const pathEl = document.createElement("span");
+      pathEl.className = "ck-ws-path";
+      pathEl.textContent = ws.path;
+      pathEl.title = ws.path;
+      const sinceEl = document.createElement("span");
+      sinceEl.className = "ck-ws-since";
+      const t = ws.since ? new Date(ws.since).getTime() : NaN;
+      sinceEl.textContent = Number.isFinite(t) ? new Date(t).toLocaleString() : "";
+      const btn = document.createElement("button");
+      btn.className = "ck-btn-text";
+      btn.type = "button";
+      btn.textContent = "\u64A4\u9500\u4FE1\u4EFB";
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        if (typeof api.revokeWorkspaceTrust !== "function") {
+          btn.disabled = false;
+          return;
+        }
+        try {
+          const r = await api.revokeWorkspaceTrust(ws.path);
+          if (r && r.success) loadTrustedWorkspaces();
+          else {
+            await ckAlert(r && r.error || "\u64A4\u9500\u4FE1\u4EFB\u5931\u8D25");
+            btn.disabled = false;
+          }
+        } catch (e) {
+          await ckAlert("\u64A4\u9500\u4FE1\u4EFB\u5931\u8D25: " + (e.message || e));
+          btn.disabled = false;
+        }
+      });
+      row.appendChild(pathEl);
+      row.appendChild(sinceEl);
+      row.appendChild(btn);
+      box.appendChild(row);
+    }
+  }
+  function loadTrustedWorkspaces() {
+    if (typeof api.getTrustedWorkspaces !== "function") return;
+    api.getTrustedWorkspaces().then((r) => {
+      if (r && r.success) renderTrustedWorkspaces(r.workspaces || []);
+    }).catch(() => {
     });
   }
 

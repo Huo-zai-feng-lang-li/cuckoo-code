@@ -40,6 +40,8 @@ function renderSettings(data: any): void {
 export async function loadSettings(): Promise<void> {
   // 每次打开设置页都重渲染图标开关：插件图标是异步挂载的，需读到最新 DOM
   try { renderActivitybarToggles(); } catch (_) { /* ignore */ }
+  loadExecutionPolicy();
+  loadTrustedWorkspaces();
   if (!api.getSettings) return;
   try {
     const r = await api.getSettings();
@@ -255,4 +257,114 @@ if (zoomSelect) {
       anyApi.setUiPrefs({ harnessZoom: z }).catch(() => {});
     }
   });
+}
+
+// ===== 安全：执行策略（三档单选，切换即持久化）=====
+const EXEC_MODES = ['smart', 'workspace', 'strict'] as const;
+type ExecMode = (typeof EXEC_MODES)[number];
+/** 当前已生效的策略档（用于失败回退 UI） */
+let currentExecMode: ExecMode = 'smart';
+
+/**
+ * 把执行策略回显到单选组。
+ * @param mode 主进程返回的模式，非法值按 smart 处理
+ */
+function setExecPolicyUI(mode: string): void {
+  const m: ExecMode = (EXEC_MODES as readonly string[]).includes(mode) ? (mode as ExecMode) : 'smart';
+  currentExecMode = m;
+  document.querySelectorAll<HTMLInputElement>('input[name="st-exec-policy"]').forEach((el) => {
+    el.checked = el.value === m;
+  });
+}
+
+/** 读取当前执行策略并回显（打开设置页/点刷新时调用） */
+export function loadExecutionPolicy(): void {
+  if (typeof api.getExecutionPolicy !== 'function') return;
+  api.getExecutionPolicy().then((r) => {
+    if (r && r.success) setExecPolicyUI(r.mode || 'smart');
+  }).catch(() => {});
+}
+
+// 切换即写入主进程；失败回退上一档并提示
+document.querySelectorAll<HTMLInputElement>('input[name="st-exec-policy"]').forEach((el) => {
+  el.addEventListener('change', async () => {
+    if (!el.checked || typeof api.setExecutionPolicy !== 'function') return;
+    const next = el.value as ExecMode;
+    try {
+      const r = await api.setExecutionPolicy(next);
+      if (r && r.success) {
+        // 以主进程回显为准（非法值会被主进程回退 smart）
+        setExecPolicyUI(r.mode || next);
+      } else {
+        setExecPolicyUI(currentExecMode);
+        await ckAlert((r && r.error) || '切换执行策略失败');
+      }
+    } catch (e: any) {
+      setExecPolicyUI(currentExecMode);
+      await ckAlert('切换执行策略失败: ' + (e.message || e));
+    }
+  });
+});
+
+// ===== 安全：受信任工作区列表 =====
+/**
+ * 渲染受信任工作区。路径与时间均走 textContent（禁止拼进 innerHTML，防路径注入）。
+ * @param list 受信任工作区 [{ path, since? }]
+ */
+function renderTrustedWorkspaces(list: Array<{ path: string; since?: string }>): void {
+  const box = document.getElementById('st-trusted-ws-list');
+  if (!box) return;
+  box.textContent = '';
+  if (!list || list.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'ck-ws-empty';
+    empty.textContent = '暂无受信任的工作区';
+    box.appendChild(empty);
+    return;
+  }
+  for (const ws of list) {
+    if (!ws || !ws.path) continue;
+    const row = document.createElement('div');
+    row.className = 'ck-ws-row';
+
+    const pathEl = document.createElement('span');
+    pathEl.className = 'ck-ws-path';
+    pathEl.textContent = ws.path;
+    pathEl.title = ws.path;
+
+    const sinceEl = document.createElement('span');
+    sinceEl.className = 'ck-ws-since';
+    const t = ws.since ? new Date(ws.since).getTime() : NaN;
+    sinceEl.textContent = Number.isFinite(t) ? new Date(t).toLocaleString() : '';
+
+    const btn = document.createElement('button');
+    btn.className = 'ck-btn-text';
+    btn.type = 'button';
+    btn.textContent = '撤销信任';
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      if (typeof api.revokeWorkspaceTrust !== 'function') { btn.disabled = false; return; }
+      try {
+        const r = await api.revokeWorkspaceTrust(ws.path);
+        if (r && r.success) loadTrustedWorkspaces();
+        else { await ckAlert((r && r.error) || '撤销信任失败'); btn.disabled = false; }
+      } catch (e: any) {
+        await ckAlert('撤销信任失败: ' + (e.message || e));
+        btn.disabled = false;
+      }
+    });
+
+    row.appendChild(pathEl);
+    row.appendChild(sinceEl);
+    row.appendChild(btn);
+    box.appendChild(row);
+  }
+}
+
+/** 拉取并渲染受信任工作区（打开设置页/撤销后调用） */
+export function loadTrustedWorkspaces(): void {
+  if (typeof api.getTrustedWorkspaces !== 'function') return;
+  api.getTrustedWorkspaces().then((r) => {
+    if (r && r.success) renderTrustedWorkspaces(r.workspaces || []);
+  }).catch(() => {});
 }
