@@ -11,16 +11,18 @@
   - 下载进度仍由**壳页面状态栏**实时展示，弹窗内不再渲染进度条
   - 新增 `showNativeDialog()` 统一封装（含 macOS 必须传 parent 的处理）
 
-### Removed
-
-- **删除自绘确认框遗留三件套**（无调用方后清理）：`src/app/confirm-window.ts`、`src/app/confirm-preload.ts`、`src/ui/confirm-window.html`（约 32 KB）
-- **删除 `src/updater/index.ts` 中 4 个死函数**：`escapeHtml`、`htmlToText`、`extractReleaseNotes`、`formatSize`（原本仅供自绘弹窗渲染版本号/更新日志/体积）
+### Performance
 
 - **安装包体积从 344.61 MB 降至 182.04 MB（-47%，省 162.57 MB）**：
   - `!node_modules/monaco-editor/**`（97.09 MB）：monaco 只通过 `src/ui/vendor/monaco/vs`（AMD loader 加载）使用，npm 包本体从未被 `require`（grep `out/src` 零引用）。
   - `!out/src/ui/vendor/monaco/**`（54.89 MB）：**死代码**。无任何构建脚本生成、无任何代码/HTML 引用（`findstr` 全仓零命中），且与 `src/ui/vendor/monaco` 内容 hash 不同（旧残留）。`src/ui/vendor/monaco`（24.38 MB，139 个文件）完整保留，是 shell.html `vendor/monaco/vs/loader.js` 的实际来源。
   - `!out/**/*.map`（27.78 MB）+ `!node_modules/**/*.map`（6.13 MB）：sourcemap 仅调试用，运行时不需要。
   - `!node_modules/**/*.ts|mts|cts`（3.71 MB）：第三方包的 TypeScript 源码，运行时只用编译后的 .js。
+
+### Removed
+
+- **删除自绘确认框遗留三件套**（回退原生后无调用方）：`src/app/confirm-window.ts`、`src/app/confirm-preload.ts`、`src/ui/confirm-window.html`（约 32 KB）
+- **删除 `src/updater/index.ts` 中 4 个死函数**：`escapeHtml`、`htmlToText`、`extractReleaseNotes`、`formatSize`（原本仅供自绘弹窗渲染版本号/更新日志/体积）
 
 ### Verified
 
