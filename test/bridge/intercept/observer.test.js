@@ -196,7 +196,6 @@ test('processInterceptedResponse：JS 工具块执行期间显示遮罩，发送
 
 test('processInterceptedResponse：执行阶段点停止 → 丢弃结果不回传', async () => {
   const mask = makeFakeMask();
-  let cancelBtn = null;
   const fakeBtn = {
     className: '',
     classList: {
@@ -205,7 +204,6 @@ test('processInterceptedResponse：执行阶段点停止 → 丢弃结果不回�
     },
     onclick: null,
   };
-  cancelBtn = fakeBtn;
   setupGlobals({ 'cuckoo-tool-mask': mask, 'cuckoo-tool-mask-cancel': fakeBtn });
   // 执行期间，按钮应可见（不被 cuckoo-hidden）
   let btnVisibleDuringExec = false;
@@ -222,6 +220,7 @@ test('processInterceptedResponse：执行阶段点停止 → 丢弃结果不回�
   await processInterceptedResponse('```cuckoo\nawait write({ filePath: "stop-test-unique.txt", content: "x" });\n```');
   assert.strictEqual(btnVisibleDuringExec, true, '执行期间停止按钮应可见');
   assert.ok(mask.classList.contains('cuckoo-hidden'), '取消后遮罩应隐藏');
+  assert.strictEqual(sentAfterCancel, 0, '点停止后应丢弃结果，不得再回传/发送到聊天框');
 });
 
 test('processInterceptedResponse：非工具回复不显示遮罩', async () => {

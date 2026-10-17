@@ -3,7 +3,7 @@
  * workspace-trust-prompt 测试：无制品 / 已信任 / 未信任三态
  * dialog 用注入替身，不弹真窗。
  */
-import { test, beforeAll, afterAll, beforeEach } from 'vitest';
+import { test, afterAll, beforeEach } from 'vitest';
 import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';

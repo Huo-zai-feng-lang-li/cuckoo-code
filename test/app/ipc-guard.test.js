@@ -5,7 +5,7 @@
  *  - guardExecutionCall 在无注册窗口（ctx=null）时必须拒绝
  *  - planToolGate / planJsGate 纯编排（含 delivery 特征计算）
  */
-import { test, beforeAll, afterAll } from 'vitest';
+import { test, afterAll } from 'vitest';
 import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
