@@ -374,10 +374,27 @@ export function dismissPreview(): void {
   hidePreview();
 }
 
-/** 恢复之前看的文件（切回「文件」tab 时） */
-export function restorePreview(): void {
+/** 恢复预览布局（切回「文件」tab 时，只恢复显隐与宽度，不重读文件——内容一直在编辑器里） */
+export function showPreviewLayout(): void {
   if (!currentRelPath) return;
-  openPreview(currentRelPath);
+  const p = pane();
+  if (!p || p.classList.contains("open")) return;
+  const l = listEl();
+  openedBaseWidth = baseSidebarWidth();
+  if (l) {
+    const treeW = Math.round(l.getBoundingClientRect().width);
+    l.style.flex = "0 0 " + treeW + "px";
+    l.style.width = treeW + "px";
+  }
+  p.classList.add("open");
+  p.style.flex = "1 1 0";
+  p.style.width = "";
+  setSidebarWidth(openedBaseWidth + Math.min(getPreviewWidth(), maxPreviewWidth()));
+}
+
+/** 恢复之前看的文件（切回「文件」tab 时）：只恢复布局，不重读文件 */
+export function restorePreview(): void {
+  showPreviewLayout();
 }
 
 // ✕ 关闭按钮

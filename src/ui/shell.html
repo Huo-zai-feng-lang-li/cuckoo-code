@@ -4,6 +4,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<meta name="color-scheme" content="dark light">
 <!-- E-009：壳窗口 CSP。本地 monaco 脚本/内联 bundle/插件 new Function/monaco worker 均需放行；
      object/frame/base 收紧。远程脚本注入被 script-src='self' 阻断。 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'">
@@ -1939,7 +1940,7 @@ body[data-ck-dark] .ck-stat-item-hl .ck-stat-val { color: #fbbf24; }
 
 </style>
 </head>
-<body>
+<body data-ck-dark>
   <div class="shell">
     <div class="toolbar">
       <button class="project-picker" id="project-picker" title="当前项目目录">
@@ -3398,7 +3399,8 @@ paths:            # 可选；省略 = 始终生效
     dismissPreview: () => dismissPreview,
     hidePreview: () => hidePreview,
     openPreview: () => openPreview,
-    restorePreview: () => restorePreview
+    restorePreview: () => restorePreview,
+    showPreviewLayout: () => showPreviewLayout
   });
   function updateSaveBtn() {
     const btn = document.getElementById("ck-preview-save");
@@ -3734,9 +3736,24 @@ paths:            # 可选；省略 = 始终生效
     }
     hidePreview();
   }
-  function restorePreview() {
+  function showPreviewLayout() {
     if (!currentRelPath) return;
-    openPreview(currentRelPath);
+    const p = pane();
+    if (!p || p.classList.contains("open")) return;
+    const l = listEl();
+    openedBaseWidth = baseSidebarWidth();
+    if (l) {
+      const treeW = Math.round(l.getBoundingClientRect().width);
+      l.style.flex = "0 0 " + treeW + "px";
+      l.style.width = treeW + "px";
+    }
+    p.classList.add("open");
+    p.style.flex = "1 1 0";
+    p.style.width = "";
+    setSidebarWidth(openedBaseWidth + Math.min(getPreviewWidth(), maxPreviewWidth()));
+  }
+  function restorePreview() {
+    showPreviewLayout();
   }
   var PREVIEW_W_KEY, MIN_PREVIEW_W, MIN_TREE_W, openedBaseWidth, currentRelPath, loadedRelPath, dirty, saving, lastSelfSaveAt, conflictHandling, diffMode;
   var init_preview = __esm({
@@ -4858,7 +4875,8 @@ paths:            # 可选；省略 = 始终生效
         if (p) {
           if (expanded.has(p)) expanded.delete(p);
           else expanded.add(p);
-          await loadFiles();
+          const listEl3 = document.getElementById("ft-list");
+          if (listEl3) renderList(listEl3);
         }
         return;
       }
@@ -4888,7 +4906,7 @@ paths:            # 可选；省略 = 始终生效
       return;
     }
     if (isDir) expanded.add(parentRel ? parentRel + "/" + name : name);
-    await loadFiles();
+    await loadFiles({ force: true });
   }
   async function doRename(relPath, oldName) {
     const newName = await ckPrompt({ title: "\u91CD\u547D\u540D", placeholder: "\u8F93\u5165\u65B0\u540D\u79F0", value: oldName });
@@ -4898,7 +4916,7 @@ paths:            # 可选；省略 = 始终生效
       await ckAlert("\u91CD\u547D\u540D\u5931\u8D25\uFF1A" + (r && r.error || "\u672A\u77E5\u9519\u8BEF"));
       return;
     }
-    await loadFiles();
+    await loadFiles({ force: true });
   }
   async function doDelete(relPath, name, isDir) {
     const ok = await ckConfirm("\u786E\u5B9A\u5220\u9664\u300C" + name + "\u300D" + (isDir ? "\uFF08\u53CA\u5176\u5168\u90E8\u5185\u5BB9\uFF09" : "") + "\u5417\uFF1F\n\u5C06\u79FB\u5165\u7CFB\u7EDF\u56DE\u6536\u7AD9\uFF0C\u53EF\u4ECE\u56DE\u6536\u7AD9\u6062\u590D\u3002", "\u5220\u9664\u786E\u8BA4");
@@ -4908,11 +4926,15 @@ paths:            # 可选；省略 = 始终生效
       await ckAlert("\u5220\u9664\u5931\u8D25\uFF1A" + (r && r.error || "\u672A\u77E5\u9519\u8BEF"));
       return;
     }
-    await loadFiles();
+    await loadFiles({ force: true });
   }
-  async function loadFiles() {
+  async function loadFiles(opts) {
     const listEl2 = document.getElementById("ft-list");
     if (!listEl2 || !api.listProjectTree) return;
+    if (!opts?.force && cachedTree.length > 0) {
+      renderList(listEl2);
+      return;
+    }
     try {
       const r = await api.listProjectTree();
       if (!r || !r.success) {
@@ -4933,19 +4955,38 @@ paths:            # 可选；省略 = 始终生效
     }
   }
   function renderList(listEl2) {
+    bindRowEvents(listEl2);
     const kw = currentKeyword();
     if (kw) {
       listEl2.innerHTML = renderSearch(kw);
-    } else {
-      if (cachedTree.length === 0) {
-        listEl2.innerHTML = '<div class="ck-list-empty">\u7A7A\u76EE\u5F55</div>';
-        return;
-      }
-      listEl2.innerHTML = renderNodes(cachedTree, 0) + (cachedTruncated ? '<div class="ck-ft-truncated">\uFF08\u8282\u70B9\u8FC7\u591A\uFF0C\u5DF2\u622A\u65AD\u663E\u793A\uFF09</div>' : "");
+      return;
     }
-    bindRowEvents(listEl2);
+    if (cachedTree.length === 0) {
+      listEl2.innerHTML = '<div class="ck-list-empty">\u7A7A\u76EE\u5F55</div>';
+      return;
+    }
+    const total = countNodes(cachedTree, 0, 301);
+    const paint = () => {
+      listEl2.innerHTML = renderNodes(cachedTree, 0) + (cachedTruncated ? '<div class="ck-ft-truncated">\uFF08\u8282\u70B9\u8FC7\u591A\uFF0C\u5DF2\u622A\u65AD\u663E\u793A\uFF09</div>' : "");
+    };
+    if (total <= 300) {
+      paint();
+      return;
+    }
+    listEl2.innerHTML = '<div class="ck-list-empty">\u52A0\u8F7D\u4E2D\u2026</div>';
+    requestAnimationFrame(paint);
   }
-  document.getElementById("ft-refresh")?.addEventListener("click", loadFiles);
+  function countNodes(nodes, n, limit) {
+    for (const node of nodes) {
+      if (++n >= limit) return n;
+      if (node.children && node.children.length) {
+        n = countNodes(node.children, n, limit);
+        if (n >= limit) return n;
+      }
+    }
+    return n;
+  }
+  document.getElementById("ft-refresh")?.addEventListener("click", () => loadFiles({ force: true }));
   document.getElementById("ft-collapse-all")?.addEventListener("click", () => {
     expanded.clear();
     const listEl2 = document.getElementById("ft-list");
@@ -4976,7 +5017,8 @@ paths:            # 可选；省略 = 始终生效
   if (api.onProjectDir) {
     api.onProjectDir(() => {
       expanded.clear();
-      loadFiles();
+      cachedTree = [];
+      loadFiles({ force: true });
     });
   }
 

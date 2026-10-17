@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<meta name="color-scheme" content="dark light">
 <!-- E-009：壳窗口 CSP。本地 monaco 脚本/内联 bundle/插件 new Function/monaco worker 均需放行；
      object/frame/base 收紧。远程脚本注入被 script-src='self' 阻断。 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'">
@@ -13,7 +14,7 @@
 /*@include:styles/pages.css*/
 </style>
 </head>
-<body>
+<body data-ck-dark>
   <div class="shell">
 <!--@include:partials/toolbar.html-->
     <div class="main-area">

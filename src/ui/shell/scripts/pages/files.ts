@@ -233,7 +233,12 @@ function bindRowEvents(listEl: HTMLElement): void {
     const dirEl = t.closest('.ck-ft-dir');
     if (dirEl) {
       const p = dirEl.dataset.path;
-      if (p) { if (expanded.has(p)) expanded.delete(p); else expanded.add(p); await loadFiles(); }
+      if (p) {
+        if (expanded.has(p)) expanded.delete(p); else expanded.add(p);
+        // 只变了展开状态 → 复用缓存重渲染，不重新拉 IPC
+        const listEl = document.getElementById('ft-list');
+        if (listEl) renderList(listEl);
+      }
       return;
     }
     // 点击文件行 → 打开文件预览（主区域覆盖视图）
@@ -257,7 +262,7 @@ async function doCreate(parentRel: string, isDir: boolean): Promise<void> {
   const r = await (api as any).createProjectEntry(parentRel, name, isDir);
   if (!r || !r.success) { await ckAlert('创建失败：' + ((r && r.error) || '未知错误')); return; }
   if (isDir) expanded.add(parentRel ? (parentRel + '/' + name) : name);
-  await loadFiles();
+  await loadFiles({ force: true });
 }
 
 /** 重命名 */
@@ -266,7 +271,7 @@ async function doRename(relPath: string, oldName: string): Promise<void> {
   if (!newName || newName === oldName) return;
   const r = await (api as any).renameProjectEntry(relPath, newName);
   if (!r || !r.success) { await ckAlert('重命名失败：' + ((r && r.error) || '未知错误')); return; }
-  await loadFiles();
+  await loadFiles({ force: true });
 }
 
 /** 删除（回收站） */
@@ -275,12 +280,21 @@ async function doDelete(relPath: string, name: string, isDir: boolean): Promise<
   if (!ok) return;
   const r = await (api as any).deleteProjectEntry(relPath);
   if (!r || !r.success) { await ckAlert('删除失败：' + ((r && r.error) || '未知错误')); return; }
-  await loadFiles();
+  await loadFiles({ force: true });
 }
 
-export async function loadFiles(): Promise<void> {
+/**
+ * 加载文件树。
+ * @param opts.force true=强制重新拉取 IPC（刷新/增删改后）；默认 false=有缓存直接复用（切 tab 用）
+ */
+export async function loadFiles(opts?: { force?: boolean }): Promise<void> {
   const listEl = document.getElementById('ft-list');
   if (!listEl || !api.listProjectTree) return;
+  // 有缓存且不强制刷新 → 直接渲染，免去 IPC 往返
+  if (!opts?.force && cachedTree.length > 0) {
+    renderList(listEl);
+    return;
+  }
   try {
     const r = await api.listProjectTree();
     if (!r || !r.success) {
@@ -301,23 +315,43 @@ export async function loadFiles(): Promise<void> {
   }
 }
 
-/** 按当前关键词渲染（无词 → 树；有词 → 扁平搜索结果） */
+/** 按当前关键词渲染（无词 → 树；有词 → 扁平搜索结果）
+ *  大项目（节点多）时先插入占位，rAF 再真正渲染，避免一次性重建数千 DOM 阻塞主线程。 */
 function renderList(listEl: HTMLElement): void {
+  bindRowEvents(listEl);
   const kw = currentKeyword();
   if (kw) {
     listEl.innerHTML = renderSearch(kw);
-  } else {
-    if (cachedTree.length === 0) {
-      listEl.innerHTML = '<div class="ck-list-empty">空目录</div>';
-      return;
-    }
+    return;
+  }
+  if (cachedTree.length === 0) {
+    listEl.innerHTML = '<div class="ck-list-empty">空目录</div>';
+    return;
+  }
+  // 节点数估算：扁平化计数，超过 300 走分帧
+  const total = countNodes(cachedTree, 0, 301);
+  const paint = () => {
     listEl.innerHTML = renderNodes(cachedTree, 0) +
       (cachedTruncated ? '<div class="ck-ft-truncated">（节点过多，已截断显示）</div>' : '');
-  }
-  bindRowEvents(listEl);
+  };
+  if (total <= 300) { paint(); return; }
+  listEl.innerHTML = '<div class="ck-list-empty">加载中…</div>';
+  requestAnimationFrame(paint);
 }
 
-document.getElementById('ft-refresh')?.addEventListener('click', loadFiles);
+/** 统计节点数（提前退出，避免大项目全量遍历） */
+function countNodes(nodes: TreeNode[], n: number, limit: number): number {
+  for (const node of nodes) {
+    if (++n >= limit) return n;
+    if (node.children && node.children.length) {
+      n = countNodes(node.children, n, limit);
+      if (n >= limit) return n;
+    }
+  }
+  return n;
+}
+
+document.getElementById('ft-refresh')?.addEventListener('click', () => loadFiles({ force: true }));
 // 全部折叠：清空展开状态后重渲染
 document.getElementById('ft-collapse-all')?.addEventListener('click', () => {
   expanded.clear();
@@ -347,5 +381,5 @@ document.getElementById('ft-new-folder')?.addEventListener('click', () => doCrea
 
 // 当前项目目录变化 → 刷新
 if (api.onProjectDir) {
-  api.onProjectDir(() => { expanded.clear(); loadFiles(); });
+  api.onProjectDir(() => { expanded.clear(); cachedTree = []; loadFiles({ force: true }); });
 }
