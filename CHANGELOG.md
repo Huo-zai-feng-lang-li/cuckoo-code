@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.10.6] - 2026-10-17
+
+### Fixed
+
+- **修复 CI 的 Coverage 工作流失败**：
+  - `.github/workflows/coverage.yml`：在跑测试前增加 `npm run compile`。原流程直接跑测试，导致 `JsRunner.WorkerPath.test.js` 找不到 `out/` 编译产物（`ERR_MODULE_NOT_FOUND`）。
+  - `src/remote/tunnel.ts`：`buildCloudflaredCandidates` 构造 Windows 路径改用 `path.win32.join`。原用 `path.join`，在 Linux CI 环境下拼接出混用正反斜杠的路径，导致 `cloudflared-path.test.js` 断言失败。
+
 ## [0.10.5] - 2026-10-17
 
 ### Performance

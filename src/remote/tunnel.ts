@@ -87,7 +87,9 @@ export function buildCloudflaredCandidates(platform: string, env: NodeJS.Process
     'C:\\Program Files\\cloudflared\\cloudflared.exe',
     'C:\\Program Files (x86)\\cloudflared\\cloudflared.exe',
   ];
-  if (env.LOCALAPPDATA) out.push(path.join(env.LOCALAPPDATA, 'cloudflared', 'cloudflared.exe'));
+  // 强制用 win32 的路径拼接：本分支只处理 Windows 候选路径，
+  // 若用宿主平台的 path.join，在 Linux CI 上会产出混用正反斜杠的路径。
+  if (env.LOCALAPPDATA) out.push(path.win32.join(env.LOCALAPPDATA, 'cloudflared', 'cloudflared.exe'));
   out.push(
     'C:\\cloudflared\\cloudflared.exe',
     'C:\\tools\\cloudflared\\cloudflared.exe',
