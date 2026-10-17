@@ -2871,6 +2871,18 @@ paths:            # 可选；省略 = 始终生效
       __defProp(target, name, { get: all[name], enumerable: true });
   };
 
+  // src/overlay/sanitizer.ts
+  function escapeHtml(input2) {
+    return String(input2 ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+  var escapeAttr;
+  var init_sanitizer = __esm({
+    "src/overlay/sanitizer.ts"() {
+      "use strict";
+      escapeAttr = escapeHtml;
+    }
+  });
+
   // src/ui/shell/scripts/shared.ts
   function ckDialog(opts) {
     return new Promise((resolve) => {
@@ -3042,12 +3054,6 @@ paths:            # 可选；省略 = 始终生效
       }, 50);
     });
   }
-  function escapeHtml(s) {
-    return String(s === null || s === void 0 ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-  }
-  function escapeAttr(s) {
-    return escapeHtml(s).replace(/"/g, "&quot;");
-  }
   function formatTokenCount(n) {
     if (!isFinite(n) || n < 0) return "0";
     if (n >= 1e8) return (n / 1e8).toFixed(2) + "\u4EBF";
@@ -3070,6 +3076,7 @@ paths:            # 可选；省略 = 始终生效
   var init_shared = __esm({
     "src/ui/shell/scripts/shared.ts"() {
       "use strict";
+      init_sanitizer();
       api = window.shellAPI || {};
     }
   });

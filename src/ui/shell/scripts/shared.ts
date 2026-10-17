@@ -136,18 +136,8 @@ export function ckPrompt(opts: { title?: string; placeholder?: string; value?: s
 }
 
 // ===== HTML 转义 =====
-export function escapeHtml(s: any): string {
-  return String(s === null || s === undefined ? '' : s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-export function escapeAttr(s: any): string {
-  return escapeHtml(s).replace(/"/g, '&quot;');
-}
+// E-002/E-005：统一引用 overlay/sanitizer.ts 真源，不手维护第二份转义逻辑。
+export { escapeHtml, escapeAttr } from '../../../overlay/sanitizer.js';
 
 // ===== 数字格式化 =====
 export function formatTokenCount(n: number): string {
