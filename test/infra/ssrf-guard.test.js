@@ -69,3 +69,32 @@ test('assertUrlAllowed 拒绝十进制/十六进制编码的回环地址', async
   await assert.rejects(assertUrlAllowed('http://0x7f.0.0.1/'), /拒绝访问内网\/保留地址/);
   await assert.rejects(assertUrlAllowed('http://2130706433/'), /拒绝访问内网\/保留地址/);
 });
+
+// ===== A-002：IPv4-mapped IPv6 十六进制写法归一 =====
+test('isBlockedIpv6 拦截十六进制 IPv4-mapped 回环/元数据地址', () => {
+  // ::ffff:7f00:1 == ::ffff:127.0.0.1；::ffff:a9fe:a9fe == ::ffff:169.254.169.254
+  assert.strictEqual(isBlockedIpv6('::ffff:7f00:1'), true);
+  assert.strictEqual(isBlockedIpv6('::ffff:a9fe:a9fe'), true);
+  assert.strictEqual(isBlockedIpv6('::ffff:0a00:0001'), true); // 10.0.0.1
+  assert.strictEqual(isBlockedIpv6('::ffff:c0a8:0101'), true); // 192.168.1.1
+});
+
+test('isBlockedIpv6 点分 mapped 保持拦截（回归）', () => {
+  assert.strictEqual(isBlockedIpv6('::ffff:127.0.0.1'), true);
+  assert.strictEqual(isBlockedIpv6('::ffff:169.254.169.254'), true);
+  assert.strictEqual(isBlockedIpv6('::ffff:10.0.0.1'), true);
+});
+
+test('isBlockedIpv6 公网 mapped 放行', () => {
+  assert.strictEqual(isBlockedIpv6('::ffff:8.8.8.8'), false);
+  assert.strictEqual(isBlockedIpv6('::ffff:0808:0808'), false); // 8.8.8.8 十六进制写法
+});
+
+test('assertUrlAllowed 拦截 [::ffff:7f00:1] 与 [::ffff:a9fe:a9fe]', async () => {
+  await assert.rejects(assertUrlAllowed('http://[::ffff:7f00:1]/'), /拒绝访问内网\/保留地址/);
+  await assert.rejects(assertUrlAllowed('http://[::ffff:a9fe:a9fe]/'), /拒绝访问内网\/保留地址/);
+});
+
+test('assertUrlAllowed 放行公网 mapped [::ffff:8.8.8.8]', async () => {
+  await assert.doesNotReject(assertUrlAllowed('http://[::ffff:8.8.8.8]/'));
+});

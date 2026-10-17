@@ -28,6 +28,69 @@ function ipv4ToInt(ip: string): number | null {
   return n >>> 0;
 }
 
+/**
+ * 把 IPv6 地址字符串解析为 16 字节大端序列（非法返回 null）。
+ * 支持压缩零段（::）与末尾内嵌 IPv4 点分形式（::ffff:1.2.3.4），
+ * 从而把 `::ffff:7f00:1`（十六进制 mapped）与 `::ffff:127.0.0.1`（点分 mapped）
+ * 归一到同一条低 32 位判定路径。
+ */
+function parseIpv6Bytes(ip: string): Uint8Array | null {
+  const s = ip.toLowerCase();
+  const dbl = s.split('::');
+  if (dbl.length > 2) return null;
+  const hasDbl = dbl.length === 2;
+
+  // 把一段（如 "ffff:7f00:1" 或 "ffff:1.2.3.4"）展开成字节追加到 out；非法返回 false。
+  // 注意：内嵌 IPv4（::ffff:1.2.3.4）只能出现在末尾，字节序上在前面的 hex 组之后。
+  const pushPart = (part: string, out: number[]): boolean => {
+    if (part === '') return true;
+    const segs = part.split(':');
+    const last = segs.pop() as string;
+    if (last.indexOf('.') >= 0) {
+      // 前面剩余的都是 hex 组，先推
+      for (const g of segs) {
+        if (!/^[0-9a-f]{1,4}$/.test(g)) return false;
+        const n = parseInt(g, 16);
+        out.push((n >> 8) & 0xff, n & 0xff);
+      }
+      // 末尾内嵌 IPv4：占 2 个 16 位组（4 字节）
+      const octets = last.split('.');
+      if (octets.length !== 4) return false;
+      for (const o of octets) {
+        if (!/^\d{1,3}$/.test(o)) return false;
+        const v = Number(o);
+        if (v > 255) return false;
+        out.push(v);
+      }
+    } else {
+      segs.push(last);
+      for (const g of segs) {
+        if (!/^[0-9a-f]{1,4}$/.test(g)) return false;
+        const n = parseInt(g, 16);
+        out.push((n >> 8) & 0xff, n & 0xff);
+      }
+    }
+    return true;
+  };
+
+  const left: number[] = [];
+  const right: number[] = [];
+  if (!pushPart(dbl[0], left)) return null;
+  if (hasDbl && !pushPart(dbl[1], right)) return null;
+  const fill = 16 - left.length - right.length;
+  if (fill < 0) return null;
+  if (!hasDbl && fill !== 0) return null;
+  const bytes = new Uint8Array(16);
+  bytes.set(left, 0);
+  bytes.set(right, left.length + fill);
+  return bytes;
+}
+
+/** 16 字节中取低 32 位 → 点分 IPv4 字符串 */
+function ipv4FromBytes(bytes: Uint8Array): string {
+  return bytes[12] + '.' + bytes[13] + '.' + bytes[14] + '.' + bytes[15];
+}
+
 /** 阻塞的 IPv4 CIDR 段 */
 const BLOCKED_IPV4_CIDRS: Array<[string, number]> = [
   ['0.0.0.0', 8],        // 本机（"this host"）
@@ -61,16 +124,30 @@ function isBlockedIpv4(ip: string): boolean {
 }
 
 function isBlockedIpv6(ip: string): boolean {
-  const s = ip.toLowerCase();
-  // IPv4-mapped（::ffff:1.2.3.4）→ 抽出 IPv4 部分递归校验
-  const mapped = s.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isBlockedIpv4(mapped[1]);
-  if (s === '::1' || s === '::') return true;                 // 回环 / 未指定
-  if (/^fe[89ab]/.test(s)) return true;                       // fe80::/10 链路本地
-  if (/^f[cd]/.test(s)) return true;                          // fc00::/7 唯一本地
-  if (/^ff/.test(s)) return true;                             // ff00::/8 组播
-  if (s.startsWith('2001:db8')) return true;                  // 文档用
-  if (s.startsWith('64:ff9b::')) return true;                 // NAT64（内嵌 IPv4）
+  const bytes = parseIpv6Bytes(ip);
+  if (!bytes) return false;
+
+  // IPv4-mapped（::ffff:0:0/96，含 ::ffff:1.2.3.4 与 ::ffff:7f00:1 两种写法）
+  // → 取低 32 位按 IPv4 判定（修 A-002：旧正则只认点分式，十六进制 mapped 直穿）
+  const mapped =
+    bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 0 && bytes[3] === 0 &&
+    bytes[4] === 0 && bytes[5] === 0 && bytes[6] === 0 && bytes[7] === 0 &&
+    bytes[8] === 0 && bytes[9] === 0 && bytes[10] === 0xff && bytes[11] === 0xff;
+  if (mapped) return isBlockedIpv4(ipv4FromBytes(bytes));
+
+  // 未指定地址 ::
+  let allZero = true;
+  for (const b of bytes) { if (b !== 0) { allZero = false; break; } }
+  if (allZero) return true;
+  // 回环 ::1（前 15 字节为 0、末字节为 1）
+  let loopback = bytes[15] === 1;
+  for (let i = 0; i < 15; i++) { if (bytes[i] !== 0) loopback = false; }
+  if (loopback) return true;
+  if (bytes[0] === 0xfe && (bytes[1] & 0xc0) === 0x80) return true;  // fe80::/10 链路本地
+  if ((bytes[0] & 0xfe) === 0xfc) return true;                       // fc00::/7 唯一本地
+  if (bytes[0] === 0xff) return true;                                // ff00::/8 组播
+  if (bytes[0] === 0x20 && bytes[1] === 0x01 && bytes[2] === 0x0d && bytes[3] === 0xb8) return true; // 2001:db8::/32
+  if (bytes[0] === 0x64 && bytes[1] === 0xff && bytes[2] === 0x9b && bytes[3] === 0x00) return true; // 64:ff9b::/96 NAT64
   return false;
 }
 
