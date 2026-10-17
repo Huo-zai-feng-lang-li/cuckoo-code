@@ -15,7 +15,7 @@ import path from 'node:path';
 import * as windowState from '../window.js';
 import { scanSkills } from '../../skills/index.js';
 import { getPluginScanRoots } from '../../plugins/roots.js';
-import { registry } from '../../tools/index.js';
+import { registry, jsRunner } from '../../tools/index.js';
 import { getProvider } from '../../providers/registry.js';
 import { resetTodosCache } from './tool.js';
 import { cdpAttach } from './cdp-attach.js';
@@ -196,6 +196,13 @@ function findContext(sender: any): any {
 async function stopGeneration(ctx: any): Promise<any> {
   if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) return { success: false };
   const wc = ctx.view.webContents;
+
+  // 强杀该窗口后台正在跑的 JS 沙箱 worker，中断执行（只杀本窗口，避免误伤其他并行任务）
+  try {
+    const winId = ctx.win && !ctx.win.isDestroyed() ? ctx.win.id : undefined;
+    if (jsRunner && typeof jsRunner.abortAll === 'function') jsRunner.abortAll(winId);
+  } catch (err) { console.log('[Cuckoo Harness] 停止 jsRunner 异常:', err); }
+
   try {
     try { wc.send('harness-stop-signal'); } catch (_) { /* ignore */ }
     try { wc.focus(); } catch (_) { /* ignore */ }
@@ -390,7 +397,9 @@ function registerHarnessIpc(): void {
       console.log('[Cuckoo Harness] 新对话 → 导航到 ' + url);
       // 清主进程 todo 缓存 + 让 harness 视图完整重置（后者是"残留"的根治点）
       prepareNewConversation(ctx);
-      ctx.view.webContents.loadURL(url);
+      ctx.view.webContents.loadURL(url).catch((err: any) => {
+        console.log('[Cuckoo Harness] loadURL 失败:', err && err.message);
+      });
       return { success: true, url: url };
     } catch (err: any) {
       console.log('[Cuckoo Harness] 新对话异常: ' + err.message);

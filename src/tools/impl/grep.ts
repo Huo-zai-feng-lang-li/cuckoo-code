@@ -122,12 +122,23 @@ function runRipgrep(args: string[], cwd: string): Promise<{ stdout: string; stde
         // 会改为从 stdin 读取搜索目标，导致无限等待、grep 卡死。
         stdio: ['ignore', 'pipe', 'pipe'],
       });
+      
+      // 兜底超时：60 秒（防止 rg 卡死导致主进程假死）
+      const timeout = setTimeout(() => {
+        try { child.kill('SIGKILL'); } catch (_) {}
+        reject(new Error('ripgrep timeout (60s)'));
+      }, 60000);
+
       let stdout = '';
       let stderr = '';
       child.stdout.on('data', (d: Buffer) => { stdout += d; });
       child.stderr.on('data', (d: Buffer) => { stderr += d; });
-      child.on('error', reject);
+      child.on('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
       child.on('close', code => {
+        clearTimeout(timeout);
         if (code === 0 || code === 1) {
           resolve({ stdout, stderr, code });
         } else {

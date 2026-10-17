@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.10.11] - 2026-10-18
+
+### Fixed
+
+- **点击停止后工具仍在后台执行**：
+  - `JsRunner` 新增 `abortAll(windowId)`：在 Windows 下通过异步 `taskkill /T /F` 强杀 worker 进程树（解决 `require` 未定义、`execSync` 阻塞主进程、并发互相覆盖、全局误杀等问题）。
+  - `harness.ts` 的 `stopGeneration` 中主动调用 `abortAll`，并在顶部静态 import 消除 ESM 混用隐患。
+  - `grep.ts` 的 `runRipgrep` 增加 60 秒兜底超时，防止 rg 卡死导致主进程假死。
+  - `harness.ts` 补全 `loadURL` 的 `.catch`，避免未捕获的 Promise 拒绝。
+
 ## [0.10.10] - 2026-10-18
 
 ### Fixed

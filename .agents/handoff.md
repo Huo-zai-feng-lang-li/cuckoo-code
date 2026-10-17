@@ -47,7 +47,13 @@
 - 最终验证：typecheck 0、vitest **127 文件 / 1184 用例**、lint 0 error、compile 0 无漂移。
 - 待办：**合并/发版由用户决定**（当前不 tag/push/发版）。真机待验项见上（尤其 A-005 打包环境 fork、D-005 手机浏览器握手、CSP file:// 放行、D-008 Electron net.request）。
 
-## v0.10.10：修复停止后工具卡片卡在运行中（本版本）
+## v0.10.11：彻底修复停止后工具仍在后台执行（本版本）
+
+- **JsRunner**：新增 `abortAll(windowId)` 支持按窗口强杀 worker（Windows 下用 `execFile('taskkill', ['/PID', pid, '/T', '/F'])` 树杀），同时修复了并发覆盖、PID 复用误杀、全局杀导致误伤其他窗口、taskkill 失败无兜底等问题。
+- **harness.ts**：`stopGeneration` 中调用 `jsRunner.abortAll(ctx.win.id)`；顶部静态 import `jsRunner`，补全 `loadURL` 的 catch。
+- **grep.ts**：`runRipgrep` 增加 60s 超时，防止 rg 卡死。
+
+## v0.10.10：修复停止后工具卡片卡在运行中
 
 - **根因**：`stop()` 函数只调用了 `markAborted()`（清计数）和 `clearPendingBubble()`（清气泡），但没有遍历 DOM 把 `.tool-badge.run` 改为失败/停止状态。
 - **修复**：在 `stop()` 中增加遍历 `.tool-badge.run`，改为「已停止」，输出显示「(用户手动中止)」，自动折叠卡片。

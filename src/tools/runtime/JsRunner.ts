@@ -11,7 +11,7 @@
  * - worker 不 import 任何 src/TS；bootstrap 脚本由主进程拼好随 run 消息下发。
  */
 
-import { fork } from 'node:child_process';
+import { fork, execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { buildBootstrapScript, buildDynamicToolsBootstrap } from './bootstrap-build.js';
@@ -115,6 +115,39 @@ class JsRunner {
   workerPath?: string;
   /** 当前/最近一次 run 的 worker pid（测试探活用） */
   activeWorkerPid: number | null = null;
+  /** 当前正在执行的 worker 进程集合（child -> ownerKey） */
+  private activeChildren = new Map<any, number | null>();
+
+  /**
+   * 强杀正在执行的沙箱进程（用户点击停止时调用）。
+   * @param windowId 可选。传入则只杀该窗口发起的 worker（避免多窗口互相误杀）；
+   *                 不传则杀全部（进程退出兜底）。
+   */
+  public abortAll(windowId?: number): void {
+    for (const [child, ownerId] of this.activeChildren) {
+      if (windowId !== undefined && ownerId !== windowId) continue;
+      try {
+        const pid = child.pid;
+        // 防御：进程已退出时 pid 可能被复用，避免误杀
+        if (pid && child.exitCode === null && child.signalCode === null) {
+          if (process.platform === 'win32') {
+            execFile('taskkill', ['/PID', String(pid), '/T', '/F'], (err) => {
+              // taskkill 失败（权限/PID 竞争）：兜底用 SIGKILL
+              if (err && child.exitCode === null) {
+                try { child.kill('SIGKILL'); } catch (_) {}
+              }
+            });
+          } else {
+            child.kill('SIGKILL');
+          }
+        }
+      } catch (err) {
+        console.warn('[JsRunner] abortAll 失败:', err);
+      }
+    }
+    // 不立即 clear：等 'exit' 事件里自行 delete，避免 taskkill 未生效时失去追踪
+    if (windowId === undefined) this.activeChildren.clear();
+  }
 
   /**
    * @param registry 工具注册表
@@ -157,6 +190,7 @@ class JsRunner {
     let child;
     try {
       child = fork(workerPath, [], { stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
+      this.activeChildren.set(child, windowId ?? null);
       this.activeWorkerPid = child.pid || null;
     } catch (err: any) {
       return { success: false, error: '无法启动沙箱进程: ' + (err.message || String(err)) };
@@ -167,6 +201,8 @@ class JsRunner {
     const promise = new Promise<{ success: boolean; output?: string; error?: string }>((res) => { resolveOuter = res; });
 
     const killWorker = () => {
+      this.activeChildren.delete(child);
+      if (this.activeWorkerPid === child.pid) this.activeWorkerPid = null;
       try { child.kill('SIGKILL'); } catch (_) { /* 已退出 */ }
     };
 
@@ -250,6 +286,8 @@ class JsRunner {
     });
 
     child.on('exit', (code: number | null) => {
+      this.activeChildren.delete(child);
+      if (this.activeWorkerPid === child.pid) this.activeWorkerPid = null;
       if (!settled) {
         finish({ success: false, error: '沙箱进程意外退出 (code=' + code + ')' }, 'exit', []);
       }
