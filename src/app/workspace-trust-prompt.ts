@@ -50,8 +50,9 @@ export function buildTrustDetail(dir: string): string {
   }
   if (art.rules.length) lines.push('项目规则 ' + art.rules.length + ' 条（注入系统提示词）');
   if (art.skills.length) lines.push('项目技能 ' + art.skills.length + ' 个（注入系统提示词）');
+  if (art.agents.length) lines.push('项目子代理 ' + art.agents.length + ' 个（可被实例化并授权工具）');
   lines.push('');
-  lines.push('这些内容将在你电脑上运行或注入提示词。未信任时项目级 MCP / 规则 / 技能均不启用。');
+  lines.push('这些内容将在你电脑上运行或注入提示词。未信任时项目级 MCP / 规则 / 技能 / 子代理均不启用。');
   return lines.join('\n');
 }
 
@@ -63,7 +64,7 @@ export function buildTrustDetail(dir: string): string {
 export async function ensureWorkspaceTrust(parentWin: any, dir: string | null): Promise<TrustPromptResult> {
   if (!dir) return { trusted: true, scope: 'trusted' };
   const art = scanWorkspaceArtifacts(dir);
-  const hasArtifacts = art.mcp.length > 0 || art.rules.length > 0 || art.skills.length > 0;
+  const hasArtifacts = art.mcp.length > 0 || art.rules.length > 0 || art.skills.length > 0 || art.agents.length > 0;
   if (!hasArtifacts) return { trusted: true, scope: 'trusted' };
   if (isWorkspaceTrusted(dir)) return { trusted: true, scope: 'trusted' };
 

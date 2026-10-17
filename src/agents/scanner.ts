@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { parseFrontmatter } from '../skills/frontmatter.js';
+import { isWorkspaceTrusted } from '../infra/workspace-trust.js';
 import type { AgentMeta, AgentSource } from './types.js';
 
 /** 从正文取首段（非空、非标题行）作为缺省 description */
@@ -103,10 +104,16 @@ export function mergeAgents(project: AgentMeta[], user: AgentMeta[], plugin: Age
  * @param extraAgentDirs 额外的 agents 目录（绝对路径）。由上层（session）计算后传入，
  *   本模块**不 import plugins**，避免形成依赖环。
  * @returns 合并后的代理列表（项目级 > 用户级 > 插件级）
+ *
+ * D-004（prompt injection 数据层兜底，对齐 skills/rules）：当 projectDir 存在但工作区
+ * 未被信任时，不扫描/不返回项目级代理。项目 agent 的 description 进主提示词、
+ * runAgent 会按其 tools 授权实例化，故必须纳入信任门。用户级/插件级不受影响。
  */
 export function scanAgents(projectDir: string | null, extraAgentDirs: string[] = []): AgentMeta[] {
   const user = scanDir(os.homedir(), 'user');
-  const project = projectDir ? scanDir(projectDir, 'project') : [];
+  const project = projectDir && isWorkspaceTrusted(projectDir)
+    ? scanDir(projectDir, 'project')
+    : [];
   const plugin: AgentMeta[] = [];
   for (const dir of extraAgentDirs) {
     if (!dir) continue;

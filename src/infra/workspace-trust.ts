@@ -28,6 +28,8 @@ export interface WorkspaceArtifacts {
   mcp: WorkspaceMcpEntry[];
   rules: string[];
   skills: string[];
+  /** 项目级子代理：<dir>/.cuckoo/agents/*.md（文件名去 .md） */
+  agents: string[];
 }
 
 interface TrustRecord {
@@ -126,21 +128,23 @@ export function clearSessionTrustForTests(): void {
 }
 
 /**
- * 扫描项目目录下的 .agents 工件（只读元数据，不读全文）：
+ * 扫描项目目录下的信任敏感工件（只读元数据，不读全文）：
  *  - MCP：<dir>/.agents/mcp.json（mcpServers 各 name/command/args/url）
  *  - 规则：<dir>/.agents/rules/*.md（文件名去掉 .md）
  *  - 技能：<dir>/.agents/skills/<name>/SKILL.md（目录名）
+ *  - 子代理：<dir>/.cuckoo/agents/*.md（文件名去掉 .md）
+ *
+ * D-004：`.agents` 与 `.cuckoo/agents` 两段目录**独立探测**，任一段存在即返回对应工件，
+ * 不因另一段缺失而提前 return（否则只带 `.cuckoo/agents` 的恶意仓库会绕过信任门）。
  */
 export function scanWorkspaceArtifacts(dir: string | null | undefined): WorkspaceArtifacts {
-  const empty: WorkspaceArtifacts = { dir: dir || '', mcp: [], rules: [], skills: [] };
+  const empty: WorkspaceArtifacts = { dir: dir || '', mcp: [], rules: [], skills: [], agents: [] };
   if (!dir || typeof dir !== 'string' || !fs.existsSync(dir)) return empty;
-  const agentsDir = path.join(dir, '.agents');
-  if (!fs.existsSync(agentsDir)) return empty;
 
   // MCP
   const mcp: WorkspaceMcpEntry[] = [];
   try {
-    const mcpFile = path.join(agentsDir, 'mcp.json');
+    const mcpFile = path.join(dir, '.agents', 'mcp.json');
     if (fs.existsSync(mcpFile)) {
       const cfg = JSON.parse(fs.readFileSync(mcpFile, 'utf-8'));
       const servers = cfg && cfg.mcpServers;
@@ -161,7 +165,7 @@ export function scanWorkspaceArtifacts(dir: string | null | undefined): Workspac
   // 规则
   const rules: string[] = [];
   try {
-    const rulesDir = path.join(agentsDir, 'rules');
+    const rulesDir = path.join(dir, '.agents', 'rules');
     if (fs.existsSync(rulesDir) && fs.statSync(rulesDir).isDirectory()) {
       for (const f of fs.readdirSync(rulesDir)) {
         if (f.endsWith('.md')) rules.push(f.slice(0, -3));
@@ -172,7 +176,7 @@ export function scanWorkspaceArtifacts(dir: string | null | undefined): Workspac
   // 技能
   const skills: string[] = [];
   try {
-    const skillsDir = path.join(agentsDir, 'skills');
+    const skillsDir = path.join(dir, '.agents', 'skills');
     if (fs.existsSync(skillsDir) && fs.statSync(skillsDir).isDirectory()) {
       for (const name of fs.readdirSync(skillsDir)) {
         if (fs.existsSync(path.join(skillsDir, name, 'SKILL.md'))) skills.push(name);
@@ -180,5 +184,16 @@ export function scanWorkspaceArtifacts(dir: string | null | undefined): Workspac
     }
   } catch (_) { /* 忽略 */ }
 
-  return { dir, mcp, rules, skills };
+  // 子代理（项目级在 .cuckoo/agents，与 .agents 平行、独立探测）
+  const agents: string[] = [];
+  try {
+    const agentsDir = path.join(dir, '.cuckoo', 'agents');
+    if (fs.existsSync(agentsDir) && fs.statSync(agentsDir).isDirectory()) {
+      for (const f of fs.readdirSync(agentsDir)) {
+        if (f.endsWith('.md')) agents.push(f.slice(0, -3));
+      }
+    }
+  } catch (_) { /* 忽略 */ }
+
+  return { dir, mcp, rules, skills, agents };
 }

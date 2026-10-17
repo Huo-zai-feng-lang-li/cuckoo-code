@@ -197,7 +197,8 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
   }
 
   const skillsSection = buildSkillsSection(filterProjectScoped(scanSkills(selectedDir, pluginRoots.skillDirs), selectedDir));
-  const agentsSection = buildAgentsSection(scanAgents(selectedDir, pluginRoots.agentDirs));
+  // D-004：agents 数据层（scanAgents）已做信任门，这里再包一层过滤，与 skills/rules 对齐。
+  const agentsSection = buildAgentsSection(filterProjectScoped(scanAgents(selectedDir, pluginRoots.agentDirs), selectedDir));
   // 无 paths 的规则：始终注入（「## 项目规则」章节）
   const rulesSection = buildUnscopedRulesSection(getUnscopedRules(filterProjectScoped(scanRules(selectedDir, pluginRoots.ruleDirs), selectedDir)));
   // 用户记忆（跨项目）：让模型了解用户习惯
