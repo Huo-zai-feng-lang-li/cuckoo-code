@@ -30,6 +30,39 @@ export const apiMetas: ToolApiMeta[] = [
 // 内部固定上限，不暴露给模型
 const FETCH_TIMEOUT_MS = 15000;
 const FETCH_MAX_OUTPUT_CHARS = 20000;
+/** SSRF 守卫开启时手动跟随的最大重定向跳数（修 A-001：每跳都过 assertUrlAllowed） */
+const MAX_REDIRECT_HOPS = 5;
+
+/**
+ * 带 SSRF 逐跳校验的 fetch（修 A-001）。
+ *
+ * 守卫开启时用 redirect:'manual' 手动跟随 3xx：每一跳的 URL 都过 assertUrlAllowed，
+ * 再发下一个请求——杜绝"首跳公网放行、302 跳进内网"的绕过（undici 在 manual 模式下
+ * 会原样返回 3xx 响应与 Location 头，本机 Node 22 已实证）。
+ * 守卫关闭时保持原行为（默认 follow，只许 http/https）。
+ *
+ * @param initialUrl 首跳 URL
+ * @param guard 是否开启 SSRF 逐跳校验
+ * @param signal  AbortSignal（超时）
+ * @returns 最终响应（非 3xx 或跳数用尽）
+ */
+async function fetchWithSsrfGuard(initialUrl: string, guard: boolean, signal: AbortSignal): Promise<Response> {
+  if (!guard) {
+    return await fetch(initialUrl, { method: 'GET', signal });
+  }
+  let currentUrl = initialUrl;
+  for (let hop = 0; ; hop++) {
+    await assertUrlAllowed(currentUrl);
+    const res = await fetch(currentUrl, { method: 'GET', signal, redirect: 'manual' });
+    const location = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+    if (!location) return res;
+    try { res.body?.cancel(); } catch (_) { /* 3xx 响应体无需读取 */ }
+    if (hop >= MAX_REDIRECT_HOPS) {
+      throw new Error('重定向次数超过上限（' + MAX_REDIRECT_HOPS + ' 跳），已中止');
+    }
+    currentUrl = new URL(location, currentUrl).toString();
+  }
+}
 
 /**
  * HTML → Markdown 转换器（对齐 dsh）。
@@ -135,17 +168,10 @@ class WebFetchTool extends Tool {
     try {
       const input = parseFetchArgs(url);
 
-      // 安全限制（**默认关闭**，需在设置里开启）：
-      // 仅 http/https，且拒绝内网/回环/链路本地/保留地址（防 SSRF）。
-      // 关闭时保留原行为（可访问任意 http/https URL，含本地项目）。
-      if (ssrfGuard === true) {
-        try {
-          await assertUrlAllowed(input.url);
-        } catch (e: any) {
-          return ToolResult.error(e.message);
-        }
-      } else {
-        // 未开启防护时，仍只允许 http/https（原行为）
+      // 两种模式都只允许 http/https 协议。
+      // SSRF 守卫（**默认关闭**）开启时：拒绝内网/回环/链路本地/保留地址，
+      // 且 302 重定向的每一跳都过 assertUrlAllowed（修 A-001，防首跳公网放行后跳进内网）。
+      {
         const protocol = new URL(input.url).protocol;
         if (protocol !== 'http:' && protocol !== 'https:') {
           return ToolResult.error('仅支持 http/https 协议');
@@ -156,10 +182,7 @@ class WebFetchTool extends Tool {
       const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
       try {
-        const response = await fetch(input.url, {
-          method: 'GET',
-          signal: controller.signal,
-        });
+        const response = await fetchWithSsrfGuard(input.url, ssrfGuard === true, controller.signal);
 
         // 流式读取，限制大小
         const reader = response.body ? response.body.getReader() : null;
@@ -200,6 +223,10 @@ class WebFetchTool extends Tool {
         clearTimeout(timeoutId);
         if (err.name === 'AbortError') {
           return ToolResult.error('请求超时 (超过 ' + FETCH_TIMEOUT_MS + 'ms)');
+        }
+        // SSRF 守卫拒绝 / 重定向超限：直接透传原因（与首跳校验报错口径一致）
+        if (/^(拒绝访问|无法解析|仅支持|重定向次数)/.test(err.message || '')) {
+          return ToolResult.error(err.message);
         }
         return ToolResult.error('请求失败: ' + err.message);
       }
