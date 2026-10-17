@@ -46,9 +46,26 @@ const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
 const DEFAULT_UA = 'cuckoo-code-plugin-market';
 
 /**
- * 基于 Electron `net` 的 GET 实现。
- * 只支持 GET（插件市场查询与 tarball 下载都只需要 GET）。
+ * D-008：插件下载允许的目标域名。重定向每跳的 Location 必须仍在白名单内，
+ * 防止 gitee/github 重定向把下载引到第三方域（窃取 token / 投毒 tarball）。
  */
+const DOWNLOAD_HOST_WHITELIST = new Set([
+  'github.com',
+  'raw.githubusercontent.com',
+  'codeload.github.com',
+  'objects.githubusercontent.com',
+  'gitee.com',
+]);
+
+const MAX_REDIRECT_HOPS = 5;
+
+/** 判断主机名是否在插件下载白名单内（纯函数，可单测）。 */
+function isAllowedDownloadHost(hostname: unknown): boolean {
+  if (typeof hostname !== 'string') return false;
+  const h = hostname.toLowerCase().replace(/^\.+|\.+$/g, '');
+  return DOWNLOAD_HOST_WHITELIST.has(h);
+}
+
 /**
  * Gitee 专用 GET 通道。
  *
@@ -57,14 +74,35 @@ const DEFAULT_UA = 'cuckoo-code-plugin-market';
  *  - Node fetch 默认不发 User-Agent（undici 默认头），反而被放行 → 真 tar.gz；
  *  - Electron net 即使不设 UA 也会被拦。
  * 因此 Gitee 的下载/接口必须用 Node fetch 无自定义头。
+ *
+ * D-008：redirect 改 manual 手动跟随，每跳 Location 必须仍在白名单域名内。
  */
 async function giteeFetch(req: HttpRequest): Promise<HttpResponse> {
   const timeoutMs = req.timeoutMs && req.timeoutMs > 0 ? req.timeoutMs : DEFAULT_TIMEOUT_MS;
   const maxBytes = req.maxBytes && req.maxBytes > 0 ? req.maxBytes : DEFAULT_MAX_BYTES;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(req.url, { method: 'GET', signal: controller.signal, redirect: 'follow' });
+  let current = req.url;
+  for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let res: Response;
+    try {
+      res = await fetch(current, { method: 'GET', signal: controller.signal, redirect: 'manual' });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get('location');
+      if (!loc) throw new Error('重定向缺少 Location 头');
+      const next = new URL(loc, current);
+      if (next.protocol !== 'https:' && next.protocol !== 'http:') {
+        throw new Error('重定向协议非法: ' + next.protocol);
+      }
+      if (!isAllowedDownloadHost(next.hostname)) {
+        throw new Error('重定向到白名单外域名: ' + next.hostname);
+      }
+      current = next.toString();
+      continue;
+    }
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.byteLength > maxBytes) {
       throw new Error('响应体超过上限（' + maxBytes + ' 字节）');
@@ -72,9 +110,8 @@ async function giteeFetch(req: HttpRequest): Promise<HttpResponse> {
     const headers: Record<string, string> = {};
     try { res.headers.forEach((v, k) => { headers[String(k).toLowerCase()] = v; }); } catch { /* ignore */ }
     return { status: res.status, headers, body: buf };
-  } finally {
-    clearTimeout(timer);
   }
+  throw new Error('重定向次数过多');
 }
 
 export function createElectronHttpGet(): HttpGet {
@@ -155,4 +192,4 @@ export function createElectronHttpGet(): HttpGet {
   };
 }
 
-export { DEFAULT_TIMEOUT_MS, DEFAULT_MAX_BYTES, DEFAULT_UA };
+export { DEFAULT_TIMEOUT_MS, DEFAULT_MAX_BYTES, DEFAULT_UA, isAllowedDownloadHost };

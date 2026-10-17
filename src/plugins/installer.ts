@@ -111,10 +111,17 @@ function listDirs(): string[] {
 }
 
 /**
+ * D-010：Windows 保留设备名（含带扩展名的形式，如 CON.txt）。
+ * 这类文件名在 Windows 上会被当作设备，解压落地会卡住/阻塞。
+ */
+const WINDOWS_RESERVED_RE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+
+/**
  * 解压过滤器：拒绝一切可能逃出目标目录的条目。
  *  - 绝对路径（POSIX / Windows 盘符）
  *  - 含 `..` 段
  *  - 符号链接 / 硬链接（可指向目录外）
+ *  - D-010：Windows 保留设备名（CON/PRN/AUX/NUL/COM1-9/LPT1-9，含带扩展名）
  */
 function safeEntryFilter(entryPath: string, entry: any): boolean {
   if (!entryPath) return false;
@@ -122,6 +129,9 @@ function safeEntryFilter(entryPath: string, entry: any): boolean {
   if (/^[A-Za-z]:/.test(entryPath)) return false;
   const normalized = entryPath.replace(/\\/g, '/');
   if (normalized.split('/').includes('..')) return false;
+  for (const seg of normalized.split('/')) {
+    if (seg && WINDOWS_RESERVED_RE.test(seg)) return false;
+  }
   const type = entry && entry.type;
   if (type === 'SymbolicLink' || type === 'Link') return false;
   return true;

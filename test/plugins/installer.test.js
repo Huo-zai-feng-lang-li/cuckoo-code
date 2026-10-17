@@ -147,6 +147,16 @@ test('safeEntryFilter: 拒绝空路径', () => {
   assert.strictEqual(safeEntryFilter('', { type: 'File' }), false);
 });
 
+test('safeEntryFilter: 拒绝 Windows 保留设备名（含带扩展名）', () => {
+  for (const bad of ['CON', 'con.txt', 'PRN', 'prn.md', 'AUX', 'NUL', 'COM1', 'com9.js', 'LPT1', 'lpt9.css']) {
+    assert.strictEqual(safeEntryFilter(bad, { type: 'File' }), false, '应拒绝: ' + bad);
+    assert.strictEqual(safeEntryFilter('dir/' + bad, { type: 'File' }), false, '嵌套段也应拒绝: ' + bad);
+  }
+  // 正常文件名不受影响
+  assert.strictEqual(safeEntryFilter('connector.js', { type: 'File' }), true, 'CON 子串不应误杀');
+  assert.strictEqual(safeEntryFilter('common.md', { type: 'File' }), true);
+});
+
 // ===== 安装 =====
 
 test('installPlugin: 全链路（含 strip 顶层目录）', async () => {

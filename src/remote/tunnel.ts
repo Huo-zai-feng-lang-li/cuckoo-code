@@ -75,17 +75,27 @@ function scheduleRestart(myGen: number): void {
   }, delay);
 }
 
-/** 常见 Windows / 类 Unix 安装路径 */
-const CANDIDATE_PATHS = [
-  'D:\\cloudflared\\cloudflared.exe',
-  'C:\\cloudflared\\cloudflared.exe',
-  'C:\\Program Files\\cloudflared\\cloudflared.exe',
-  'C:\\Program Files (x86)\\cloudflared\\cloudflared.exe',
-  'C:\\tools\\cloudflared\\cloudflared.exe',
-  'D:\\tools\\cloudflared\\cloudflared.exe',
-  'cloudflared.exe',
-  'cloudflared',
-];
+/**
+ * S-003：按"谁可写"排序 cloudflared 候选路径。
+ * 优先受 ACL 保护的 Program Files（仅管理员可写）与用户目录 LocalAppData，
+ * 最后才是 C:\cloudflared、C:\tools 这类任意用户可写的根目录。
+ * 单位置安装无回归（只有一个存在就被选中）。纯函数，可单测。
+ */
+export function buildCloudflaredCandidates(platform: string, env: NodeJS.ProcessEnv): string[] {
+  if (platform !== 'win32') return ['cloudflared'];
+  const out: string[] = [
+    'C:\\Program Files\\cloudflared\\cloudflared.exe',
+    'C:\\Program Files (x86)\\cloudflared\\cloudflared.exe',
+  ];
+  if (env.LOCALAPPDATA) out.push(path.join(env.LOCALAPPDATA, 'cloudflared', 'cloudflared.exe'));
+  out.push(
+    'C:\\cloudflared\\cloudflared.exe',
+    'C:\\tools\\cloudflared\\cloudflared.exe',
+    'D:\\cloudflared\\cloudflared.exe',
+    'D:\\tools\\cloudflared\\cloudflared.exe',
+  );
+  return out;
+}
 
 /** 寻找可用的 cloudflared 路径 */
 export function findCloudflaredBinary(customPath?: string): string | null {
@@ -93,7 +103,7 @@ export function findCloudflaredBinary(customPath?: string): string | null {
   const envPath = process.env.CLOUDFLARED_PATH;
   if (envPath && fs.existsSync(envPath)) return envPath;
 
-  for (const p of CANDIDATE_PATHS) {
+  for (const p of buildCloudflaredCandidates(process.platform, process.env)) {
     if (p.includes('\\') || p.includes('/')) {
       if (fs.existsSync(p)) return p;
     }

@@ -520,11 +520,20 @@ async function fetchRemoteManifests(opts: {
  * ⚠️ raw 放最前：jsdelivr 对 @main 有**最长 7 天**的 CDN 缓存，
  * 目录刚更新时会拿到陈旧内容（实测：新插件上架后市场看不到）。
  * raw.githubusercontent 的缓存窗口短得多（约 5 分钟）。
+ *
+ * D-007：第三方反代/CDN（jsdelivr、ghproxy）不是 GitHub 官方源，明确标注
+ * official=false，仅在官方源失败时兜底使用，不静默信任。
  */
-const CURATED_URLS = [
-  'https://raw.githubusercontent.com/8555uuy/cuckoo-plugin-market/main/plugins.json',
-  'https://cdn.jsdelivr.net/gh/8555uuy/cuckoo-plugin-market@main/plugins.json',
-  'https://ghproxy.net/https://raw.githubusercontent.com/8555uuy/cuckoo-plugin-market/main/plugins.json',
+interface CuratedSource {
+  url: string;
+  label: string;
+  official: boolean;
+}
+
+const CURATED_SOURCES: CuratedSource[] = [
+  { url: 'https://raw.githubusercontent.com/8555uuy/cuckoo-plugin-market/main/plugins.json', label: 'GitHub 官方源', official: true },
+  { url: 'https://cdn.jsdelivr.net/gh/8555uuy/cuckoo-plugin-market@main/plugins.json', label: 'jsDelivr CDN（非官方镜像）', official: false },
+  { url: 'https://ghproxy.net/https://raw.githubusercontent.com/8555uuy/cuckoo-plugin-market/main/plugins.json', label: 'ghproxy 反代（非官方镜像）', official: false },
 ];
 
 const CURATED_CACHE_TTL_MS = 30 * 60 * 1000;
@@ -542,12 +551,12 @@ function getCuratedCacheFile(): string {
   return getMarketCacheFile().replace(/\.json$/, '-curated.json');
 }
 
-function readCuratedCache(file: string): { cachedAt: string; doc: CuratedDoc } | null {
+function readCuratedCache(file: string): { cachedAt: string; doc: CuratedDoc; source: CuratedSource | null } | null {
   try {
     if (!fs.existsSync(file)) return null;
     const raw = JSON.parse(fs.readFileSync(file, 'utf-8'));
     if (!raw || typeof raw !== 'object' || !raw.doc || typeof raw.cachedAt !== 'string') return null;
-    return { cachedAt: raw.cachedAt, doc: raw.doc };
+    return { cachedAt: raw.cachedAt, doc: raw.doc, source: raw.source || null };
   } catch { return null; }
 }
 
@@ -586,6 +595,8 @@ export interface CuratedResult {
   categories: Record<string, { en?: string; zh?: string }>;
   updatedAt: string;
   fromCache: boolean;
+  /** D-007：本次目录数据来自哪个源；official=false 时 UI 应标注"非官方镜像"。 */
+  source?: CuratedSource | null;
   error?: string;
 }
 
@@ -597,7 +608,8 @@ export interface CuratedResult {
  *  - 目录能补充搜索接口给不了的字段（封面图、分类、版本）；
  *  - GitHub 抽风时客户端还能显示上次快照（缓存兜底）。
  *
- * 逐源降级：jsdelivr（CDN）→ raw.githubusercontent → ghproxy。
+ * 逐源降级：raw（官方）→ jsDelivr（CDN 镜像）→ ghproxy（反代镜像）。
+ * D-007：第三方镜像在结果的 source 字段里标注 official=false，UI 应提示"非官方镜像"。
  */
 async function fetchCurated(opts: {
   httpGet: HttpGet;
@@ -614,24 +626,24 @@ async function fetchCurated(opts: {
       const age = now - Date.parse(cache.cachedAt);
       if (Number.isFinite(age) && age >= 0 && age < CURATED_CACHE_TTL_MS) {
         const items = (cache.doc.plugins || []).map(normalizeCurated).filter(Boolean) as MarketItem[];
-        return { success: true, items, categories: cache.doc.categories || {}, updatedAt: cache.doc.updated || '', fromCache: true };
+        return { success: true, items, categories: cache.doc.categories || {}, updatedAt: cache.doc.updated || '', fromCache: true, source: cache.source };
       }
     }
   }
 
   let lastErr = '';
-  for (const url of CURATED_URLS) {
+  for (const src of CURATED_SOURCES) {
     try {
-      const res = await opts.httpGet({ url, timeoutMs: 12000 });
-      if (res.status !== 200) { lastErr = 'HTTP ' + res.status + ' @ ' + url; continue; }
+      const res = await opts.httpGet({ url: src.url, timeoutMs: 12000 });
+      if (res.status !== 200) { lastErr = 'HTTP ' + res.status + ' @ ' + src.url; continue; }
       const doc = JSON.parse(res.body ? res.body.toString('utf-8') : '') as CuratedDoc;
-      if (!doc || !Array.isArray(doc.plugins)) { lastErr = '格式非法 @ ' + url; continue; }
+      if (!doc || !Array.isArray(doc.plugins)) { lastErr = '格式非法 @ ' + src.url; continue; }
       const items = doc.plugins.map(normalizeCurated).filter(Boolean) as MarketItem[];
       try {
         fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
-        fs.writeFileSync(cacheFile, JSON.stringify({ cachedAt: new Date(now).toISOString(), doc }, null, 2), 'utf-8');
+        fs.writeFileSync(cacheFile, JSON.stringify({ cachedAt: new Date(now).toISOString(), doc, source: src }, null, 2), 'utf-8');
       } catch { /* 缓存写失败不影响本次 */ }
-      return { success: true, items, categories: doc.categories || {}, updatedAt: doc.updated || '', fromCache: false };
+      return { success: true, items, categories: doc.categories || {}, updatedAt: doc.updated || '', fromCache: false, source: src };
     } catch (err: any) {
       lastErr = (err && err.message) ? err.message : String(err);
     }
@@ -641,9 +653,9 @@ async function fetchCurated(opts: {
   const stale = readCuratedCache(cacheFile);
   if (stale) {
     const items = (stale.doc.plugins || []).map(normalizeCurated).filter(Boolean) as MarketItem[];
-    return { success: true, items, categories: stale.doc.categories || {}, updatedAt: stale.doc.updated || '', fromCache: true, error: '目录源不可达，显示缓存' };
+    return { success: true, items, categories: stale.doc.categories || {}, updatedAt: stale.doc.updated || '', fromCache: true, source: stale.source, error: '目录源不可达，显示缓存' };
   }
-  return { success: false, items: [], categories: {}, updatedAt: '', fromCache: false, error: lastErr || '目录不可达' };
+  return { success: false, items: [], categories: {}, updatedAt: '', fromCache: false, source: null, error: lastErr || '目录不可达' };
 }
 
 export {
