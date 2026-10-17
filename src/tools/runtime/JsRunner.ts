@@ -1,28 +1,31 @@
 /**
- * JsRunner - 在受限的 Node vm 沙箱中执行 AI 生成的 JavaScript 工具代码
+ * JsRunner - 在独立 OS 进程的 Node vm 沙箱中执行 AI 生成的 JavaScript 工具代码（A-005）
  *
- * 设计要点：
- * - 通过 vm.createContext 创建沙箱，禁用字符串代码生成（eval / Function 构造器均被禁用）
- * - AI 代码无法访问 require / process / global 等 Node 能力，只能使用注入的工具函数
- * - 工具函数（read / readLines / write / edit / glob / grep / bash / deleteFile / log）
- *   通过唯一的 __hostBridge 桥接函数回到主进程执行，宿主函数从不向沙箱抛出宿主对象
- * - 每个工具调用都带执行截止时间检查，防止死循环；整体运行有 60 秒超时
+ * 与旧版的本质区别：AI 代码不再跑在主进程事件循环里。
+ * - 每次 run 用 child_process.fork 启动一个独立 worker（js-sandbox-worker.mjs），
+ *   worker 内用 vm.createContext 跑脚本；run 结束（done/error/超时/进程崩溃）即 kill 该 OS 进程。
+ * - 异步微任务死循环（while(true){ await Promise.resolve() }）不再饿死主进程事件循环：
+ *   主进程看门狗到点直接 SIGKILL worker 进程，主进程窗口/IPC 全程可响应。
+ * - 工具仍在主进程执行：worker 的 __hostBridge 把 {op,argsJson} 通过 IPC 发回主进程，
+ *   主进程 registry.get(op).execute(...) 跑完把结果 JSON 回送。
+ * - worker 不 import 任何 src/TS；bootstrap 脚本由主进程拼好随 run 消息下发。
  */
 
-import vm from 'node:vm';
+import { fork } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { TOOL_BOOTSTRAP } from './bootstrap.generated.js';
+import { buildBootstrapScript, buildDynamicToolsBootstrap } from './bootstrap-build.js';
 import { logRun, ToolFailure } from '../../infra/tool-error-log.js';
 import { scanRules, getScopedRules, getInjectedSet, markInjected } from '../../rules/index.js';
 import { getPluginScanRoots } from '../../plugins/roots.js';
 import { matchRulesForPath } from '../../rules/matcher.js';
 import { renderRuleFull, renderRulePointer } from '../../rules/prompt.js';
 
-// 同步执行超时（vm timeout，覆盖无 await 的死循环）
+// 同步执行超时（worker 内 vm timeout，覆盖无 await 的死循环）
 const SYNC_TIMEOUT = 30 * 1000;
 // "无活动"截止时间：距最后一次工具调用超过这么久才判超时。
 // 每次工具调用都续命，故合法长任务（多次调用）不会误杀；
-// 异步死循环（如 while(true){ await sleep() }）不经过工具桥接 → 无续命 → 仍会被兜底。
+// 异步死循环不经过工具桥接 → 无续命 → 主进程看门狗兜底杀进程。
 const RUN_DEADLINE = 60 * 1000;
 // 固定长任务工具：自身有独立等待/超时兜底（子代理默认 10 分钟）
 const LONG_TASK_TOOLS = new Set(['runAgent', 'runAgents']);
@@ -31,7 +34,7 @@ const SHELL_TOOLS = new Set(['bash', 'pwsh']);
 
 /**
  * 判断某次工具调用是否属于"长任务"——执行期间暂停脚本的无活动看门狗，
- * 避免脚本 60 秒 deadline 误杀自身有更长超时的工具。
+ * 避免脚本 deadline 误杀自身有更长超时的工具。
  * @param op 工具名
  * @param args 工具参数
  * @param deadlineMs 脚本无活动 deadline（RUN_DEADLINE）
@@ -48,64 +51,13 @@ function isLongRunningTool(op: string, args: any, deadlineMs: number): boolean {
 const OUTPUT_LIMIT = 20000;
 
 /**
- * 沙箱初始化脚本：在沙箱上下文内定义所有工具函数
- * 注意：该脚本运行在沙箱 realm 内，其抛出的 Error 也是沙箱 realm 对象，无逃逸风险
- */
-const BOOTSTRAP = [
-"'use strict';",
-"(function () {",
-"  globalThis.__logs = [];",
-"",
-"  function __stringify(value) {",
-"    if (typeof value === 'string') return value;",
-"    try { return JSON.stringify(value, null, 2); } catch (e) { return String(value); }",
-"  }",
-"",
-"  globalThis.log = function () {",
-"    var parts = [];",
-"    for (var i = 0; i < arguments.length; i++) parts.push(__stringify(arguments[i]));",
-"    globalThis.__logs.push(parts.join(' '));",
-"  };",
-"",
-"  globalThis.projectDir = __projectDir;",
-"",
-"  // 计时器：沙箱原本没有 setTimeout/sleep，AI 常用它们做等待",
-"  globalThis.sleep = function (ms) {",
-"    return new Promise(function (resolve) { __hostSetTimeout(resolve, ms || 0); });",
-"  };",
-"  globalThis.setTimeout = function (fn, ms) {",
-"    var extra = Array.prototype.slice.call(arguments, 2);",
-"    return __hostSetTimeout(function () { fn.apply(null, extra); }, ms || 0);",
-"  };",
-"  globalThis.clearTimeout = function (id) { __hostClearTimeout(id); };",
-"",
-"  async function __call(name, args) {",
-"    var resText = await __hostBridge(name, JSON.stringify(args == null ? {} : args));",
-"    var res;",
-"    try { res = JSON.parse(resText); } catch (e) { throw new Error('工具结果解析失败: ' + e.message); }",
-"    if (!res || res.success !== true) {",
-"      throw new Error((res && res.error) || ('工具 ' + name + ' 执行失败'));",
-"    }",
-"    return res.data;",
-"  }",
-"",
-TOOL_BOOTSTRAP,
-"",
-"  if (!globalThis.projectDir) {",
-"    globalThis.log('[提示] 尚未初始化项目目录，相对路径将基于系统目录解析。可点击覆盖层“初始化项目”。');",
-"  }",
-"})();",
-"",
-].join('\n');
-
-/**
  * 把 read 的文件路径转成"项目内相对路径（正斜杠）"。
  * 绝对路径 → 相对 projectDir；相对路径 → 原样（去盘符/前导 ./）。
  */
 function toProjectRelPath(filePath: any, projectDir: any): string | null {
   if (!filePath || typeof filePath !== 'string') return null;
   let p = filePath.replace(/\\/g, '/');
-  if (path.isAbsolute(filePath) || /^[a-zA-Z]:/.test(p)) {
+  if (/^[a-zA-Z]:/.test(p) || p.startsWith('/')) {
     if (!projectDir) return null;
     const abs = path.resolve(filePath);
     const rel = path.relative(projectDir, abs).replace(/\\/g, '/');
@@ -113,38 +65,6 @@ function toProjectRelPath(filePath: any, projectDir: any): string | null {
   }
   // 相对路径
   return p.replace(/^\.\//, '');
-}
-
-/** 合法 JS 标识符（防注入：插件工具名/参数名来自不可信插件） */
-const JS_IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
-
-/**
- * 为"运行时动态工具"（插件工具）生成沙箱注入代码。
- * 每个工具生成 globalThis.<name> = async function(...) { return await __call('<name>', {...}) }
- * @returns 注入代码；无动态工具时返回空串
- */
-function buildDynamicToolsBootstrap(registry: any): string {
-  if (!registry || typeof registry.getDynamicTools !== 'function') return '';
-  const tools = registry.getDynamicTools();
-  if (!tools || tools.length === 0) return '';
-  // 用暴露的 __hostBridge（沙箱 globalThis 上）——不能依赖 BOOTSTRAP IIFE 内的局部 __call
-  const lines: string[] = ['(function () {', "'use strict';"];
-  for (const tool of tools) {
-    const name = tool.name;
-    if (!JS_IDENT_RE.test(name)) continue; // 非法标识符，跳过
-    const props = Object.keys((tool.parameters && tool.parameters.properties) || {})
-      .filter((p) => JS_IDENT_RE.test(p));
-    const params = props.join(', ');
-    const argsObj = props.map((p) => p + ': ' + p).join(', ');
-    lines.push('  globalThis.' + name + ' = async function (' + params + ') {');
-    lines.push('    var resText = await globalThis.__hostBridge(' + JSON.stringify(name) + ', JSON.stringify({ ' + argsObj + ' }));');
-    lines.push('    var res; try { res = JSON.parse(resText); } catch (e) { throw new Error("工具结果解析失败: " + e.message); }');
-    lines.push('    if (!res || res.success !== true) { throw new Error((res && res.error) || "工具 ' + name + ' 执行失败"); }');
-    lines.push('    return res.data;');
-    lines.push('  };');
-  }
-  lines.push('})();');
-  return lines.join('\n');
 }
 
 /**
@@ -162,23 +82,41 @@ function safeStringify(value: any): string {
   }
 }
 
+export interface JsRunnerOptions {
+  /** 同步 vm 超时（默认 30s；测试可注入小值） */
+  syncTimeoutMs?: number;
+  /** 无活动 deadline（默认 60s；测试可注入小值） */
+  deadlineMs?: number;
+  /** 测试用：覆盖 worker 脚本路径（验证 worker 崩溃路径） */
+  workerPath?: string;
+}
+
 class JsRunner {
   registry: any;
+  syncTimeoutMs: number;
+  deadlineMs: number;
+  workerPath?: string;
+  /** 当前/最近一次 run 的 worker pid（测试探活用） */
+  activeWorkerPid: number | null = null;
 
   /**
    * @param registry 工具注册表
+   * @param options 可选；测试注入短超时用（syncTimeoutMs/deadlineMs）
    */
-  constructor(registry: any) {
+  constructor(registry: any, options: JsRunnerOptions = {}) {
     this.registry = registry;
+    this.syncTimeoutMs = typeof options.syncTimeoutMs === 'number' ? options.syncTimeoutMs : SYNC_TIMEOUT;
+    this.deadlineMs = typeof options.deadlineMs === 'number' ? options.deadlineMs : RUN_DEADLINE;
+    this.workerPath = options.workerPath;
   }
 
   /**
-   * 执行 AI 生成的 JS 工具代码
-   * @param {string} code - AI 生成的 JavaScript 代码（无需函数包裹，支持顶层 await）
-   * @param {string|null} projectDir - 当前项目目录（相对路径基准）
-   * @param {number|null} windowId - 当前对话窗口 id（attachFile 等需要窗口上下文的工具使用）
-   * @param {object} [settings] - 附加设置（attachDelayMin/attachDelayMax 等），透传给工具
-   * @returns {Promise<{success: boolean, output?: string, error?: string}>}
+   * 执行 AI 生成的 JS 工具代码（在独立 worker 进程中）
+   * @param code AI 生成的 JavaScript（支持顶层 await）
+   * @param projectDir 当前项目目录（相对路径基准）
+   * @param windowId 当前对话窗口 id（attachFile 等需要窗口上下文的工具使用）
+   * @param settings 附加设置（attachDelayMin/sessionId 等），透传给工具
+   * @returns {Promise<{success, output?, error?}>}
    */
   async run(code: any, projectDir: any, windowId: any, settings: any): Promise<{ success: boolean; output?: string; error?: string }> {
     if (!code || typeof code !== 'string' || !code.trim()) {
@@ -186,179 +124,136 @@ class JsRunner {
     }
 
     const startTime = Date.now();
-    const deadlineMs = RUN_DEADLINE;
-    // 最后一次"活动"时间（每次工具调用刷新）；deadline 基于它，而非脚本起点
-    let lastActivity = startTime;
-    // 正在执行的长任务数（>0 时暂停 deadline 检查）
+    const deadlineMs = this.deadlineMs;
+    let lastActivity = Date.now();
     let longTaskRunning = 0;
-    // 收集本次脚本里"工具级失败"（供开发版错误日志）
     const toolFailures: ToolFailure[] = [];
-    // 本次脚本 read 过的文件（项目内相对路径，正斜杠）——供规则注入
     const readFiles: string[] = [];
 
-    // 唯一跨域桥接函数：AI 代码中的每个工具调用都通过它回到主进程执行。
-    // 注意：该函数绝不向沙箱抛出宿主对象（错误一律包装成 { success:false, error } 结果），
-    // 避免沙箱内出现宿主 realm 的 Error / Function 逃逸通道。
-    const hostBridge = async (op: any, argsJson: any) => {
-      lastActivity = Date.now(); // 每次工具调用续命
-      let args = {};
-      try {
-        args = JSON.parse(argsJson || '{}');
-      } catch (e) {
-        args = {};
-      }
-      // 长任务判定（固定白名单 + 显式长超时命令），执行期间暂停脚本 deadline
-      const isLongTask = isLongRunningTool(op, args, deadlineMs);
-      if (isLongTask) longTaskRunning++;
-
-      let result;
-      const tool = this.registry.get(op);
-      if (!tool) {
-        result = { success: false, error: '未知工具: ' + op };
-        toolFailures.push({ tool: op || 'unknown', args: args, error: result.error });
-      } else {
-        try {
-          result = await tool.execute(Object.assign({}, settings || {}, args, { projectDir, currentWindowId: windowId }));
-          if (result && result.success === false) {
-            toolFailures.push({ tool: op, args: args, error: result.error || '未知错误' });
-          } else if (op === 'read' && result && result.success !== false) {
-            // 记录本次读过的文件（项目内相对路径），供规则注入
-            const rel = toProjectRelPath((args as any) && (args as any).filePath, projectDir);
-            if (rel) readFiles.push(rel);
-          }
-        } catch (err: any) {
-          result = { success: false, error: '工具 ' + op + ' 执行异常: ' + (err.message || String(err)) };
-          toolFailures.push({ tool: op, args: args, error: result.error });
-        }
-      }
-      if (isLongTask) longTaskRunning = Math.max(0, longTaskRunning - 1);
-      lastActivity = Date.now(); // 工具返回后也续命
-      return JSON.stringify(result);
-    };
-
-    // 沙箱内的计时器句柄（脚本结束时统一清理，避免残留定时器）
-    const sandboxTimers = new Set<any>();
-    const hostSetTimeout = (fn: any, ms: any) => {
-      const h = setTimeout(() => { try { fn(); } catch (_) { /* 回调异常忽略 */ } }, ms);
-      sandboxTimers.add(h);
-      return h;
-    };
-    const hostClearTimeout = (h: any) => { if (h) { clearTimeout(h); sandboxTimers.delete(h); } };
-
-    // ========== 沙箱构建与加固 ==========
-    const sandbox = {};
-    Object.defineProperty(sandbox, '__hostBridge', {
-      value: hostBridge, enumerable: true, writable: false, configurable: false,
-    });
-    Object.defineProperty(sandbox, '__projectDir', {
-      value: projectDir || null, enumerable: true, writable: false, configurable: false,
-    });
-    Object.defineProperty(sandbox, '__hostSetTimeout', {
-      value: hostSetTimeout, enumerable: true, writable: false, configurable: false,
-    });
-    Object.defineProperty(sandbox, '__hostClearTimeout', {
-      value: hostClearTimeout, enumerable: true, writable: false, configurable: false,
-    });
-    // 截断沙箱对象与桥接函数的原型链，阻止经 constructor/__proto__ 逃逸到宿主 realm
-    try { Object.setPrototypeOf(sandbox, null); } catch (e) { /* 尽力而为 */ }
-    try { Object.setPrototypeOf(hostBridge, null); } catch (e) { /* 尽力而为 */ }
-
-    let context: any;
+    // ========== 启动独立 worker 进程 ==========
+    const workerPath = this.workerPath || fileURLToPath(new URL('./js-sandbox-worker.mjs', import.meta.url));
+    let child;
     try {
-      context = vm.createContext(sandbox, {
-        codeGeneration: { strings: false, wasm: false },
-        name: 'cuckoo-js-sandbox',
-      });
-    } catch (err) {
-      // 兜底：极少数环境下 null 原型沙箱不可用
-      const fallback: any = {};
-      fallback.__hostBridge = hostBridge;
-      fallback.__projectDir = projectDir || null;
-      fallback.__hostSetTimeout = hostSetTimeout;
-      fallback.__hostClearTimeout = hostClearTimeout;
-      context = vm.createContext(fallback, {
-        codeGeneration: { strings: false, wasm: false },
-        name: 'cuckoo-js-sandbox',
-      });
-    }
-
-    try {
-      vm.runInContext(BOOTSTRAP, context, { filename: 'cuckoo-js-api.js' });
-      // 动态注入插件工具（运行时工具，非构建期固定）
-      const dynCode = buildDynamicToolsBootstrap(this.registry);
-      if (dynCode) {
-        vm.runInContext(dynCode, context, { filename: 'cuckoo-plugin-tools.js' });
-      }
+      child = fork(workerPath, [], { stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
+      this.activeWorkerPid = child.pid || null;
     } catch (err: any) {
-      return { success: false, error: '沙箱初始化失败: ' + (err.message || String(err)) };
+      return { success: false, error: '无法启动沙箱进程: ' + (err.message || String(err)) };
     }
 
-    // 包装为 async IIFE：支持顶层 await、return 返回值
-    const script = new vm.Script('(async () => {\n' + code + '\n})()', { filename: 'cuckoo-js-tool-script.js' });
+    let settled = false;
+    let resolveOuter: (r: { success: boolean; output?: string; error?: string }) => void;
+    const promise = new Promise<{ success: boolean; output?: string; error?: string }>((res) => { resolveOuter = res; });
 
-    let settleTimer: any = null;
-    try {
-      // 动态 deadline：距上次"活动"超过 deadlineMs 且无长任务在跑时才超时
-      const deadline = new Promise((_resolve, reject) => {
-        const check = () => {
-          if (longTaskRunning === 0 && Date.now() - lastActivity > deadlineMs) {
-            reject(new Error('JS 脚本执行超时（' + Math.round(deadlineMs / 1000) + ' 秒无活动）'));
+    const killWorker = () => {
+      try { child.kill('SIGKILL'); } catch (_) { /* 已退出 */ }
+    };
+
+    const watchdog = setInterval(() => {
+      if (!settled && longTaskRunning === 0 && Date.now() - lastActivity > deadlineMs) {
+        killWorker();
+        finish({ success: false, error: 'JS 脚本执行超时（' + Math.round(deadlineMs / 1000) + ' 秒无活动）' }, 'timeout');
+      }
+    }, 500);
+    if (typeof (watchdog as any).unref === 'function') (watchdog as any).unref();
+
+    function finish(result: { success: boolean; output?: string; error?: string }, _reason: string, _logs?: any[]) {
+      if (settled) return;
+      settled = true;
+      clearInterval(watchdog);
+      killWorker();
+      resolveOuter(result);
+    }
+
+    child.on('message', async (msg: any) => {
+      if (!msg || typeof msg !== 'object') return;
+      try {
+        if (msg.type === 'tool-call') {
+          lastActivity = Date.now(); // 工具调用续命
+          let args: any = {};
+          try { args = JSON.parse(msg.argsJson || '{}'); } catch (_) { args = {}; }
+          const isLongTask = isLongRunningTool(msg.op, args, deadlineMs);
+          if (isLongTask) longTaskRunning++;
+
+          let result;
+          const tool = this.registry.get(msg.op);
+          if (!tool) {
+            result = { success: false, error: '未知工具: ' + msg.op };
+            toolFailures.push({ tool: msg.op || 'unknown', args: args, error: result.error });
           } else {
-            settleTimer = setTimeout(check, 1000);
+            try {
+              result = await tool.execute(Object.assign({}, settings || {}, args, { projectDir, currentWindowId: windowId }));
+              if (result && result.success === false) {
+                toolFailures.push({ tool: msg.op, args: args, error: result.error || '未知错误' });
+              } else if (msg.op === 'read' && result && result.success !== false) {
+                const rel = toProjectRelPath(args.filePath, projectDir);
+                if (rel) readFiles.push(rel);
+              }
+            } catch (err: any) {
+              result = { success: false, error: '工具 ' + msg.op + ' 执行异常: ' + (err.message || String(err)) };
+              toolFailures.push({ tool: msg.op, args: args, error: result.error });
+            }
           }
-        };
-        settleTimer = setTimeout(check, 1000);
+          if (isLongTask) longTaskRunning = Math.max(0, longTaskRunning - 1);
+          lastActivity = Date.now(); // 工具返回也续命
+          try {
+            child.send({ type: 'tool-result', runId: msg.runId, seq: msg.seq, resultJson: JSON.stringify(result) });
+          } catch (_) { /* worker 已死 */ }
+        } else if (msg.type === 'done') {
+          const logs = Array.isArray(msg.logs) ? msg.logs : [];
+          const parts: string[] = [];
+          if (logs.length > 0) parts.push(logs.join('\n'));
+          const ret = msg.returnValue;
+          if (ret !== undefined && ret !== null) {
+            parts.push(typeof ret === 'string' ? ret : safeStringify(ret));
+          }
+          let output = parts.filter(Boolean).join('\n\n');
+
+          // 规则注入（有 paths 的规则，read 命中时）
+          const rulesInjection = buildRulesInjection(readFiles, projectDir, settings);
+          if (rulesInjection) output = rulesInjection + '\n\n' + output;
+          if (output.length > OUTPUT_LIMIT) {
+            output = output.slice(0, OUTPUT_LIMIT) + '\n...[输出过长已截断]...';
+          }
+          logRun(code, toolFailures, null, { projectDir: projectDir || '(未设置)', windowId: windowId, 耗时ms: Date.now() - startTime });
+          finish({ success: true, output: output || '(脚本执行完成，无输出)\n如需输出请使用 log() 方法' }, 'done', logs);
+        } else if (msg.type === 'error') {
+          const errMsg = msg.message || '未知错误';
+          const fromTool = toolFailures.length > 0 && toolFailures.some((f) => errMsg.indexOf(f.error) !== -1);
+          logRun(code, toolFailures, fromTool ? null : errMsg, { projectDir: projectDir || '(未设置)', windowId: windowId, 耗时ms: Date.now() - startTime });
+          finish({ success: false, error: errMsg }, 'error', []);
+        }
+      } catch (err: any) {
+        finish({ success: false, error: 'worker 消息处理异常: ' + (err.message || String(err)) }, 'error', []);
+      }
+    });
+
+    child.on('exit', (code: number | null) => {
+      if (!settled) {
+        finish({ success: false, error: '沙箱进程意外退出 (code=' + code + ')' }, 'exit', []);
+      }
+    });
+    child.on('error', (err: any) => {
+      if (!settled) {
+        finish({ success: false, error: '沙箱进程错误: ' + (err.message || String(err)) }, 'error', []);
+      }
+    });
+
+    // 下发 run 消息
+    try {
+      child.send({
+        type: 'run',
+        runId: 1,
+        code: code,
+        projectDir: projectDir || null,
+        bootstrapScript: buildBootstrapScript(),
+        dynamicToolsScript: buildDynamicToolsBootstrap(this.registry),
+        syncTimeoutMs: this.syncTimeoutMs,
       });
-
-      const ret = await Promise.race([script.runInContext(context, { timeout: SYNC_TIMEOUT }), deadline]);
-
-      // 收集 log() 输出
-      let logs: any[] = [];
-      try {
-        const logsJson = vm.runInContext('JSON.stringify(globalThis.__logs || [])', context);
-        logs = JSON.parse(logsJson);
-      } catch (e) { /* 忽略日志收集失败 */ }
-
-      const parts = [];
-      if (Array.isArray(logs) && logs.length > 0) {
-        parts.push(logs.join('\n'));
-      }
-      if (ret !== undefined && ret !== null) {
-        parts.push(typeof ret === 'string' ? ret : safeStringify(ret));
-      }
-
-      let output = parts.filter(Boolean).join('\n\n');
-
-      // ===== 规则注入（有 paths 的规则，read 命中时）=====
-      const rulesInjection = buildRulesInjection(readFiles, projectDir, settings);
-      if (rulesInjection) {
-        // 拼在输出开头（截断切尾，开头必保留）
-        output = rulesInjection + '\n\n' + output;
-      }
-
-      if (output.length > OUTPUT_LIMIT) {
-        output = output.slice(0, OUTPUT_LIMIT) + '\n...[输出过长已截断]...';
-      }
-
-      // 开发版：记录本次脚本里所有工具级失败（无工具失败则不写）
-      logRun(code, toolFailures, null, { projectDir: projectDir || '(未设置)', windowId: windowId, 耗时ms: Date.now() - startTime });
-      return { success: true, output: output || '(脚本执行完成，无输出)\n如需输出请使用 log() 方法' };
     } catch (err: any) {
-      console.error('[JsRunner] 脚本执行失败:', err && err.stack ? err.stack : String(err));
-      console.error('[JsRunner] [诊断] 失败代码(JSON转义): ' + JSON.stringify(code));
-      const errMsg = err && err.message ? err.message : String(err);
-      // 区分"脚本级失败"与"工具引起的失败"：
-      // 若该错误正是某次工具失败抛出的（工具失败已单独记到 <工具名>.log），
-      // 则不再重复写 _script.log；只有纯脚本级错误（语法/超时/沙箱）才写。
-      const fromTool = toolFailures.length > 0 && toolFailures.some((f) => errMsg.indexOf(f.error) !== -1);
-      logRun(code, toolFailures, fromTool ? null : errMsg, { projectDir: projectDir || '(未设置)', windowId: windowId, 耗时ms: Date.now() - startTime });
-      return { success: false, error: errMsg };
-    } finally {
-      if (settleTimer) clearTimeout(settleTimer);
-      // 清理沙箱内遗留的计时器
-      for (const h of sandboxTimers) clearTimeout(h);
-      sandboxTimers.clear();
+      finish({ success: false, error: '无法下发脚本: ' + (err.message || String(err)) }, 'error', []);
     }
+
+    return promise;
   }
 }
 
@@ -397,6 +292,3 @@ function buildRulesInjection(readFiles: string[], projectDir: any, settings: any
 }
 
 export { JsRunner, isLongRunningTool };
-
-
-
