@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import * as profileManager from '../profile.js';
 import { showSystemNotification } from '../notification-window.js';
+import { assertSenderOk } from '../ipc-guard.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -93,6 +94,8 @@ function registerRendererIpc(): void {
 
   // 站点原生发送：向聚焦输入框注入真实级 Enter（智谱只响应 isTrusted=true 的输入，合成事件免疫）
   ipcMain.handle('chat-send-enter', async (event: any) => {
+    // X-001 第一层：仅合法 AI 页/自有窗口可注入输入事件
+    if (!assertSenderOk(event).ok) return false;
     const sender = event.sender;
     if (!sender || sender.isDestroyed()) return false;
     try {
@@ -109,6 +112,7 @@ function registerRendererIpc(): void {
   // 模拟真实鼠标事件（isTrusted=true），用于需要原生点击的站点
   // action: 'move' | 'click'；x/y 为相对视口的 CSS 像素坐标
   ipcMain.handle('simulate-mouse', async (event: any, { action, x, y }: any = {}) => {
+    if (!assertSenderOk(event).ok) return false;
     const sender = event.sender;
     if (!sender || sender.isDestroyed()) return false;
     const px = Math.round(Number(x) || 0);

@@ -18,6 +18,7 @@ import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import * as taskManager from '../../infra/task-manager.js';
 import { isDangerous } from '../../infra/dangerous-commands.js';
+import { guardExecutionCall } from '../ipc-guard.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -62,6 +63,11 @@ function registerTaskIpc(): void {
       if (!trimmed) return { success: false, error: '命令为空' };
       if (isDangerous(trimmed)) {
         return { success: false, error: '命令被安全策略拒绝（危险命令）' };
+      }
+      // X-001：host 校验 + 按命令算投递特征过策略闸（task 会 spawn 命令）
+      const guard = await guardExecutionCall(event, 'tool', { toolName: 'bash', params: { command: trimmed } });
+      if (!guard.pass) {
+        return { success: false, error: guard.error ? guard.error.error : '已拒绝执行任务' };
       }
       const cwd = getProjectRoot(event) || process.env.USERPROFILE || process.cwd();
       const src = source === 'script' ? 'script' : 'manual';

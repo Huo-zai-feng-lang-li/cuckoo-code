@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { getProviderByUrl, getProvider } from '../../providers/registry.js';
 import { initProject } from '../../session/project-context.js';
+import { assertSenderOk } from '../ipc-guard.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain, shell } = require('electron');
@@ -57,6 +58,8 @@ const watcherBoundWc = new Set<number>(); // 已绑定 destroyed 的 wcId（避�
 
 function clearFileWatcher(wcId: number): void {
   const w = fileWatchers.get(wcId);
+  // C-008：watcher 清理时一并摘除 destroyed 绑定标记（否则 wcId 残留 Set）
+  watcherBoundWc.delete(wcId);
   if (!w) return;
   try { w.watcher.close(); } catch (_) {}
   if (w.timer) { try { clearTimeout(w.timer); } catch (_) {} }
@@ -122,6 +125,8 @@ function registerSessionIpc(): void {
 
   // 写入项目文件内容（编辑器保存；原子写入 + 防目录穿越 + 文本校验）
   ipcMain.handle('write-project-file', async (event: any, { relPath, content }: any) => {
+    // X-001 第一层：副作用面硬来源校验（host 白名单，无感）
+    if (!assertSenderOk(event).ok) return { success: false, error: '来源校验失败' };
     const ctx = windowState.getContextByWebContents(event.sender);
     const store = ctx ? ctx.sessionStore : null;
     const rootDir = (store && store.state && store.state.selectedProjectDir) || null;
@@ -156,6 +161,7 @@ function registerSessionIpc(): void {
 
   // 新建文件/文件夹（parentRel 为空=项目根）
   ipcMain.handle('create-project-entry', async (event: any, { parentRel, name, isDir }: any) => {
+    if (!assertSenderOk(event).ok) return { success: false, error: '来源校验失败' };
     const ctx = windowState.getContextByWebContents(event.sender);
     const store = ctx ? ctx.sessionStore : null;
     if (!name || typeof name !== 'string' || /[\\/:*?"<>|]/.test(name) || name === '.' || name === '..') {
@@ -176,6 +182,7 @@ function registerSessionIpc(): void {
 
   // 重命名（文件或目录）
   ipcMain.handle('rename-project-entry', async (event: any, { relPath, newName }: any) => {
+    if (!assertSenderOk(event).ok) return { success: false, error: '来源校验失败' };
     const ctx = windowState.getContextByWebContents(event.sender);
     const store = ctx ? ctx.sessionStore : null;
     if (!relPath || typeof relPath !== 'string') return { success: false, error: '缺少路径' };
@@ -199,6 +206,7 @@ function registerSessionIpc(): void {
 
   // 删除（走系统回收站，可恢复）
   ipcMain.handle('delete-project-entry', async (event: any, { relPath }: any) => {
+    if (!assertSenderOk(event).ok) return { success: false, error: '来源校验失败' };
     const ctx = windowState.getContextByWebContents(event.sender);
     const store = ctx ? ctx.sessionStore : null;
     if (!relPath || typeof relPath !== 'string') return { success: false, error: '缺少路径' };
@@ -394,8 +402,33 @@ function registerSessionIpc(): void {
   });
 
   // 取项目目录信息（全路径 + 创建时间），供侧边栏悬停卡片
-  ipcMain.handle('get-dir-info', async (_event: any, { dir }: any) => {
-    if (!dir) return { success: false, error: 'no-dir' };
+  // C-005 收口：仅允许 stat 当前窗口项目根或会话账本登记过的项目目录，
+  // 不再对任意路径 stat（防 shell XSS 后枚举文件系统）。
+  ipcMain.handle('get-dir-info', async (event: any, { dir }: any) => {
+    if (!dir || typeof dir !== 'string') return { success: false, error: 'no-dir' };
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const store = ctx ? ctx.sessionStore : null;
+    const roots: string[] = [];
+    const cur = store && store.state && store.state.selectedProjectDir;
+    if (cur) roots.push(cur);
+    if (store && typeof store.readSessionStore === 'function') {
+      try {
+        const all = store.readSessionStore();
+        for (const v of Object.values(all)) {
+          const d = typeof v === 'string' ? v : (v && typeof v === 'object' ? (v as any).projectDir : null);
+          if (typeof d === 'string' && d) roots.push(d);
+        }
+      } catch (_) { /* 账本读取失败就只允许当前根 */ }
+    }
+    let abs: string;
+    try { abs = path.resolve(dir); } catch (_) { return { success: false, error: '非法路径' }; }
+    const inScope = roots.some((r) => {
+      try {
+        const rr = path.resolve(r);
+        return abs === rr || abs.startsWith(rr + path.sep);
+      } catch (_) { return false; }
+    });
+    if (!inScope) return { success: false, error: '路径不在允许范围' };
     try {
       const st = fs.statSync(dir);
       const bt = st.birthtime && st.birthtime.getTime() > 0 ? st.birthtime.toISOString() : null;

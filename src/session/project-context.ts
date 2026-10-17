@@ -7,6 +7,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import * as windowState from '../app/window.js';
 import { buildPrompt, PROMPT_DIR } from './prompt-builder.js';
+import { ensureWorkspaceTrust } from '../app/workspace-trust-prompt.js';
 
 const require = createRequire(import.meta.url);
 const { app, dialog } = require('electron');
@@ -158,6 +159,22 @@ async function initProject(skipPrompt: boolean = false, windowContext: any = nul
 
   // 记录"上次项目目录"（全局，供下次目录选择框默认定位）
   if (selectedDir) writeLastProjectDir(selectedDir);
+
+  // ========== 工作区信任门（D-002+D-004）：选定目录后、buildPrompt / MCP 连接前 ==========
+  if (selectedDir) {
+    if (noDialog || presetDir) {
+      // 自动场景（子代理 noDialog / 压缩 presetDir）：不弹窗；
+      // 未信任项目按"不信任"处理——项目级 MCP/规则/技能由消费者侧过滤（数据层另有兜底）
+      console.log('[Cuckoo Code] 自动初始化场景：信任门不弹窗，按现有信任记录处理');
+    } else {
+      try {
+        const trust = await ensureWorkspaceTrust(mainWindow, selectedDir);
+        console.log('[Cuckoo Code] 工作区信任门结果:', trust.scope);
+      } catch (err: any) {
+        console.warn('[Cuckoo Code] 信任门异常，按不信任处理:', err && err.message);
+      }
+    }
+  }
 
   // 每个项目的约定：确保 .agents/handoff.md 存在（不存在则建空模板）
   ensureAgentsHandoff(selectedDir);

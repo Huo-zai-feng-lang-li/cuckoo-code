@@ -9,6 +9,7 @@
 import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { listSnapshots, createSnapshot, restoreSnapshot, deleteSnapshot } from '../snapshots.js';
+import { assertSenderOk } from '../ipc-guard.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -24,7 +25,8 @@ function registerSnapshotIpc(): void {
     }
   });
 
-  ipcMain.handle('create-snapshot', async (_event: any, { projectDir, name, description }: any) => {
+  ipcMain.handle('create-snapshot', async (event: any, { projectDir, name, description }: any) => {
+    if (!assertSenderOk(event).ok) return { success: false, error: '来源校验失败' };
     try {
       const m = createSnapshot(projectDir, name, description || '');
       return { success: true, snapshot: m };
@@ -33,7 +35,9 @@ function registerSnapshotIpc(): void {
     }
   });
 
-  ipcMain.handle('restore-snapshot', async (_event: any, { id }: any) => {
+  ipcMain.handle('restore-snapshot', async (event: any, { id }: any) => {
+    // restore 是写操作：硬来源校验（host 白名单）
+    if (!assertSenderOk(event).ok) return { success: false, error: '来源校验失败' };
     try {
       const r = restoreSnapshot(id);
       return { success: true, restored: r.restored, projectDir: r.projectDir };

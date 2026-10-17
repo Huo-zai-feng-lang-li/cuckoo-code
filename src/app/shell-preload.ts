@@ -297,6 +297,11 @@ const shellAPI = {
   resetSettings: () => ipcRenderer.invoke('reset-settings'),
   getUiPrefs: () => ipcRenderer.invoke('get-ui-prefs'),
   setUiPrefs: (data: any) => ipcRenderer.invoke('set-ui-prefs', { data }),
+  // ========== 安全 / 执行策略（X-001 第三层 + 工作区信任列表）==========
+  getExecutionPolicy: () => ipcRenderer.invoke('get-execution-policy'),
+  setExecutionPolicy: (mode: string) => ipcRenderer.invoke('set-execution-policy', { mode }),
+  getTrustedWorkspaces: () => ipcRenderer.invoke('get-trusted-workspaces'),
+  revokeWorkspaceTrust: (dir: string) => ipcRenderer.invoke('revoke-workspace-trust', { dir }),
 };
 
 try {

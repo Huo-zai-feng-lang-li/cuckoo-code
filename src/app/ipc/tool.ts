@@ -4,6 +4,7 @@
 import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { registry as toolRegistry, jsRunner } from '../../tools/index.js';
+import { guardExecutionCall } from '../ipc-guard.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -19,14 +20,24 @@ function resetTodosCache(): void {
 
 export { resetTodosCache };
 
+/** 从 ctx 解析项目目录 / windowId（ctx 为 null 时调用方应已拒绝） */
+function resolveCtx(ctx: any): { selectedDir: string | null; windowId: number | null } {
+  const store = ctx ? ctx.sessionStore : null;
+  const selectedDir = store ? store.state.selectedProjectDir : null;
+  const win = ctx ? ctx.win : null;
+  const windowId = win && !win.isDestroyed() ? win.id : null;
+  return { selectedDir, windowId };
+}
+
 function registerToolIpc(): void {
-  // 执行工具
+  // 执行工具（X-001：host 校验 + 策略闸；ctx 为 null 直接拒绝）
   ipcMain.handle('execute-tool', async (event: any, { toolName, params, callId }: any) => {
-    const ctx = windowState.getContextByWebContents(event.sender);
-    const store = ctx ? ctx.sessionStore : null;
-    const selectedDir = store ? store.state.selectedProjectDir : null;
-    const win = ctx ? ctx.win : null;
-    const windowId = win && !win.isDestroyed() ? win.id : null;
+    const guard = await guardExecutionCall(event, 'tool', { toolName, params });
+    if (!guard.pass) {
+      return { callId, success: false, error: guard.error ? guard.error.error : '已拒绝执行' };
+    }
+    const ctx = guard.ctx || windowState.getContextByWebContents(event.sender);
+    const { selectedDir, windowId } = resolveCtx(ctx);
     try {
       const result = await toolRegistry.execute(toolName, { ...params, projectDir: selectedDir, currentWindowId: windowId });
       return { callId, success: result.success, data: result.data, error: result.error };
@@ -35,12 +46,16 @@ function registerToolIpc(): void {
     }
   });
 
-  // 执行 JS 脚本
+  // 执行 JS 脚本（X-001：host 校验 + 策略闸；ctx 为 null 直接拒绝）
   ipcMain.handle('execute-js', async (event: any, { code, callId, attachDelayMin, attachDelayMax, ssrfGuard }: any) => {
     if (!code || typeof code !== 'string') {
       return { callId, success: false, error: '无效的 JS 代码' };
     }
-    const ctx = windowState.getContextByWebContents(event.sender);
+    const guard = await guardExecutionCall(event, 'js', { code });
+    if (!guard.pass) {
+      return { callId, success: false, error: guard.error ? guard.error.error : '已拒绝执行' };
+    }
+    const ctx = guard.ctx || windowState.getContextByWebContents(event.sender);
     const store = ctx ? ctx.sessionStore : null;
     const selectedDir = store ? store.state.selectedProjectDir : null;
     const sessionId = store ? store.state.currentSessionId : null;

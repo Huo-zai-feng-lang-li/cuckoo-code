@@ -15,6 +15,7 @@ import { scanRules, getUnscopedRules, buildUnscopedRulesSection } from '../rules
 import { getPluginScanRoots } from '../plugins/roots.js';
 import type { PluginScanRoots } from '../plugins/roots.js';
 import { buildMemorySection } from '../infra/memories.js';
+import { isWorkspaceTrusted } from '../infra/workspace-trust.js';
 // DSH 插件注册的提示词段（C4）
 import { getPromptSections as getDshPromptSections } from '../plugins/dsh-compat/prompt-sections.js';
 
@@ -137,6 +138,16 @@ function readProjectIntro(selectedDir: string): string {
 }
 
 /**
+ * 消费侧过滤（D-004 落地）：项目未在工作区信任门被信任时，
+ * 剔除 source==='project' 的规则/技能（用户级/插件级不受影响）。
+ * 数据层（mcp/config、skills/rules 扫描）另有兜底，这里是组装侧双保险。
+ */
+function filterProjectScoped<T extends { source?: string }>(items: T[], projectDir: string | null): T[] {
+  if (!projectDir || isWorkspaceTrusted(projectDir)) return items;
+  return items.filter((it) => !(it && it.source === 'project'));
+}
+
+/**
  * 组装完整的系统提示词。
  * @param opts { providerId, selectedDir, isCompaction }
  * @returns { prompt, error? }，error 存在时 prompt 为空
@@ -185,10 +196,10 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
     console.warn('[Cuckoo Code] 读取插件扫描根失败:', err && err.message ? err.message : String(err));
   }
 
-  const skillsSection = buildSkillsSection(scanSkills(selectedDir, pluginRoots.skillDirs));
+  const skillsSection = buildSkillsSection(filterProjectScoped(scanSkills(selectedDir, pluginRoots.skillDirs), selectedDir));
   const agentsSection = buildAgentsSection(scanAgents(selectedDir, pluginRoots.agentDirs));
   // 无 paths 的规则：始终注入（「## 项目规则」章节）
-  const rulesSection = buildUnscopedRulesSection(getUnscopedRules(scanRules(selectedDir, pluginRoots.ruleDirs)));
+  const rulesSection = buildUnscopedRulesSection(getUnscopedRules(filterProjectScoped(scanRules(selectedDir, pluginRoots.ruleDirs), selectedDir)));
   // 用户记忆（跨项目）：让模型了解用户习惯
   let memorySection = '';
   try { memorySection = buildMemorySection(); } catch (err: any) {

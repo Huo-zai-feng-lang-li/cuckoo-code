@@ -46,6 +46,7 @@ import {
 import { registry as toolRegistry } from '../../tools/index.js';
 import * as windowState from '../window.js';
 import * as mcpClient from '../../mcp/client.js';
+import { assertSenderOk } from '../ipc-guard.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain, shell, app } = require('electron');
@@ -277,7 +278,8 @@ function registerPluginIpc(): void {
 
   // ===== 安装 / 更新 =====
   // upgrade=true 时覆盖已安装的同 id 插件。
-  ipcMain.handle('plugin-install', async (_event: any, { repo, branch, upgrade }: any = {}) => {
+  ipcMain.handle('plugin-install', async (event: any, { repo, branch, upgrade }: any = {}) => {
+    if (!assertSenderOk(event).ok) return { success: false, error: '来源校验失败' };
     try {
       const r = await installPlugin({ httpGet, repo, branch, upgrade: !!upgrade });
       if (r.success) invalidateCustomProvidersCache();
@@ -462,7 +464,8 @@ function registerPluginIpc(): void {
   // ===== 插件主进程函数调用（壳页面 → 主进程插件）=====
   // 插件在 providers/*.js 里注册：globalThis.__cuckooPluginHostFns['<id>:<fn>'] = fn
   // 壳页面通过 shellAPI.pluginHostCall(id, fn, args) 调用（避开 file:// fetch 127.0.0.1 被拦）
-  ipcMain.handle('plugin-host-call', async (_event: any, { pluginId, fn, args }: any = {}) => {
+  ipcMain.handle('plugin-host-call', async (event: any, { pluginId, fn, args }: any = {}) => {
+    if (!assertSenderOk(event).ok) return { success: false, error: '来源校验失败' };
     try {
       if (!pluginId || !fn) return { success: false, error: '缺少 pluginId / fn' };
       const table = (globalThis as any).__cuckooPluginHostFns || {};
@@ -533,10 +536,18 @@ function registerPluginIpc(): void {
   }, 30000);
 
   // ===== 插件调试日志（渲染进程 → 写文件，便于排查）=====
+  // C-012：删除死代码 dir；加 1MB 大小上限（超过则轮转清空，防无限增长）
+  const PLUGIN_DEBUG_LOG_MAX = 1024 * 1024;
   ipcMain.on('plugin-debug-log', (_event: any, { msg }: any = {}) => {
     try {
-      const dir = path.join(app.getPath('userData'), '..');
       const logFile = path.join(app.getPath('userData'), 'plugin-debug.log');
+      try {
+        const st = fs.statSync(logFile);
+        if (st.size > PLUGIN_DEBUG_LOG_MAX) {
+          try { fs.unlinkSync(logFile + '.bak'); } catch (_) {}
+          try { fs.renameSync(logFile, logFile + '.bak'); } catch (_) {}
+        }
+      } catch (_) { /* 日志文件不存在，直接写 */ }
       const line = new Date().toISOString() + ' ' + String(msg || '') + '\n';
       fs.appendFileSync(logFile, line, 'utf-8');
     } catch (_) { /* ignore */ }
@@ -553,7 +564,9 @@ function registerPluginIpc(): void {
   });
 
   // ===== 注入代码到主世界（AI 页面主世界，contextIsolation 下）=====
+  // C-007/X-001：硬来源校验——仅合法 AI 页（provider 域）或自有窗口可调
   ipcMain.handle('plugin-inject-main-world', async (event: any, { code }: any = {}) => {
+    if (!assertSenderOk(event).ok) return { success: false, error: '来源校验失败' };
     try {
       if (typeof code !== 'string') return { success: false, error: '缺少 code' };
       // webContents.executeJavaScript 在"主世界"执行（等价 CDP）
@@ -623,7 +636,8 @@ function registerPluginIpc(): void {
   });
 
   // 安装（npm 下载 + 加载 + 注册工具）
-  ipcMain.handle('cuckoo-plugin-install', async (_event: any, { pkgName }: any = {}) => {
+  ipcMain.handle('cuckoo-plugin-install', async (event: any, { pkgName }: any = {}) => {
+    if (!assertSenderOk(event).ok) return { success: false, error: '来源校验失败' };
     try {
       if (!pkgName || typeof pkgName !== 'string') return { success: false, error: '缺少包名' };
       const r = await installAndLoad(pkgName, toolRegistry);
@@ -698,7 +712,8 @@ function registerPluginIpc(): void {
       return { success: false, commands: [], error: err && err.message ? err.message : String(err) };
     }
   });
-  ipcMain.handle('plugin-command-invoke', async (_event: any, { commandId }: any = {}) => {
+  ipcMain.handle('plugin-command-invoke', async (event: any, { commandId }: any = {}) => {
+    if (!assertSenderOk(event).ok) return { success: false, error: '来源校验失败' };
     try {
       const { invokeCommand } = await import('../plugin-commands.js');
       return await invokeCommand(commandId);
@@ -1008,6 +1023,7 @@ function registerPluginIpc(): void {
 
   // 在覆盖层执行 JS（插件 UI 的真正宿主）
   ipcMain.handle('plugin-overlay-eval', async (event: any, { code }: any = {}) => {
+    if (!assertSenderOk(event).ok) return { success: false, error: '来源校验失败' };
     try {
       if (typeof code !== 'string') return { success: false, error: '缺少 code' };
       const ov = findOverlayView(event);
@@ -1021,6 +1037,7 @@ function registerPluginIpc(): void {
 
   // 向覆盖层注入一段 HTML（插件 UI）
   ipcMain.handle('plugin-overlay-html', async (event: any, { html }: any = {}) => {
+    if (!assertSenderOk(event).ok) return { success: false, error: '来源校验失败' };
     try {
       if (typeof html !== 'string') return { success: false, error: '缺少 html' };
       const ov = findOverlayView(event);

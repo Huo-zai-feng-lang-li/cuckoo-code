@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { isDangerous } from '../../infra/dangerous-commands.js';
 import { decodeOutput, normalizeCommand } from '../../infra/decode-output.js';
+import { guardExecutionCall } from '../ipc-guard.js';
 
 const require = createRequire(import.meta.url);
 const { app, dialog, ipcMain } = require('electron');
@@ -14,6 +15,11 @@ function registerCommandIpc(): void {
   ipcMain.handle('execute-command', async (event: any, { command, id }: any) => {
     if (!command || typeof command !== 'string') {
       return { id, success: false, error: '无效的命令' };
+    }
+    // X-001 第一层：host 硬校验（手动通道，不能由 AI 远程页提权）；弹窗确认保留
+    const guard = await guardExecutionCall(event, 'command', {});
+    if (!guard.pass) {
+      return { id, success: false, error: guard.error ? guard.error.error : '来源校验失败', rejected: true };
     }
     const trimmed = normalizeCommand(command.trim());
     if (!trimmed) return { id, success: false, error: '命令为空' };

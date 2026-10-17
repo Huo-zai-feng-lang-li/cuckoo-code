@@ -14,9 +14,16 @@ import { scanAgents } from '../../agents/index.js';
 import { buildAgentsSection } from '../../agents/prompt.js';
 import { getPluginScanRoots } from '../../plugins/roots.js';
 import { parseFrontmatter } from '../../skills/frontmatter.js';
+import { isWorkspaceTrusted } from '../../infra/workspace-trust.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain, shell } = require('electron');
+
+/** 消费侧过滤（D-004）：未信任项目剔除 source==='project' 的技能/代理 */
+function filterProjectScoped<T extends { source?: string }>(items: T[], projectDir: string | null): T[] {
+  if (!projectDir || isWorkspaceTrusted(projectDir)) return items;
+  return items.filter((it) => !(it && it.source === 'project'));
+}
 
 function registerProjectIpc(): void {
   // 初始化项目
@@ -40,7 +47,7 @@ function registerProjectIpc(): void {
       const ctx = windowState.getContextByWebContents(event.sender);
       const store = ctx ? ctx.sessionStore : null;
       const projectDir = store ? store.state.selectedProjectDir : null;
-      const skills = scanSkills(projectDir || null, getPluginScanRoots().skillDirs);
+      const skills = filterProjectScoped(scanSkills(projectDir || null, getPluginScanRoots().skillDirs), projectDir || null);
       return {
         success: true,
         skills: skills.map((s: any) => ({
@@ -192,7 +199,7 @@ function registerProjectIpc(): void {
       const ctx = windowState.getContextByWebContents(event.sender);
       const store = ctx ? ctx.sessionStore : null;
       const projectDir = store ? store.state.selectedProjectDir : null;
-      const skills = scanSkills(projectDir || null, getPluginScanRoots().skillDirs);
+      const skills = filterProjectScoped(scanSkills(projectDir || null, getPluginScanRoots().skillDirs), projectDir || null);
       const agents = scanAgents(projectDir || null, getPluginScanRoots().agentDirs);
       // 合并：技能章节 + 代理章节（各自无内容时返回空串）
       const sections = [buildSkillsSection(skills), buildAgentsSection(agents)].filter((s) => s && s.trim());
