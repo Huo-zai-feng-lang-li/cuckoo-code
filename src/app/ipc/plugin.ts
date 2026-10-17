@@ -49,10 +49,32 @@ import * as mcpClient from '../../mcp/client.js';
 import { assertSenderOk } from '../ipc-guard.js';
 
 const require = createRequire(import.meta.url);
-const { ipcMain, shell, app } = require('electron');
+const { ipcMain, shell, app, dialog } = require('electron');
 const _os = require('node:os');
 const _fs = require('node:fs');
 const _path = require('node:path');
+
+/**
+ * D-001：第三方插件安装前的主进程确认框。
+ *
+ * 第三方插件（GitHub/Gitee 仓库 或 npm 包）可在本机执行任意代码（生命周期脚本、
+ * main/index.js、远程 hook），安装前必须用户明确同意。默认聚焦"取消"。
+ *
+ * @param detailLines 要展示给用户的明细（包名/仓库、分支等）
+ * @returns true = 用户点"安装"；false/取消 = 中止安装
+ */
+async function confirmThirdPartyInstall(detailLines: string[]): Promise<boolean> {
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    buttons: ['安装', '取消'],
+    defaultId: 1,   // 默认聚焦"取消"，防误装
+    cancelId: 1,
+    title: '安装第三方插件',
+    message: '第三方插件可在你的电脑上执行任意代码',
+    detail: detailLines.filter(Boolean).join('\n'),
+  });
+  return response === 0;
+}
 
 /**
  * 加载插件"网页注入脚本"（CommonJS）。用 .cjs 临时副本，避免项目 type:module 干扰。
@@ -280,6 +302,14 @@ function registerPluginIpc(): void {
   // upgrade=true 时覆盖已安装的同 id 插件。
   ipcMain.handle('plugin-install', async (event: any, { repo, branch, upgrade }: any = {}) => {
     if (!assertSenderOk(event).ok) return { success: false, error: '来源校验失败' };
+    // D-001：安装前主进程确认（第三方仓库可执行任意代码），默认聚焦取消。
+    if (!await confirmThirdPartyInstall([
+      `仓库：${repo || '(空)'}`,
+      branch ? `分支：${branch}` : '',
+      upgrade ? '（升级已安装插件）' : '',
+    ])) {
+      return { success: false, canceled: true, error: '用户取消安装' };
+    }
     try {
       const r = await installPlugin({ httpGet, repo, branch, upgrade: !!upgrade });
       if (r.success) invalidateCustomProvidersCache();
@@ -640,6 +670,13 @@ function registerPluginIpc(): void {
     if (!assertSenderOk(event).ok) return { success: false, error: '来源校验失败' };
     try {
       if (!pkgName || typeof pkgName !== 'string') return { success: false, error: '缺少包名' };
+      // D-001：npm 包可执行任意生命周期脚本，安装前主进程确认；默认禁用、需手动启用。
+      if (!await confirmThirdPartyInstall([
+        `npm 包：${pkgName}`,
+        '安装后默认禁用，需在列表中手动启用。',
+      ])) {
+        return { success: false, canceled: true, error: '用户取消安装' };
+      }
       const r = await installAndLoad(pkgName, toolRegistry);
       return { success: true, id: r.id, pluginName: r.pluginName, tools: r.tools, state: r.state, note: r.note, npmSource: r.npmSource };
     } catch (err: any) {

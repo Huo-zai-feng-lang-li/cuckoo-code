@@ -170,11 +170,34 @@ function judgeState(real: { dir: string; pkg: any } | null): { state: CuckooInst
 }
 
 /**
+ * D-001：校验 npm 包名是否为合法 registry 包名。
+ *
+ * 仅允许 `name` / `@scope/name`，可带 `@版本或 dist-tag`；
+ * 显式拒绝 URL、git、file:、tarball、命令行参数注入、路径穿越与空白。
+ * 纯函数，便于单测。
+ */
+function isValidNpmPackageSpec(pkgName: unknown): pkgName is string {
+  if (typeof pkgName !== 'string') return false;
+  const s = pkgName.trim();
+  if (!s || s.length > 214) return false;
+  if (/\s/.test(s)) return false;            // 空白/换行
+  if (s.startsWith('-')) return false;         // 形如 --registry=... 的参数注入
+  if (/[:\\]/.test(s)) return false;          // URL scheme(:) 或反斜杠路径
+  if (/\.(git|tgz|tar\.gz|tar)$/i.test(s)) return false; // tarball/git 后缀
+  if (s.includes('git+') || s.includes('://')) return false;
+  // @scope/name 或 name，可选 @version/@dist-tag；只允许单个 scope 斜杠
+  return /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(@[a-z0-9][a-z0-9._-]+)?$/.test(s);
+}
+
+/**
  * 安装 npm 包到插件目录。
  * @param pkgName npm 包名（如 dsh-greet-tool 或 @scope/name）
  */
 async function installCuckooPlugin(pkgName: string): Promise<CuckooInstallResult> {
   if (!pkgName || typeof pkgName !== 'string') throw new Error('包名不能为空');
+  if (!isValidNpmPackageSpec(pkgName)) {
+    throw new Error('非法 npm 包名（仅允许 @scope/name 或 name，禁止 URL/git/tarball/参数）: ' + pkgName);
+  }
   const id = packageNameToId(pkgName);
   if (!isValidPluginId(id)) throw new Error('包名转 id 非法: ' + id);
   const dir = getCuckooPluginDir(id);
@@ -281,4 +304,4 @@ function runNpm(npm: { cmd: string; binDir: string }, args: string[], cwd: strin
   });
 }
 
-export { installCuckooPlugin, bundledNpm, systemNpm, resolveNpm, packageNameToId };
+export { installCuckooPlugin, bundledNpm, systemNpm, resolveNpm, packageNameToId, isValidNpmPackageSpec };

@@ -127,7 +127,8 @@ async function installAndLoad(pkgName: string, registry: any, host?: CuckooHost)
   } catch (err: any) {
     loadErr = (err && err.message) ? err.message : String(err);
   }
-  setCuckooPluginEnabled(inst.id, true);
+  // D-001：第三方 npm 插件可在本机执行任意代码，安装后默认禁用，须用户手动启用。
+  setCuckooPluginEnabled(inst.id, false);
   // 加载失败 → 覆盖状态判定为 broken，把原因带回 UI
   const state = loadErr ? 'broken' : inst.state;
   const note = loadErr ? ('已下载但加载失败: ' + loadErr) : inst.note;
