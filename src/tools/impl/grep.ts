@@ -4,6 +4,7 @@ import { ToolResult } from '../core/ToolResult.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { trackProcess } from '../../infra/process-tracker.js';
 
 // ========== D12：API 契约元数据（构建期生成 api.d.ts）==========
 export const apiMetas: ToolApiMeta[] = [
@@ -112,7 +113,7 @@ function buildGrepCommand(input: { pattern: string; path?: string; include?: str
 /**
  * 执行 ripgrep，返回完整 stdout。
  */
-function runRipgrep(args: string[], cwd: string): Promise<{ stdout: string; stderr: string; code: number | null }> {
+function runRipgrep(args: string[], cwd: string, windowId: number | null = null): Promise<{ stdout: string; stderr: string; code: number | null }> {
   return new Promise((resolve, reject) => {
     getRgPath().then(rgPath => {
       const child = spawn(rgPath, ['--no-config', ...args], {
@@ -122,9 +123,14 @@ function runRipgrep(args: string[], cwd: string): Promise<{ stdout: string; stde
         // 会改为从 stdin 读取搜索目标，导致无限等待、grep 卡死。
         stdio: ['ignore', 'pipe', 'pipe'],
       });
+
+      // 登记追踪，允许停止按钮强杀
+      trackProcess(child, windowId);
       
       // 兜底超时：60 秒（防止 rg 卡死导致主进程假死）
+      let aborted = false;
       const timeout = setTimeout(() => {
+        aborted = true;
         try { child.kill('SIGKILL'); } catch (_) {}
         reject(new Error('ripgrep timeout (60s)'));
       }, 60000);
@@ -139,6 +145,7 @@ function runRipgrep(args: string[], cwd: string): Promise<{ stdout: string; stde
       });
       child.on('close', code => {
         clearTimeout(timeout);
+        if (aborted) return; // 超时已 reject，避免重复 reject
         if (code === 0 || code === 1) {
           resolve({ stdout, stderr, code });
         } else {
@@ -333,7 +340,7 @@ class GrepToolNew extends Tool {
       const args = buildGrepCommand(input);
       let run;
       try {
-        run = await runRipgrep(args, baseDir);
+        run = await runRipgrep(args, baseDir, params.currentWindowId || null);
       } catch (err: any) {
         const msg = String(err.message || err);
         if (/regex parse error|error parsing glob/i.test(msg)) {

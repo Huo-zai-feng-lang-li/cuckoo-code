@@ -168,7 +168,7 @@ class BashTool extends Tool {
       console.log('[BashTool] 执行命令: ' + trimmed + ', cwd=' + workDir);
 
       // spawn + 超时杀整个进程树（修 A-006：不再只杀 shell 本体）
-      const r = await runCaptured(trimmed, null, { cwd: workDir, timeout, shell: true });
+      const r = await runCaptured(trimmed, null, { cwd: workDir, timeout, shell: true, windowId: params.currentWindowId });
       const out = decodeOutput(r.stdout);
       const err = decodeOutput(r.stderr);
 

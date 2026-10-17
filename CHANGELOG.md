@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.10.13] - 2026-10-18
+
+### Fixed
+
+- **彻底修复“停止”和“发新消息”时工具进程未中断**：
+  - 新增 `src/infra/process-tracker.ts` 全局追踪主进程 spawn 出来的系统进程（bash/cmd、pwsh、rg）。
+  - `harness-stop` 时调用 `abortWindowWork`，强杀属于该窗口的 bash/pwsh/grep 等进程树，同时杀 JS worker。
+  - **发送新消息时**，也会先触发 `abortWindowWork`，强制结束上一轮还在后台跑的残余任务，防止并行冲突。
+  - 统一了 Unix 下的进程组强杀逻辑（复用 `killProcessTree`，防止孙进程孤儿化）；修复了窗口销毁时的全局误杀问题。
+  - `grep.ts` 增加 abort 标志，避免超时被强杀后重复抛出无用错误。
+
 ## [0.10.12] - 2026-10-18
 
 ### Fixed

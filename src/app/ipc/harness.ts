@@ -16,6 +16,22 @@ import * as windowState from '../window.js';
 import { scanSkills } from '../../skills/index.js';
 import { getPluginScanRoots } from '../../plugins/roots.js';
 import { registry, jsRunner } from '../../tools/index.js';
+import { abortWindowProcesses } from '../../infra/process-tracker.js';
+
+/**
+ * 强杀该窗口后台正在跑的工具子进程（bash / grep 等）和 JS 沙箱 worker。
+ * 不包含点击网页停止按钮。
+ */
+function abortWindowWork(ctx: any): void {
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
+  const winId = ctx.win.id;
+  try {
+    abortWindowProcesses(winId);
+    if (jsRunner && typeof jsRunner.abortAll === 'function') jsRunner.abortAll(winId);
+  } catch (err) {
+    console.log('[Cuckoo Harness] abortWindowWork 异常:', err);
+  }
+}
 import { getProvider } from '../../providers/registry.js';
 import { resetTodosCache } from './tool.js';
 import { cdpAttach } from './cdp-attach.js';
@@ -197,11 +213,8 @@ async function stopGeneration(ctx: any): Promise<any> {
   if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) return { success: false };
   const wc = ctx.view.webContents;
 
-  // 强杀该窗口后台正在跑的 JS 沙箱 worker，中断执行（只杀本窗口，避免误伤其他并行任务）
-  try {
-    const winId = ctx.win && !ctx.win.isDestroyed() ? ctx.win.id : undefined;
-    if (jsRunner && typeof jsRunner.abortAll === 'function') jsRunner.abortAll(winId);
-  } catch (err) { console.log('[Cuckoo Harness] 停止 jsRunner 异常:', err); }
+  // 强杀该窗口后台正在跑的工具子进程和 JS 沙箱 worker
+  abortWindowWork(ctx);
 
   try {
     try { wc.send('harness-stop-signal'); } catch (_) { /* ignore */ }

@@ -47,7 +47,13 @@
 - 最终验证：typecheck 0、vitest **127 文件 / 1184 用例**、lint 0 error、compile 0 无漂移。
 - 待办：**合并/发版由用户决定**（当前不 tag/push/发版）。真机待验项见上（尤其 A-005 打包环境 fork、D-005 手机浏览器握手、CSP file:// 放行、D-008 Electron net.request）。
 
-## v0.10.12：纠正 v0.10.11 的探活字段回归（本版本）
+## v0.10.13：彻底修复停止/发消息时工具进程未中断（本版本）
+
+- **新架构**：新增 `process-tracker.ts` 追踪前台 spawn 进程。`runCaptured`（bash/pwsh）和 `runRipgrep`（grep）都通过它登记。
+- **全面强杀**：`stopGeneration` 和 `harness-send` 发送新消息前，会调用 `abortWindowWork`，按窗口维度强杀工具子进程树 + JS worker。
+- **底层修复**：修复 Unix 下只杀父进程的漏洞；修复窗口销毁时无 windowId 导致的误杀所有窗口；修复 grep abort 时的错误噪音。
+
+## v0.10.12：纠正 v0.10.11 的探活字段回归
 
 - **v0.10.11 的失误**：在 killWorker/exit 里加了 `activeWorkerPid = null`，破坏了 `JsRunner.Process.test.js` 的探活断言。该字段语义是"最近一次 run 的 pid"，用于 `process.kill(pid, 0)` 验证进程真死，不应清空。
 - **教训**：改完跑全量测试后必须先看结果再提交，v0.10.11 是没检查测试输出就发版的。

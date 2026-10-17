@@ -13,6 +13,7 @@
  */
 import { spawn } from 'node:child_process';
 import { killProcessTree } from './task-manager.js';
+import { trackProcess } from './process-tracker.js';
 
 export interface RunCapturedOptions {
   cwd: string;
@@ -22,6 +23,8 @@ export interface RunCapturedOptions {
   maxBuffer?: number;
   /** command 是整条 shell 命令时传 true（等价 exec 的 shell:true） */
   shell?: boolean;
+  /** 发起调用的窗口 id（用于用户点“停止”时按窗口强杀） */
+  windowId?: number | null;
 }
 
 export interface RunCapturedResult {
@@ -63,6 +66,9 @@ export function runCaptured(
           detached: !isWin,
           env: { ...process.env },
         });
+
+    // 登记到全局追踪器，允许外部（如停止按钮）强杀
+    trackProcess(child, opts.windowId ?? null);
 
     const max = opts.maxBuffer ?? DEFAULT_MAX_BUFFER;
     let stdout = Buffer.alloc(0);

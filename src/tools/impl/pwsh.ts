@@ -127,7 +127,7 @@ class PwshTool extends Tool {
       console.log('[PwshTool] 执行命令: ' + trimmed + ', cwd=' + workDir);
 
       // spawn + 超时杀整个进程树（修 A-006：不再只杀 powershell 本体）
-      const r = await runCaptured('powershell', ['-NoProfile', '-Command', trimmed], { cwd: workDir, timeout });
+      const r = await runCaptured('powershell', ['-NoProfile', '-Command', trimmed], { cwd: workDir, timeout, windowId: params.currentWindowId });
       const out = decodeOutput(r.stdout);
       const err = decodeOutput(r.stderr);
 
