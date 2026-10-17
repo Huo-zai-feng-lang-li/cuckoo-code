@@ -1,5 +1,44 @@
 # 最新接续状态 (2026-10-17)
 
+## v0.10.0 全量安全加固（本会话，分支 fix/security-bug-sweep，**未 tag / 未 push / 未发版**）
+
+对全项目做只读安全审计（5 路分片 + 独立复核，产物在 `docs/audit/`，commit 8160a54 在 master），确认 **59 条 bug（P0×4 / P1×15 / P2×17 / P3×23）全部修复或逐条给出不改结论**，并复核 17 条推测项。新增约 166 个回归测试（100 文件/1012 → 126 文件/1178 全过）；typecheck 0、lint 0 error、compile 0、生成物无漂移。修复按 bug ID 小步 commit（master..HEAD，见 `git log`）。
+
+### 新增安全地基（已冻结，下游在用）
+- `src/infra/`：`atomic-json.ts`（cuckooHomeDir + writeJsonAtomicSync/readJsonRobust）、`host-allowlist.ts`（isOwnWindowUrl/isProviderHost/checkSenderUrl）、`workspace-trust.ts`（信任记录 ~/.cuckoo/trusted-workspaces.json，CUCKOO_HOME 可覆盖）、`run-captured.ts`（runCaptured + killProcessTree 树杀）；`dangerous-commands.ts`（isDangerous 硬拒绝 + findDeliverySignature 投递特征）。
+- `src/app/`：`execution-policy.ts`（smart/workspace/strict + decideToolGate）、`ipc-guard.ts`（classifySender/guardExecutionCall/planToolGate/planJsGate，确认默认聚焦取消、无 dialog 保守拒绝）、`workspace-trust-prompt.ts`（ensureWorkspaceTrust 默认聚焦"不信任"）、`ipc/security.ts`（4 个 IPC 通道，仅 own-window）。
+- `src/overlay/sanitizer.ts`：零依赖白名单 sanitizer，构建产物 `src/ui/vendor/cuckoo-sanitize.js`（`scripts/build-sanitizer.mjs`，已在 compile 串）；harness 在 marked 后、KaTeX 前 sanitize；shell shared.ts re-export 真源。
+- `src/tools/runtime/`：JsRunner 改为 `child_process.fork` 独立 worker（`js-sandbox-worker.mjs`，纯 ESM 零 src 依赖）+ `bootstrap-build.ts`（主进程拼 bootstrap 随 run 下发）；`scripts/copy-sandbox-worker.mjs` 拷 .mjs 到 out（已在 compile 串）。工具仍在主进程执行（worker IPC 桥接，seq 匹配）；看门狗 500ms unref，无活动到点 SIGKILL。
+
+### 三大产品决策（用户拍板，勿改）
+1. **X-001 三层防线**：主进程 host 白名单 + sender 校验；高危投递特征任何模式都弹确认；设置页三档策略（默认 smart 保持自动，**绝不做每条命令都问**）。
+2. **D-002+D-004 工作区信任门**：选项目发现 .agents/mcp.json、rules、skills 时弹一次；不信任则项目级 MCP 不 spawn、规则技能不注入（数据层 scanner 兜底，覆盖 JsRunner/cuckoo-host/harness 等所有入口）；用户级不受影响。
+3. **D-001 插件**：安装前确认（默认聚焦取消）+ 安装后默认禁用（`setCuckooPluginEnabled(id,false)`）+ 包名白名单（isValidNpmPackageSpec）。
+
+### 不改 / 未彻底处理（如实记录，别再"修"）
+- **A-008 DNS rebinding 未彻底修**：需 undici pinned dispatcher（非直接依赖）；现缓解=逐跳复检+fail-closed，残余窗口写在 ssrf-guard.ts 头注释。
+- **A-009 审计结论不成立**：memory 增删全同步、IPC 无 await 间隙，无 RMW。
+- **C-010/C-011 复核无缺陷**；C-S-002 execute-command 是用户手动通道逐条确认，不额外改。
+- **D-009 远程 PWA 静态资源不鉴权**（无敏感数据，数据走 /api、/ws token 鉴权）。
+- 推测项回源排除 9 条：A-S2/S3、B-S1~S4、C-S002、E start.js 调试端口（env 等价本机权限）、E chat-input（引用捕获正确不串台）。
+
+### 真机待验（沙箱起不了真机，交付前没跑）
+- 信任门 / 执行策略 dialog UX、设置页两个新卡片的实际点选与持久化。
+- hook 在真实 DeepSeek/Claude 页的断流、XHR 看门狗、host 白名单（B-001/B-010 等）。
+- D-001 安装确认框、D-005 真手机浏览器 Sec-WebSocket-Protocol 握手（Node ws 已过，ws 8.22 默认回选首个 subprotocol）、D-008 Electron net.request 逐跳重定向（仅 Node fetch 路径已改）。
+- CSP 在 file:// 下对 vendor 相对脚本、Monaco worker（worker-src blob:）、插件 unsafe-eval 的放行。
+- **A-005 Electron 打包环境 fork .mjs 主模块加载、长任务（runAgent/bash 大 timeout）跨进程桥接与看门狗暂停语义**（plain Node 已硬验死循环硬杀，见 test/tools/JsRunner.Process.test.js）。
+- utilityProcess.fork ESM 路径未采用（选了 child_process.fork 更确定）。
+
+### PoC 复跑结论（`.agents/audit-poc/`，12 个，保留不删）
+- poc-1/2/3/4、poc-harness-marked-xss、poc-overlay-mcp-name-xss、poc-non-atomic 是**旧源码逐字静态拷贝/裸 marked 演示**，复跑仍显示旧行为（设计如此）；权威验证是 `test/` 下 import 真实模块的回归（dangerous-commands / ssrf-guard / protected-paths / run-captured / mcp-escape / window-escape / sanitizer / atomic-json）。
+- poc-parser-boundaries.test.js 导入真实 js-detector：PoC-1 攻击断言已**翻转失败**（未闭合块不再提取），其余 8 项正确行为通过。
+- 防御型 poc-d007 zipslip 10/10 继续拦；poc-d004 token 为静态风险报告（真实修复见 test/remote/ws-auth.test.js）；poc-d001 证明"已启用插件"仍可 require（架构本质），一键"安装即 RCE"链已被默认禁用+确认+包名白名单打断。
+
+### 收尾状态
+- 版本已升 0.10.0（package.json + package-lock.json）；CHANGELOG 0.10.0 按 Keep a Changelog 覆盖全部 59 + 17 推测；README 安全机制/插件/MCP 旧行为已改。
+- 待办：独立复核子 agent 按 checklist 复审；**合并/发版由用户决定**（当前不 tag/push/发版）。
+
 ## 核心进展
 - **最新版本 v0.9.24**（修复图片模式停止按钮不可见 + 停止按钮改红，typecheck/lint(0)/test(1012)/compile 全绿）。
 - **v0.9.23**：提示词增强加「停止」按钮（增强中 ✨ 变停止图标，可取消在途请求）；未聚焦输入框加柔和抬升阴影美化。
@@ -80,7 +119,7 @@
 
 ## 关键上下文
 - 目录: `D:\Desktop\Super-File\cuckoo-code`
-- 构建/验证: `npm run typecheck` / `npm test`（1011）/ `npm run lint`（0 error）/ `npm run compile`
+- 构建/验证: `npm run typecheck` / `npm test`（v0.10.0：126 文件 / 1178 用例）/ `npm run lint`（0 error）/ `npm run compile`
 - **生成物禁手改**：`*.generated.ts`、`src/tools/api.d.ts`、`src/ui/shell.html`（改真源 + compile）
 - **依赖铁律**：`infra ← providers ← tools ← bridge ← session ← app`；overlay 不依赖 bridge/session；tools 不依赖上层（注入）
 - **窗口结构**：AI 页面在 `ctx.view.webContents`，不是 `ctx.win.webContents`

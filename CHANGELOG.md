@@ -2,6 +2,95 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-17
+
+本版本是一次**全量安全加固**（分支 `fix/security-bug-sweep`）。对全项目做了只读安全审计（5 路分片 + 独立复核），确认 **59 条 bug（P0 致命 4 / P1 高危 15 / P2 中危 17 / P3 低危 23）全部修复或逐条给出不改结论**，并复核了 17 条置信度不足的推测项。审计证据见 `docs/audit/`。新增 150+ 条回归测试，全部 PoC 复跑确认。
+
+### Security
+
+- **X-001（P0，跨模块）修复"任意网页可零确认执行命令"**：AI 工具执行通道此前不校验调用来源。建立三层防线——① 主进程 IPC 对 `execute-tool` / `execute-js` / `execute-command` 等执行面做 **host 白名单 + sender 校验**（仅 registry 注册的 provider 域名与自有窗口可调用，`src/app/ipc-guard.ts`）；② 高危投递特征族（PowerShell `-enc`、`iex`、`curl|iex`、`certutil`、`bitsadmin`、写启动项、反弹 shell 等）在**任何执行模式下都于主进程弹确认**，确认框默认聚焦"取消"（`src/infra/dangerous-commands.ts`）；③ 设置页新增**三档执行策略**（智能 / 工作区信任 / 严格，见下）。
+- **A-001（P0）webFetch SSRF 302 重定向往内网**：改为手动逐跳重定向，每一跳都重新过 SSRF 守卫，落到内网/回环/云元数据即 fail-closed，不再盲跟 `Location`（`src/tools/impl/WebFetchTool.ts`）。
+- **A-002（P0）SSRF IPv6 / 进制写法绕过**：`http://[::ffff:7f00:1]`、`0x7f000001`、十进制整数、尾点等写法经 WHATWG URL 归一化后按解析结果判定，IPv4-mapped IPv6 十六进制不再直穿（`src/infra/ssrf-guard.ts`）。
+- **A-003（P1）主机名大小写 / 尾点绕过**：host 判定统一小写归一化并处理尾点。
+- **E-001（P0）MCP 面板 server 名 DOM XSS → executeJs → RCE**：项目 `.agents/mcp.json` 的 server 名未转义拼进 innerHTML，克隆恶意仓库即可植入。内容位与属性位统一转义（`src/overlay/panels/mcp-manager.ts`）。
+- **E-002（P1）harness 渲染 AI 回复 marked 无消毒**：新增**零依赖单一真源白名单 sanitizer** `src/overlay/sanitizer.ts`，构建产物 `src/ui/vendor/cuckoo-sanitize.js`；harness 渲染管线在 `marked.parse` 之后、KaTeX 恢复之前做 sanitize（保留 class/aria-*/data-*），shell 与 overlay 共享同一真源。`<img onerror>`、`<script>`、`javascript:` 链接等一律清除。
+- **E-003（P1）窗口管理面板 profile 名 / 平台名 / id 注入**：内容位与属性位统一转义。
+- **E-009（P3）自有窗口补 CSP**：harness / shell / alert / confirm / notification / platform-select 加 CSP meta（`object-src/base-uri/frame-src` 收紧；shell 因插件 `new Function` 与 Monaco worker 额外放行 `unsafe-eval`、`worker-src blob:`）。
+- **D-001（P1）插件市场点"安装"即主进程 RCE**：① 安装前在主进程弹第三方代码风险确认框（默认聚焦"取消"）；② **安装后默认禁用**（`setCuckooPluginEnabled(id,false)`），需用户手动启用；③ 新增 npm 包名规范白名单（拒绝 URL / git / file: / tarball / 参数 / 路径穿越），触达 npm 前拦截。
+- **D-002 + D-004（P1）新增"工作区信任门"**：选择项目目录后，若发现 `.agents/mcp.json`、`.agents/rules`、`.agents/skills` 等工件，弹一次信任确认（默认聚焦"不信任"）。**不信任时项目级 MCP server 不 spawn、项目级规则/技能不注入系统提示词**；信任记录以原子写存于 `~/.cuckoo/trusted-workspaces.json`（支持本次会话 / 持久 / 撤销）；用户级 MCP / 规则 / 技能不受影响。数据层扫描兜底，覆盖所有注入入口。
+- **D-003（P1）MCP HTTP server SSRF**：建立 `StreamableHTTPClientTransport` 前先 `assertUrlAllowed`，项目级内网 MCP URL 同样受约束；stdio 不受影响。
+- **D-005（P2）远程服务 WS token 经 URL query 泄漏**：WebSocket 改走 `Sec-WebSocket-Protocol: cuckoo.<token>` 握手，手机端 PWA 预检/重连改用 `Authorization` 头（query 保留过渡兼容）。
+- **D-006（P2）token 比较改常量时间**：`crypto.timingSafeEqual`（等长前置判断）。
+- **D-007（P2）插件市场镜像源投毒**：curated 源结构化标注 provenance（官方 raw 优先；jsdelivr/ghproxy 等第三方镜像显式标注），缓存记录服务来源。
+- **D-008（P2）下载重定向跟随**：Gitee 抓取改手动逐跳重定向（≤5 跳），每跳 Location 必须在 github/raw/codeload/objects/gitee 白名单。
+- **D-010（P3）zip 解压路径穿越**：`safeEntryFilter` 增补 Windows 保留名（CON/PRN/AUX/NUL/COM1-9/LPT1-9，含带扩展名）逐段校验；符号链接/硬链接/绝对路径/`../` 穿越继续拦截。
+- **E-008（P3）运行时下载无完整性校验**：`fetch-runtime` 下载 Node/uv 资产后做 sha256 校验（hash 取自官方 nodejs.org 与 astral-sh 校验文件），不匹配即删除并 fail-closed。
+- **C-001/C-002/C-003（P1）存储非原子写可致数据静默丢失**：会话映射、profile、窗口分组等 8 处直接 `writeFileSync` 统一切到原子写（临时文件 + rename）+ 损坏时回退（`src/infra/atomic-json.ts`）。
+- **A-006（P2）命令超时只杀 shell、孙进程孤儿化**：新增 `runCaptured` + 进程树回收（`taskkill /T /F` 树杀），并加 pid 探活；`bash`/`pwsh` 工具超时后连带杀死孙进程。
+- **A-012（P3）命令里的密码明文进日志**：连接串 / `-p` 密码等做打码。
+- **A-015（P3）todo 列表跨项目串桶**：按项目目录分桶存储。
+- **A-S-1 / C-S-001 等推测项加固**：Node vm 沙箱隔离（见 A-005）、执行面 sender 系统性校验（见 X-001）。
+
+### Added
+
+- **设置页新增"安全·执行策略"与"受信任的工作区"两个卡片**：三档策略——**智能（默认，保持自动体验，仅高危投递特征弹确认）/ 工作区信任（按项目信任放行自动执行）/ 严格（每次执行都问）**；受信任工作区可查看与一键撤销。
+- **A-005（P1）JsRunner 迁出主进程到独立 OS 进程**：AI 脚本改用 `child_process.fork` 在独立 worker（`src/tools/runtime/js-sandbox-worker.mjs`）的 vm 中执行，**异步微任务死循环不再饿死主进程**——主进程看门狗到点直接 `SIGKILL` worker 进程（PoC 实测：异步死循环 ~2.4s 返回超时、worker pid 探活 ESRCH 真死、主事件循环全程响应；同步死循环由 vm timeout 处理）。工具仍在主进程执行（worker 经 IPC 桥接），`currentWindowId`/项目目录/设置/长任务看门狗暂停语义全部保留；对外 `run()` 签名不变。
+- **webFetch 内网守卫默认更严**：重定向、IPv6、进制写法全部归一化判定（见 A-001~A-003）。
+
+### Changed
+
+- **插件安装后默认禁用**（原为安装即启用），需用户在面板手动启用；市场外手动包名安装额外弹确认。
+- **项目级 MCP / 规则 / 技能默认不加载**，需先信任该工作区；用户级不受影响。
+- **命令执行默认策略**：保持自动体验（智能档），仅高危投递特征强制确认——**不做"每条命令都问"**。
+- **D-009**：远程 PWA 静态资源仍不鉴权（页面为无敏感数据的 UI 外壳，数据访问全走带 token 的 `/api` 与 `/ws`；加静态 token 会破坏分享链接流程）。
+- **cloudflared 候选路径按可写性排序**（推测项 S-003）：`Program Files` / `LocalAppData` 优先，任意用户可写的 `C:\cloudflared` 根目录降为最后兜底。
+- **插件自动更新防降级**（推测项 D-S-002）：依赖 `isNewer` 严格版本比较，补充回归测试。
+
+### Fixed
+
+- **A-004（P1）高危投递命令特征族**：扩充危险命令检测，覆盖 `-enc`/`iex`/`curl|iex`/`certutil`/`bitsadmin`/启动项/反弹 shell 等投递特征（中文描述命中即确认）。
+- **A-007（P2）读取文件无大小上限**：读取加 200MB 上限，避免超大文件撑爆内存。
+- **A-010（P3）非 UTF-8 输出致 fatal**：解码改为 fatal=false 容错并替换非法字节。
+- **A-011（P3）引号外参数注入**：`Get-Content` 等命令参数正确加引号。
+- **A-013（P3）grep 长输出未截断**：统一截断处理。
+- **A-014（P3）glob 污染**：默认排除 node_modules 等依赖/产物目录并修 `--no-config`。
+- **B-001（P1）失败重试倒计时切会话后污染新会话**：发送前复核会话，与 watchdog 对齐。
+- **B-002（P1）Claude 流中断被误判为成功并执行截断代码**：正确识别错误终态并重试。
+- **B-003（P2）DeepSeek 完成请求匹配无 host 白名单**：判定下沉纯函数并加 host 校验。
+- **B-004（P2）流式截断的未闭合 cuckoo 块被 flush 后执行**：未闭合围栏不再提取为完整代码。
+- **B-005（P2）XHR 观测路径无流静默看门狗**：补看门狗。
+- **B-006（P2）残缺代码被重复执行 3 次**：语法错误不再重试，重试判定收紧。
+- **B-007（P3）通知摘要正则写错吞掉字母 s**：`/\s+/g` 改正（误用为 `/s+/g`）。
+- **B-008（P3）4 反引号围栏不识别**：围栏解析兼容。
+- **B-009（P3）harness 流式剥离正则误伤普通代码块收尾围栏**：剥离规则修正。
+- **B-010（P3）DeepSeek 发送按钮选择器宽泛且重复**：选择器收窄去重。
+- **B-011（P3）executor 执行锁仅写不检**：加锁状态校验。
+- **C-004（P1）上下文压缩配对错乱**：主链 walk 失败的回退分支过滤掉 branch 消息，严格 user→assistant 配对。
+- **C-005（P2）get-dir-info 任意路径 stat**：收口到项目目录。
+- **C-006（P2）文件 watcher 残留**：正确清理监听器。
+- **C-007（P2）摘要未截断 / 插件注入主世界**：摘要长度截断。
+- **C-008（P2）session 监听器轻微残留**：清理。
+- **C-009（P3）compaction 健壮性**：边界处理。
+- **C-012（P3）插件 debug 日志无上限**：1MB 轮转。
+- **E-004（P2）确认对话框文案走 innerHTML**：动态文案改 `textContent` 承载。
+- **E-005（P2）overlay escapeHtml 不转义引号**：补全 `"` `'`，属性位统一（含原推测项）。
+- **E-006（P3）子代理窗口 token 写入共享 localStorage**：子代理窗口抑制每日 token 写入。
+- **E-007（P3）设置页主题/活动栏名注入**：option value、文本、data 属性转义。
+- **推测项 A-S-4**：MySQL 工具补 30s 语句超时（原仅 connectTimeout，慢查询会挂住连接）。
+- **推测项 A-S-5**：`openBrowserWindow` 去掉 `...restOptions` 任意 BrowserWindow 选项透传。
+
+### Audit notes（审计复核结论，不改 / 未彻底处理）
+
+- **A-008（P2）DNS rebinding 未彻底修复**：彻底修复需引入 undici 的 pinned dispatcher（undici 非本项目直接依赖）。当前缓解为逐跳复检 + fail-closed，残余窗口与后续增强已在 `src/infra/ssrf-guard.ts` 头注释说明。
+- **A-009（P3）审计结论不成立**：`addMemory`/`removeMemory` 全同步、IPC 无 await 间隙，不存在读改写竞态，不改。
+- **C-010 / C-011（P3）复核无缺陷**：回源确认逻辑正确，不改。
+- **推测项回源排除（9 条）**：A-S-2（`new Function` 仅编译不执行，无注入面）、A-S-3（多 file input 附错位置属 UX 非安全）；B-S-1（DeepSeek 会话提取 currentIndex）、B-S-2（ChatGPT 增量帧 `o` 缺失路径）、B-S-3（hook 异步注入时序）、B-S-4（custom provider 直接 require 路径）均回源无缺陷；C-S-002（`execute-command` 是用户手动通道，逐条确认，无额外注入面）；E 项 start.js `CUCKOO_DEBUG_PORT`（环境变量等价本机权限，非攻击面）、chat-input 延迟发送（引用捕获正确，切会话不串台）。
+
+### 验证
+
+- `npm run typecheck`：0 error；`npm test`（vitest）：**126 文件 / 1178 用例全过**（基线 100 文件 / 1012 用例，新增约 166 个）；`npm run lint`：0 error；`npm run compile`：0 且生成物无漂移。
+- 12 个攻击/防御 PoC 全部复跑：攻击型在真实模块回归中失效、防御型（zipslip 等）继续拦截；静态拷贝型 PoC 仅作历史留存，权威验证以 `test/` 下 import 真实模块的回归为准。
+
 ## [0.9.24] - 2026-10-17
 
 ### Fixed
