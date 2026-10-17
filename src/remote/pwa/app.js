@@ -124,7 +124,11 @@
   async function verifyAndConnect(t) {
     $('login-err').textContent = '验证中…';
     try {
-      const resp = await fetch('/api/ping?token=' + encodeURIComponent(t), { cache: 'no-store' });
+      // D-005：token 走 Authorization 头，不进 URL（访问/代理日志）。
+      const resp = await fetch('/api/ping', {
+        cache: 'no-store',
+        headers: { Authorization: 'Bearer ' + t },
+      });
       if (resp.status === 401) { $('login-err').textContent = '令牌错误，请检查后重试'; return; }
       if (!resp.ok) { $('login-err').textContent = '连接失败（HTTP ' + resp.status + '）'; return; }
     } catch {
@@ -141,7 +145,7 @@
   // ===== WebSocket =====
   function wsUrl() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return proto + '//' + location.host + '/ws?token=' + encodeURIComponent(token);
+    return proto + '//' + location.host + '/ws';
   }
 
   function connect() {
@@ -150,7 +154,8 @@
     setConn('connecting');
     let sock;
     try {
-      sock = new WebSocket(wsUrl());
+      // D-005：token 通过 Sec-WebSocket-Protocol（cuckoo.<token>）传递，不进 URL。
+      sock = new WebSocket(wsUrl(), ['cuckoo.' + token]);
     } catch {
       scheduleReconnect();
       return;
@@ -188,7 +193,10 @@
       showOffline('连接已断开，正在自动重连…');
       // 失败 3 次以上时，在后台静默探测是否是令牌被电脑端重置（401）
       if (++failStreak >= 3 && failStreak % 3 === 0) {
-        fetch('/api/ping?token=' + encodeURIComponent(token), { cache: 'no-store' })
+        fetch('/api/ping', {
+          cache: 'no-store',
+          headers: { Authorization: 'Bearer ' + token },
+        })
           .then((res) => {
             if (res.status === 401) {
               localStorage.removeItem('cuckoo-token');

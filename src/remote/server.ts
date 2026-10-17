@@ -11,6 +11,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
@@ -75,12 +76,41 @@ function parseUrl(req: http.IncomingMessage): URL | null {
 }
 
 /** 校验 token：header 优先，其次 query */
+/**
+ * D-006：常量时间比较 token，防计时侧信道。
+ * 长度不一致直接失败（timingSafeEqual 对异长 buffer 会抛错，前置判断）。
+ */
+function safeTokenEqual(candidate: unknown): boolean {
+  if (typeof candidate !== 'string' || !candidate || !currentToken) return false;
+  const a = Buffer.from(candidate);
+  const b = Buffer.from(currentToken);
+  if (a.length !== b.length) return false;
+  try { return crypto.timingSafeEqual(a, b); } catch { return false; }
+}
+
+/** D-005：从 Sec-WebSocket-Protocol 提取 token（形如 `cuckoo.<token>`，不进 URL 日志）。 */
+function tokenFromSubprotocol(req: http.IncomingMessage): string | null {
+  const sub = req.headers['sec-websocket-protocol'];
+  if (typeof sub !== 'string' || !sub) return null;
+  for (const part of sub.split(',')) {
+    const v = part.trim();
+    if (v.startsWith('cuckoo.')) return v.slice('cuckoo.'.length);
+  }
+  return null;
+}
+
 function checkToken(req: http.IncomingMessage): boolean {
   if (!currentToken) return false;
   const auth = req.headers['authorization'];
-  if (typeof auth === 'string' && auth === 'Bearer ' + currentToken) return true;
+  if (typeof auth === 'string' && auth.startsWith('Bearer ') && safeTokenEqual(auth.slice('Bearer '.length))) {
+    return true;
+  }
+  // D-005：WS 握手首选 Sec-WebSocket-Protocol（不进访问日志/代理日志）。
+  const subToken = tokenFromSubprotocol(req);
+  if (subToken !== null && safeTokenEqual(subToken)) return true;
+  // 过渡兼容：URL query token（旧客户端/测试仍可用）。
   const url = parseUrl(req);
-  return !!(url && url.searchParams.get('token') === currentToken);
+  return !!(url && safeTokenEqual(url.searchParams.get('token')));
 }
 
 /** 静态文件响应（PWA 资源；防路径穿越）。异步读盘，避免阻塞主进程事件循环 */
