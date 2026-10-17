@@ -70,3 +70,6 @@ coverage/
 custom-providers/
 # Monaco（体积大，不进仓库；由 scripts/copy-monaco.mjs 从 node_modules 复制）
 src/ui/vendor/monaco/
+
+# 临时调试产物（CDP 探针/临时脚本，不进仓库）
+.agents/tmp/
