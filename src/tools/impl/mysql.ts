@@ -3,6 +3,25 @@ import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
 import mysql from 'mysql2/promise';
 
+/** 语句级超时（S-4）：慢查询 30s 主动放弃，不再挂到 Node 默认 10min */
+const QUERY_TIMEOUT_MS = 30000;
+
+/**
+ * 带超时的 query：超时即 reject，并销毁连接（释放服务端会话）。
+ */
+function queryWithTimeout(conn: any, sql: string): Promise<any> {
+  return Promise.race([
+    conn.query(sql),
+    new Promise((_, reject) => {
+      const t = setTimeout(() => {
+        try { conn.destroy(); } catch (_) { /* ignore */ }
+        reject(new Error('查询超过 ' + QUERY_TIMEOUT_MS / 1000 + 's 未完成，已中止'));
+      }, QUERY_TIMEOUT_MS);
+      if (typeof t.unref === 'function') t.unref();
+    }),
+  ]);
+}
+
 // ========== D12：API 契约元数据（构建期生成 api.d.ts）==========
 export const apiMetas: ToolApiMeta[] = [
   {
@@ -127,7 +146,9 @@ class MySQLTool extends Tool {
             finalSql = finalSql.replace(/;?\s*$/, '') + ' LIMIT ' + safeLimit;
           }
 
-          const [rows, fields] = await connection.query(finalSql);
+          // S-4：语句级超时——旧实现只有 connectTimeout，慢查询会挂住到 Node 默认 10min。
+          // 超时后销毁连接，避免占着。
+          const [rows, fields] = await queryWithTimeout(connection, finalSql);
 
           const elapsed = Date.now() - startTime;
           const actualRows = Array.isArray(rows) ? rows.length : 0;
@@ -145,7 +166,7 @@ class MySQLTool extends Tool {
           return ToolResult.success(output);
         } else {
           // 写操作或 DDL
-          const [result] = await connection.query(trimmedSql);
+          const [result] = await queryWithTimeout(connection, trimmedSql);
 
           const elapsed = Date.now() - startTime;
           const affectedRows = (result as any).affectedRows || 0;

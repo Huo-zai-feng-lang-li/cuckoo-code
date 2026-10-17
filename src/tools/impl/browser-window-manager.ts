@@ -7,7 +7,7 @@ const { BrowserWindow } = require('electron');
 interface OpenWindowOptions {
   width?: number;
   height?: number;
-  [key: string]: any;
+  webPreferences?: Record<string, any>;
 }
 
 class BrowserWindowManager {
@@ -32,12 +32,11 @@ class BrowserWindowManager {
       } while (this.windows.has(id));
     }
 
-    // 剥离用户传入的 width/height/webPreferences，由本模块统一接管
-    const { webPreferences: optWebPrefs, width: _w, height: _h, ...restOptions } = options;
+    // 剥离用户传入的 webPreferences，由本模块统一接管（S-5：不再展开任意 BrowserWindow 选项）
+    const { webPreferences: optWebPrefs } = options;
     const win = new BrowserWindow({
       width: options.width || 1200,
       height: options.height || 800,
-      ...restOptions,
       webPreferences: {
         ...(optWebPrefs || {}),
         // 以下安全基线由本模块强制接管，用户 webPreferences 不可覆盖（保证 preload 一定生效）
