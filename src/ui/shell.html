@@ -6847,9 +6847,13 @@ paths:            # 可选；省略 = 始终生效
       el2.classList.toggle("ck-conv-disabled", harnessBusy2);
     });
   }
-  async function loadConversations(retainOnEmpty) {
+  async function loadConversations(retainOnEmpty, force) {
     const listEl2 = document.getElementById("conv-list");
     if (!listEl2 || !api.listWebSessions) return;
+    if (!force && listEl2.querySelector(".ck-conv-item")) {
+      applyBusyState();
+      return;
+    }
     let res = null;
     try {
       res = await api.listWebSessions();
@@ -6882,12 +6886,12 @@ paths:            # 可选；省略 = 始终生效
     applyBusyState();
   }
   function reloadConversationsAfterNav() {
-    loadConversations(true);
-    setTimeout(() => loadConversations(true), 800);
-    setTimeout(() => loadConversations(true), 1800);
-    setTimeout(() => loadConversations(false), 3200);
+    loadConversations(true, true);
+    setTimeout(() => loadConversations(true, true), 800);
+    setTimeout(() => loadConversations(true, true), 1800);
+    setTimeout(() => loadConversations(false, true), 3200);
   }
-  document.getElementById("conv-refresh")?.addEventListener("click", () => loadConversations());
+  document.getElementById("conv-refresh")?.addEventListener("click", () => loadConversations(false, true));
   document.getElementById("conv-new")?.addEventListener("click", () => {
     if (api.newWebConversation) api.newWebConversation().then(() => reloadConversationsAfterNav());
   });
@@ -7953,7 +7957,10 @@ paths:            # 可选；省略 = 始终生效
     const hasMsg = !!(msgEl && String(msgEl.value || "").trim());
     btn.disabled = !(hasMsg && hasStagedFiles);
   }
-  async function loadGit() {
+  async function loadGit(opts) {
+    const listEl2 = document.getElementById("git-list");
+    if (!listEl2) return;
+    if (!opts?.force && lastItems.length > 0) return;
     if (!gitWatcherStarted && api.gitWatchStart) {
       api.gitWatchStart().then((r) => {
         gitWatcherStarted = !!(r && r.success);
@@ -7962,8 +7969,6 @@ paths:            # 可选；省略 = 始终生效
       });
     }
     loadBranch();
-    const listEl2 = document.getElementById("git-list");
-    if (!listEl2) return;
     if (!api.gitStatus) {
       listEl2.innerHTML = '<div class="ck-list-empty">Git \u529F\u80FD\u4E0D\u53EF\u7528</div>';
       return;
@@ -8426,7 +8431,7 @@ paths:            # 可选；省略 = 始终生效
     }
     gitLoadInFlight = true;
     try {
-      await loadGit();
+      await loadGit({ force: true });
       if (historyOpen) await loadHistory();
     } catch (_) {
     } finally {
@@ -8454,7 +8459,8 @@ paths:            # 可选；省略 = 始终生效
       historyLoaded = false;
       lastHistorySig = "";
       gitWatcherStarted = false;
-      loadGit();
+      lastItems = [];
+      loadGit({ force: true });
       if (historyOpen) loadHistory();
     });
   }

@@ -96,8 +96,15 @@ function updateCommitBtn(): void {
   btn.disabled = !(hasMsg && hasStagedFiles);
 }
 
-/** 读取并渲染状态 */
-export async function loadGit(): Promise<void> {
+/** 读取并渲染状态
+ * @param opts.force true=强制走 IPC（watcher 变更/项目切换/手动操作后）；
+ *                   默认 false=有缓存直接复用（切 tab 用）。
+ */
+export async function loadGit(opts?: { force?: boolean }): Promise<void> {
+  const listEl = document.getElementById('git-list');
+  if (!listEl) return;
+  // 有缓存且不强制 → 跳过 IPC 和 DOM 重建
+  if (!opts?.force && lastItems.length > 0) return;
   // 首次加载时启动项目目录 watcher（自动刷新用）。
   // 注意：只在成功后才置 flag——未选目录等失败情况保持 false，下次 loadGit 可重试。
   if (!gitWatcherStarted && api.gitWatchStart) {
@@ -106,8 +113,6 @@ export async function loadGit(): Promise<void> {
     }).catch(() => { gitWatcherStarted = false; });
   }
   loadBranch(); // 分支显示独立于文件状态，失败也不阻断
-  const listEl = document.getElementById('git-list');
-  if (!listEl) return;
   if (!api.gitStatus) { listEl.innerHTML = '<div class="ck-list-empty">Git 功能不可用</div>'; return; }
   try {
     const r = await api.gitStatus();
@@ -581,7 +586,7 @@ async function loadGitCoalesced(): Promise<void> {
   if (gitLoadInFlight) { gitLoadQueued = true; return; }
   gitLoadInFlight = true;
   try {
-    await loadGit();
+    await loadGit({ force: true });
     if (historyOpen) await loadHistory();
   } catch (_) { /* ignore */ }
   finally {
@@ -608,7 +613,8 @@ if (api.onProjectDir) {
   api.onProjectDir(() => {
     historyLoaded = false; lastHistorySig = ''; // 目录变了，历史需重拉
     gitWatcherStarted = false; // 目录变了，watcher 需重新启动监听新目录（start 会清理旧 watcher）
-    loadGit();
+    lastItems = []; // 清空缓存，强制重拉
+    loadGit({ force: true });
     if (historyOpen) loadHistory();
   });
 }

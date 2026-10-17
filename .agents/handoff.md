@@ -47,10 +47,11 @@
 - 最终验证：typecheck 0、vitest **127 文件 / 1184 用例**、lint 0 error、compile 0 无漂移。
 - 待办：**合并/发版由用户决定**（当前不 tag/push/发版）。真机待验项见上（尤其 A-005 打包环境 fork、D-005 手机浏览器握手、CSP file:// 放行、D-008 Electron net.request）。
 
-## v0.10.4：Git / 对话列表页切 tab 性能修复（本版本）
+## v0.10.5：Git / 对话列表页切 tab 性能修复（本版本，纠正 v0.10.4 空版本）
 
 - **Git 页**：`loadGit({ force })` 支持缓存。切 tab 不再重走 `gitStatus` IPC + 重建列表；watcher 变更/项目切换/手动操作时 `force: true`。
 - **对话列表页**：`loadConversations(retainOnEmpty, force)` 支持跳过跨进程 DOM 扫描。切 tab 不再重扫网页会话；导航/新建/刷新时 `force: true`。
+- ⚠️ **教训**：v0.10.4 是空版本——上一轮脚本编辑因中断未落地，我却没复核就发版。以后发版前必须 grep 确认修改点真实存在。
 
 ## v0.10.3：文件页性能修复 + 默认暗色首帧
 

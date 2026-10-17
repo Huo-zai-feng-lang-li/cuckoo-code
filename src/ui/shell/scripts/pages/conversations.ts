@@ -15,9 +15,12 @@ function applyBusyState(): void {
 }
 
 // retainOnEmpty=true：读到空时保留旧列表（页面正在导航/DOM 未就绪时避免误清空）
-export async function loadConversations(retainOnEmpty?: boolean): Promise<void> {
+// force=true：强制拉 IPC（导航/新建/刷新）；否则有内容直接复用（切 tab 用）
+export async function loadConversations(retainOnEmpty?: boolean, force?: boolean): Promise<void> {
   const listEl = document.getElementById('conv-list');
   if (!listEl || !api.listWebSessions) return;
+  // 有内容且不强制 → 跳过 IPC 与 DOM 重建，只刷新禁用态
+  if (!force && listEl.querySelector('.ck-conv-item')) { applyBusyState(); return; }
   let res: any = null;
   try { res = await api.listWebSessions(); } catch (_) { res = null; }
   const sessions: any[] = (res && res.success && Array.isArray(res.sessions)) ? res.sessions : [];
@@ -50,13 +53,13 @@ export async function loadConversations(retainOnEmpty?: boolean): Promise<void> 
 
 // 导航后延迟多次重试读取（网页导航中 DOM 未就绪 → 等加载完再读）
 function reloadConversationsAfterNav(): void {
-  loadConversations(true);
-  setTimeout(() => loadConversations(true), 800);
-  setTimeout(() => loadConversations(true), 1800);
-  setTimeout(() => loadConversations(false), 3200);
+  loadConversations(true, true);
+  setTimeout(() => loadConversations(true, true), 800);
+  setTimeout(() => loadConversations(true, true), 1800);
+  setTimeout(() => loadConversations(false, true), 3200);
 }
 
-document.getElementById('conv-refresh')?.addEventListener('click', () => loadConversations());
+document.getElementById('conv-refresh')?.addEventListener('click', () => loadConversations(false, true));
 
 document.getElementById('conv-new')?.addEventListener('click', () => {
   if (api.newWebConversation) api.newWebConversation().then(() => reloadConversationsAfterNav());
