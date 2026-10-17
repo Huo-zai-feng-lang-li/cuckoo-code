@@ -1,0 +1,12 @@
+﻿src/providers/chatgpt.ts
+src/providers/claude.ts
+src/providers/custom/loader.ts
+src/providers/deepseek.ts
+src/providers/generated/hook-sources.ts
+src/providers/hooks/chatgpt.ts
+src/providers/hooks/claude.ts
+src/providers/hooks/deepseek.ts
+src/providers/hooks/shared/sse.ts
+src/providers/registry.ts
+src/providers/types.ts
+src/providers/validate.ts

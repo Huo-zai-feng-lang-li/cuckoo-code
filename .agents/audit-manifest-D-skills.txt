@@ -1,0 +1,5 @@
+﻿src/skills/frontmatter.ts
+src/skills/index.ts
+src/skills/prompt.ts
+src/skills/scanner.ts
+src/skills/types.ts

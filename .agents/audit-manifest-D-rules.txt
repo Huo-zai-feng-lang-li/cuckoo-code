@@ -1,0 +1,9 @@
+﻿src/rules/defaults.ts
+src/rules/files.ts
+src/rules/frontmatter.ts
+src/rules/index.ts
+src/rules/injection.ts
+src/rules/matcher.ts
+src/rules/prompt.ts
+src/rules/scanner.ts
+src/rules/types.ts

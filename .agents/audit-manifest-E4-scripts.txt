@@ -1,0 +1,13 @@
+﻿scripts/build-docs-index.mjs
+scripts/build-hooks.mjs
+scripts/build-shell.mjs
+scripts/build-tool-api.mjs
+scripts/copy-monaco.mjs
+scripts/copy-remote-pwa.mjs
+scripts/create-plugin.mjs
+scripts/fetch-runtime.mjs
+scripts/patch-electron-icon.mjs
+scripts/runtime-versions.json
+scripts/sync-market.mjs
+scripts/sync-version.js
+scripts/try-dsh-plugin.mjs

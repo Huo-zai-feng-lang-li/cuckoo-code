@@ -1,0 +1,11 @@
+﻿src/overlay/chat-input.ts
+src/overlay/events.ts
+src/overlay/fab.ts
+src/overlay/panel.ts
+src/overlay/panels/mcp-manager.ts
+src/overlay/panels/settings.ts
+src/overlay/panels/window-manager.ts
+src/overlay/project-dir.ts
+src/overlay/session-list.ts
+src/overlay/state.ts
+src/overlay/tps.ts
