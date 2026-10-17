@@ -82,6 +82,23 @@ function safeStringify(value: any): string {
   }
 }
 
+/**
+ * 把 worker 的 asar 内路径映射到 asar.unpacked 真实文件系统路径。
+ *
+ * 打包后代码位于 app.asar 内（虚拟路径），但 `child_process.fork` 启动的是
+ * 原生 OS 进程，操作系统不认识 asar 格式（透明映射仅 Electron 内建模块享有）。
+ * 故 `build.asarUnpack` 把 worker 解到 `app.asar.unpacked/`，运行时需把路径同步映射，
+ * 否则打包版 AI 执行 JS 代码块会 100% 失败（ENOENT）。
+ *
+ * @param workerPath 原始 worker 路径（可能是 asar 内路径）
+ * @returns 映射后的真实文件系统路径（非 asar 路径原样返回）
+ */
+export function resolveWorkerPath(workerPath: string): string {
+  if (!workerPath || typeof workerPath !== 'string') return workerPath;
+  if (!workerPath.includes('app.asar')) return workerPath;
+  return workerPath.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+}
+
 export interface JsRunnerOptions {
   /** 同步 vm 超时（默认 30s；测试可注入小值） */
   syncTimeoutMs?: number;
@@ -131,7 +148,12 @@ class JsRunner {
     const readFiles: string[] = [];
 
     // ========== 启动独立 worker 进程 ==========
-    const workerPath = this.workerPath || fileURLToPath(new URL('./js-sandbox-worker.mjs', import.meta.url));
+    // 打包后 worker 位于 app.asar 内，但 child_process.fork 启动的是原生 OS 进程，
+    // 操作系统不认识 asar 虚拟路径（不透明映射仅 Electron 内建模块享有）。
+    // 故 asarUnpack 把 worker 解到 app.asar.unpacked，此处把路径同步映射过去。
+    const workerPath = resolveWorkerPath(
+      this.workerPath || fileURLToPath(new URL('./js-sandbox-worker.mjs', import.meta.url))
+    );
     let child;
     try {
       child = fork(workerPath, [], { stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });

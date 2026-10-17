@@ -1,6 +1,6 @@
 {
   "name": "cuckoo-code",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "DeepSeek 桌面应用——内嵌浏览器，自动识别 AI 回复中的命令和工具调用并执行",
   "type": "module",
   "main": "out/src/app/entry.js",
@@ -121,7 +121,8 @@
     },
     "asarUnpack": [
       "**/node_modules/@vscode/ripgrep/**",
-      "**/node_modules/@vscode/ripgrep-win32-x64/**"
+      "**/node_modules/@vscode/ripgrep-win32-x64/**",
+      "**/js-sandbox-worker.mjs"
     ],
     "extraResources": [
       {
@@ -148,6 +149,18 @@
       "!eslint.config.js",
       "!.github/**",
       "!.githooks/**",
+      "!.archify/**",
+      "!.codegraph/**",
+      "!.cuckoo/**",
+      "!.cuckooCode/**",
+      "!eslint-rules/**",
+      "!examples/**",
+      "!release-notes/**",
+      "!templates/**",
+      "!wyp/**",
+      "!src/**/*.ts",
+      "!src/**/*.tsx",
+      "!src/**/*.map",
       "src/prompt/*.md",
       "src/overlay/template/*.html",
       "src/overlay/template/*.css",

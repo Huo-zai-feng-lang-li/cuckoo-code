@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-17
+
+### Fixed
+
+- **打包版 AI 执行 JS 代码块 100% 失败（v0.10.0 阻塞级回归）**：A-005 把 JsRunner 迁到 `child_process.fork` 独立进程后，worker 脚本 `js-sandbox-worker.mjs` 被打进 `app.asar`。但 fork 启动的是**原生 OS 进程**，操作系统不认识 asar 虚拟路径（不透明映射仅 Electron 内建模块享有），实测直接 `MODULE_NOT_FOUND` 崩溃。修复：① `build.asarUnpack` 增补 `**/js-sandbox-worker.mjs`，打包时解到 `app.asar.unpacked/`；② `JsRunner` 新增 `resolveWorkerPath()`，fork 前把路径中的 `app.asar/` 映射到 `app.asar.unpacked/`；③ 新增 6 例回归测试锁定（Windows/POSIX 路径、开发态原样、幂等、空输入、非目录段不误伤）。实测：unpacked 路径 fork 成功存活，asar 内路径 `exists=false` 崩溃。
+- **安装包瘦身（v0.10.0 遗漏）**：`build.files` 补排除 `.archify`/`.codegraph`/`.cuckoo`/`.cuckooCode`/`eslint-rules`/`examples`/`release-notes`/`templates`/`wyp` 与 `src/**/*.ts`（源码 + 代码图谱 DB 11 MB + 截图日志 12.7 MB 不再进包）。`app.asar` 从 352.49 MB 降到 343.28 MB。
+
 ## [0.10.0] - 2026-10-17
 
 本版本是一次**全量安全加固**（分支 `fix/security-bug-sweep`）。对全项目做了只读安全审计（5 路分片 + 独立复核），确认 **59 条 bug（P0 致命 4 / P1 高危 15 / P2 中危 17 / P3 低危 23）全部修复或逐条给出不改结论**，并复核了 17 条置信度不足的推测项。审计证据见 `docs/audit/`。新增 150+ 条回归测试，全部 PoC 复跑确认。

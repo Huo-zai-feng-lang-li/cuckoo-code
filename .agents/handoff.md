@@ -47,6 +47,13 @@
 - 最终验证：typecheck 0、vitest **127 文件 / 1184 用例**、lint 0 error、compile 0 无漂移。
 - 待办：**合并/发版由用户决定**（当前不 tag/push/发版）。真机待验项见上（尤其 A-005 打包环境 fork、D-005 手机浏览器握手、CSP file:// 放行、D-008 Electron net.request）。
 
+## v0.10.1：修复 v0.10.0 打包阻塞 bug（已发）
+
+**根因**：A-005 的 worker 打进 app.asar，`child_process.fork` 是原生进程，OS 不认 asar 路径 → 打包版 AI 执行 JS 代码块 100% MODULE_NOT_FOUND。
+**修复**：`asarUnpack` 加 `**/js-sandbox-worker.mjs` + `JsRunner.resolveWorkerPath()` 把 `app.asar/` 映射到 `app.asar.unpacked/`。6 例回归测试锁定。
+**铁证**：unpacked 路径 fork 成功存活，asar 内路径 exists=false 崩溃。
+**另补**：打包排除 .archify/.codegraph/.cuckoo/wyp/templates/examples/release-notes/eslint-rules + src/**/*.ts（asar 352→343 MB）。
+
 ## v0.10.0 后续 UI 功能线（同一分支，未 tag / 未 push）
 
 在 0.10.0 安全修复基础上追加以下功能（独立审计见 `.agents/快捷键新对话与设置即时生效-审计.md`，裁决 PASS）：
