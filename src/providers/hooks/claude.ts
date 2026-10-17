@@ -5,6 +5,8 @@
  * 共享 SSE 解码见 ./shared/sse.js。
  */
 import { createFrameDecoder, parseBlock } from './shared/sse.js';
+import { decideClaudeStreamExit } from './shared/claude-status.js';
+import { createIdleWatchdog } from './shared/idle-watchdog.js';
 
 function install(): void {
   var MARKER = '__cuckooClaudeHookInstalled__';
@@ -25,6 +27,23 @@ function install(): void {
     }
   }
 
+  // 读流静默看门狗超时（毫秒，<=0 禁用）；默认 300000（与 DeepSeek 一致）
+  function readIdleTimeout() {
+    try {
+      var v = parseInt(localStorage.getItem('cuckoo-xhr-idle-timeout') || '', 10);
+      if (isFinite(v)) return v;
+    } catch (e) { /* ignore */ }
+    return 300000;
+  }
+
+  // 从当前 URL 提取会话 id（claude.ai/chat/{uuid}），供看门狗会话复核
+  function getSessionIdFromUrl() {
+    try {
+      var m = String(location.href).match(/\/chat\/([a-f0-9-]+)/i);
+      return m ? m[1] : null;
+    } catch (e) { return null; }
+  }
+
   function dispatch(text, finished) {
     try {
       // 空回复（正文为空）→ 按失败处理，触发自动重试（普通失败间隔）
@@ -36,6 +55,15 @@ function install(): void {
       }
       window.dispatchEvent(new CustomEvent('cuckoo-ai-response', {
         detail: { text: text || '', finished: !!finished }
+      }));
+    } catch (e) { /* ignore */ }
+  }
+
+  // B-002：派发"流失败"事件（触发自动重试），而非把截断正文当 finished 成功。
+  function dispatchError(text, reason) {
+    try {
+      window.dispatchEvent(new CustomEvent('cuckoo-ai-error', {
+        detail: { text: text || '', status: 'error', reason: reason }
       }));
     } catch (e) { /* ignore */ }
   }
@@ -124,8 +152,22 @@ function install(): void {
         }
         feed(decoder.decode(r.value, { stream: true }));
         pump();
-      }).catch(function () {
-        if (!dispatched) { dispatched = true; dispatch(extractor.text, true); }
+      }).catch(function (e) {
+        if (dispatched) return;
+        dispatched = true;
+        // B-002：网络异常/连接被掐不应把截断正文当 finished 成功；区分用户中止与真错误
+        var exit = decideClaudeStreamExit({
+          sawMessageStop: extractor.finished,
+          text: extractor.text,
+          networkError: true,
+          aborted: !!(e && e.name === 'AbortError'),
+        });
+        if (exit === 'error') {
+          console.log('[Cuckoo Code][hook] fetch stream error name=' + (e && e.name));
+          dispatchError(extractor.text, 'stream');
+        } else {
+          dispatch(extractor.text, true);
+        }
       });
     }
     pump();
@@ -171,6 +213,16 @@ function install(): void {
     var frameDecoder = createFrameDecoder();
     var extractor = createExtractor();
     var dispatched = false;
+    // B-005：XHR 路径补流静默看门狗（此前仅 fetch 路径有）
+    var reqSessionId = getSessionIdFromUrl();
+    var wd = createIdleWatchdog({
+      timeoutMs: readIdleTimeout(),
+      onIdle: function () {
+        try {
+          window.dispatchEvent(new CustomEvent('cuckoo-stream-idle', { detail: { sessionId: reqSessionId } }));
+        } catch (e) { /* ignore */ }
+      }
+    });
 
     function consumeChunk() {
       var raw;
@@ -186,20 +238,31 @@ function install(): void {
       dispatchStream(extractor.think, extractor.text, extractor.finished);
       if (extractor.finished && !dispatched) {
         dispatched = true;
+        wd.stop();
         dispatch(extractor.text, true);
       }
     }
 
     xhr.addEventListener('readystatechange', function () {
+      wd.touch(); // B-005：任何状态变化都视为活跃
       if (xhr.readyState === 3 || xhr.readyState === 4) consumeChunk();
       if (xhr.readyState === 4 && !dispatched) {
+        wd.stop();
         var rest = frameDecoder.finish();
         for (var i = 0; i < rest.length; i++) {
           var parsed = parseBlock(rest[i]);
           if (parsed) extractor.consume(parsed);
         }
         dispatched = true;
-        dispatch(extractor.text, true);
+        // B-002：XHR 终态按 HTTP 状态 + 是否收到 message_stop 判定；
+        // 历史不看 status 直接 dispatch(text,true)，把失败/截断响应当成功。
+        var st = decideClaudeStreamExit({
+          sawMessageStop: extractor.finished,
+          text: extractor.text,
+          httpStatus: (typeof xhr.status === 'number') ? xhr.status : null,
+        });
+        if (st === 'error') dispatchError(extractor.text, 'xhr');
+        else dispatch(extractor.text, true);
       }
     });
   }

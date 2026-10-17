@@ -6,6 +6,8 @@
  * 共享 SSE 解码见 ./shared/sse.js。
  */
 import { createFrameDecoder, parseBlock } from './shared/sse.js';
+import { matchProviderEndpoint } from './shared/url-match.js';
+import { createIdleWatchdog } from './shared/idle-watchdog.js';
 
 function install(): void {
   var MARKER = '__cuckooDeepseekHookInstalled__';
@@ -14,29 +16,17 @@ function install(): void {
 
   var COMPLETION_PATH = '/api/v0/chat/completion';
   var STOP_STREAM_PATH = '/api/v0/chat/stop_stream';
+  // B-003：host 白名单——只认 DeepSeek 自己的域名，防止第三方页面/脚本发同 pathname 请求被当 AI 回复
+  var DEEPSEEK_HOST = ['deepseek.com'];
   // 用户主动停止标志：拦截到 stop_stream 请求时置位，新的 completion 开始时复位
   var userStopped = false;
 
   function isStopStream(url, method) {
-    if (!url) return false;
-    if (String(method || 'GET').toUpperCase() !== 'POST') return false;
-    try {
-      var u = new URL(url, document.baseURI);
-      return u.pathname === STOP_STREAM_PATH;
-    } catch (e) {
-      return String(url).indexOf(STOP_STREAM_PATH) !== -1;
-    }
+    return matchProviderEndpoint(url, method, document.baseURI, STOP_STREAM_PATH, DEEPSEEK_HOST);
   }
 
   function isCompletion(url, method) {
-    if (!url) return false;
-    if (String(method || 'GET').toUpperCase() !== 'POST') return false;
-    try {
-      var u = new URL(url, document.baseURI);
-      return u.pathname === COMPLETION_PATH;
-    } catch (e) {
-      return String(url).indexOf(COMPLETION_PATH) !== -1;
-    }
+    return matchProviderEndpoint(url, method, document.baseURI, COMPLETION_PATH, DEEPSEEK_HOST);
   }
 
   // 限流关键词（响应体文案检测）：DeepSeek 除 429 / biz_code 外，
@@ -555,6 +545,15 @@ function install(): void {
     var extractor = createExtractor();
     var dispatched = false;
     var reqSessionId = getSessionIdFromUrl(); // 发起时记录会话
+    // B-005：XHR 路径补流静默看门狗（与 fetch observeBody 对齐）
+    var wd = createIdleWatchdog({
+      timeoutMs: readIdleTimeout(),
+      onIdle: function () {
+        try {
+          window.dispatchEvent(new CustomEvent('cuckoo-stream-idle', { detail: { sessionId: reqSessionId } }));
+        } catch (e) { /* ignore */ }
+      }
+    });
 
     function consumeChunk() {
       var raw;
@@ -570,13 +569,16 @@ function install(): void {
       dispatchStream(extractor.think, extractor.text, extractor.finished, extractor.tokenUsage ? extractor.tokenUsage.accumulatedTokens : null);
       if (extractor.finished && !dispatched) {
         dispatched = true;
+        wd.stop();
         dispatch(extractor.text, resolveStatus(extractor), extractor.tokenUsage, extractor.msgIds, null, Object.assign({ path: 'xhr-finished-frame' }, extractor.snapshot()));
       }
     }
 
     xhr.addEventListener('readystatechange', function () {
+      wd.touch(); // B-005：任何状态变化都视为活跃
       if (xhr.readyState === 3 || xhr.readyState === 4) consumeChunk();
       if (xhr.readyState === 4 && !dispatched) {
+        wd.stop();
         var rest = frameDecoder.finish();
         for (var i = 0; i < rest.length; i++) {
           var parsed = parseBlock(rest[i]);
