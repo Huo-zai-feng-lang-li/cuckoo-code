@@ -17,7 +17,6 @@ import { scanSkills } from '../../skills/index.js';
 import { getPluginScanRoots } from '../../plugins/roots.js';
 import { registry, jsRunner } from '../../tools/index.js';
 import { abortWindowProcesses } from '../../infra/process-tracker.js';
-import { stopBySource } from '../../infra/task-manager.js';
 
 /**
  * 强杀该窗口后台正在跑的工具子进程（bash / grep 等）和 JS 沙箱 worker。
@@ -27,14 +26,11 @@ function abortWindowWork(ctx: any): void {
   if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
   const winId = ctx.win.id;
   try {
-    // 1. 杀前台命令工具（bash/pwsh/grep）
+    // 只杀"阻塞当前回复"的前台进程（bash/pwsh/grep）和 JS 沙箱。
+    // 绝对不杀：task-manager 里的后台长驻任务（比如 AI 拉起的 dev server），
+    // 因为它们有独立的生命周期，用户可能正在浏览器里用，不能被聊天窗口的“停止”误杀。
     abortWindowProcesses(winId);
-    
-    // 2. 杀 JS 沙箱
     if (jsRunner && typeof jsRunner.abortAll === 'function') jsRunner.abortAll(winId);
-    
-    // 3. 停掉 AI 拉起的后台长驻任务（如 dev server）
-    stopBySource('ai');
   } catch (err) {
     console.log('[Cuckoo Harness] abortWindowWork 异常:', err);
   }
