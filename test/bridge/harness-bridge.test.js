@@ -238,3 +238,23 @@ test('网页模式点停止（onUserStop）→ 纯净模式收尾（ai-state 停
   assert.strictEqual(lastAiState(), false, '网页停止应同步 ai-state 停止');
   assert.ok(types().includes('task-idle'), '网页停止应上报 task-idle 让纯净模式收尾');
 });
+
+// ===== B-009：普通语言代码块收尾围栏不被误剥 =====
+
+test('B-009: 回复以 ```python 块收尾时，其收尾围栏保留（不被当残缺开标记剥掉）', async () => {
+  // 流式结束帧带全文：正文以 ```python 块收尾
+  streamCb({ think: '', text: '请看：\n```python\nprint(1)\n```\n', finished: true });
+  await new Promise((r) => setTimeout(r, 0));
+  const p = S.reported.find((x) => x.type === 'stream');
+  assert.ok(p, '应上报 stream');
+  // 收尾 ``` 应保留：文本结尾仍有 python 块的闭合围栏
+  assert.ok(/```python[\s\S]*```\s*$/.test(p.text.trimEnd()), 'python 收尾块闭合围栏应保留，实际: ' + JSON.stringify(p.text));
+});
+
+test('B-009: 残缺 cuckoo 开标记（```cuck）仍被隐藏', async () => {
+  streamCb({ think: '', text: '正在写：\n```cuck', finished: false });
+  await new Promise((r) => setTimeout(r, 0));
+  const p = S.reported.find((x) => x.type === 'stream');
+  assert.ok(p, '应上报 stream');
+  assert.ok(!/```cuck/.test(p.text), '残缺 cuck 开标记应被剥离，实际: ' + JSON.stringify(p.text));
+});

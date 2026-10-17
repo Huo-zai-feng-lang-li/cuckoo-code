@@ -116,3 +116,16 @@ test('handleJsToolScript 成功无 output 时 UI 显示占位', async () => {
   await executor.handleJsToolScript('code');
   assert.ok(els['cuckoo-result-output'].textContent.includes('无输出'));
 });
+
+test('B-011: 执行中重入调用被丢弃（isExecuting 入口检查）', async () => {
+  let resolveFirst;
+  window.electronAPI.executeJs = vi.fn(() => new Promise((res) => { resolveFirst = res; }));
+  // 第一次调用挂起（isExecuting=true）
+  const p1 = executor.handleJsToolScript('await read({filePath:"a"})');
+  // 第二次重入：应被入口锁丢弃，返回 undefined
+  const r2 = await executor.handleJsToolScript('await bash({command:"echo bad"})');
+  assert.strictEqual(r2, undefined, '重入应返回 undefined（丢弃）');
+  // 结束第一次
+  resolveFirst({ success: true, output: 'ok' });
+  await p1;
+});

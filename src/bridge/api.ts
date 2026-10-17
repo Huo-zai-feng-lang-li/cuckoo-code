@@ -258,4 +258,7 @@ try {
 }
 
 // 无论 contextBridge 是否成功，都直接挂载到 window 作为备选
+// X-001：本应用 contextIsolation:true，contextBridge.exposeInMainWorld 已把 electronAPI
+// 隔离在隔离世界；下面这行兜底赋值仅落在隔离世界的 window，不泄漏到 AI 页面主世界，
+// 保留作 contextBridge 失败时的降级（安全闸在主进程 host 白名单，不在此）。
 (window as any).electronAPI = electronAPI;

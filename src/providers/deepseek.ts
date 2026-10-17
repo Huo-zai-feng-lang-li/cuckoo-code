@@ -59,8 +59,8 @@ const deepseek = {
       '[data-testid="send"]',
       '[data-testid="send-button"]',
       'button:has(svg[data-icon="arrow"])',
-      'button:has(> svg)',
-      'button:has(svg[data-icon="send"])',
+      // B-010：收窄兜底——必须带 aria-label，避免误点到任意含 svg 的按钮（新对话/分享/收藏）
+      'button[aria-label]:has(> svg)',
     ];
     for (const sel of selectors) {
       try {

@@ -20,8 +20,14 @@ function notifyJsScriptDetected(code: string): void {
 
 /**
  * 执行检测到的 JS 工具脚本
+ * B-011：执行锁此前只写不检（入口不查 isExecuting），两条 finished 回复在 await 期间
+ * 先后到达会并发执行两组 JS。入口先检查，已有脚本在执行则丢弃本次重入。
  */
-async function handleJsToolScript(code: string): Promise<{ code: string; result: any }> {
+async function handleJsToolScript(code: string): Promise<{ code: string; result: any } | undefined> {
+  if (isExecuting) {
+    console.log('[Cuckoo Code] 已有 JS 工具脚本在执行，丢弃重入调用');
+    return undefined;
+  }
   isExecuting = true;
   notifyJsScriptDetected(code);
   setTaskStatus(true);

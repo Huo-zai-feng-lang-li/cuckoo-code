@@ -43,7 +43,9 @@ function stripToolBlocks(text: string): string {
   out = out.replace(/```(?:cuckoo|javascript|js)\s*$/gi, '');
   // 流式边界兜底：开标记行未收全（如 ```cuck / ```cuckoo 尚未换行）→ 也隐藏，
   // 否则这几个字符会作为普通文本闪现在流式输出尾部。
-  out = out.replace(/```[a-z]*\s*$/i, '');
+  // B-009：要求反引号后至少带一个字母——即"半截开标记"才剥；回复若以普通语言代码块
+  // （如 ```python）收尾，其收尾 ``` 是裸反引号（后无字母），不被误剥导致气泡渲染异常。
+  out = out.replace(/```[a-z]+\s*$/i, '');
   return out.trim();
 }
 
