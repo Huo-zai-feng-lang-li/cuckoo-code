@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node scripts/fetch-runtime.mjs && node scripts/copy-monaco.mjs && node start.js",
     "dev": "node scripts/fetch-runtime.mjs && node scripts/copy-monaco.mjs && node start.js --dev",
-    "compile": "node scripts/copy-monaco.mjs && node scripts/build-hooks.mjs && tsc -p tsconfig.build.json && node scripts/copy-remote-pwa.mjs && node scripts/build-tool-api.mjs && node scripts/build-shell.mjs",
+    "compile": "node scripts/copy-monaco.mjs && node scripts/build-hooks.mjs && node scripts/build-sanitizer.mjs && tsc -p tsconfig.build.json && node scripts/copy-remote-pwa.mjs && node scripts/build-tool-api.mjs && node scripts/build-shell.mjs",
     "copy-monaco": "node scripts/copy-monaco.mjs",
     "fetch-runtime": "node scripts/fetch-runtime.mjs",
     "test": "vitest run",

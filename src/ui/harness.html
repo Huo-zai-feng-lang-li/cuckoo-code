@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light dark">
+<!-- E-009：自有窗口 CSP。harness 有内联脚本块与 vendor 本地脚本，保留 'unsafe-inline'；
+     真正的 XSS 兜底是 renderMarkdown 的白名单 sanitizer。禁止 object/frame/base 劫持。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-src 'none'">
 <title>Cuckoo Harness</title>
 <link rel="stylesheet" href="vendor/katex/katex.min.css">
 <script src="vendor/katex/katex.min.js"></script>
@@ -1060,6 +1063,7 @@
   </div>
 </div>
 <script src="vendor/marked.umd.js"></script>
+<script src="vendor/cuckoo-sanitize.js"></script>
 <script>
 (function () {
   var api = window.harnessAPI || {};
@@ -2570,6 +2574,11 @@
     try {
       if (window.marked && typeof window.marked.parse === 'function') {
         src = window.marked.parse(src, { gfm: true, breaks: true });
+        // E-002：marked 输出先过白名单 sanitizer。此时 @@MATHn@@ 是纯文本占位，
+        // 会被完整保留；随后才恢复 KaTeX 受信 HTML（顺序不可调换）。
+        if (window.CuckooSanitize && typeof window.CuckooSanitize.sanitizeHtml === 'function') {
+          src = window.CuckooSanitize.sanitizeHtml(src);
+        }
         return src.replace(/@@MATH(\d+)@@/g, function (m, idx) { return maths[+idx] || ''; });
       }
     } catch (e) { /* 解析失败回退纯文本 */ }
