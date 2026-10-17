@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { parseRuleFrontmatter } from './frontmatter.js';
+import { isWorkspaceTrusted } from '../infra/workspace-trust.js';
 import type { RuleMeta, RuleSource } from './types.js';
 
 /** 用户级目录（统一为 ~/.agents/rules，可用 CUCKOO_HOME 覆盖，供测试隔离） */
@@ -66,10 +67,16 @@ function scanProjectRules(projectDir: string): RuleMeta[] {
  * @param projectDir 项目根（可为 null）
  * @param extraRulesDirs 额外的 rules 目录（绝对路径）。由上层（session）计算后传入，
  *   本模块**不 import plugins**，避免形成依赖环。
+ *
+ * D-004（prompt injection 数据层兜底）：当 projectDir 存在但工作区未被信任时，
+ * 不扫描/不返回项目级规则。所有消费方（prompt-builder、list-skills IPC、JsRunner 按路径
+ * 注入 scoped 规则、harness 等）自动获得过滤，不依赖各入口自觉调用。用户级/插件级不受影响。
  */
 export function scanRules(projectDir: string | null, extraRulesDirs: string[] = []): RuleMeta[] {
   const user = scanDir(getUserRulesDir(), 'user');
-  const project = projectDir ? scanProjectRules(projectDir) : [];
+  const project = projectDir && isWorkspaceTrusted(projectDir)
+    ? scanProjectRules(projectDir)
+    : [];
   const plugin: RuleMeta[] = [];
   for (const dir of extraRulesDirs) {
     if (!dir) continue;

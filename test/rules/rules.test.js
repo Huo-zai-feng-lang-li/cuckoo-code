@@ -24,6 +24,11 @@ beforeEach(async () => {
   fs.mkdirSync(FAKE_HOME, { recursive: true });
   fs.mkdirSync(path.join(PROJ, '.agents', 'rules'), { recursive: true });
   rules = await import('../../src/rules/index.js');
+  // D-004：这些用例验证"扫描/匹配/渲染"本身，按受信任项目建立前置状态；
+  // 未信任时的过滤由 test/rules/project-trust.test.js 专门覆盖。
+  const trust = await import('../../src/infra/workspace-trust.js');
+  trust.clearSessionTrustForTests();
+  trust.setWorkspaceTrust(PROJ, 'trusted');
 });
 
 afterEach(() => {

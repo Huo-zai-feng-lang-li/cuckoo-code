@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { parseFrontmatter } from './frontmatter.js';
+import { isWorkspaceTrusted } from '../infra/workspace-trust.js';
 import type { SkillMeta, SkillSource } from './types.js';
 
 /** 从正文取首段（非空、非标题行）作为缺省 description */
@@ -116,10 +117,16 @@ export function mergeSkills(project: SkillMeta[], user: SkillMeta[], plugin: Ski
  * @param extraSkillDirs 额外的 skills 目录（绝对路径）。由上层（session）计算后传入，
  *   本模块**不 import plugins**，避免形成依赖环（见 docs/arch/02-dependency.md）。
  * @returns 合并后的技能列表（项目级 > 用户级 > 插件级）
+ *
+ * D-004（prompt injection 数据层兜底）：当 projectDir 存在但工作区未被信任时，
+ * 不扫描/不返回项目级技能。这样所有消费方（prompt-builder、list-skills IPC、
+ * DSH host、harness 等）自动获得过滤，不依赖各入口自觉调用。用户级/插件级不受影响。
  */
 export function scanSkills(projectDir: string | null, extraSkillDirs: string[] = []): SkillMeta[] {
   const user = scanSkillsRoot(getUserSkillsDir(), 'user');
-  const project = projectDir ? scanSkillsRoot(getProjectSkillsDir(projectDir), 'project') : [];
+  const project = projectDir && isWorkspaceTrusted(projectDir)
+    ? scanSkillsRoot(getProjectSkillsDir(projectDir), 'project')
+    : [];
 
   const plugin: SkillMeta[] = [];
   for (const dir of extraSkillDirs) {
