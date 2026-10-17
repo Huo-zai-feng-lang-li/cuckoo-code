@@ -2550,6 +2550,14 @@
   }
 
   // Markdown → HTML：用 marked（GFM）
+  // fail-closed：消毒器（CuckooSanitize）不可用时绝不放行未消毒的 marked HTML，
+  // 一律降级为下方纯文本回退分支（带一次性 warn 便于排查）。
+  var _cuckooSanitizeWarned = false;
+  function warnSanitizerMissing() {
+    if (_cuckooSanitizeWarned) return;
+    _cuckooSanitizeWarned = true;
+    console.warn('[cuckoo] HTML 消毒器不可用，渲染降级为纯文本（fail-closed）');
+  }
   function renderMarkdown(text) {
     var src = String(text == null ? '' : text);
     if (!src) return '';
@@ -2572,13 +2580,13 @@
       return '@@MATH' + (maths.length - 1) + '@@';
     });
     try {
-      if (window.marked && typeof window.marked.parse === 'function') {
+      var sanitizerOk = !!(window.CuckooSanitize && typeof window.CuckooSanitize.sanitizeHtml === 'function');
+      if (!sanitizerOk) warnSanitizerMissing();
+      if (window.marked && typeof window.marked.parse === 'function' && sanitizerOk) {
         src = window.marked.parse(src, { gfm: true, breaks: true });
         // E-002：marked 输出先过白名单 sanitizer。此时 @@MATHn@@ 是纯文本占位，
         // 会被完整保留；随后才恢复 KaTeX 受信 HTML（顺序不可调换）。
-        if (window.CuckooSanitize && typeof window.CuckooSanitize.sanitizeHtml === 'function') {
-          src = window.CuckooSanitize.sanitizeHtml(src);
-        }
+        src = window.CuckooSanitize.sanitizeHtml(src);
         return src.replace(/@@MATH(\d+)@@/g, function (m, idx) { return maths[+idx] || ''; });
       }
     } catch (e) { /* 解析失败回退纯文本 */ }
