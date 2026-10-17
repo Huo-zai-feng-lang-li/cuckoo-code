@@ -10,9 +10,9 @@
  *   - plugins/runtime/theme-runtime.ts 是平台无关纯逻辑，两处共用
  *   - 本文件是主进程权威实例；渲染进程不自己建注册表
  */
-import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { writeJsonAtomicSync, readJsonRobustSync } from '../../infra/atomic-json.js';
 import { ThemeRuntime } from '../../plugins/runtime/theme-runtime.js';
 import type { ThemeSnapshot, ThemeDefinition, ThemeTokenOverrides } from '../../plugins/runtime/theme-runtime.js';
 import os from 'node:os';
@@ -28,19 +28,12 @@ function getStateFile(): string {
   return path.join(process.env.CUCKOO_HOME || path.join(os.homedir(), '.cuckoo'), 'theme-state.json');
 }
 function readPreference(): string | null {
-  try {
-    const file = getStateFile();
-    if (!fs.existsSync(file)) return null;
-    const raw = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    return raw && typeof raw.preference === 'string' ? raw.preference : null;
-  } catch { return null; }
+  // C-003：损坏回退 .bak
+  const raw = readJsonRobustSync<{ preference?: string }>(getStateFile(), {});
+  return raw && typeof raw.preference === 'string' ? raw.preference : null;
 }
 function writePreference(preference: string): void {
-  try {
-    const file = getStateFile();
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ preference }, null, 2), 'utf-8');
-  } catch { /* ignore */ }
+  writeJsonAtomicSync(getStateFile(), { preference });
 }
 /** 订阅者：窗口 webContents，变化时推快照 */
 const subscribers = new Set<any>();

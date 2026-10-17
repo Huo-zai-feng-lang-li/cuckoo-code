@@ -182,3 +182,29 @@ test('_parseSummaryTitle 空字符串', () => {
   assert.strictEqual(r.title, '');
   assert.strictEqual(r.body, '');
 });
+
+// ===== C-004：回退分支混入 branch 孤立消息 → 必须保证 user/assistant 严格配对 =====
+
+test('C-004 回退分支：链断裂时同角色相邻 branch 消息被剔除，结果严格成对', () => {
+  // 叶子 7 的 parent_id 指向不存在的 id → 主链 walk 断裂（长度 1），进入回退分支
+  // 消息 5 是挂在 3 下的 branch ASSISTANT（与 4 同角色相邻）
+  const msgs = [
+    { message_id: 1, role: 'USER', parent_id: null },
+    { message_id: 2, role: 'ASSISTANT', parent_id: 1 },
+    { message_id: 3, role: 'USER', parent_id: 2 },
+    { message_id: 4, role: 'ASSISTANT', parent_id: 3 },
+    { message_id: 5, role: 'ASSISTANT', parent_id: 3 }, // branch 孤立消息
+    { message_id: 6, role: 'USER', parent_id: 4 },
+    { message_id: 7, role: 'ASSISTANT', parent_id: 'nonexistent' }, // 链断裂 → 回退
+  ];
+  const picked = compaction._pickRecentPairedIds(msgs, 7, 1);
+  // 按 id 升序检查严格交替
+  const sorted = [...picked].sort((a, b) => a - b);
+  const byId = Object.fromEntries(msgs.map((m) => [m.message_id, m]));
+  for (let i = 1; i < sorted.length; i++) {
+    assert.notStrictEqual(byId[sorted[i]].role, byId[sorted[i - 1]].role, `id ${sorted[i]} 与前一条 ${sorted[i - 1]} 同角色相邻（不配对）`);
+  }
+  assert.strictEqual(byId[sorted[0]].role, 'USER', '起点必须是 USER');
+  assert.strictEqual(byId[sorted[sorted.length - 1]].role, 'ASSISTANT', '终点必须是 ASSISTANT');
+  assert.ok(!picked.includes(5), 'branch 孤立消息 5 不应出现在压缩对里');
+});

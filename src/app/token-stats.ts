@@ -18,9 +18,9 @@
  * 若将来改成 fs.promises（异步），"读"与"写"之间会插入其它调用，
  * 可能导致后者覆盖前者的结果（丢失更新）——届时必须加锁或改原子写。
  */
-import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { writeJsonAtomicSync, readJsonRobustSync } from '../infra/atomic-json.js';
 
 const require = createRequire(import.meta.url);
 const { app } = require('electron');
@@ -74,22 +74,17 @@ function localDateKey(): string {
  */
 function readRaw(): any {
   if (_cache) return _cache;
-  try {
-    const raw = fs.readFileSync(file(), 'utf-8');
-    const o = JSON.parse(raw);
-    _cache = (o && typeof o === 'object') ? o : {};
-  } catch (_) {
-    _cache = {};
-  }
+  // C-003：损坏回退 .bak，不再静默吞成 {}
+  const o = readJsonRobustSync<any>(file(), {});
+  _cache = (o && typeof o === 'object') ? o : {};
   return _cache;
 }
 
 /** 写回磁盘，同时更新内存缓存（保持内存=磁盘） */
 function writeRaw(o: any): void {
   _cache = o;
-  try {
-    fs.writeFileSync(file(), JSON.stringify(o, null, 2), 'utf-8');
-  } catch (_) {
+  // C-003：原子写（tmp+rename），避免崩溃中途截断 JSON
+  if (!writeJsonAtomicSync(file(), o, { keepBackup: true })) {
     // 写盘失败 → 使缓存失效，下次读回退到磁盘真相（避免本会话读到未落盘的值）
     _cache = null;
   }

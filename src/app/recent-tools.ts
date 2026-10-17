@@ -6,9 +6,9 @@
  *
  * 数据模型：{ type: 'skill'|'mcp'|'agent'|'snippet', name, ts, payload?, autoSend? }[]
  */
-import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { writeJsonAtomicSync, readJsonRobustSync } from '../infra/atomic-json.js';
 
 export type RecentType = 'skill' | 'mcp' | 'agent' | 'snippet';
 
@@ -43,23 +43,14 @@ function normItem(raw: any): RecentItem | null {
 }
 
 function loadRecent(): RecentItem[] {
-  try {
-    const raw = fs.readFileSync(getFile(), 'utf-8');
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return [];
-    return arr.map(normItem).filter(Boolean) as RecentItem[];
-  } catch (_) {
-    return [];
-  }
+  // C-003：损坏回退 .bak
+  const arr = readJsonRobustSync<RecentItem[]>(getFile(), []);
+  if (!Array.isArray(arr)) return [];
+  return arr.map(normItem).filter(Boolean) as RecentItem[];
 }
 
 function saveRecent(list: RecentItem[]): void {
-  try {
-    fs.mkdirSync(getUserDir(), { recursive: true });
-    fs.writeFileSync(getFile(), JSON.stringify(list.slice(0, MAX), null, 2), 'utf-8');
-  } catch (err: any) {
-    console.warn('[RecentTools] 写入失败:', err.message);
-  }
+  writeJsonAtomicSync(getFile(), list.slice(0, MAX), { keepBackup: true });
 }
 
 /** 记录一次使用（同类型同名去重后置顶），最多 MAX 条；返回新列表 */

@@ -8,9 +8,9 @@
  *
  * API Key 默认空（源码不硬编码任何密钥，开源安全）；用户在设置里填写后存 ui-prefs.json。
  */
-import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { writeJsonAtomicSync, readJsonRobustSync } from '../infra/atomic-json.js';
 
 export interface PromptEnhancerConfig {
   /** 是否显示增强按钮 */
@@ -96,16 +96,13 @@ function normEnhancer(raw: any): PromptEnhancerConfig {
 }
 
 function readPrefs(): UiPrefs {
-  try {
-    const raw = fs.readFileSync(getPrefsFile(), 'utf-8');
-    const o = JSON.parse(raw);
-    return {
-      harnessZoom: clampZoom(o && o.harnessZoom),
-      promptEnhancer: normEnhancer(o && o.promptEnhancer),
-    };
-  } catch (_) {
-    return { harnessZoom: DEFAULTS.harnessZoom, promptEnhancer: { ...DEFAULTS.promptEnhancer } };
-  }
+  // C-003：损坏回退 .bak
+  const o = readJsonRobustSync<Record<string, any> | null>(getPrefsFile(), null);
+  if (!o) return { harnessZoom: DEFAULTS.harnessZoom, promptEnhancer: { ...DEFAULTS.promptEnhancer } };
+  return {
+    harnessZoom: clampZoom(o && o.harnessZoom),
+    promptEnhancer: normEnhancer(o && o.promptEnhancer),
+  };
 }
 
 function writePrefs(patch: Partial<UiPrefs>): UiPrefs {
@@ -113,12 +110,7 @@ function writePrefs(patch: Partial<UiPrefs>): UiPrefs {
   const next: UiPrefs = { ...cur };
   if (patch.harnessZoom !== undefined) next.harnessZoom = clampZoom(patch.harnessZoom);
   if (patch.promptEnhancer !== undefined) next.promptEnhancer = normEnhancer({ ...cur.promptEnhancer, ...patch.promptEnhancer });
-  try {
-    fs.mkdirSync(getUserDir(), { recursive: true });
-    fs.writeFileSync(getPrefsFile(), JSON.stringify(next, null, 2), 'utf-8');
-  } catch (err: any) {
-    console.warn('[UIPrefs] 写入失败:', err.message);
-  }
+  writeJsonAtomicSync(getPrefsFile(), next, { keepBackup: true });
   return next;
 }
 

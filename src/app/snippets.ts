@@ -10,9 +10,9 @@
  * 首次读写时若文件不存在，写入 3 条默认提示词。
  * 之后完全由用户掌控（可增/删/改）。
  */
-import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { writeJsonAtomicSync, readJsonRobustSync } from '../infra/atomic-json.js';
 
 export interface Snippet {
   id: string;
@@ -75,16 +75,11 @@ function normalizeSnippet(raw: any): Snippet | null {
  */
 function listSnippets(): Snippet[] {
   const file = getSnippetsFile();
-  try {
-    if (fs.existsSync(file)) {
-      const raw = JSON.parse(fs.readFileSync(file, 'utf-8'));
-      if (Array.isArray(raw)) {
-        const list = raw.map(normalizeSnippet).filter(Boolean) as Snippet[];
-        return list;
-      }
-    }
-  } catch (err: any) {
-    console.error('[Snippets] 读取失败:', err.message);
+  // C-003：损坏回退 .bak，不再静默吞成默认（防崩溃中途截断丢用户自定义）
+  const raw = readJsonRobustSync<unknown>(file, null);
+  if (Array.isArray(raw)) {
+    const list = raw.map(normalizeSnippet).filter(Boolean) as Snippet[];
+    return list;
   }
   // 首次：写入默认
   const defaults = defaultSnippets();
@@ -95,17 +90,9 @@ function listSnippets(): Snippet[] {
 /** 整体覆盖写入 */
 function saveSnippets(list: any): boolean {
   const file = getSnippetsFile();
-  try {
-    const arr = Array.isArray(list) ? list : [];
-    const clean = arr.map(normalizeSnippet).filter(Boolean) as Snippet[];
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(clean, null, 2), 'utf-8');
-    console.log('[Snippets] 已写入:', file);
-    return true;
-  } catch (err: any) {
-    console.error('[Snippets] 写入失败:', err.message);
-    return false;
-  }
+  const arr = Array.isArray(list) ? list : [];
+  const clean = arr.map(normalizeSnippet).filter(Boolean) as Snippet[];
+  return writeJsonAtomicSync(file, clean, { keepBackup: true });
 }
 
 export { listSnippets, saveSnippets, getSnippetsFile, defaultSnippets };

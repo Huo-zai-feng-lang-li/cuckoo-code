@@ -13,9 +13,9 @@
  *  - windowIds 顺序 = 轮换顺序（按添加进组的先后）
  *  - lastWindowId/lastSessionId：最后一次继续的窗口与对话（便于定位最新进展）
  */
-import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { writeJsonAtomicSync, readJsonRobustSync } from "../infra/atomic-json.js";
 
 const require = createRequire(import.meta.url);
 const { app } = require("electron");
@@ -26,15 +26,12 @@ function getGroupsFile(): string {
   return GROUPS_FILE;
 }
 
+const DEFAULT_DATA = { groups: [], rateLimits: {} };
+
 function readData(): any {
-  try {
-    const file = getGroupsFile();
-    if (!fs.existsSync(file)) return { groups: [], rateLimits: {} };
-    const data = JSON.parse(fs.readFileSync(file, "utf-8"));
-    return data && typeof data === "object" ? data : { groups: [], rateLimits: {} };
-  } catch (_) {
-    return { groups: [], rateLimits: {} };
-  }
+  // C-003：损坏回退 .bak，不再静默返回默认（防崩溃中途截断丢配置）
+  const data = readJsonRobustSync<any>(getGroupsFile(), DEFAULT_DATA);
+  return data && typeof data === "object" ? data : DEFAULT_DATA;
 }
 
 function readGroups(): any[] {
@@ -43,11 +40,8 @@ function readGroups(): any[] {
 }
 
 function writeData(data: any): void {
-  try {
-    fs.mkdirSync(path.dirname(getGroupsFile()), { recursive: true });
-    fs.writeFileSync(getGroupsFile(), JSON.stringify(data, null, 2), "utf-8");
-  } catch (err: any) {
-    console.error("[WindowGroups] 写入失败:", err.message);
+  if (!writeJsonAtomicSync(getGroupsFile(), data, { keepBackup: true })) {
+    console.error("[WindowGroups] 写入失败:", getGroupsFile());
   }
 }
 

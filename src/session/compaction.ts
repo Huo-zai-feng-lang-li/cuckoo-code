@@ -230,10 +230,19 @@ function pickRecentPairedIds(msgs: MessageItem[], leafId: number | null, ratio: 
   }
   chain.reverse(); // 根 → 叶子
 
-  // 3) 回溯失败（无 parent_id 数据）→ 回退到旧的"按 id 排序取尾部"
+  // 3) 回溯失败（无 parent_id 数据）→ 回退：按 id 全量排序
+  //    C-004：回退分支混入 branch 消息会破坏 user/assistant 严格配对
+  //    （share/create 报 MESSAGES_MUST_APPEAR_IN_PAIRS）。回退路径先做
+  //    "同角色相邻去重"——合法线性对话角色本就严格交替，去重只删 branch 孤立消息，
+  //    不动正常消息；再走 start/end 对齐。
   let ordered: MessageItem[];
   if (chain.length <= 1 && msgs.length > 1) {
-    ordered = msgs;
+    ordered = [];
+    for (const m of msgs) {
+      const last = ordered[ordered.length - 1];
+      if (last && last.role === m.role) continue; // 丢弃 branch 孤立的同角色相邻消息
+      ordered.push(m);
+    }
   } else {
     ordered = chain;
   }
@@ -298,7 +307,12 @@ async function runCompaction(projectDir?: string): Promise<void> {
     // 方案 B：首行「【标题】xxx」解析为续接会话标题（正文剔除标题行，避免污染 extraPrompt）。
     try {
       const parsed = parseSummaryTitle(summaryText || '');
-      if (parsed.body) localStorage.setItem(COMPACT_SUMMARY_KEY, parsed.body.slice(0, MAX_SUMMARY_LEN));
+      // C-009：超长摘要按边界感知截断——去掉尾部空白并加省略标记，不再硬切丢语义
+      const body = parsed.body || '';
+      const clipped = body.length > MAX_SUMMARY_LEN
+        ? body.slice(0, MAX_SUMMARY_LEN).replace(/\s+$/, '') + ' …'
+        : body;
+      if (clipped) localStorage.setItem(COMPACT_SUMMARY_KEY, clipped);
       if (parsed.title) localStorage.setItem(COMPACT_TITLE_KEY, parsed.title);
       else localStorage.removeItem(COMPACT_TITLE_KEY);
     } catch (_) { /* ignore */ }

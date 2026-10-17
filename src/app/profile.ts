@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { writeJsonAtomicSync, readJsonRobustSync } from '../infra/atomic-json.js';
 
 const require = createRequire(import.meta.url);
 const { app } = require('electron');
@@ -58,23 +59,14 @@ function getLastActiveProfileId(): string | null {
 }
 
 function readProfiles(): any[] {
-  try {
-    const file = getProfileFile();
-    if (fs.existsSync(file)) {
-      return JSON.parse(fs.readFileSync(file, 'utf-8'));
-    }
-  } catch (err: any) {
-    console.error('[Profile] 读取 profile 列表失败:', err.message);
-  }
-  return [];
+  // C-002：损坏回退 .bak，不再静默返回 []（避免崩溃后全部 profile 丢失）
+  const arr = readJsonRobustSync<any[]>(getProfileFile(), []);
+  return Array.isArray(arr) ? arr : [];
 }
 
 function writeProfiles(profiles: any[]): void {
-  try {
-    const file = getProfileFile();
-    fs.writeFileSync(file, JSON.stringify(profiles, null, 2), 'utf-8');
-  } catch (err: any) {
-    console.error('[Profile] 写入 profile 列表失败:', err.message);
+  if (!writeJsonAtomicSync(getProfileFile(), profiles, { keepBackup: true })) {
+    console.error('[Profile] 写入 profile 列表失败:', getProfileFile());
   }
 }
 

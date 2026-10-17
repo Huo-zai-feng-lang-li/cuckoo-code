@@ -2,9 +2,9 @@
  * 会话-目录映射持久化存储 + URL 会话检测（每 profile 独立实例）
  * 由原 session-store.js 改造：从单例改为工厂函数，每个 profile 拥有独立存储文件和状态。
  */
-import fs from 'node:fs';
 import path from 'node:path';
 import { getProviderByUrl } from '../providers/registry.js';
+import { writeJsonAtomicSync, readJsonRobustSync } from '../infra/atomic-json.js';
 
 /**
  * 创建 profile 专属的 session store 实例
@@ -21,23 +21,14 @@ function createSessionStore(profileId: string, storeDir: string, windowState: an
 
   function readSessionStore(): any {
     if (noPersist) return memStore;
-    try {
-      if (fs.existsSync(STORE_FILE)) {
-        return JSON.parse(fs.readFileSync(STORE_FILE, 'utf-8'));
-      }
-    } catch (err: any) {
-      console.error('[Cuckoo Code] 读取会话存储失败:', err.message);
-    }
-    return {};
+    // C-001：损坏回退 .bak，不再静默返回 {}（避免崩溃中途截断后账本全丢）
+    return readJsonRobustSync<Record<string, any>>(STORE_FILE, {});
   }
 
   function writeSessionStore(store: any): void {
     if (noPersist) { memStore = store; return; }
-    try {
-      fs.writeFileSync(STORE_FILE, JSON.stringify(store, null, 2), 'utf-8');
+    if (writeJsonAtomicSync(STORE_FILE, store, { keepBackup: true })) {
       console.log('[Cuckoo Code] 会话存储已保存:', STORE_FILE);
-    } catch (err: any) {
-      console.error('[Cuckoo Code] 写入会话存储失败:', err.message);
     }
   }
 
