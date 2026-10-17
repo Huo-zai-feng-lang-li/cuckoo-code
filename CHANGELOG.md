@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-10-17
+
+### Performance
+
+- **修复"任务菜单切到源代码菜单卡顿"**（`src/ui/shell/scripts/pages/files.ts` + `preview.ts`）：
+  - **切 tab 复用缓存**：原每次切回「文件」都重新走 IPC 扫描整个项目目录树；现缓存命中直接渲染，只有刷新按钮 / 增删改 / 项目切换才强制拉取（`loadFiles({ force: true })`）。
+  - **目录展开/折叠不拉 IPC**：原每次点击目录都会重新扫描整棵树；现只重渲染缓存（展开状态本来就在内存里）。
+  - **预览恢复不重读文件**：新增 `showPreviewLayout()`，切回「文件」只恢复显隐与宽度，文件内容一直在编辑器里（`restorePreview` 改调它）。
+  - **大项目分帧渲染**：节点数 > 300 时先插入"加载中…"占位，`requestAnimationFrame` 再真正渲染，避免一次性重建数千 DOM 阻塞主线程。
+
+### Changed
+
+- **默认暗色首帧**（`src/ui/shell/index.html`）：新增 `<meta name="color-scheme" content="dark light">` 与 `<body data-ck-dark>`，首帧直接暗色渲染，避免"先白屏再变暗"的闪烁；原生控件（select 下拉、滚动条）跟随暗色。
+
+### Verified
+
+- typecheck 0 / vitest 128 文件 1190 用例全过 / lint 0 error / compile 无漂移
+
 ## [0.10.2] - 2026-10-17
 
 ### Changed
