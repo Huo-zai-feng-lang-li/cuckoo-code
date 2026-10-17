@@ -283,3 +283,22 @@ test('onTaskIdle：空文本不触发', async () => {
   await processInterceptedResponse('');
   assert.strictEqual(idle, 0);
 });
+
+// ===== B-006：finished 稳定文本的语法错误不再空跑重试 =====
+
+test('B-006: cuckoo 块抛语法错误时只执行一次（不重跑 3 次）', async () => {
+  const mask = makeFakeMask();
+  setupGlobals({ 'cuckoo-tool-mask': mask });
+  let calls = 0;
+  globalThis.window.electronAPI.executeJs = async () => {
+    calls++;
+    return { success: false, error: 'SyntaxError: Unexpected end of input' };
+  };
+  // 拦截发送，避免真实投递
+  globalThis.window.electronAPI.sendEnterToChat = async () => true;
+  // 已闭合的 cuckoo 块，但 JS 本身有语法错误（括号未闭合）——隔离 B-006 行为
+  const text = '```cuckoo\nawait write({ filePath: "x", content: "half"\n```';
+  await processInterceptedResponse(text, true);
+  // 历史实现会重跑 4 次（1+3）；修复后只跑 1 次
+  assert.strictEqual(calls, 1, '语法错误不应重跑，executeJs 调用次数=' + calls);
+});

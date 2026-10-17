@@ -6,6 +6,7 @@
 import { extractJsToolBlocks, BT } from '../parser/js-detector.js';
 import { looksLikeJsonToolCall } from '../parser/json-detector.js';
 import { handleJsToolScript } from '../loop/executor.js';
+import { buildNotificationSummary } from './notification-summary.js';
 import { sendCombinedJsResultsToChat, sendMessageToChat, cancelPendingSend } from '../../overlay/chat-input.js';
 import { showToolMask, hideToolMask } from '../../overlay/panel.js';
 import * as watchdog from '../loop/watchdog.js';
@@ -53,7 +54,6 @@ async function processInlineMarkers(text: string): Promise<{ memories: number; s
   return result;
 }
 
-const MAX_JS_RETRY = 3;
 // 连续"格式提示"次数（JSON/XML 共用，防止 AI 来回切换格式绕过上限）
 let formatHintCount = 0;
 const FORMAT_HINT_MAX = 10;
@@ -65,11 +65,6 @@ let lastInterceptedText = '';
 let abortRequested = false;
 function requestAbort(): void { abortRequested = true; }
 function clearAbort(): void { abortRequested = false; }
-
-function looksLikeIncompleteCodeError(error: any): boolean {
-  if (!error || typeof error !== 'string') return false;
-  return /SyntaxError|Missing initializer|Unexpected end of input|Unexpected token|Unexpected identifier|Unexpected reserved word|Invalid or unexpected token/i.test(error);
-}
 
 /**
  * 识别 XML / DSML / antml 格式的工具调用（DeepSeek 原生格式等）。
@@ -123,24 +118,20 @@ async function sendToolResultWithRetry(results: any, onSent?: () => void): Promi
 }
 
 /**
- * 执行 JS 代码块，遇到"代码不完整"错误时自动重试。
- * 拦截模式下文本已完整（finished），无需重新提取，简单重试执行即可。
+ * 执行 JS 代码块（拦截模式下文本已完整/稳定，失败即终态，不重跑同一段代码）。
+ *
+ * B-006：历史实现在遇到"代码不完整"类错误（SyntaxError 等）时把同一段代码重跑最多 3 次。
+ * 但 finished 路径下代码文本不会变化，解析期语法错误重跑必然复现同样的错误，纯属空转
+ * （每次隔 1s，徒增 ~3s 延迟并向沙箱重复提交非法代码；多块时还会把已成功的块再执行一遍）。
+ * 真正的截断代码已由 B-002（断流走 error）与 B-004（未闭合围栏丢弃）在源头拦截，这里一次执行即可。
  */
 async function executeJsBlocksWithRetry(blocks: string[]): Promise<any[]> {
   // 工具开始（每个代码块一次）
   for (const code of blocks) emitToolCall({ phase: 'start', code });
-  let results: any[] = [];
-  for (let attempt = 0; attempt <= MAX_JS_RETRY; attempt++) {
-    results = [];
-    for (const code of blocks) {
-      const r = await handleJsToolScript(code);
-      if (r) results.push(r);
-    }
-    const hasIncompleteFailure = results.some(
-      (item) => item && item.result && !item.result.success && looksLikeIncompleteCodeError(item.result.error)
-    );
-    if (!hasIncompleteFailure) break;
-    if (attempt < MAX_JS_RETRY) await sleep(1000);
+  const results: any[] = [];
+  for (const code of blocks) {
+    const r = await handleJsToolScript(code);
+    if (r) results.push(r);
   }
   // 工具结束（逐块上报结果）
   for (const r of results) {
@@ -258,7 +249,7 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
   if (!suppressAiNotification) {
     try {
       // 传回复正文作为通知摘要（主进程截断展示），让用户一眼看到 AI 说了什么
-      const summary = String(raw || '').replace(/s+/g, ' ').trim().slice(0, 120);
+      const summary = buildNotificationSummary(raw, 120);
       (window as any).electronAPI.showAiNotification(summary).catch(() => {});
     } catch (e) { /* ignore */ }
   }
