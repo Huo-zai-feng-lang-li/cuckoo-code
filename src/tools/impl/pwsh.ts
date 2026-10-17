@@ -1,10 +1,10 @@
 import { Tool } from '../core/Tool.js';
 import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
-import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { decodeOutput } from '../../infra/decode-output.js';
 import { isDangerous, DANGEROUS_CMDS } from '../../infra/dangerous-commands.js';
+import { runCaptured } from '../../infra/run-captured.js';
 
 // ========== D12：API 契约元数据（构建期生成 api.d.ts）==========
 export const apiMetas: ToolApiMeta[] = [
@@ -126,43 +126,34 @@ class PwshTool extends Tool {
 
       console.log('[PwshTool] 执行命令: ' + trimmed + ', cwd=' + workDir);
 
-      return await new Promise<ToolResult>((resolve) => {
-        execFile(
-          'powershell',
-          ['-NoProfile', '-Command', trimmed],
-          { cwd: workDir, timeout, maxBuffer: 1024 * 1024, windowsHide: true, encoding: 'buffer' },
-          (error, stdout, stderr) => {
-            const out = decodeOutput(stdout);
-            const err = decodeOutput(stderr);
+      // spawn + 超时杀整个进程树（修 A-006：不再只杀 powershell 本体）
+      const r = await runCaptured('powershell', ['-NoProfile', '-Command', trimmed], { cwd: workDir, timeout });
+      const out = decodeOutput(r.stdout);
+      const err = decodeOutput(r.stderr);
 
-            // dsh 风格渲染
-            let body = out;
-            if (err && err.length > 0) {
-              if (body.length > 0 && !body.endsWith('\n')) body += '\n';
-              body += '[stderr]\n' + err;
-            }
-            if (body.length === 0) body = '(no output)';
+      // dsh 风格渲染
+      let body = out;
+      if (err && err.length > 0) {
+        if (body.length > 0 && !body.endsWith('\n')) body += '\n';
+        body += '[stderr]\n' + err;
+      }
+      if (body.length === 0) body = '(no output)';
 
-            const markers: string[] = [];
-            if (error) {
-              if ((error as any).killed) {
-                markers.push('[timed out after ' + timeout + 'ms]');
-              } else if (typeof (error as any).code === 'number') {
-                markers.push('[exit code: ' + (error as any).code + ']');
-              } else {
-                markers.push('[exit code: 1]');
-              }
-            }
+      const markers: string[] = [];
+      if (r.timedOut) {
+        markers.push('[timed out after ' + timeout + 'ms]');
+      } else if (r.spawnError) {
+        markers.push('[exit code: 1]');
+      } else if (typeof r.code === 'number' && r.code !== 0) {
+        markers.push('[exit code: ' + r.code + ']');
+      }
 
-            if (markers.length > 0) {
-              if (!body.endsWith('\n')) body += '\n';
-              body += markers.join('\n');
-            }
+      if (markers.length > 0) {
+        if (!body.endsWith('\n')) body += '\n';
+        body += markers.join('\n');
+      }
 
-            resolve(ToolResult.success(body));
-          }
-        );
-      });
+      return ToolResult.success(body);
     } catch (err: any) {
       return ToolResult.error('命令执行异常: ' + err.message);
     }

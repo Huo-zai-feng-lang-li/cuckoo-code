@@ -254,6 +254,30 @@ function toInfo(rec: TaskRecord): TaskInfo {
 }
 
 /**
+ * 杀整个进程树（后台任务 + 前台命令共用，修 A-006）。
+ * Windows：taskkill /T /F 连带子孙进程；Unix：杀整个进程组（spawn 时 detached 成为组长）。
+ *
+ * A-016：先探活（process.kill(pid, 0)）——进程已退出则不发 taskkill，
+ * 避免 OS 把该 pid 复给新进程后被 /T /F 误伤。探活与杀之间仍有微秒级窗口，属残余风险。
+ *
+ * @param pid 根进程 pid
+ * @param signal Unix 信号（默认 SIGTERM；前台超时可传 SIGKILL 立即强杀）
+ */
+export function killProcessTree(pid: number, signal: NodeJS.Signals = 'SIGTERM'): void {
+  if (!pid || pid <= 0) return;
+  try { process.kill(pid, 0); } catch (_) { return; } // ESRCH：进程已退出，不动（防 pid 复用误伤）
+  if (process.platform === 'win32') {
+    execFile('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true }, (err) => {
+      if (err) console.warn('[task-manager] taskkill /T 失败 pid=' + pid + ': ' + (err.message || err));
+    });
+  } else {
+    try { process.kill(-pid, signal); } catch (_) {
+      try { process.kill(pid, signal); } catch (_) { /* 已退出 */ }
+    }
+  }
+}
+
+/**
  * 停止一个任务（精准杀进程树）。
  * @returns 是否发起了停止（任务不存在或已退出返回 false）
  */
@@ -278,7 +302,7 @@ export function stop(id: string): boolean {
     // Windows：taskkill /T 连带子进程树；/F 强制。
     // ⚠️ 必须只走 taskkill——若同时 rec.child.kill() 抢先杀掉父进程，
     //    异步的 taskkill 执行时父 PID 已死，/T 就找不到子进程树了（子进程残留）。
-    execFile('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true }, () => { /* 忽略结果 */ });
+    killProcessTree(pid);
   } else {
     // Unix：杀整个进程组（detached 使其成为组长）
     try { process.kill(-pid, 'SIGTERM'); } catch (_) {
@@ -337,13 +361,7 @@ export function dispose(): void {
     const pid = rec.pid;
     if (!pid) continue;
     try {
-      if (process.platform === 'win32') {
-        execFile('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true }, () => { /* ignore */ });
-      } else {
-        try { process.kill(-pid, 'SIGKILL'); } catch (_) {
-          try { rec.child.kill('SIGKILL'); } catch (_) { /* ignore */ }
-        }
-      }
+      killProcessTree(pid, 'SIGKILL');
     } catch (_) { /* ignore */ }
     rec.status = 'exited';
     rec.endedAt = Date.now();
