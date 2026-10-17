@@ -48,11 +48,27 @@ function hasOnlyFences(text: any): boolean {
 }
 
 /**
+ * 统计一行 trim 后开头连续反引号的数量；不足 3 个返回 0（不是围栏）。
+ * 用字符码判定避免正则里转义反引号。Markdown 围栏允许 3 个及以上反引号。
+ */
+function leadingFenceLen(line: string): number {
+  let n = 0;
+  const len = line.length;
+  while (n < len && line.charCodeAt(n) === 96) n++;
+  return n >= 3 ? n : 0;
+}
+
+/**
  * 从原始文本（含 Markdown 围栏）中提取 JS 工具代码块
  * 规则：
  * - cuckoo 代码块：一律视为工具脚本
  * - js / javascript 代码块：仅当整条回复只包含代码块、且代码调用了工具函数时才视为工具脚本
  *   （避免把正常回答里的示例代码误当作工具脚本执行）
+ *
+ * 边界处理：
+ * - B-008：围栏反引号数量可变（``` 或 ```` 等），按实际开围栏长度截取 lang，闭合围栏
+ *   反引号数需 >= 开围栏数（Markdown 规则）。
+ * - B-004：流结束时仍未闭合的围栏 = 流式截断，其内部是残缺代码，一律丢弃、不提取执行。
  */
 function extractJsToolBlocks(text: any): string[] {
   const blocks: string[] = [];
@@ -63,12 +79,14 @@ function extractJsToolBlocks(text: any): string[] {
   const lines = text.split(String.fromCharCode(10));
   let inBlock = false;
   let lang = '';
+  let openFenceLen = 0;
   let buf: string[] = [];
 
-  const flush = () => {
+  // closed=false 表示是 EOF 截断的未闭合块（B-004），残缺代码不提取
+  const flush = (closed: boolean) => {
     const code = buf.join(String.fromCharCode(10)).trim();
     const l = (lang || '').toLowerCase();
-    if (code) {
+    if (code && closed) {
       if (l === 'cuckoo') {
         blocks.push(code);
       } else if ((l === 'js' || l === 'javascript') && onlyFences && looksLikeToolScript(code)) {
@@ -78,26 +96,31 @@ function extractJsToolBlocks(text: any): string[] {
     inBlock = false;
     lang = '';
     buf = [];
+    openFenceLen = 0;
   };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
     if (!inBlock) {
-      if (trimmed.startsWith(FENCE)) {
-        lang = (trimmed.slice(3) || '').split(' ')[0];
+      const n = leadingFenceLen(trimmed);
+      if (n >= 3) {
+        lang = (trimmed.slice(n) || '').split(' ')[0];
         inBlock = true;
+        openFenceLen = n;
         buf = [];
       }
       continue;
     }
-    if (trimmed.startsWith(FENCE)) {
-      flush();
+    // 闭合围栏：反引号数 >= 开围栏数（Markdown 规则），避免块内 ``` 示例提前闭合
+    if (leadingFenceLen(trimmed) >= openFenceLen) {
+      flush(true);
       continue;
     }
     buf.push(line.replace(String.fromCharCode(13), ''));
   }
-  if (inBlock) flush();
+  // B-004：流结束仍未闭合 → 截断块，丢弃（不提取残缺代码执行）
+  if (inBlock) flush(false);
   return blocks;
 }
 
