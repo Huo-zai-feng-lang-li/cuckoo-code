@@ -5,6 +5,7 @@
 import { OVERLAY_HTML, OVERLAY_CSS } from './template.generated.js';
 import { getProviderByUrl } from '../providers/registry.js';
 import { state } from './state.js';
+import { escapeHtml } from './sanitizer.js';
 
 // ========== 注入样式 ==========
 /**
@@ -65,16 +66,7 @@ function truncate(text: any, maxLen: number = 50): string {
   return text.substring(0, maxLen) + '...';
 }
 
-/**
- * HTML 转义，防止 XSS 攻击
- * @param text - 要转义的文本
- * @returns 转义后的 HTML 字符串
- */
-function escapeHtml(text: any): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+/** HTML 转义 {@link escapeHtml} 已迁移至 ./sanitizer.js（统一真源，补全引号转义）。 */
 
 /**
  * 显示浮动提示弹窗
@@ -138,19 +130,28 @@ function showConfirmDialog(text: string, options?: { okText?: string; showCancel
           background: transparent; color: #aab0ff;
           font-size: 13px; font-weight: 600; cursor: pointer;
           margin-right: 10px; transition: all 0.2s;
-        ">${cancelText}</button>`
+        "></button>`
       : '';
     dialog.innerHTML = `
-      <div style="margin-bottom:16px;white-space:pre-wrap;word-break:break-word;">${text}</div>
+      <div class="cuckoo-confirm-text" style="margin-bottom:16px;white-space:pre-wrap;word-break:break-word;"></div>
       <div>${cancelBtnHtml}
         <button id="cuckoo-confirm-ok" style="
           padding: 9px 28px; border: none; border-radius: 10px;
           background: linear-gradient(135deg, #8b93ff, #6d76ff); color: #fff;
           font-size: 13px; font-weight: 600; cursor: pointer;
           transition: all 0.2s;
-        ">${okText}</button>
+        "></button>
       </div>
     `;
+    // 动态文案一律走 textContent，避免调用方传入 HTML 造成注入（E-004）
+    const textEl = dialog.querySelector('.cuckoo-confirm-text');
+    if (textEl) textEl.textContent = text;
+    const okBtn = dialog.querySelector('#cuckoo-confirm-ok');
+    if (okBtn) okBtn.textContent = okText;
+    if (showCancel) {
+      const cancelBtn = dialog.querySelector('#cuckoo-confirm-cancel');
+      if (cancelBtn) cancelBtn.textContent = cancelText;
+    }
     document.body.appendChild(dialog);
 
     const cleanup = () => dialog.remove();
