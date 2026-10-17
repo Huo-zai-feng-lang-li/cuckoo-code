@@ -1,7 +1,7 @@
 'use strict';
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { parseGrepArgs, validateInclude, parseGrepMatches, formatGrepOutput, retainGrepMatches, previewLine } from '../../src/tools/impl/grep.js';
+import { parseGrepArgs, validateInclude, parseGrepMatches, parseGrepMatchesCapped, formatGrepOutput, retainGrepMatches, previewLine } from '../../src/tools/impl/grep.js';
 
 test('validateInclude 合法', () => {
   assert.doesNotThrow(() => validateInclude('*.js'));
@@ -64,6 +64,17 @@ test('parseGrepMatches bytes 行返回占位', () => {
   const record = { type: 'match', data: { path: { text: 'c.js' }, line_number: 5, lines: { bytes: 'abc' } } };
   const matches = parseGrepMatches(JSON.stringify(record));
   assert.strictEqual(matches[0].line, '(line is not valid UTF-8)');
+});
+
+test('A-013：parseGrepMatchesCapped 只收集前 maxItems，seen 仍统计全部', () => {
+  const lines = [];
+  for (let i = 1; i <= 10; i++) {
+    lines.push(JSON.stringify({ type: 'match', data: { path: { text: 'f.js' }, line_number: i, lines: { text: 'x' + i } } }));
+  }
+  const { items, seen } = parseGrepMatchesCapped(lines.join('\n'), 3);
+  assert.strictEqual(seen, 10);       // 总数仍统计
+  assert.strictEqual(items.length, 3); // 只收集前 3 条
+  assert.strictEqual(items[2].lineNumber, 3);
 });
 
 test('formatGrepOutput 基本与截断', () => {

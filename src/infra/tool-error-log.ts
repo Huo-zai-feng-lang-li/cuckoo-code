@@ -37,12 +37,34 @@ function errorsDir(): string {
   return path.join(app.getPath('userData'), 'wyp', 'log', 'tool-errors');
 }
 
-/** 安全序列化（截断长值） */
+/** 敏感字段名（A-012）：日志里这些 key 的值一律打码，防 mysql/数据库密码落盘 */
+const REDACT_KEY = /(password|passwd|secret|token|api[_-]?key|credential|authorization)/i;
+
+/**
+ * 深拷贝并打码敏感字段（A-012）。纯函数，便于单测。
+ * 嵌套深度上限 5，防循环引用。
+ */
+export function redactSecrets(v: any, depth = 0): any {
+  if (depth > 5 || v === null || typeof v !== 'object') return v;
+  if (Array.isArray(v)) return v.map((x) => redactSecrets(x, depth + 1));
+  const out: Record<string, any> = {};
+  for (const k of Object.keys(v)) {
+    if (REDACT_KEY.test(k)) {
+      out[k] = '***REDACTED***';
+    } else {
+      out[k] = redactSecrets(v[k], depth + 1);
+    }
+  }
+  return out;
+}
+
+/** 安全序列化（截断长值；敏感字段打码，A-012） */
 function safeStr(v: any, max = 2000): string {
   if (v === undefined) return 'undefined';
   if (v === null) return 'null';
   try {
-    const s = typeof v === 'string' ? v : JSON.stringify(v, null, 2);
+    const clean = redactSecrets(v);
+    const s = typeof clean === 'string' ? clean : JSON.stringify(clean, null, 2);
     if (s === undefined) return String(v);
     return s.length > max ? s.slice(0, max) + '\n...(截断)' : s;
   } catch (_) {

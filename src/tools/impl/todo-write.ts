@@ -155,9 +155,11 @@ class TodoWriteTool extends Tool {
         completed: count('completed'),
       };
 
-      // 无持久化，仅在内存中短暂存储（可选）
-      if (!(globalThis as any).__cuckooTodos) (globalThis as any).__cuckooTodos = [];
-      (globalThis as any).__cuckooTodos = list;
+      // 无持久化，仅在内存中短暂存储（可选）。
+      // A-015：按 projectDir 分桶——旧实现是全局单个数组，多窗口/多项目
+      // 同时跑 AI 时互相覆盖对方的待办。
+      if (!(globalThis as any).__cuckooTodos) (globalThis as any).__cuckooTodos = {};
+      (globalThis as any).__cuckooTodos[projectDir || '__default__'] = list;
 
       console.log('[TodoWriteTool] 更新待办列表:', JSON.stringify(counts));
       return ToolResult.success(formatTodoOutput(counts));

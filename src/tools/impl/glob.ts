@@ -85,6 +85,7 @@ function parseGlobArgs(pattern: any, searchPath: any): { pattern: string; path?:
  */
 function buildGlobArgs(input: { pattern: string; path?: string }): string[] {
   const parts = [
+    '--no-config', // A-014：忽略用户全局/项目 rg 配置，对齐 grep.ts，防被 .gitignore 之外的配置影响
     '--files',
     '--glob=' + input.pattern,
     '--no-ignore',

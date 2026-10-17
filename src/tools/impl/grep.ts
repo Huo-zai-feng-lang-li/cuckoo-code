@@ -195,6 +195,23 @@ function parseGrepMatches(stdout: string): GrepMatch[] {
 }
 
 /**
+ * A-013：流式解析——只收集前 maxItems 条，但仍统计 match 总数 seen。
+ * 旧实现把所有匹配全量 build 成数组再 slice，命中十万级匹配时内存爆掉。
+ */
+function parseGrepMatchesCapped(stdout: string, maxItems: number): { items: GrepMatch[]; seen: number } {
+  const items: GrepMatch[] = [];
+  let seen = 0;
+  for (const line of stdout.split('\n')) {
+    if (line.length === 0) continue;
+    const match = parseRecord(line);
+    if (match === undefined) continue;
+    seen++;
+    if (items.length < maxItems) items.push(match);
+  }
+  return { items, seen };
+}
+
+/**
  * 对齐 dsh formatGrepMatches：按文件分组。
  */
 function formatGrepMatches(matches: GrepMatch[]): string {
@@ -318,22 +335,28 @@ class GrepToolNew extends Tool {
         return ToolResult.success('No matches found');
       }
 
-      // 解析匹配
-      let all;
+      // 解析匹配（A-013：流式，攒够上限即停收集，不把十万级匹配全 build 进内存）
+      let parsed;
       try {
-        all = parseGrepMatches(run.stdout);
+        parsed = parseGrepMatchesCapped(run.stdout, GREP_MAX_MATCHES);
       } catch (err: any) {
         return ToolResult.error(err.message);
       }
 
-      // 路径统一为 / 分隔
-      all = all.map(m => ({ ...m, path: m.path.replace(/\\/g, '/') }));
+      const retained = {
+        items: parsed.items.map(m => ({
+          path: m.path.replace(/\\/g, '/'),
+          lineNumber: m.lineNumber,
+          line: previewLine(m.line, GREP_MAX_LINE_BYTES),
+        })),
+        seen: parsed.seen,
+        kept: parsed.items.length,
+        truncated: parsed.seen > parsed.items.length,
+      };
 
-      const retained = retainGrepMatches(all, GREP_MAX_MATCHES, GREP_MAX_LINE_BYTES);
+      console.log('[GrepTool] 搜索完成: pattern=' + input.pattern + ', 匹配 ' + parsed.seen + ' 条');
 
-      console.log('[GrepTool] 搜索完成: pattern=' + input.pattern + ', 匹配 ' + all.length + ' 条');
-
-      if (all.length === 0) {
+      if (parsed.seen === 0) {
         return ToolResult.success('No matches found');
       }
 
@@ -356,4 +379,4 @@ export function bootstrap(__call: any): void {
   };
 }
 
-export { GrepToolNew, parseGrepArgs, validateInclude, parseGrepMatches, formatGrepOutput, retainGrepMatches, previewLine };
+export { GrepToolNew, parseGrepArgs, validateInclude, parseGrepMatches, parseGrepMatchesCapped, formatGrepOutput, retainGrepMatches, previewLine };

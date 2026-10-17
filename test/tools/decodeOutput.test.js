@@ -96,3 +96,31 @@ test('decodeOutput GBK 分支也剥离 ANSI', () => {
   assert.ok(!out.includes('\x1b'), 'GBK 分支不应残留 ESC');
 });
 
+// ---- A-010：合法 UTF-8 自带 U+FFFD 不得被误判为 GBK ----
+test('A-010：含 U+FFFD 的合法 UTF-8 不再误判 GBK', () => {
+  // 文件内容本身就是合法 UTF-8 且含替换符 �（如日志里的损坏字符）
+  const buf = Buffer.from('日志里出现 � 损坏字符，继续中文', 'utf8');
+  const out = decodeOutput(buf);
+  assert.strictEqual(out, '日志里出现 � 损坏字符，继续中文');
+});
+
+// ---- A-011：字符串字面量里的 Get-Content 不动 ----
+test('A-011：单引号字符串内的 Get-Content 不注入', () => {
+  const cmd = `powershell -Command Write-Output '请用 Get-Content 查看日志'`;
+  const out = normalizeCommand(cmd);
+  assert.ok(out.includes("请用 Get-Content 查看日志"), '引号内文本必须保持原样');
+});
+
+test('A-011：双引号字符串内的 Get-Content 不注入', () => {
+  const cmd = 'powershell -Command "说明: Get-Content 用于读文件"';
+  const out = normalizeCommand(cmd);
+  assert.ok(out.includes('说明: Get-Content 用于读文件'));
+});
+
+test('A-011：引号外调用位仍注入（混合场景）', () => {
+  const cmd = `powershell -Command Write-Output '提示' ; Get-Content a.txt`;
+  const out = normalizeCommand(cmd);
+  assert.ok(out.includes('Get-Content -Encoding UTF8 a.txt'));
+  assert.ok(out.includes("Write-Output '提示'"));
+});
+
