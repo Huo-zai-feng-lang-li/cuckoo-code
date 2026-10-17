@@ -35,9 +35,17 @@
 - poc-parser-boundaries.test.js 导入真实 js-detector：PoC-1 攻击断言已**翻转失败**（未闭合块不再提取），其余 8 项正确行为通过。
 - 防御型 poc-d007 zipslip 10/10 继续拦；poc-d004 token 为静态风险报告（真实修复见 test/remote/ws-auth.test.js）；poc-d001 证明"已启用插件"仍可 require（架构本质），一键"安装即 RCE"链已被默认禁用+确认+包名白名单打断。
 
+### 独立复核结果（已完成，PASS）
+- 报告：`docs/audit/2026-10-17-修复独立复核-0.10.0.md`（commit 699aff3）。亲手复跑 typecheck/lint/test/compile 全绿、自写探针证实死循环硬杀、PoC 全复跑；测试无弱化/跳过/硬编码。
+- 复核发现 1 项「重要」+ 1 项「建议」，**均已补修并复测**：
+  1. 项目级子代理 `.cuckoo/agents/*.md` 原绕过信任门（D-004 漏网）→ 已按 skills/rules 数据层模式补齐（agents/scanner 挂 isWorkspaceTrusted、scanWorkspaceArtifacts 两段独立探测 `.agents` 与 `.cuckoo/agents`、prompt-builder 过滤、信任弹窗展示），新增 6 例（commit 2c1d4d9）。
+  2. harness 渲染在 sanitizer 缺失时 fail-open → 改 fail-closed 降级纯文本（commit d85d57e）。
+- 复核「建议但不阻断」中**有意保留**：① 两段式 `powershell -File x.ps1` 不命中投递特征（黑名单固有局限；裸 `-File` 跑本地脚本是正常开发行为，加了会误伤、违反"智能档不逐条问"；`-ExecutionPolicy Bypass` 已拦）；② overlay→session 历史反向依赖（本次未引入，后续可拆）；③ 生产死循环 60s 无活动 deadline（主循环不饿死前提下的产品取舍）。
+
 ### 收尾状态
-- 版本已升 0.10.0（package.json + package-lock.json）；CHANGELOG 0.10.0 按 Keep a Changelog 覆盖全部 59 + 17 推测；README 安全机制/插件/MCP 旧行为已改。
-- 待办：独立复核子 agent 按 checklist 复审；**合并/发版由用户决定**（当前不 tag/push/发版）。
+- 版本已升 0.10.0（package.json + package-lock.json）；CHANGELOG 0.10.0 按 Keep a Changelog 覆盖全部 59 + 17 推测 + 复核加固；README 安全机制/插件/MCP 旧行为已改。
+- 最终验证：typecheck 0、vitest **127 文件 / 1184 用例**、lint 0 error、compile 0 无漂移。
+- 待办：**合并/发版由用户决定**（当前不 tag/push/发版）。真机待验项见上（尤其 A-005 打包环境 fork、D-005 手机浏览器握手、CSP file:// 放行、D-008 Electron net.request）。
 
 ## 核心进展
 - **最新版本 v0.9.24**（修复图片模式停止按钮不可见 + 停止按钮改红，typecheck/lint(0)/test(1012)/compile 全绿）。
@@ -119,7 +127,7 @@
 
 ## 关键上下文
 - 目录: `D:\Desktop\Super-File\cuckoo-code`
-- 构建/验证: `npm run typecheck` / `npm test`（v0.10.0：126 文件 / 1178 用例）/ `npm run lint`（0 error）/ `npm run compile`
+- 构建/验证: `npm run typecheck` / `npm test`（v0.10.0：127 文件 / 1184 用例）/ `npm run lint`（0 error）/ `npm run compile`
 - **生成物禁手改**：`*.generated.ts`、`src/tools/api.d.ts`、`src/ui/shell.html`（改真源 + compile）
 - **依赖铁律**：`infra ← providers ← tools ← bridge ← session ← app`；overlay 不依赖 bridge/session；tools 不依赖上层（注入）
 - **窗口结构**：AI 页面在 `ctx.view.webContents`，不是 `ctx.win.webContents`

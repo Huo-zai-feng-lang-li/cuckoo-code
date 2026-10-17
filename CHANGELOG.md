@@ -17,7 +17,7 @@
 - **E-003（P1）窗口管理面板 profile 名 / 平台名 / id 注入**：内容位与属性位统一转义。
 - **E-009（P3）自有窗口补 CSP**：harness / shell / alert / confirm / notification / platform-select 加 CSP meta（`object-src/base-uri/frame-src` 收紧；shell 因插件 `new Function` 与 Monaco worker 额外放行 `unsafe-eval`、`worker-src blob:`）。
 - **D-001（P1）插件市场点"安装"即主进程 RCE**：① 安装前在主进程弹第三方代码风险确认框（默认聚焦"取消"）；② **安装后默认禁用**（`setCuckooPluginEnabled(id,false)`），需用户手动启用；③ 新增 npm 包名规范白名单（拒绝 URL / git / file: / tarball / 参数 / 路径穿越），触达 npm 前拦截。
-- **D-002 + D-004（P1）新增"工作区信任门"**：选择项目目录后，若发现 `.agents/mcp.json`、`.agents/rules`、`.agents/skills` 等工件，弹一次信任确认（默认聚焦"不信任"）。**不信任时项目级 MCP server 不 spawn、项目级规则/技能不注入系统提示词**；信任记录以原子写存于 `~/.cuckoo/trusted-workspaces.json`（支持本次会话 / 持久 / 撤销）；用户级 MCP / 规则 / 技能不受影响。数据层扫描兜底，覆盖所有注入入口。
+- **D-002 + D-004（P1）新增"工作区信任门"**：选择项目目录后，若发现 `.agents/mcp.json`、`.agents/rules`、`.agents/skills` 或 `.cuckoo/agents` 等工件，弹一次信任确认（默认聚焦"不信任"）。**不信任时项目级 MCP server 不 spawn、项目级规则 / 技能 / 子代理不注入系统提示词、`runAgent` 无法实例化项目级代理**；信任记录以原子写存于 `~/.cuckoo/trusted-workspaces.json`（支持本次会话 / 持久 / 撤销）；用户级 MCP / 规则 / 技能 / 代理不受影响。数据层扫描兜底，覆盖所有注入入口（含 JsRunner 按路径注入、cuckoo-host、harness 列举、project list/refresh、runAgent）。
 - **D-003（P1）MCP HTTP server SSRF**：建立 `StreamableHTTPClientTransport` 前先 `assertUrlAllowed`，项目级内网 MCP URL 同样受约束；stdio 不受影响。
 - **D-005（P2）远程服务 WS token 经 URL query 泄漏**：WebSocket 改走 `Sec-WebSocket-Protocol: cuckoo.<token>` 握手，手机端 PWA 预检/重连改用 `Authorization` 头（query 保留过渡兼容）。
 - **D-006（P2）token 比较改常量时间**：`crypto.timingSafeEqual`（等长前置判断）。
@@ -76,6 +76,11 @@
 - **E-005（P2）overlay escapeHtml 不转义引号**：补全 `"` `'`，属性位统一（含原推测项）。
 - **E-006（P3）子代理窗口 token 写入共享 localStorage**：子代理窗口抑制每日 token 写入。
 - **E-007（P3）设置页主题/活动栏名注入**：option value、文本、data 属性转义。
+- **harness 渲染消毒器缺失时 fail-closed**（独立复核加固）：marked 与白名单 sanitizer 必须同时存在才渲染 HTML；消毒器加载失败时降级为纯文本转义并告警一次，绝不静默放行未消毒的 marked HTML。
+
+### 复核加固（独立复核发现并补修）
+
+- **项目级子代理（`.cuckoo/agents/*.md`）原本绕过工作区信任门**（D-004 补漏）：`scanAgents` 项目级未挂信任门、`scanWorkspaceArtifacts` 不探测 `.cuckoo/agents` 且 `.agents` 缺失即提前返回，导致恶意仓库的子代理（可在 frontmatter 授权 `tools: bash`）不触发信任弹窗即可被注入提示词、被 `runAgent` 实例化。已按 skills/rules 同模式在数据层门控 + 工件探测（两段独立扫描）+ prompt 过滤全部补齐，新增 6 例回归。
 - **推测项 A-S-4**：MySQL 工具补 30s 语句超时（原仅 connectTimeout，慢查询会挂住连接）。
 - **推测项 A-S-5**：`openBrowserWindow` 去掉 `...restOptions` 任意 BrowserWindow 选项透传。
 
@@ -88,7 +93,8 @@
 
 ### 验证
 
-- `npm run typecheck`：0 error；`npm test`（vitest）：**126 文件 / 1178 用例全过**（基线 100 文件 / 1012 用例，新增约 166 个）；`npm run lint`：0 error；`npm run compile`：0 且生成物无漂移。
+- `npm run typecheck`：0 error；`npm test`（vitest）：**127 文件 / 1184 用例全过**（基线 100 文件 / 1012 用例，新增约 172 个）；`npm run lint`：0 error；`npm run compile`：0 且生成物无漂移。
+- 已通过独立复核（`docs/audit/2026-10-17-修复独立复核-0.10.0.md`）：测试未弱化/跳过/硬编码、主进程闸/信任门/sanitizer/进程隔离/SSRF/WS 鉴权抽查成立，复核发现的 1 项重要缺口（项目级子代理信任门）与 1 项加固（sanitizer fail-closed）已补修并复测。
 - 12 个攻击/防御 PoC 全部复跑：攻击型在真实模块回归中失效、防御型（zipslip 等）继续拦截；静态拷贝型 PoC 仅作历史留存，权威验证以 `test/` 下 import 真实模块的回归为准。
 
 ## [0.9.24] - 2026-10-17
