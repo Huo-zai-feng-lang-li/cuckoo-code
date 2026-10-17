@@ -4,6 +4,9 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<!-- E-009：壳窗口 CSP。本地 monaco 脚本/内联 bundle/插件 new Function/monaco worker 均需放行；
+     object/frame/base 收紧。远程脚本注入被 script-src='self' 阻断。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'">
 <title>Cuckoo</title>
 <script src="vendor/monaco/vs/loader.js"></script>
 <style>
@@ -6370,7 +6373,7 @@ paths:            # 可选；省略 = 始终生效
       if (t && t.id && t.id !== "light" && t.id !== "dark") opts.push([t.id, t.id]);
     }
     const cur = themeSelect.value;
-    themeSelect.innerHTML = opts.map(([v, label]) => '<option value="' + v + '">' + label + "</option>").join("");
+    themeSelect.innerHTML = opts.map(([v, label]) => '<option value="' + escapeAttr(v) + '">' + escapeHtml(label) + "</option>").join("");
     if (cur) themeSelect.value = cur;
   }
   function refreshThemeValue() {
@@ -6445,7 +6448,7 @@ paths:            # 可选；省略 = 始终生效
       const disabled = isSettings ? " disabled" : "";
       const checked = isSettings || !hidden.has(tab) ? " checked" : "";
       const title = isPlugin ? ' title="\u63D2\u4EF6\u56FE\u6807"' : "";
-      return '<div class="ck-set-field ck-set-toggle"' + title + '><span class="ck-set-key">' + label + (isPlugin ? "\uFF08\u63D2\u4EF6\uFF09" : "") + '</span><label class="ck-switch"><input type="checkbox" data-ab-tab="' + tab + '"' + checked + disabled + ' /><span class="ck-switch-track"></span></label></div>';
+      return '<div class="ck-set-field ck-set-toggle"' + title + '><span class="ck-set-key">' + escapeHtml(label) + (isPlugin ? "\uFF08\u63D2\u4EF6\uFF09" : "") + '</span><label class="ck-switch"><input type="checkbox" data-ab-tab="' + escapeAttr(tab) + '"' + checked + disabled + ' /><span class="ck-switch-track"></span></label></div>';
     }).join("");
     box.querySelectorAll("input[data-ab-tab]").forEach((el2) => {
       el2.addEventListener("change", () => {

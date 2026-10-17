@@ -11,7 +11,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -52,6 +53,37 @@ function download(url, dest) {
   console.log('[runtime] 下载 ' + url);
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   execSync('curl -L --fail --silent --show-error -o "' + dest + '" "' + url + '"', { stdio: 'inherit' });
+}
+
+/**
+ * 计算本地文件的 sha256（小写 hex）。
+ * @param {string} file 本地文件路径
+ * @returns {string} sha256 十六进制串
+ */
+function sha256File(file) {
+  return createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+}
+
+/**
+ * 校验下载资产的 sha256（E-008）。
+ *  - runtime-versions.json 配置了该资产的期望 hash → 不一致即删除文件并抛错（fail closed）；
+ *  - 未配置期望 hash → 告警跳过（向后兼容，新增版本时需补 hash）。
+ *
+ * @param {string} file 已下载的本地文件
+ * @param {string} assetName 资产文件名（作为 sha256 映射的 key）
+ */
+function verifyChecksum(file, assetName) {
+  const expected = VERSIONS.sha256 && VERSIONS.sha256[assetName];
+  if (!expected) {
+    console.warn('[runtime] 警告：未配置 ' + assetName + ' 的 sha256，跳过完整性校验');
+    return;
+  }
+  const actual = sha256File(file);
+  if (actual.toLowerCase() !== String(expected).toLowerCase()) {
+    fs.rmSync(file, { force: true });
+    throw new Error('完整性校验失败：' + assetName + '\n  期望: ' + expected + '\n  实际: ' + actual);
+  }
+  console.log('[runtime] 校验通过 ' + assetName);
 }
 
 function extract(archive, dest) {
@@ -121,6 +153,7 @@ function main() {
   const uvUrl = 'https://github.com/astral-sh/uv/releases/download/' + VERSIONS.uv + '/' + uvAssetName;
   const uvArchive = path.join(TMP_DIR, uvAssetName);
   download(uvUrl, uvArchive);
+  verifyChecksum(uvArchive, uvAssetName);
   const uvExtract = path.join(TMP_DIR, 'uv');
   extract(uvArchive, uvExtract);
   // uv 解压后直接是 uv / uv.exe（可能有子目录，递归找）
@@ -131,6 +164,7 @@ function main() {
   const nodeUrl = 'https://nodejs.org/dist/' + VERSIONS.node + '/' + nodeAssetName;
   const nodeArchive = path.join(TMP_DIR, nodeAssetName);
   download(nodeUrl, nodeArchive);
+  verifyChecksum(nodeArchive, nodeAssetName);
   const nodeExtract = path.join(TMP_DIR, 'node');
   extract(nodeArchive, nodeExtract);
   // node 解压后是 node-vX.Y.Z-<platform>/ 子目录
@@ -151,4 +185,7 @@ function main() {
   console.log('[runtime] 内容: ' + fs.readdirSync(binDir).join(', '));
 }
 
-main();
+// 仅作为脚本直接执行时才下载；被测试 import 时不触发副作用
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

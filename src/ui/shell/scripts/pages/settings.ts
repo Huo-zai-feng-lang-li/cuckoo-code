@@ -1,7 +1,7 @@
 /**
  * 设置页：失败重试 / 发送延迟 / 附件间隔。
  */
-import { api, ckAlert, ckConfirm } from '../shared.js';
+import { api, ckAlert, ckConfirm, escapeHtml, escapeAttr } from '../shared.js';
 import { getHiddenTabs, toggleTab } from '../activitybar-visibility.js';
 
 const SET_FIELDS: [string, string][] = [
@@ -119,7 +119,7 @@ function fillThemeOptions(registered: any[]): void {
   }
   const cur = themeSelect.value;
   themeSelect.innerHTML = opts.map(([v, label]) =>
-    '<option value="' + v + '">' + label + '</option>').join('');
+    '<option value="' + escapeAttr(v) + '">' + escapeHtml(label) + '</option>').join('');
   if (cur) themeSelect.value = cur;
 }
 /** 刷新当前主题值（只取值，可重复调用；不注册监听） */
@@ -194,9 +194,9 @@ export function renderActivitybarToggles(): void {
     const checked = (isSettings || !hidden.has(tab)) ? ' checked' : '';
     const title = isPlugin ? ' title="插件图标"' : '';
     return '<div class="ck-set-field ck-set-toggle"' + title + '>' +
-      '<span class="ck-set-key">' + label + (isPlugin ? '（插件）' : '') + '</span>' +
+      '<span class="ck-set-key">' + escapeHtml(label) + (isPlugin ? '（插件）' : '') + '</span>' +
       '<label class="ck-switch">' +
-        '<input type="checkbox" data-ab-tab="' + tab + '"' + checked + disabled + ' />' +
+        '<input type="checkbox" data-ab-tab="' + escapeAttr(tab) + '"' + checked + disabled + ' />' +
         '<span class="ck-switch-track"></span>' +
       '</label>' +
     '</div>';
