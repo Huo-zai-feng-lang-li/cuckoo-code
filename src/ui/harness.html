@@ -1702,12 +1702,14 @@
       // 按原会话正常载入历史。若不拦住，截断后历史会覆盖原会话本地历史，造成视图与网页不一致。
       clearPendingTruncate();
       if (truncateTimer) { clearTimeout(truncateTimer); truncateTimer = null; }
+      setStatus('就绪', 'ready');  // 兜底恢复状态：否则 UI 永久停在「截断中…」
       loadHist();
     } else if (pendingTruncate && sid) {
       // 到达新会话：用暂存的截断后历史覆盖（不读 localStorage，避免读到空 key）。
       history = pendingTruncate.history.slice();
       clearPendingTruncate();
       if (truncateTimer) { clearTimeout(truncateTimer); truncateTimer = null; }
+      setStatus('就绪', 'ready');  // 截断已成功，必须复位状态；否则 UI 永久停在「截断中…」
       saveHist();  // 写入新 sid 的 key
     } else {
       // 无 pending，或 sid 为空（分享页 /share/xxx 中间态）→ 不动 pendingTruncate，等真正的新会话
