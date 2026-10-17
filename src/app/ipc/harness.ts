@@ -293,6 +293,8 @@ function registerHarnessIpc(): void {
     if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) {
       return { success: false, error: 'no-ai-view' };
     }
+    // 发送新消息前，先强杀上一轮可能仍在后台跑的旧任务（防并行冲突）
+    abortWindowWork(ctx);
     // 新用户消息 = 新任务：清空旧计划（否则旧 todoWrite 结果一直挂着）
     try {
       resetTodosCache();

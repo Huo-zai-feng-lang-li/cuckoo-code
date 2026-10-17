@@ -47,7 +47,12 @@
 - 最终验证：typecheck 0、vitest **127 文件 / 1184 用例**、lint 0 error、compile 0 无漂移。
 - 待办：**合并/发版由用户决定**（当前不 tag/push/发版）。真机待验项见上（尤其 A-005 打包环境 fork、D-005 手机浏览器握手、CSP file:// 放行、D-008 Electron net.request）。
 
-## v0.10.13：彻底修复停止/发消息时工具进程未中断（本版本）
+## v0.10.14：补全 v0.10.13 遗漏的发送前强杀逻辑（本版本）
+
+- **失误**：v0.10.13 中的编辑脚本匹配失败（把 `ipcMain.handle('harness-send', (event...)` 错写成了带 async 的），导致发新消息时并没有清理旧进程，直接发了版。
+- **修复**：v0.10.14 补上了 `abortWindowWork(ctx)` 调用。
+
+## v0.10.13：彻底修复停止/发消息时工具进程未中断
 
 - **新架构**：新增 `process-tracker.ts` 追踪前台 spawn 进程。`runCaptured`（bash/pwsh）和 `runRipgrep`（grep）都通过它登记。
 - **全面强杀**：`stopGeneration` 和 `harness-send` 发送新消息前，会调用 `abortWindowWork`，按窗口维度强杀工具子进程树 + JS worker。
