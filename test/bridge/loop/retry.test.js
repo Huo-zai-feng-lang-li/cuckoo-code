@@ -2,6 +2,20 @@
 import { test, beforeEach, afterEach, vi } from 'vitest';
 import assert from 'node:assert';
 
+// 拦截 chat-input：直接观测 sendToChat 是否被调用（B-001 回归）
+const sendToChatMock = vi.fn(() => Promise.resolve(true));
+vi.mock('../../../src/overlay/chat-input.js', () => ({
+  sendToChat: (...a) => sendToChatMock(...a),
+  sendCombinedJsResultsToChat: async () => true,
+  sendMessageToChat: async () => true,
+  cancelPendingSend: () => {},
+  onMessageDelivered: () => () => {},
+}));
+// panel/通知等打空，避免 DOM 副作用
+vi.mock('../../../src/overlay/panel.js', () => ({
+  showToast: () => {},
+}));
+
 let retry;
 let observer;
 
@@ -17,6 +31,7 @@ function setupGlobals() {
   globalThis.window = {
     location: { href: 'https://chat.deepseek.com/a/chat/s/abc123' },
     addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); },
+    dispatchEvent: () => true,
     electronAPI: { showAiNotification: () => Promise.resolve() },
   };
   globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 0);
@@ -45,6 +60,7 @@ function dispatch(listeners, type, detail) {
 beforeEach(async () => {
   vi.resetModules();
   vi.useFakeTimers();
+  sendToChatMock.mockClear();
   globalThis.__obs = null;
 });
 
@@ -178,4 +194,32 @@ test('startRetryEngine 幂等', async () => {
   retry.startRetryEngine();
   retry.startRetryEngine();
   // 无异常即通过
+});
+
+// ===== B-001：倒计时期间切会话 → 发送前复核，不污染新会话 =====
+
+test('B-001: 倒计时期间切到别的会话 → 取消发送', async () => {
+  const listeners = await boot();
+  localStorage.setItem('cuckoo-retry-enabled', '1');
+  localStorage.setItem('cuckoo-retry-delay-min', '1000');
+  localStorage.setItem('cuckoo-retry-delay-max', '1000');
+  retry.startRetryEngine();
+  observer.startInterceptObserver();
+  dispatch(listeners, 'cuckoo-ai-error', { httpStatus: 500 });
+  // 倒计时进行中：SPA 无刷新切到另一个会话（hex 会话 id，与 abc123 不同）
+  globalThis.window.location.href = 'https://chat.deepseek.com/a/chat/s/def456';
+  vi.advanceTimersByTime(1001);
+  assert.strictEqual(sendToChatMock.mock.calls.length, 0, '切会话后不应发送重试提示词');
+});
+
+test('B-001: 不切会话 → 正常发送（对照）', async () => {
+  const listeners = await boot();
+  localStorage.setItem('cuckoo-retry-enabled', '1');
+  localStorage.setItem('cuckoo-retry-delay-min', '1000');
+  localStorage.setItem('cuckoo-retry-delay-max', '1000');
+  retry.startRetryEngine();
+  observer.startInterceptObserver();
+  dispatch(listeners, 'cuckoo-ai-error', { httpStatus: 500 });
+  vi.advanceTimersByTime(1001);
+  assert.strictEqual(sendToChatMock.mock.calls.length, 1, '同会话应发送重试提示词');
 });

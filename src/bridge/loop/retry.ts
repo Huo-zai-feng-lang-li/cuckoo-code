@@ -188,11 +188,22 @@ let handleError = function handleError(detail: any): void {
     : pickDelay(cfg.delayMin, cfg.delayMax);
 
   const cdTimer = showCountdown(delay);
+  // B-001：记录调度时的会话，倒计时结束发送前再复核一次——
+  // 倒计时期间用户切到别的会话（DeepSeek/Claude SPA 无刷新导航）时，
+  // 不得把旧会话的重试提示词打进新会话（对齐 watchdog.ts:56-62 的发送前复核）。
+  const scheduledSessionId = getCurrentSessionId();
   const timer = setTimeout(() => {
     const box = document.getElementById('cuckoo-retry-countdown');
     if (box) box.classList.add('cuckoo-hidden');
     if (pending && pending.countdownTimer) clearInterval(pending.countdownTimer);
     pending = null;
+    // 发送前会话复核：当前会话已不是发起会话 → 作废本次重试，不污染新会话
+    const cur = getCurrentSessionId();
+    if (cur !== scheduledSessionId) {
+      console.log('[Cuckoo Code][重试] 倒计时期间会话已切换（' + scheduledSessionId + ' -> ' + cur + '），取消自动重试，不污染新会话');
+      emitRetryState('cancelled');
+      return;
+    }
     try {
       sendToChat(cfg.prompt, is429 ? '重试(操作频繁)' : '重试', undefined);
     } catch (e: any) {
