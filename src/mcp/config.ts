@@ -27,6 +27,8 @@ import { createRequire } from 'node:module';
 // plugins 是底层模块（纯 node），此依赖向下，不违反依赖方向。
 // 只返回**已授权**插件的 mcp.json —— 未授权时等价于不存在。
 import { getEnabledPluginMcpFiles } from '../plugins/roots.js';
+// D-002：项目级 server 默认不启用，必须工作区被信任才生效（防打开恶意项目自动 spawn）。
+import { isWorkspaceTrusted } from '../infra/workspace-trust.js';
 
 const require = createRequire(import.meta.url);
 const { app } = require('electron');
@@ -154,12 +156,12 @@ function getServers(projectDir: string | null): any[] {
   // 先项目级（优先）
   for (const [name, def] of Object.entries(projectServers) as [string, any][]) {
     seen.add(name);
-    out.push(buildServerDef(name, def, 'project', projectState));
+    out.push(buildServerDef(name, def, 'project', projectState, projectDir));
   }
   // 再用户级（跳过项目级已有的同名）
   for (const [name, def] of Object.entries(userServers) as [string, any][]) {
     if (seen.has(name)) continue;
-    out.push(buildServerDef(name, def, 'user', userState));
+    out.push(buildServerDef(name, def, 'user', userState, projectDir));
   }
   // 最后插件级（最低优先级）。
   // 能走到这里说明该插件的 execEnabled 已为 true —— 连接 MCP server 会 spawn 子进程，
@@ -170,16 +172,28 @@ function getServers(projectDir: string | null): any[] {
       const nsName = pluginId + ':' + name;
       if (seen.has(nsName)) continue;
       seen.add(nsName);
-      out.push(buildServerDef(nsName, def, 'plugin', {}));
+      out.push(buildServerDef(nsName, def, 'plugin', {}, projectDir));
     }
   }
   return out;
 }
 
-function buildServerDef(name: string, def: any, source: string, state: Record<string, boolean>): any {
+/**
+ * 构造单个 server 定义。
+ *
+ * D-002 信任门：仅 `source==='project'` 的 server 受工作区信任约束——
+ * 未信任时即便 mcp-state 没有显式 false，也按 disabled 处理（getEnabledServers 不会连接它）。
+ * 用户级 / 插件级保持原语义（state[name] !== false 即默认启用）：用户级是用户自己的配置，
+ * 插件级已由插件 execEnabled 授权前置把关。
+ *
+ * @param projectDir 项目目录（仅用于 project 来源的信任判定；user/plugin 忽略）
+ */
+function buildServerDef(name: string, def: any, source: string, state: Record<string, boolean>, projectDir: string | null = null): any {
+  const stateEnabled = state[name] !== false;
+  const trustGate = source === 'project' ? isWorkspaceTrusted(projectDir) : true;
   return {
     name,
-    source, // 'project' | 'user'
+    source, // 'project' | 'user' | 'plugin'
     type: def && def.url ? 'http' : 'stdio',
     command: def && def.command,
     args: (def && def.args) || [],
@@ -187,7 +201,7 @@ function buildServerDef(name: string, def: any, source: string, state: Record<st
     headers: def && def.headers,
     env: def && def.env,
     cwd: def && def.cwd,
-    enabled: state[name] !== false, // 默认启用
+    enabled: stateEnabled && trustGate,
   };
 }
 

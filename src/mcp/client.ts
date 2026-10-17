@@ -18,6 +18,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import * as mcpConfig from './config.js';
 import { resolveRuntimeBinDir } from '../infra/paths.js';
+import { assertUrlAllowed } from '../infra/ssrf-guard.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -187,6 +188,14 @@ async function doConnectServer(server: any, key: string): Promise<any> {
       stderr: 'pipe',
     });
   } else if (server.type === 'http') {
+    // D-003：防 SSRF —— 建连前校验目标 URL，内网/回环/云元数据一律拒绝。
+    // stdio 类型不经网络，不受影响。
+    if (!server.url) throw new Error('MCP http server 缺少 url');
+    try {
+      await assertUrlAllowed(server.url);
+    } catch (err: any) {
+      throw new Error('MCP 拒绝连接内网地址（SSRF 防护）: ' + (err && err.message ? err.message : String(err)));
+    }
     transport = new StreamableHTTPClientTransport(server.url, {
       requestInit: server.headers ? { headers: server.headers } : undefined,
     });
