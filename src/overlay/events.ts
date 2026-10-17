@@ -82,6 +82,8 @@ function todayKey(): string {
 
 /** 某天累加 token（传入"当轮完整 acc"） */
 function addDailyToken(delta: number): void {
+  // 子代理窗口共享父窗口 localStorage，不应参与 token 统计（E-006）
+  if (isSubagentWindow) return;
   if (typeof delta !== 'number' || delta <= 0) return;
   try {
     const raw = localStorage.getItem(TOKEN_DAILY_KEY);
@@ -170,6 +172,8 @@ function readTokenCache(): Record<string, SessionToken> {
  * 仅在 acc 相比上次增大时才累加，避免同一轮重复事件重复计数。
  */
 function saveTokenForSession(sessionId: string, acc: number): void {
+  // 子代理窗口共享父窗口 localStorage，不写缓存/不累加，避免今日统计双计（E-006）
+  if (isSubagentWindow) return;
   if (!sessionId || typeof acc !== 'number') return;
   try {
     const cache = readTokenCache();
