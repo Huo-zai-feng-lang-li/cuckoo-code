@@ -213,8 +213,13 @@ async function activateShareSession(wc: any, shareUrl: string, newText: string, 
   // 导致同一文本被发 3~4 次 —— 用户看到导航栏出现多个相同的消息（实测踩过）。
   // 现在：未发送过 + textarea 就绪 → 发一次并标记；之后只轮询 URL 等变活。
   let sent = false;
-  for (let attempt = 0; attempt < 15; attempt++) {
-    await new Promise((r) => setTimeout(r, 800));
+  // 原实现首轮就 await 800ms（白等），且轮询粒度 800ms 太粗。
+  // 改为：首轮立即检查（分享页可能已就绪），之后 300ms 一轮。
+  // 总时长上限保持 12 秒（40 × 300ms = 15 × 800ms）。
+  const POLL_MS = 300;
+  const MAX_ATTEMPTS = 40;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, POLL_MS));
     if (wc.isDestroyed()) return;
     const url = wc.getURL() || '';
     if (/\/a\/chat\/s\//.test(url)) {

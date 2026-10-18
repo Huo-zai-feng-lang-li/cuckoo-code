@@ -44,9 +44,17 @@ const COMPACT_SUMMARY_KEY = 'cuckoo-compact-summary';
 // 压缩标题：段1 从摘要首行「【标题】xxx」解析 → 段3 设为续接会话标题（方案 B）
 const COMPACT_TITLE_KEY = 'cuckoo-compact-title';
 /** 注入新会话的摘要长度上限（防 prompt 膨胀）。
- *  实测 44246 长度提示词被 DeepSeek 拒绝（status=error）；40503 能过。
- *  基础提示词约 40500，摘要上限必须压到 3000 以内，总长才能落在 43000 安全区。 */
-const MAX_SUMMARY_LEN = 3000;
+ *
+ *  【历史误判纠正】曾因"44246 长度提示词被拒"把上限压到 3000，
+ *  但真机复查发现那次拒绝是**高频请求限流**（3 秒内连发 3 次），与长度无关：
+ *  - 47175 长度（含 3000 摘要）多次成功发送
+ *  - 32432 长度在限流时同样报错
+ *  3000 的代价是摘要被砍掉 15%~48% 的信息（实测 5757→3002，丢 47.9%），
+ *  导致续接会话丢失前情。现放宽到 5000：
+ *  - 覆盖常态摘要（实测 3540 字），只在极端长会话（5757）下才裁
+ *  - 总长 44100 + 5000 = 49100，仅超实测成功线（47175）2000，风险可控
+ *  （8000 会到 52100，超 5000 且未验证，故不采用） */
+const MAX_SUMMARY_LEN = 5000;
 
 // 真截断：URL flag（触发 hook 的 IDB 写入拦截 + 页内检测）与跨刷新 pending 数据 key
 const TRUNCATE_URL_FLAG = 'cuckoo-truncate';
@@ -151,7 +159,7 @@ function waitForIdbMessages(
   sessionId: string,
   predicate: (list: MessageItem[], currentMessageId: number | null) => boolean,
   timeoutMs: number,
-  intervalMs = 200
+  intervalMs = 150
 ): Promise<{ list: MessageItem[]; currentMessageId: number | null }> {
   return new Promise((resolve, reject) => {
     let done = false;
@@ -457,10 +465,21 @@ function checkPendingInit(): void {
   try { compactSummary = localStorage.getItem(COMPACT_SUMMARY_KEY) || ''; } catch (_) {}
   let compactTitle = '';
   try { compactTitle = localStorage.getItem(COMPACT_TITLE_KEY) || ''; } catch (_) {}
-  const extraPrompt = compactSummary
-    ? '以下是上一段对话（因上下文接近上限而被压缩）的摘要，请基于它无缝续接，不要重复已完成的工作：\n\n' + compactSummary
+  // 总长度保护：基础提示词约 44100，加摘要后若超过 52000 就按需缩减。
+  // 实测 47175 能正常发送，52000 留了余量；比之前固定砍到 3000 合理得多
+  // （3000 会丢 15%~48% 的摘要信息）。
+  const BASE_PROMPT_EST = 44100;
+  const MAX_TOTAL_LEN = 49500;
+  let effectiveSummary = compactSummary;
+  if (effectiveSummary && BASE_PROMPT_EST + effectiveSummary.length > MAX_TOTAL_LEN) {
+    const room = Math.max(2000, MAX_TOTAL_LEN - BASE_PROMPT_EST);
+    console.warn('[Cuckoo Compact] 摘要过长（' + effectiveSummary.length + '），为总长限制缩减到 ' + room);
+    effectiveSummary = effectiveSummary.slice(0, room).replace(/\s+$/, '') + ' …';
+  }
+  const extraPrompt = effectiveSummary
+    ? '以下是上一段对话（因上下文接近上限而被压缩）的摘要，请基于它无缝续接，不要重复已完成的工作：\n\n' + effectiveSummary
     : '';
-  console.log('[Cuckoo Compact] 检测到压缩后待初始化，3 秒后执行；项目目录=' + (projectDir || '(无)') + '，压缩前会话=' + (parentSessionId || '(无)') + '，摘要长度=' + compactSummary.length + '，标题=' + (compactTitle || '(无)'));
+  console.log('[Cuckoo Compact] 检测到压缩后待初始化；项目目录=' + (projectDir || '(无)') + '，压缩前会话=' + (parentSessionId || '(无)') + '，摘要长度=' + effectiveSummary.length + '（原 ' + compactSummary.length + '），标题=' + (compactTitle || '(无)'));
   // 标题暂存：会话 ID 未出现时先存 pendingTitle，待 initProject 后新会话 ID 出现时绑定
   if (compactTitle) {
     try {
@@ -471,7 +490,21 @@ function checkPendingInit(): void {
       }
     } catch (_) { /* ignore */ }
   }
-  setTimeout(() => {
+  // 原实现固定等 3 秒（等分享页渲染稳定）。改成轮询检测输入框就绪：
+  // chat-input 的 sendToChat 内部本就有 500ms 轮询兜底，所以只要 input 出现就能发。
+  // 实测分享页渲染通常 <1 秒，白等 3 秒是纯浪费。
+  let waited = 0;
+  const POLL_MS = 200;
+  const MAX_WAIT_MS = 3000;
+  const tryInit = () => {
+    let inputReady = false;
+    try { inputReady = !!document.querySelector('textarea'); } catch (_) { /* ignore */ }
+    if (!inputReady && waited < MAX_WAIT_MS) {
+      waited += POLL_MS;
+      setTimeout(tryInit, POLL_MS);
+      return;
+    }
+    if (waited > 0) console.log('[Cuckoo Compact] 等待输入框就绪 ' + waited + 'ms');
     try {
       const api: any = (window as any).electronAPI;
       const p = api.initProject(projectDir || null, true, extraPrompt, false, parentSessionId);
@@ -496,7 +529,8 @@ function checkPendingInit(): void {
     } catch (err) {
       console.error('[Cuckoo Compact] 压缩后初始化失败:', err);
     }
-  }, 3000);
+  };
+  tryInit();
 }
 
 /**

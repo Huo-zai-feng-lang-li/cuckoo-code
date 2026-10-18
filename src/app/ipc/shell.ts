@@ -256,19 +256,33 @@ function registerShellIpc(): void {
         // 页面加载完即可发系统提示词：initial-prompt 监听器在 preload 顶层**同步注册**
         // （preload 先于页面脚本执行，did-finish-load 时必然已就绪），输入框就绪由
         // chat-input 的轮询保证（每 500ms 找一次）—— 故无需固定等 2s，仅留极短渲染缓冲。
-        ctxAny.__newConvTimer = setTimeout(async () => {
+        // 原实现固定等 400ms（等首屏渲染稳定），但 DeepSeek 首页的输入框
+        // 通常在 did-finish-load 后 100~300ms 内就出现 → 白等 100-300ms。
+        // 改为轮询检测 input（每 100ms，最多 1.5 秒），出现即走初始化。
+        const waitInput = (deadline: number, cb: () => void) => {
+          const tryCheck = () => {
+            if (wc.isDestroyed()) return;
+            wc.executeJavaScript('!!document.querySelector("textarea")')
+              .then((ready: boolean) => {
+                if (ready || Date.now() >= deadline) { cb(); return; }
+                setTimeout(tryCheck, 100);
+              })
+              .catch(() => { if (Date.now() >= deadline) cb(); else setTimeout(tryCheck, 100); });
+          };
+          tryCheck();
+        };
+        ctxAny.__newConvTimer = setTimeout(() => {
           ctxAny.__newConvTimer = null;
-          try {
-            // 沿用当前项目开新对话 → 仍需过信任门；ensureWorkspaceTrust 内部对已信任目录直接短路（不弹）。
-            // session 级（仅本次会话）记录在进程内存，本进程内命中即短路、不会重复问；
-            // 选过"不信任"的没有持久记录，下次新建对话会再问（见 ensureWorkspaceTrust）。
-            // 信任门是告知，不阻断初始化。
-            try { await ensureWorkspaceTrust(ctx ? ctx.win : null, currentDir); }
-            catch (err: any) { console.warn('[Cuckoo Code] 信任门异常，按不信任处理:', err && err.message); }
-            await initProject(false, ctx, currentDir, false, '', false);
-          } catch (err: any) { console.log('[Cuckoo Code] 新对话初始化项目失败: ' + (err && err.message)); }
-          finally { notifyDone(); }
-        }, 400);
+          waitInput(Date.now() + 1500, async () => {
+            try {
+              // 沿用当前项目开新对话 → 仍需过信任门；ensureWorkspaceTrust 内部对已信任目录直接短路（不弹）。
+              try { await ensureWorkspaceTrust(ctx ? ctx.win : null, currentDir); }
+              catch (err: any) { console.warn('[Cuckoo Code] 信任门异常，按不信任处理:', err && err.message); }
+              await initProject(false, ctx, currentDir, false, '', false);
+            } catch (err: any) { console.log('[Cuckoo Code] 新对话初始化项目失败: ' + (err && err.message)); }
+            finally { notifyDone(); }
+          });
+        }, 50);
       };
       ctxAny.__newConvOnLoad = onLoad;
       try { wc.on('did-finish-load', onLoad); } catch (_) { /* ignore */ }
