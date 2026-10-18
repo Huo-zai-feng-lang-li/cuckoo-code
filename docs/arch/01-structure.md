@@ -171,6 +171,35 @@
 一个开关管全部 —— 这三类都属"这个插件的内容"，而 MCP 与 provider 会**在本机执行第三方代码**，
 所以默认不启用。**装一个插件不该顺带执行代码**，启用必须是用户的显式动作。
 
+## src/remote/ —— 远程控制（手机端 PWA）
+
+> 手机通过 Cloudflare 隧道访问电脑上的 AI 对话。主进程起 HTTP+WS 服务（绑定 127.0.0.1），
+> 隧道转发到这里；AI 页面上报的流式/工具事件按 profileId 隔离广播给手机。
+
+| 文件 | 职责 |
+|---|---|
+| `config.ts` | 配置读写（`~/.cuckoo/remote.json`）：启用开关、端口、token、publicUrl、隧道配置 |
+| `server.ts` | HTTP + WebSocket 服务：静态资源（PWA）、`/api/ping` 鉴权、WS 消息分发、心跳保活 |
+| `manager.ts` | **主进程粘合层**：启动/停止服务、手机消息 → 路由到目标窗口 `sendToChat`、AI 事件 → 节流广播、忙碌态准入 |
+| `tunnel.ts` | Cloudflare Tunnel 子进程托管：固定 token 模式 / 快速临时模式、自愈重启、URL 捕获 |
+| `pwa/` | 手机端 PWA（`index.html` / `app.js` / `style.css`），多窗口隔离、断线重连、流式渲染 |
+
+## src/rules/ —— 规则系统（对齐 Claude Code）
+
+> 项目级 `.agents/rules/` + 用户级 `~/.cuckoo/rules/`。规则可带 `paths` 绑定文件路径，
+> 只在 AI 读到相关文件时注入（区别于无 paths 的规则始终注入）。
+
+| 文件 | 职责 |
+|---|---|
+| `scanner.ts` | 扫描规则文件（项目级 + 用户级 + 插件级），解析 frontmatter |
+| `frontmatter.ts` | 极简 YAML frontmatter 解析 |
+| `matcher.ts` | `paths` glob 匹配：判断某条规则是否命中当前操作文件 |
+| `injection.ts` | 会话级注入去重（同一规则一轮只注入一次） |
+| `prompt.ts` | 生成系统提示词的「项目规则」章节（全文 / 指针两种渲染） |
+| `files.ts` | 默认规则种子（首次使用项目时生成基础规则模板） |
+| `types.ts` | `RuleMeta` / `RuleSource` 类型 |
+| `index.ts` | 模块入口 |
+
 ## src/updater/ 、src/types/ 、src/prompt/ 、src/ui/
 
 | 路径 | 职责 |
