@@ -14,6 +14,7 @@ import * as updater from '../../updater/index.js';
 // 新对话要让 harness 视图一起重置 —— 两个入口共用同一段逻辑，避免行为分叉
 import { prepareNewConversation } from './harness.js';
 import { initProject } from '../../session/project-context.js';
+import { ensureWorkspaceTrust } from '../workspace-trust-prompt.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain, app, shell, BrowserWindow } = require('electron');
@@ -257,8 +258,15 @@ function registerShellIpc(): void {
         // chat-input 的轮询保证（每 500ms 找一次）—— 故无需固定等 2s，仅留极短渲染缓冲。
         ctxAny.__newConvTimer = setTimeout(async () => {
           ctxAny.__newConvTimer = null;
-          try { await initProject(false, ctx, currentDir, false, '', false); }
-          catch (err: any) { console.log('[Cuckoo Code] 新对话初始化项目失败: ' + (err && err.message)); }
+          try {
+            // 沿用当前项目开新对话 → 仍需过信任门；ensureWorkspaceTrust 内部对已信任目录直接短路（不弹）。
+            // session 级（仅本次会话）记录在进程内存，本进程内命中即短路、不会重复问；
+            // 选过"不信任"的没有持久记录，下次新建对话会再问（见 ensureWorkspaceTrust）。
+            // 信任门是告知，不阻断初始化。
+            try { await ensureWorkspaceTrust(ctx ? ctx.win : null, currentDir); }
+            catch (err: any) { console.warn('[Cuckoo Code] 信任门异常，按不信任处理:', err && err.message); }
+            await initProject(false, ctx, currentDir, false, '', false);
+          } catch (err: any) { console.log('[Cuckoo Code] 新对话初始化项目失败: ' + (err && err.message)); }
           finally { notifyDone(); }
         }, 400);
       };

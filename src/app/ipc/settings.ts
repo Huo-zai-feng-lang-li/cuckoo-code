@@ -91,7 +91,12 @@ function registerSettingsIpc(): void {
   });
   // 手动触发压缩
   ipcMain.handle('trigger-compact', async (event: any) => {
-    const r = await requestFromAiPage(event, 'cuckoo-trigger-compact');
+    // 从主进程 sessionStore 拿当前目录：overlay 侧的 state.currentProjectDir
+    // 在刷新/导航后常为 null，导致压缩段3 initProject 拿到空目录、注入失败。
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const currentDir = (ctx && ctx.sessionStore && ctx.sessionStore.state)
+      ? (ctx.sessionStore.state.selectedProjectDir || null) : null;
+    const r = await requestFromAiPage(event, 'cuckoo-trigger-compact', { projectDir: currentDir });
     return r.ok ? { success: true } : { success: false, error: r.error };
   });
 

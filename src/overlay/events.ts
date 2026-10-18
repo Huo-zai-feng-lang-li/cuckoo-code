@@ -672,9 +672,11 @@ function applyAutoCompactConfig(data: any): { success: boolean; error?: string; 
   return { success: true, data: { enabled, threshold: th } };
 }
 
-/** 手动触发压缩（调用压缩流程） */
-function triggerCompaction(): void {
-  runCompaction(state.currentProjectDir || undefined).catch((e: any) => {
+/** 手动触发压缩（调用压缩流程）
+ *  @param dirFromMain 主进程传入的项目目录（优先于 overlay 内存 state，防刷新后丢失） */
+function triggerCompaction(dirFromMain?: string): void {
+  const dir = dirFromMain || state.currentProjectDir || undefined;
+  runCompaction(dir).catch((e: any) => {
     console.error('[Cuckoo Code] 压缩失败:', e && e.message);
   });
 }

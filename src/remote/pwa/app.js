@@ -93,8 +93,36 @@
   function showApp() {
     login.classList.add('hidden');
     app.classList.remove('hidden');
-    checkEmptyState();
+    // 连接刚建立、历史尚未到达：先显示"同步中"过渡态。
+    // 原实现直接 checkEmptyState() → 用户看到"已就绪"空态卡片，误以为没有历史/卡住了。
+    // 历史到达（renderHistory）或超时（无历史）后才切到真正的空态。
+    setSyncing(true);
     setTimeout(() => { messages.scrollTop = messages.scrollHeight; }, 50);
+  }
+
+  /** 同步中过渡态：复用 empty-state 卡片，只改标题文案与可见性。
+   *  - true：显示"正在同步对话…"，隐藏快捷指令卡
+   *  - false：恢复正常空态（无历史时）或直接移除（有历史时）
+   *  同时设 8 秒兜底：即使服务端历史因故未到，也不能让用户永久看"同步中"。 */
+  let syncTimeoutTimer = null;
+  function setSyncing(on) {
+    if (!emptyState) return;
+    if (syncTimeoutTimer) { clearTimeout(syncTimeoutTimer); syncTimeoutTimer = null; }
+    const titleEl = emptyState.querySelector('.empty-title');
+    const descEl = emptyState.querySelector('.empty-desc');
+    const quickEl = emptyState.querySelector('.quick-prompts-card');
+    if (on) {
+      if (emptyState.parentNode !== messages) messages.appendChild(emptyState);
+      if (titleEl) titleEl.textContent = '正在同步对话…';
+      if (descEl) descEl.textContent = '正在从电脑端拉取最近的对话记录，请稍候。';
+      if (quickEl) quickEl.style.display = 'none';
+      syncTimeoutTimer = setTimeout(() => { setSyncing(false); }, 8000);
+    } else {
+      if (titleEl) titleEl.textContent = 'Cuckoo Remote 已就绪';
+      if (descEl) descEl.textContent = '已与电脑端建立低延迟安全直连。随时在手机上发送指令、控制电脑、查看实时生成并随时中断。';
+      if (quickEl) quickEl.style.display = '';
+      checkEmptyState();
+    }
   }
 
   $('token-btn').addEventListener('click', () => {
@@ -390,6 +418,9 @@
    *  若页面已有消息（说明正在实时收流），则跳过，避免覆盖实时内容。
    *  只渲染 user/assistant/system 三类文本消息；tool/plan 在手机端无对应卡片，跳过。 */
   function renderHistory(entries) {
+    // 无论是否有内容，历史回执到达即结束"同步中"状态。
+    // 空历史 → 恢复正常空态卡片；有历史 → checkEmptyState() 会移除卡片。
+    setSyncing(false);
     if (!Array.isArray(entries) || !entries.length) return;
     if (messages.querySelector('.msg')) return; // 已有实时消息 → 不覆盖
     for (let i = 0; i < entries.length; i++) {

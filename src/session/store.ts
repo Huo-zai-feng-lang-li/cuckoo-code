@@ -156,9 +156,10 @@ function createSessionStore(profileId: string, storeDir: string, windowState: an
     console.log('[Cuckoo Code][' + profileId + '] 已删除会话: ' + sessionId + '（共清理 ' + toDelete.size + ' 项）');
   }
 
-  /** 删除项目工作区（清理该项目下的所有会话及归档标记） */
-  function deleteProjectWorkspace(dir: string): void {
-    if (!dir) return;
+  /** 删除项目工作区（清理该项目下的所有会话及归档标记）
+   *  @returns 被删除的 sessionId 列表（供调用方清理关联的 localStorage 缓存） */
+  function deleteProjectWorkspace(dir: string): string[] {
+    if (!dir) return [];
     const store = readSessionStore();
 
     // 清理该项目目录下的所有会话
@@ -193,6 +194,7 @@ function createSessionStore(profileId: string, storeDir: string, windowState: an
 
     writeSessionStore(store);
     console.log('[Cuckoo Code][' + profileId + '] 已删除项目工作区: ' + dir + '（清理会话 ' + toDelete.length + ' 个）');
+    return toDelete;
   }
 
   /** 更新会话标题（AI 命名对话 / 网页标题抓取）。条目不存在时新建。 */
@@ -378,7 +380,10 @@ function createSessionStore(profileId: string, storeDir: string, windowState: an
       // 提取不到会话 ID（如 ChatGPT 首页 https://chatgpt.com/）：
       // 若有暂存目录（刚初始化但还没绑定会话），保留目录；否则清空（恢复原行为）。
       state.currentSessionId = null;
-      if (!state.pendingProjectDir) {
+      // 分享页中间态（截断/压缩跳 /share/xxx）：这是过渡 URL，
+      // 紧接着会跳到 /a/chat/s/<新id>，项目目录不变。清空会导致资源管理器闪成"未选择"。
+      const isSharePage = /\/share\//.test(url);
+      if (!state.pendingProjectDir && !isSharePage) {
         state.selectedProjectDir = null;
         if (canSend) emitProjectDir(wc, null);
       }

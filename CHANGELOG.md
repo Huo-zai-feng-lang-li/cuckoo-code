@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+## [0.10.17] - 2026-10-18
+
+### Fixed
+
+- **会话切换后纯净模式历史不加载**（严重）：`notifyHarnessSession` 与 `harness-ready` 补发时仅用 `ctx.providerId` 取 provider，该字段未设置时 `sid` 恒为空，导致 harness 永远拿不到当前会话、历史一片空白。已补 `getProviderByUrl(url)` 兜底。
+- **子代理 maxTurns 达到后不真正停止**：原实现只上报 `partial` 而不阻断后续流程，实测 `maxTurns=1` 仍跑 3 轮才结束。现加 `stopped` 标志 + `cancelPendingSend` + `requestAbort`，日志验证触发后立即中止。
+- **纯净模式滚底 `suppressPin` 永久卡住**：页面 `document.hidden` 时 rAF 被浏览器挂起，`settleScrollBottom` 的多帧循环永不推进，`suppressPin` 长置 true。改为 `hidden` 时一次性完成（`scrollTop = scrollHeight`），不进入多帧循环。
+- **右侧对话导航 hover 强制滚底**（反 UX）：原实现 hover 右侧导航立刻 `scrollBottom(true)`，用户根本点不到想跳的历史消息。已移除该行为，hover 保持原位置。
+- **压缩丢 `projectDir`**：`triggerCompaction` 取 overlay 内存 `state.currentProjectDir`，刷新/导航后为空 → 压缩段3 `initProject` 拿不到目录。改为主进程 `sessionStore.state.selectedProjectDir` 直传给 bridge，再由 bridge 传给 `triggerCompaction`。
+- **压缩摘要超长被服务端拒**：`MAX_SUMMARY_LEN` 8000 → 3000。基础提示词约 40.5k 字符，加上 8000 字摘要即触碰 DeepSeek 拒绝边界。
+- **压缩段3 过早清 localStorage**：`checkPendingInit` 读到 pending 立即 removeItem，若 `initProject` 失败则摘要/目录永久丢失无法重试。改为 initProject 成功回执后再清。
+- **截断重发迟到回执被丢弃**：长历史下快路径可能 >60s 超时，此时回执到达因 `truncatePending` 已空被静默丢弃。已加 `truncateLateHandler`，超时后仍能完成导航+激活；同时超时 60s → 120s。
+- **截断重发慢**：`activateShareSession` 原用 `waitForLoad(15000)`，但 `loadURL` 已 await 完成，did-finish-load 事件早已过去 → 白等 15 秒。改为 6 次 × 800ms 轮询检查 textarea 就绪，激活成功耗时从 17s 降至 ~5s。
+- **历史消息"保存修改"缺失**：历史消息编辑栏只有"取消/填入输入框/从此处截断重发"，用户只想改错别字保存无从下手。新增"保存修改"按钮（`doSaveOnly`），更新 DOM + `histItem.text` + `saveHistory`。
+- **截断重发本地降级**：无 `webMsgId`（纯净模式首条 / 无网页记录）时原实现直接 `cancel()` 丢弃用户输入。改为回退本地物理截断：`truncateUserMessage` 清历史 → 新文本入输入框 → `send()`。
+- **目标迭代始终显示 0**：`round` 语义为"自动续跑次数"，AI 靠工具循环跑完不触发 nudge → 恒定 0。改为"当前第 N 轮"语义，起始 1，`renderGoalMeta` 兜底 `Math.max(1, ...)`。
+- **空白气泡/空 pre 残留**：流式渲染剥离工具块后 `renderMarkdown('')` 产生 `<pre><code></code></pre>`，深色主题下呈空黑框。新增 `removeEmptyPres` 在流式/收尾/历史恢复三处清理；无正文时隐藏 body 容器。
+- **删除工作区 localStorage 缓存残留**：删除工作区只清主进程账本，harness 的 history/goal/plan 缓存永久驻留。`deleteProjectWorkspace` 现返回被删 sessionId 列表，UI 侧逐个清理三 key。
+- **会话标题更新后侧栏不刷新**：`set-session-title` 处理完未广播 `shell-sessions-changed`，跨视图联动存在盲区。
+
+### Added
+
+- **子代理 partial 上报**：达 `maxTurns` 截断时主对话收到 `[子代理达到轮次上限，以下为部分结果]` 前缀，避免把半截当完整结论。
+- **远程 PWA 同步过渡态**：连接建立但历史尚未到达时显示"正在同步对话…"，8 秒兜底解除，避免用户误以为卡在首页。
+- **远程空 history 回执**：harness 未创建 / 导出超时 / 无可用窗口时也回一条空 `history`，客户端立即解除同步态。
+- **远程用户消息入历史**：`case 'user'` 原仅 `addUser` 渲染 DOM 未 `pushHist`，手机重连补发历史时看不到自己发过的话。已补 `pushHist` 并传 `histItem` 供删除/编辑引用。
+- **工作区信任门**：新建对话到含 `.agents` 工件的目录时弹三按钮确认框（信任并启用 / 仅本次会话 / 不信任）；`harness-ready` 路径对已信任目录短路不弹。未信任时项目级 MCP / 规则 / 技能 / 子代理均不注入。
+- **目录信息增强**：`getDirInfo` 现返回 `createdAt` + `source`（session/dir），优先取该目录下最早会话的 `createdAt`，老数据回落磁盘 `birthtime`。
+- **工具计数泄漏自愈**：`scheduleGoalNudge` 遇忙不再直接丢弃，改为指数退避重试（上限 12 次）；`onTaskIdle` 遇 `toolRunningCount > 0` 也调度续跑兜底。
+- **历史恢复未收尾工具落终态**：`success === null` 的工具卡片渲染为"上次会话中断，工具未执行完成"，不再是永久"运行中"。
+- **自动滚底（081）**：切回窗口时若在底部附近且内容变高则平滑滚底；离开时在翻历史则不动。新增 `src/bridge/scroll-follow.ts`（含 `shouldFollowToBottom` 纯函数便于单测）。
+
 ## [0.10.16] - 2026-10-18
 
 ### Fixed

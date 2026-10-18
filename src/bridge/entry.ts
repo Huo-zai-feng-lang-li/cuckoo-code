@@ -26,6 +26,7 @@ import { initProbeIfNeeded } from './probe.js';
 import { initRemoteBridge } from './remote-bridge.js';
 import { initPlugins, bindPluginReload } from './plugin-system.js';
 import { buildUserAgentDataFix } from '../infra/user-agent.js';
+import { startScrollFollow, resetScrollFollow } from './scroll-follow.js';
 
 const require = createRequire(import.meta.url);
 const { webFrame, ipcRenderer } = require('electron');
@@ -121,6 +122,8 @@ let lastUserNameKey = '';
  * 刷新首页模式、检测会话切换、更新窗口名。
  */
 function handleUrlChanged(): void {
+  // URL/会话切换：清空滚动跟随缓存，避免指向旧会话容器（旧节点可能以 visibility:hidden 保留）
+  try { resetScrollFollow(); } catch (_) {}
   try { ui.updateHomeMode(); } catch (_) {}
   try { checkSessionChange(); } catch (_) {}
   try { refreshTokenForCurrentSession(); } catch (_) {}
@@ -209,9 +212,13 @@ function init(): void {
         ipcRenderer.send('cuckoo-autocompact-result', { reqId, ok: false, error: err.message });
       }
     });
-    ipcRenderer.on('cuckoo-trigger-compact', (_e: any, { reqId }: any) => {
+    ipcRenderer.on('cuckoo-trigger-compact', (_e: any, payload: any) => {
+      const reqId = payload && payload.reqId;
+      const data = payload && payload.data;
       try {
-        triggerCompaction();
+        // 主进程传下来的项目目录优先：overlay 侧 state 在刷新/导航后常为空，
+        // 直接用它会导致压缩段3（新会话初始化）丢失 projectDir、注入失败。
+        triggerCompaction(data && data.projectDir ? data.projectDir : undefined);
         ipcRenderer.send('cuckoo-autocompact-result', { reqId, ok: true });
       } catch (err: any) {
         ipcRenderer.send('cuckoo-autocompact-result', { reqId, ok: false, error: err.message });
@@ -227,15 +234,15 @@ function init(): void {
         ipcRenderer.send('cuckoo-switch-share-result', { reqId, ok: false, error: err.message });
       }
     });
-    // 纯净模式真截断·段1：主进程请求"清 IDB + 刷新以重建完整历史"
-    // （截断必须在刷新后基于完整 IDB 精确回溯，故此处只做清 IDB + 刷新；
-    //  刷新后由 overlay/events.ts → compaction.checkPendingTruncate 完成分享并回执主进程）
+    // 纯净模式真截断·段1：
+    //  - 快路径：IDB 已就绪 → 直接造分享并回执（1~3 秒，不刷新）
+    //  - 慢路径：清 IDB + 刷新重建完整历史 → 由 overlay/events.ts → checkPendingTruncate 继续
     ipcRenderer.on('cuckoo-truncate-prepare', (_e: any, { webMsgId, newText }: any) => {
-      try {
-        prepareTruncate(webMsgId, newText || '');
-      } catch (err: any) {
-        ipcRenderer.send('cuckoo-truncate-share-ready', { error: (err && err.message) || '截断准备失败' });
-      }
+      Promise.resolve()
+        .then(() => prepareTruncate(webMsgId, newText || ''))
+        .catch((err: any) => {
+          ipcRenderer.send('cuckoo-truncate-share-ready', { error: (err && err.message) || '截断准备失败' });
+        });
     });
     // 追加文本到输入框末尾（MCP 名等，不发送）
     ipcRenderer.on('cuckoo-append-input', (_e: any, data: any) => {
@@ -270,6 +277,9 @@ function init(): void {
 
     // 拦截模式：监听主世界注入器派发的 'cuckoo-ai-response' 事件
     startInterceptObserver();
+
+    // 切回窗口时智能跟随底部：有新内容且在底部附近才滚到底，不打断翻历史
+    try { startScrollFollow(); } catch (err) { console.warn('[Cuckoo Code] 启动滚动跟随失败:', err); }
 
     // 启动自动重试引擎（订阅失败事件）
     startRetryEngine();

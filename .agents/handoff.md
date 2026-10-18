@@ -1,36 +1,54 @@
 # 最新接续状态 (2026-10-18)
 
-## 核心进展
-- **修复纯净模式截断状态卡死**：点历史消息"从此处截断重发"后，状态栏一直停在"截断中…"不恢复。根因是 `src/ui/harness.html` 的 `onSessionChanged` 消费 `pendingTruncate` 的两个分支（回退原会话/到达新会话）只清了 pending 和 timer，没复位 status；90s 兜底定时器首行 `if (!pendingTruncate) return` 因 pending 已清空而失效。修复：两个分支各加 `setStatus('就绪','ready')`。四件套全绿（typecheck/test 128文件1190用例/lint 0 error/compile）。已提交推送。
-- 上一版本 **v0.10.16**：修复“纯净模式点停止/发消息时底层进程不中断”的严重 Bug，明确精确的进程中止边界。GitHub CI 全绿。
+## 本轮完成：审计 + 全链路修复 + 真机闭环
 
-## 核心动机与背景 (Motivation & Background)
-- **假停止问题**：用户在 Harness 点击停止或发送新消息时，之前的 UI 只改了状态，并没有杀主进程 spawn 出来的工具子进程（如 `rg.exe`、`cmd.exe`），导致工具卡片一直卡在“运行中”，且后台资源被白白占用。
-- **边界定义（极其重要，曾踩坑）**：中止操作必须只强杀**阻塞当前对话**的前台进程（bash/grep/JS 沙箱）。**绝对不能**杀有独立生命周期的后台任务（如 AI 拉起的 `npm run dev`）以及 MCP 长连接服务，否则会把用户的开发环境弄崩。
+### 闭环清单（20 项，均有真机证据）
+**harness 核心**
+1. 会话切换加载历史（根因：providerId 空 → sid 空）
+2. 远程用户消息入历史（补 pushHist）
+3. 目标迭代显示（0/50 → 1/50）
+4. 空白框渲染（removeEmptyPres + 隐藏空 body）
+5. 截断速度（17s → 5.7s）
 
-## 关键设计与实现 (Implementation & Decisions)
-- **进程追踪基建**：新增 `src/infra/process-tracker.ts`，全局追踪主进程 spawn 的进程，支持按 `windowId` 强杀。
-- **底层接入**：`runCaptured`（bash/pwsh）和 `runRipgrep`（grep）全部接入 `trackProcess`；并给 grep 增加了 60s 兜底超时。
-- **统一中止入口**：在 `src/app/ipc/harness.ts` 中封装了 `abortWindowWork(ctx)`，只杀属于该窗口的前台进程和 `JsRunner` 沙箱。
-- **触发时机**：在 `harness-stop`（停止）和 `harness-send`（发新消息前）均会调用 `abortWindowWork`。
-- **UI 兜底**：`src/ui/harness.html` 的 `stop()` 里增加了遍历 `.tool-badge.run`，把卡死的卡片标记为“已停止”。
-- **版本纠错**：v0.10.15 曾错误加入 `stopBySource('ai')` 导致误杀 dev server，已紧急撤销，并彻底删除了远程错误的 v0.10.15 tag，重新发布了正确的 v0.10.16。
+**远程（手机端）**
+6. PWA 首屏历史加载（22ms 送达）
+7. PWA 同步过渡态（setSyncing + 8s 兜底）
+8. 空 history 回执（所有失败路径都回）
+9. 远程 WS 时序
 
-## 待办事项 (Next Steps)
-- [ ] 用户下载 v0.10.16 安装包，真机验证：
-  1. 点停止/发新消息，前台卡住的 bash/grep 是否能瞬间消失且不卡。
-  2. 后台运行的 dev server（任务页里的）是否依然存活，不被误杀。
-- [ ] 如果后续还有其他页面（如 Git、文件、任务）在极端情况下的性能或卡顿问题，继续按同样的思路排查。
+**压缩/截断**
+10. 压缩接续（摘要注入成功，AI 自主续前情）
+11. 压缩 projectDir 传递（(无) → 正确路径）
+12. MAX_SUMMARY_LEN 8000→3000
+13. checkPendingInit 延迟清理
 
-## 关键上下文
-- 目录: `D:\Desktop\Super-File\cuckoo-code`
-- 主要文件:
-  - `src/infra/process-tracker.ts`（新增的前台进程追踪器）
-  - `src/app/ipc/harness.ts`（abortWindowWork 及 IPC 拦截）
-  - `src/tools/runtime/JsRunner.ts`（沙箱 abortAll 实现）
-  - `src/tools/impl/grep.ts`（接入追踪与超时）
-  - `src/infra/run-captured.ts`（bash/pwsh 底层执行）
-  - `src/ui/harness.html`（UI 卡片状态清理）
-- **构建/验证**: `npm run typecheck` / `npm test` / `npm run lint` / `npm run compile`。
-- **发版注意**：发布前必须跑四件套且亲自 grep 确认关键修改落地，绝不能盲信 edit 返回值（此前曾因此发过空版本和坏版本）。
-- **外网代理**: `http://127.0.0.1:51081`
+**其他**
+14. 加号新建（有项目目录）
+15. 历史消息保存修改
+16. 历史消息本地降级截断重发
+17. 删除工作区清缓存
+18. getDirInfo 双源
+19. 生成物一致性
+20. 子代理 maxTurns 真正停止（新发现缺陷）
+
+### 本轮修复清单（13 处代码）
+- src/ui/harness.html：onSessionChanged 早退、case 'user' 补 pushHist、settleScrollBottom、removeEmptyPres、空 body 隐藏、截断超时 45s
+- src/app/entry.ts + ipc/harness.ts：providerId 空时 getProviderByUrl 兜底（**会话历史不加载根因**）
+- src/bridge/subagent.ts：maxTurns 真正停止（stopped + cancelPendingSend + requestAbort）
+- src/session/compaction.ts：MAX_SUMMARY_LEN 3000、checkPendingInit 延迟清理、tryFastTruncate 迟到回执
+- src/remote/manager.ts + pwa/app.js：空 history 回执、setSyncing 过渡态
+- src/app/ipc/settings.ts + bridge/entry.ts + overlay/events.ts：trigger-compact 带 projectDir
+
+### 四项校验
+typecheck ✅ / test 129文件1218用例全绿 ✅ / lint 0 error ✅ / compile ✅
+
+### 撤回的错误结论
+- ❌ "44246 超限导致 AI 报错" → 实为高频请求限流，与长度无关（32432 也报）
+- ❌ "提示词需要总长安全阀" → 不需要
+
+### 待用户确认（环境限制，我无法验证）
+1. **截断重发 · 分享页激活**：DeepSeek 官方改版，分享页不再支持"发消息变活会话"。需确认生产版是否也这样
+2. **真实手机通过隧道**：开发版用 7800 端口，手机连的是生产版 7799
+3. **滚底稳定期拖拽**：harness 后台 rAF 挂起，需人工点验
+
+</content>

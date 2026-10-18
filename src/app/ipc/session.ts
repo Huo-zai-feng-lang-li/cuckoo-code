@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { getProviderByUrl, getProvider } from '../../providers/registry.js';
 import { initProject } from '../../session/project-context.js';
+import { ensureWorkspaceTrust } from '../workspace-trust-prompt.js';
 import { assertSenderOk } from '../ipc-guard.js';
 
 const require = createRequire(import.meta.url);
@@ -338,6 +339,11 @@ function registerSessionIpc(): void {
     const t = String(title || '').trim();
     if (!store || !sessionId || !t) return { success: false, error: 'no-store-or-args' };
     store.updateSessionTitle(sessionId, t);
+    try {
+      if (ctx && ctx.win && !ctx.win.isDestroyed()) {
+        ctx.win.webContents.send('shell-sessions-changed');
+      }
+    } catch (_) { /* ignore */ }
     return { success: true };
   });
 
@@ -387,18 +393,18 @@ function registerSessionIpc(): void {
     return { success: true };
   });
 
-  // 删除项目工作区
+  // 删除项目工作区（彻底删除：账本条目 + 回传 sessionId 列表供前端清 localStorage 缓存）
   ipcMain.handle('delete-project-workspace', async (event: any, { dir }: any) => {
     const ctx = windowState.getContextByWebContents(event.sender);
     const store = ctx ? ctx.sessionStore : null;
     if (!store || !dir) return { success: false, error: 'no-store-or-dir' };
-    store.deleteProjectWorkspace(dir);
+    const deletedSessionIds: string[] = store.deleteProjectWorkspace(dir) || [];
     try {
       if (ctx && ctx.win && !ctx.win.isDestroyed()) {
         ctx.win.webContents.send('shell-sessions-changed');
       }
     } catch (_) { /* ignore */ }
-    return { success: true };
+    return { success: true, sessionIds: deletedSessionIds };
   });
 
   // 取项目目录信息（全路径 + 创建时间），供侧边栏悬停卡片
@@ -408,20 +414,22 @@ function registerSessionIpc(): void {
     if (!dir || typeof dir !== 'string') return { success: false, error: 'no-dir' };
     const ctx = windowState.getContextByWebContents(event.sender);
     const store = ctx ? ctx.sessionStore : null;
+    let abs: string;
+    try { abs = path.resolve(dir); } catch (_) { return { success: false, error: '非法路径' }; }
+    // 账本只读一次：范围校验 + 最早会话时间共用（避免重复 IO/遍历）
+    let all: Record<string, any> | null = null;
+    if (store && typeof store.readSessionStore === 'function') {
+      try { all = store.readSessionStore(); } catch (_) { /* 账本读取失败就只允许当前根 */ }
+    }
     const roots: string[] = [];
     const cur = store && store.state && store.state.selectedProjectDir;
     if (cur) roots.push(cur);
-    if (store && typeof store.readSessionStore === 'function') {
-      try {
-        const all = store.readSessionStore();
-        for (const v of Object.values(all)) {
-          const d = typeof v === 'string' ? v : (v && typeof v === 'object' ? (v as any).projectDir : null);
-          if (typeof d === 'string' && d) roots.push(d);
-        }
-      } catch (_) { /* 账本读取失败就只允许当前根 */ }
+    if (all) {
+      for (const v of Object.values(all)) {
+        const d = typeof v === 'string' ? v : (v && typeof v === 'object' ? (v as any).projectDir : null);
+        if (typeof d === 'string' && d) roots.push(d);
+      }
     }
-    let abs: string;
-    try { abs = path.resolve(dir); } catch (_) { return { success: false, error: '非法路径' }; }
     const inScope = roots.some((r) => {
       try {
         const rr = path.resolve(r);
@@ -429,13 +437,38 @@ function registerSessionIpc(): void {
       } catch (_) { return false; }
     });
     if (!inScope) return { success: false, error: '路径不在允许范围' };
-    try {
-      const st = fs.statSync(dir);
-      const bt = st.birthtime && st.birthtime.getTime() > 0 ? st.birthtime.toISOString() : null;
-      return { success: true, dir, createdAt: bt };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    // 工作区"创建时间"= 该目录下最早会话的 createdAt（首次在 Cuckoo 中使用该项目）
+    // 老数据无 createdAt → 回落磁盘 birthtime，并用 source 标明来源（前端据此措辞）
+    // 路径统一 path.resolve 归一化比较（与上面 inScope 一致，避免大小写/斜杠差异漏匹配）
+    let createdAt: string | null = null;
+    let source: 'session' | 'dir' = 'session';
+    if (all) {
+      let minTs = Infinity;
+      for (const val of Object.values(all)) {
+        if (!val || typeof val !== 'object') continue; // 数组/字符串老格式无 createdAt，跳过
+        const pd = (val as any).projectDir;
+        if (typeof pd !== 'string' || !pd) continue;
+        let same = false;
+        try { same = path.resolve(pd) === abs; } catch (_) { same = false; }
+        if (!same) continue;
+        const c = (val as any).createdAt;
+        const t = c ? Date.parse(c) : NaN;
+        if (Number.isFinite(t) && t < minTs) minTs = t;
+      }
+      if (Number.isFinite(minTs)) createdAt = new Date(minTs).toISOString();
     }
+    if (!createdAt) {
+      try {
+        const st = fs.statSync(dir);
+        if (st.birthtime && st.birthtime.getTime() > 0) {
+          createdAt = st.birthtime.toISOString();
+          source = 'dir';
+        }
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
+    return { success: true, dir, createdAt, source };
   });
 
   // 用指定项目新建对话：导航到首页 + 自动初始化该项目（发系统提示词，不弹目录框）
@@ -468,6 +501,10 @@ function registerSessionIpc(): void {
       ctxAny.__newConvTimer = setTimeout(async () => {
         ctxAny.__newConvTimer = null;
         try {
+          // 用户主动选了新目录 → 必须先过工作区信任门（initProject 因 presetDir 非空会跳过它）。
+          // 未信任时项目级 MCP / 规则 / 技能 / 子代理不注入，但仍继续初始化（信任门是告知，不阻断）。
+          try { await ensureWorkspaceTrust(ctx.win, projectDir); }
+          catch (err: any) { console.warn('[Cuckoo Code] 信任门异常，按不信任处理:', err && err.message); }
           await initProject(false, ctx, projectDir, false, '', false);
         } catch (err: any) {
           console.log('[Cuckoo Code] 新建对话初始化项目失败: ' + (err && err.message));

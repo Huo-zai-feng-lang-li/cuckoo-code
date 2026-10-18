@@ -150,8 +150,13 @@ function showDirTip(dir: string, anchor: HTMLElement): void {
     api.getDirInfo(dir).then((r: any) => {
       const t = document.getElementById('ws-tip-time');
       if (!t) return;
-      if (r && r.success && r.createdAt) t.textContent = '创建于 ' + fmtCreatedAt(r.createdAt);
-      else t.textContent = '（无法读取创建时间）';
+      if (r && r.success && r.createdAt) {
+        // source=dir 表示回落为磁盘目录时间（老数据无会话记录），措辞需区分
+        const prefix = r.source === 'dir' ? '目录创建于 ' : '工作区创建于 ';
+        t.textContent = prefix + fmtCreatedAt(r.createdAt);
+      } else {
+        t.textContent = '（无法读取创建时间）';
+      }
     }).catch(() => {
       const t = document.getElementById('ws-tip-time');
       if (t) t.textContent = '（无法读取创建时间）';
@@ -226,9 +231,20 @@ function bindWorkspaceEvents(listEl: HTMLElement): void {
       } else if (act === 'delete') {
         if (!api.deleteProjectWorkspace) return;
         const name = baseName(dir);
-        const ok = await ckConfirm('确定要删除项目工作区“' + name + '”及其所有对话记录吗？\n（仅移除工作区记录，不会删除磁盘实际项目文件）', '删除工作区');
+        const ok = await ckConfirm('确定要删除项目工作区“' + name + '”及其所有对话记录吗？\n（仅移除工作区记录与本地缓存，不会删除磁盘实际项目文件）', '删除工作区');
         if (!ok) return;
-        try { await api.deleteProjectWorkspace(dir); } catch (_) { /* ignore */ }
+        try {
+          const r: any = await api.deleteProjectWorkspace(dir);
+          // 彻底删除：连带清理被删会话的 harness 本地缓存（历史/目标/计划）
+          const ids: string[] = (r && Array.isArray(r.sessionIds)) ? r.sessionIds : [];
+          for (const id of ids) {
+            try {
+              localStorage.removeItem('cuckoo-harness-history-v1:' + id);
+              localStorage.removeItem('cuckoo-harness-goal-v1:' + id);
+              localStorage.removeItem('cuckoo-harness-plan-v1:' + id);
+            } catch (_) { /* ignore */ }
+          }
+        } catch (_) { /* ignore */ }
         loadWorkspaces();
       }
     });

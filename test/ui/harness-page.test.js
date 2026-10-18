@@ -76,7 +76,8 @@ test('兜底超时后必须重置为就绪（不能只换文案）', () => {
 });
 
 test('工具计数泄漏有自愈兜底（tool-end 丢失不会永久卡住）', () => {
-  const idx = script.indexOf('if (toolRunningCount > 0) {');
+  // 定位兜底 setInterval 里那段（而非 onTaskIdle 的早退分支）：用其独有的超时判据锚定
+  const idx = script.indexOf('Date.now() - lastActivityAt > AI_STATE_QUIET_TOOL_MS');
   assert.ok(idx > 0, '应有工具计数泄漏兜底');
   const tail = script.slice(idx, idx + 400);
   assert.ok(tail.includes('toolRunningCount = 0'), '超过上限应清零工具计数');
@@ -254,6 +255,59 @@ test('消息气泡：最后一条重发与历史消息截断重发/填入输入�
   assert.ok(script.includes('msg-edit-truncate'), '历史消息编辑栏应有截断重发按钮');
   assert.ok(/\.msg-edit-bar \{/.test(html), '应有 .msg-edit-bar 样式');
   assert.ok(/\.msg-edit-btn \{/.test(html), '应有 .msg-edit-btn 样式');
+});
+
+test('消息气泡：历史消息就地保存修改与本地截断重发兜底', () => {
+  // 1. 历史消息编辑栏提供就地保存按钮
+  assert.ok(script.includes('msg-edit-save-only'), '应提供仅保存/保存修改按钮');
+  assert.ok(script.includes('function doSaveOnly'), '应有 doSaveOnly 函数');
+
+  // 2. 就地保存修改应更新历史并落盘
+  const editIdx = script.indexOf('function editUserMessage');
+  const editBody = script.slice(editIdx, editIdx + 6000);
+  assert.ok(editBody.includes('histItem.text = newText'), 'doSaveOnly 应更新 histItem.text');
+  assert.ok(editBody.includes('saveHist()'), 'doSaveOnly 应调用 saveHist 持久化');
+
+  // 3. 历史中间消息 Ctrl+Enter 提交为安全就地保存
+  assert.ok(editBody.includes('if (isLatest) doSubmitLatest(); else doSaveOnly();'), '历史消息快捷键应默认为就地保存修改');
+
+  // 4. doTruncate 本地兜底链路完整
+  assert.ok(editBody.includes('truncateUserMessage(msgEl, histItem)'), '无 webMsgId 时应回退到本地物理截断');
+  assert.ok(editBody.includes('input.value = newText'), '截断后应将新文本填入输入框');
+  assert.ok(editBody.includes('send()'), '截断后应重新触发发送生成');
+});
+
+// ===== 目标推进死锁三处修复（2026-10-18 实测复现后修）=====
+
+test('历史恢复：未收尾工具必须落终态，不能永久显示运行中', () => {
+  // 历史里 success===null 表示上次崩溃/刷新时工具没收尾。
+  // 若只 addToolStart 不 addToolEnd，卡片永远"运行中"，isBusy() 与 DOM 脱节 → 目标推进卡死。
+  const idx = script.indexOf('function restoreHist');
+  assert.ok(idx > 0, '应有 restoreHist');
+  const body = script.slice(idx, idx + 1800);
+  assert.ok(/addToolEnd\(false/.test(body), '未收尾工具应以失败终态落定（addToolEnd(false, ...)）');
+  assert.ok(body.includes('上次会话中断'), '终态应给出可辨识的中断原因');
+});
+
+test('目标续跑：nudge 遇忙不丢弃，改为退避重试', () => {
+  assert.ok(/function scheduleGoalNudgeRetry\s*\(/.test(script), '应有退避重试函数');
+  assert.ok(/GOAL_NUDGE_RETRY_MAX/.test(script), '应有重试上限常量（防无限重试）');
+  const idx = script.indexOf('function scheduleGoalNudge()');
+  const body = script.slice(idx, idx + 500);
+  assert.ok(body.includes('scheduleGoalNudgeRetry()'), 'nudge 到点仍忙时应转重试，不能直接丢弃');
+});
+
+test('目标续跑：task-idle 遇工具计数残留也调度续跑（不白等）', () => {
+  const idx = script.indexOf('function onTaskIdle');
+  const body = script.slice(idx, idx + 700);
+  assert.ok(body.includes('scheduleGoalNudgeRetry()'), 'task-idle 遇计数残留应调度续跑兜底');
+});
+
+test('目标续跑：退避有上限，不会无限循环', () => {
+  const idx = script.indexOf('function scheduleGoalNudgeRetry');
+  const body = script.slice(idx, idx + 900);
+  assert.ok(body.includes('goalNudgeRetries >= GOAL_NUDGE_RETRY_MAX'), '应有重试上限判定');
+  assert.ok(/Math\.min\(GOAL_NUDGE_DELAY \* Math\.pow\(2/.test(body), '应为指数退避且有上限');
 });
 
 

@@ -35,7 +35,7 @@ function abortWindowWork(ctx: any): void {
     console.log('[Cuckoo Harness] abortWindowWork 异常:', err);
   }
 }
-import { getProvider } from '../../providers/registry.js';
+import { getProvider, getProviderByUrl } from '../../providers/registry.js';
 import { resetTodosCache } from './tool.js';
 import { cdpAttach } from './cdp-attach.js';
 import { initProject } from '../../session/project-context.js';
@@ -121,20 +121,37 @@ function attachFn(doc: any, win: any, b64: any, fileName: any, mimeType: any, ti
 let truncatePending: { resolve: (v: any) => void; timer: any } | null = null;
 
 /** AI 页面回执入口（由 registerHarnessIpc 注册到 ipcMain.on）。
- *  刷新后的渲染进程经 checkPendingTruncate 完成分享，回执 { shareUrl, shareId, newText } 或 { error }。 */
+ *  刷新后的渲染进程经 checkPendingTruncate 完成分享，回执 { shareUrl, shareId, newText } 或 { error }。
+ *
+ *  重要：快路径（tryFastTruncate）在长历史下可能耗时 60~90 秒（读 IDB + 造分享），
+ *  若比 requestTruncateReady 的超时更晚到达，原实现会因 truncatePending 已被清空而**静默丢弃**，
+ *  导致分享已成功创建却无人消费 —— 用户看到"截断中…"后无反应，回到原会话。
+ *  修复：即使 truncatePending 已空（超时），只要回执里带 shareUrl，也主动完成导航。 */
+let truncateLateHandler: ((r: any) => void) | null = null;
+
 function onTruncateShareReady(_event: any, payload: any): void {
-  if (!truncatePending) return;
   const p = truncatePending;
   truncatePending = null;
-  if (p.timer) clearTimeout(p.timer);
-  p.resolve(payload || {});
+  if (p && p.timer) clearTimeout(p.timer);
+  if (p) {
+    p.resolve(payload || {});
+    return;
+  }
+  // 迟到回执：truncatePending 已空（超时/已完成），但 AI 页面仍回报了分享结果。
+  // 交给外面注册的 lateHandler 处理（主进程侧导航到分享页）。
+  if (payload && payload.shareUrl && truncateLateHandler) {
+    console.log('[Cuckoo Harness] 收到迟到截断回执（主进程已超时），主动导航: ' + payload.shareUrl);
+    try { truncateLateHandler(payload); } catch (err: any) {
+      console.log('[Cuckoo Harness] 迟到回执处理失败: ' + (err && err.message));
+    }
+  }
 }
 
 /**
  * 请求 AI 页面执行「清 IDB + 刷新重建历史」（段1），并等待刷新后的渲染进程回执 shareUrl（段2）。
  * 超时（含刷新 + 等 IDB 重建 + share 请求）后返回 { error }，绝不滞留。
  */
-function requestTruncateReady(wc: any, webMsgId: number, newText: string, timeoutMs = 60000): Promise<any> {
+function requestTruncateReady(wc: any, webMsgId: number, newText: string, timeoutMs = 120000): Promise<any> {
   // 防重入：单飞 pending 下并发触发会让后者的回执覆盖前者、且前者定时器误清后者。
   // 截断本就是单用户串行操作，直接拒绝并发请求即可（UI 侧点击后即移除编辑态，实务不可达，此为兜底）。
   if (truncatePending) return Promise.resolve({ error: '已有截断正在进行，请稍候' });
@@ -163,18 +180,23 @@ function waitForLoad(wc: any, timeoutMs: number): Promise<void> {
 }
 
 async function activateShareSession(wc: any, shareUrl: string, newText: string, fallbackUrl: string): Promise<void> {
-  // 等分享页导航完成（loadURL 已 await，但 WebContentsView 可能还有二次跳转）
-  await waitForLoad(wc, 15000);
-  // 给分享页前端一点渲染时间，再发消息；最多重试 3 次
-  for (let attempt = 0; attempt < 3; attempt++) {
-    await new Promise((r) => setTimeout(r, 1500));
+  // 注意：调用方已 await wc.loadURL(shareUrl)，did-finish-load 已过去。
+  // 原实现再调 waitForLoad 会因监听器注册晚于事件而永远等 15s 超时 —— 截断慢的主因。
+  // 改为轮询：等前端渲染出输入框 → 发消息 → 检查是否变活，总计最多约 6 秒。
+  for (let attempt = 0; attempt < 6; attempt++) {
+    await new Promise((r) => setTimeout(r, 800));
     if (wc.isDestroyed()) return;
     const url = wc.getURL() || '';
-    // 若已变活会话（/a/chat/s/），说明上一条发送已生效，停止
     if (/\/a\/chat\/s\//.test(url)) {
       console.log('[Cuckoo Harness] 分享会话已激活: ' + url);
       return;
     }
+    // 检查页面是否渲染出输入框（未渲染就再等一轮，不浪费发送尝试）
+    let ready = false;
+    try {
+      ready = await wc.executeJavaScript('!!document.querySelector("textarea")');
+    } catch (_) { /* ignore */ }
+    if (!ready) continue;
     try {
       console.log('[Cuckoo Harness] 在分享页发送新消息（第 ' + (attempt + 1) + ' 次）');
       wc.send('harness-user-message', { text: newText });
@@ -444,11 +466,36 @@ function registerHarnessIpc(): void {
       const provider = ctx.providerId ? getProvider(ctx.providerId) : null;
       if (provider && typeof provider.extractSessionId === 'function') prevSid = provider.extractSessionId(wc.getURL()) || '';
     } catch (_) { /* ignore */ }
+    // 注册迟到回执处理器：requestTruncateReady 超时后（长历史下快路径可能 >60s），
+    // 若 AI 页面仍回报了 shareUrl，仍要完成导航与激活，不能丢弃。
+    truncateLateHandler = async (lateR: any) => {
+      try {
+        console.log('[Cuckoo Harness] 迟到回执导航到 ' + lateR.shareUrl);
+        await wc.loadURL(lateR.shareUrl);
+        if (lateR.newText) {
+          let fallbackUrl = '';
+          try {
+            const provider = ctx.providerId ? getProvider(ctx.providerId) : null;
+            if (provider && provider.sessionUrlBase && prevSid) fallbackUrl = provider.sessionUrlBase + prevSid;
+          } catch (_) { /* ignore */ }
+          activateShareSession(wc, lateR.shareUrl, lateR.newText, fallbackUrl).catch((err: any) => {
+            console.log('[Cuckoo Harness] 迟到回执激活失败: ' + (err && err.message));
+          });
+        }
+      } catch (err: any) {
+        console.log('[Cuckoo Harness] 迟到回执导航失败: ' + (err && err.message));
+      } finally {
+        truncateLateHandler = null;
+      }
+    };
     // 段1 + 段2：AI 页面清 IDB + 刷新 → 刷新后渲染进程截断分享 → 回执 shareUrl
     const r = await requestTruncateReady(wc, webMsgId, newText);
     if (!r || !r.shareUrl) {
+      // 超时：保留 lateHandler 一段时间（AI 页面可能马上回报结果）
+      setTimeout(() => { truncateLateHandler = null; }, 120000);
       return { success: false, error: (r && r.error) || '截断分享失败', prevSessionId: prevSid };
     }
+    truncateLateHandler = null;
     // 导航 AI 页面到分享页（静态快照），加载完后再发新消息触发"变活会话"
     try {
       console.log('[Cuckoo Harness] 截断成功，导航到 ' + r.shareUrl);
@@ -525,8 +572,13 @@ function registerHarnessIpc(): void {
         if (ctx && ctx.view && !ctx.view.webContents.isDestroyed()) {
           const url = ctx.view.webContents.getURL();
           let sid = '';
-          const provider = ctx.providerId ? getProvider(ctx.providerId) : null;
+          // 原实现只用 ctx.providerId 取 provider —— 若该字段未设置（懒加载/异常路径），
+          // sid 恒为空，harness 永远加载不到当前会话历史。
+          // 兜底：优先 ctx.providerId，取不到则用 getProviderByUrl 从当前 URL 识别。
+          let provider = ctx.providerId ? getProvider(ctx.providerId) : null;
+          if (!provider) provider = getProviderByUrl(url);
           if (provider && typeof provider.extractSessionId === 'function') sid = provider.extractSessionId(url) || '';
+          console.log('[Cuckoo Harness] ready 补发 session-changed: url=' + url + ' sid=' + (sid || '(空)') + ' provider=' + (provider ? provider.id : '(无)'));
           event.sender.send('harness-event', { type: 'session-changed', sessionId: sid });
         }
       } catch (_) { /* ignore */ }

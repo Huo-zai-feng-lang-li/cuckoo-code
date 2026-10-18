@@ -1100,6 +1100,16 @@
       }
       history = JSON.parse(raw || '[]') || [];
     } catch (e) { history = []; }
+    // 仅在内存中滤除极端无用的空气泡（无思考、无正文的 assistant）防渲染白板，
+    // 【绝不写回 localStorage】—— loadHist 读取时机不一定是正确的 currentSessionId，
+    // 随意写回会造成跨会话覆盖、或把正常历史洗成空数组（实测踩过 223KB 历史被清空的坑）。
+    // 渲染时的空 pre 防御统一交由 removeEmptyPres 和 renderAssistantStatic 处理。
+    if (history.length) {
+      history = history.filter(function (e) {
+        if (e && e.t === 'assistant' && !e.text && !e.think) return false;
+        return true;
+      });
+    }
   }
   // 单条字段截断上限（防止超大工具输出撑爆 localStorage）
   var HIST_FIELD_MAX = 6000;
@@ -1216,6 +1226,10 @@
       toRemove.push(curNext);
     }
     for (var i = 0; i < toRemove.length; i++) {
+      if (cur && cur.el === toRemove[i]) {
+        cur = null;
+        resetStreamRender();
+      }
       if (toRemove[i].parentNode) toRemove[i].parentNode.removeChild(toRemove[i]);
     }
     if (histItem) {
@@ -1252,6 +1266,10 @@
       next = next.nextElementSibling;
     }
     for (var i = 0; i < toRemove.length; i++) {
+      if (cur && cur.el === toRemove[i]) {
+        cur = null;
+        resetStreamRender();
+      }
       if (toRemove[i].parentNode) toRemove[i].parentNode.removeChild(toRemove[i]);
     }
     if (histItem) {
@@ -1291,6 +1309,10 @@
     if (bubbleEl.querySelector('.ck-mledit')) return;
     var isLatest = isLatestUserMessage(msgEl);
 
+    // 进入编辑态时先移除悬浮操作条，避免遮挡与误触
+    var oldActions = msgEl.querySelector('.msg-actions');
+    if (oldActions && oldActions.parentNode) oldActions.parentNode.removeChild(oldActions);
+
     var ta = document.createElement('textarea');
     ta.className = 'ck-mledit';
     ta.value = origText;
@@ -1298,14 +1320,16 @@
     bar.className = 'msg-edit-bar';
 
     if (isLatest) {
-      // 最后一条消息：极简丝滑，直接取消或重发
+      // 最后一条消息：极简丝滑，直接取消、仅保存或重新发送
       bar.innerHTML = '<button class="msg-edit-btn msg-edit-cancel">取消</button>' +
-        '<button class="msg-edit-btn msg-edit-save primary">重新发送</button>';
+        '<button class="msg-edit-btn msg-edit-save-only" title="仅修改本条提问文字并保存，不重新向 AI 发送">仅保存</button>' +
+        '<button class="msg-edit-btn msg-edit-save primary" title="修改本条提问并重新向 AI 发送">重新发送</button>';
     } else {
-      // 历史中间消息：提供取消、填入输入框（引用）以及截断并重发
+      // 历史中间消息：提供取消、填入输入框（引用）、从此处截断重发、以及就地保存修改
       bar.innerHTML = '<button class="msg-edit-btn msg-edit-cancel">取消</button>' +
         '<button class="msg-edit-btn msg-edit-quote" title="将文字填入底部输入框，保留现有对话历史">填入输入框</button>' +
-        '<button class="msg-edit-btn msg-edit-truncate danger" title="丢弃此消息之后的所有对话，从此处重新接续生成">从此处截断重发</button>';
+        '<button class="msg-edit-btn msg-edit-truncate danger" title="丢弃此消息之后的所有对话，从此处重新接续生成">从此处截断重发</button>' +
+        '<button class="msg-edit-btn msg-edit-save-only primary" title="仅修改本条消息文字并保存，保留后续所有对话">保存修改</button>';
     }
 
     bubbleEl.innerHTML = '';
@@ -1317,6 +1341,25 @@
 
     function cancel() {
       bubbleEl.innerHTML = esc(origText) + renderBubbleChips(msgEl.__ckChips);
+      attachUserActions(msgEl, bubbleEl, function () { return origText; }, histItem);
+    }
+    function doSaveOnly() {
+      var newText = ta.value.trim();
+      if (!newText || newText === origText) { cancel(); return; }
+      if (histItem) {
+        histItem.text = newText;
+      } else {
+        for (var j = history.length - 1; j >= 0; j--) {
+          if (history[j].t === 'user' && history[j].text === origText) {
+            history[j].text = newText;
+            break;
+          }
+        }
+      }
+      saveHist();
+      bubbleEl.innerHTML = esc(newText) + renderBubbleChips(msgEl.__ckChips);
+      attachUserActions(msgEl, bubbleEl, function () { return newText; }, histItem);
+      try { updateConvNav(); } catch (e) { /* ignore */ }
     }
     function doSubmitLatest() {
       var newText = ta.value.trim();
@@ -1334,53 +1377,51 @@
     function doTruncate() {
       var newText = ta.value.trim();
       if (!newText) { cancel(); return; }
-      // 真截断：定位目标 user 在 history 中的下标，取其前最近 assistant 的 webMsgId
       var targetIdx = histItem ? history.indexOf(histItem) : -1;
       var webMsgId = resolveTruncateWebMsgId(targetIdx);
-      // 不支持精确截断（旧历史无 webMsgId / 首条 user / 未注入 api）→ 温柔拒绝，不做任何破坏
-      if (targetIdx < 0 || webMsgId == null || !api.truncate) {
+
+      // 1. 若网页端具备精准截断条件，走底层跨会话分支
+      if (targetIdx >= 0 && webMsgId != null && api.truncate) {
+        var kept = history.slice(0, targetIdx);
+        kept.push({ t: 'user', text: newText });
+        savePendingTruncate({ newText: newText, history: kept, oldSid: currentSessionId });
         cancel();
-        appendSystem('此会话不支持精确截断（缺少网页消息记录）。请在**新对话**里使用该功能；旧历史请手动处理。');
-        return;
-      }
-      // 算出截断后的本地历史（保留 targetIdx 之前 + 新消息）
-      var kept = history.slice(0, targetIdx);
-      kept.push({ t: 'user', text: newText });
-      savePendingTruncate({ newText: newText, history: kept, oldSid: currentSessionId });
-      cancel();
-      input.value = '';
-      setStatus('截断中…', 'busy');
-      // 兜底：超时未见新会话（事件丢失/导航失败）→ 清理并提示，绝不滞留。
-      // 超时须 > 主进程 requestTruncateReady(60s)，否则刷新+等 IDB 期间就被 UI 提前清掉 pendingTruncate。
-      if (truncateTimer) clearTimeout(truncateTimer);
-      truncateTimer = setTimeout(function () {
-        if (!pendingTruncate) return;
-        clearPendingTruncate();
-        setStatus('就绪', 'ready');
-        appendSystem('截断超时：未收到新会话，已取消。可重试或手动处理。');
-      }, 90000);
-      // 请求主进程：分享到 webMsgId → 导航新会话 → 在其中发送 newText
-      api.truncate({ webMsgId: webMsgId, newText: newText }).then(function (res) {
-        if (!res || !res.success) {
+        input.value = '';
+        setStatus('截断中…', 'busy');
+        if (truncateTimer) clearTimeout(truncateTimer);
+        truncateTimer = setTimeout(function () {
+          if (!pendingTruncate) return;
+          clearPendingTruncate();
+          setStatus('就绪', 'ready');
+          appendSystem('截断超时：未收到新会话，已取消。可重试或手动处理。');
+        }, 45000);
+        api.truncate({ webMsgId: webMsgId, newText: newText }).then(function (res) {
+          if (!res || !res.success) {
+            clearPendingTruncate();
+            if (truncateTimer) { clearTimeout(truncateTimer); truncateTimer = null; }
+            setStatus('就绪', 'ready');
+            appendSystem('截断失败：' + ((res && res.error) || '未知错误'));
+          }
+        }).catch(function (err) {
           clearPendingTruncate();
           if (truncateTimer) { clearTimeout(truncateTimer); truncateTimer = null; }
           setStatus('就绪', 'ready');
-          appendSystem('截断失败：' + ((res && res.error) || '未知错误'));
-        }
-        // 成功：等新会话的 session-changed 事件来消费 pendingTruncate
-      }).catch(function (err) {
-        clearPendingTruncate();
-        if (truncateTimer) { clearTimeout(truncateTimer); truncateTimer = null; }
-        setStatus('就绪', 'ready');
-        appendSystem('截断异常：' + ((err && err.message) || err));
-      });
+          appendSystem('截断异常：' + ((err && err.message) || err));
+        });
+        return;
+      }
+
+      // 2. 纯净模式本地会话 / 首条提问 / 无 webMsgId：本地优雅物理截断并接续重新发送
+      truncateUserMessage(msgEl, histItem);
+      input.value = newText;
+      send();
     }
 
     ta.addEventListener('input', function () { autoGrowTextarea(ta); });
     ta.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        if (isLatest) doSubmitLatest(); else doTruncate();
+        if (isLatest) doSubmitLatest(); else doSaveOnly();
       } else if (e.key === 'Escape') {
         e.preventDefault();
         cancel();
@@ -1391,6 +1432,13 @@
     bar.querySelector('.msg-edit-cancel').addEventListener('click', function (e) {
       e.stopPropagation(); cancel();
     });
+
+    var btnSaveOnly = bar.querySelector('.msg-edit-save-only');
+    if (btnSaveOnly) {
+      btnSaveOnly.addEventListener('click', function (e) {
+        e.stopPropagation(); doSaveOnly();
+      });
+    }
 
     if (isLatest) {
       bar.querySelector('.msg-edit-save').addEventListener('click', function (e) {
@@ -1453,6 +1501,10 @@
 
   function deleteAssistantMessage(msgEl, histItem) {
     if (msgEl.parentNode) msgEl.parentNode.removeChild(msgEl);
+    if (cur && cur.el === msgEl) {
+      cur = null;
+      resetStreamRender();
+    }
     if (histItem) {
       var at = history.indexOf(histItem);
       if (at >= 0) { history.splice(at, 1); saveHist(); }
@@ -1538,7 +1590,10 @@
     if (think && think.trim()) {
       thinkHtml = '<div class="think"><div class="think-head"><svg class="caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg><span class="think-label">已思考 (' + countThinkChars(think) + ' 字)</span></div><div class="think-body">' + esc(think) + '</div></div>';
     }
-    d.innerHTML = '<div class="prefix">' + PREFIX_SVG + 'Cuckoo</div>' + thinkHtml + '<div class="body">' + renderMarkdown(text) + '</div>';
+    var hasText = !!(text && text.trim());
+    var bodyHtml = '<div class="body"' + (hasText ? '' : ' style="display:none"') + '>' + (hasText ? renderMarkdown(text) : '') + '</div>';
+    d.innerHTML = '<div class="prefix">' + PREFIX_SVG + 'Cuckoo</div>' + thinkHtml + bodyHtml;
+    removeEmptyPres(d);
     var thinkEl = d.querySelector('.think');
     if (thinkEl) {
       thinkEl.querySelector('.think-head').addEventListener('click', function () { thinkEl.classList.toggle('open'); });
@@ -1557,7 +1612,14 @@
         try {
           var t = pendingTools[k];
           addToolStart(t.code);
-          if (t.success !== null && t.success !== undefined) addToolEnd(t.success, t.output, t.error);
+          if (t.success !== null && t.success !== undefined) {
+            addToolEnd(t.success, t.output, t.error);
+          } else {
+            // 历史里 success===null = 上次页面崩溃/刷新时工具还没收尾。
+            // 必须落终态，否则恢复出来的卡片永远显示"运行中"，
+            // 且会让 isBusy() 判据与 DOM 表现脱节（曾致目标推进永久卡死）。
+            addToolEnd(false, '', '上次会话中断，工具未执行完成');
+          }
         } catch (err) { /* 单条工具恢复失败，跳过 */ }
       }
       pendingTools = [];
@@ -1577,7 +1639,7 @@
       }
     }
     try { flushTools(); } catch (err) { try { console.warn('[harness] 历史工具恢复失败:', err && err.message); } catch (_) {} }
-    stream.scrollTop = stream.scrollHeight;
+    settleScrollBottom(true);
     try { updateConvNav(); } catch (e) { /* ignore */ }
     updateScrollBtn();
   }
@@ -1671,7 +1733,11 @@
   // 会话切换：保存旧会话历史，加载新会话历史 + 切换该会话的 goal/plan
   function onSessionChanged(sid) {
     sid = sid || '';
-    if (sid === currentSessionId) return;
+    // 早退条件必须排除"首次到达空 sid"的场景：
+    // 初始 currentSessionId=''，harness-ready 补发时若页面在首页（sid=''），
+    // 原早退会直接 return，导致 localStorage 里已有的历史永远不被加载。
+    // 加一个"是否已真正初始化过"的判断：currentSessionId 非空才算真的同会话。
+    if (sid === currentSessionId && (sid !== '' || currentSessionId !== '')) return;
     // 跨对话不该保留的临时状态（附件/提示/工具计数/中止窗口）一律先清，
     // 它们不属于任何会话，留着就是残留
     clearTransientState();
@@ -1713,6 +1779,10 @@
       saveHist();  // 写入新 sid 的 key
     } else {
       // 无 pending，或 sid 为空（分享页 /share/xxx 中间态）→ 不动 pendingTruncate，等真正的新会话
+      if (pendingTruncate) {
+        // 截断流程仍在进行（正在分享页等待激活），显示明确进度而非"生成中…"
+        setStatus('正在打开截断后的新会话…', 'busy');
+      }
       loadHist();
     }
     loadGoalState();       // 载入新会话的 goal
@@ -1866,7 +1936,9 @@
   function renderGoalMeta() {
     if (!goal) return;
     goalStateTextEl.textContent = goal.done ? '已完成' : (goal.paused ? '已暂停' : '进行中');
-    goalRoundEl.textContent = '迭代 ' + goal.round + (goal.maxIterations ? ' / ' + goal.maxIterations : '') + ' · ' + fmtElapsed(goalElapsedMs());
+    // Math.max(1, ...) 兜底：兼容历史遗留 round=0 的已完成目标，避免显示"迭代 0 / 50"
+    var shownRound = Math.max(1, goal.round || 0);
+    goalRoundEl.textContent = '迭代 ' + shownRound + (goal.maxIterations ? ' / ' + goal.maxIterations : '') + ' · ' + fmtElapsed(goalElapsedMs());
   }
 
   function renderGoalBar() {
@@ -1907,7 +1979,9 @@
 
   function startGoal(text) {
     cancelGoalNudge();
-    goal = { text: text, round: 0, done: false, paused: false, maxIterations: goalMaxIterations(), lastText: '', startedAt: Date.now(), elapsed: 0 };
+    // round 语义 = "当前正在进行第 N 轮"（从 1 起），而不是"已自动续跑过几次"。
+    // 起始设 1，是因为 /goal 本身即触发第 1 轮 AI 工作；nudge 时递增表示进入下一轮。
+    goal = { text: text, round: 1, done: false, paused: false, maxIterations: goalMaxIterations(), lastText: '', startedAt: Date.now(), elapsed: 0 };
     goalNoProgress = 0;
     saveGoalState();
     renderGoalBar();
@@ -1941,6 +2015,17 @@
     if (api.stop) { try { api.stop().catch(function () { /* ignore */ }); } catch (e) { /* ignore */ } }
   }
 
+  /** 清理 Markdown 渲染出来的空代码块（如剥离工具块后残留的空 pre） */
+  function removeEmptyPres(container) {
+    if (!container) return;
+    var pres = container.querySelectorAll('pre');
+    for (var i = 0; i < pres.length; i++) {
+      if (!pres[i].textContent.trim() && pres[i].parentNode) {
+        pres[i].parentNode.removeChild(pres[i]);
+      }
+    }
+  }
+
   /**
    * 收尾当前助手气泡：纯占位（仅三点、无思考无正文）→ 整块移除；有内容 → 只摘三点与流式光标。
    *
@@ -1960,6 +2045,11 @@
       if (cur.el && cur.el.parentNode) cur.el.parentNode.removeChild(cur.el); // 纯占位：整块移除
     } else {
       if (dots && dots.parentNode) dots.parentNode.removeChild(dots);
+      // 有思考但无正文：隐藏空的 body 容器，防止出现多余的空白块
+      if (cur.body && !cur.body.textContent.trim()) {
+        cur.body.innerHTML = '';
+        cur.body.style.display = 'none';
+      }
     }
     // 光标清理由 resetStreamRender 统一负责（从实际父节点摘除，含 thinkBody）
     cur = null;
@@ -2002,6 +2092,31 @@
    * 只服务 goal（以及用户已确认执行后的 plan）。
    * ★ plan 在 confirm 阶段绝不自动推进 —— 那是等待用户确认的闸门。
    */
+  // 续跑重试退避：nudge 到点时若仍忙（工具在跑 / 流式未停），不能直接丢弃 ——
+  // 正常靠后续 assistant-done / tool-end 重新调度，但那些事件一旦丢失（页面异常、
+  // 计数泄漏）目标就永久卡死。这里自带退避重试，确保目标推进不会因单次错过而停摆。
+  var goalNudgeRetries = 0;
+  var GOAL_NUDGE_RETRY_MAX = 12;
+  function scheduleGoalNudgeRetry() {
+    var gOn = !!(goal && !goal.done && !goal.paused);
+    var pOn = !gOn && planIsExecuting();
+    if (!gOn && !pOn) return;
+    if (goalNudgeRetries >= GOAL_NUDGE_RETRY_MAX) {
+      // 重试用尽：仍忙则放弃本次（真·长任务由 tool-end 再触发；异常情况由静默兜底收尾）
+      goalNudgeRetries = 0;
+      return;
+    }
+    goalNudgeRetries++;
+    var delay = Math.min(GOAL_NUDGE_DELAY * Math.pow(2, goalNudgeRetries - 1), 30000);
+    if (goalNudgeTimer) clearTimeout(goalNudgeTimer);
+    goalNudgeTimer = setTimeout(function () {
+      goalNudgeTimer = null;
+      if (isBusy()) { scheduleGoalNudgeRetry(); return; }
+      goalNudgeRetries = 0;
+      scheduleGoalNudge();
+    }, delay);
+  }
+
   function scheduleGoalNudge() {
     var goalActive = !!(goal && !goal.done && !goal.paused);
     var planActive = !goalActive && planIsExecuting();
@@ -2009,7 +2124,7 @@
     cancelGoalNudge();
     goalNudgeTimer = setTimeout(function () {
       goalNudgeTimer = null;
-      if (isBusy()) return;
+      if (isBusy()) { scheduleGoalNudgeRetry(); return; }
       var gOn = !!(goal && !goal.done && !goal.paused);
       var pOn = !gOn && planIsExecuting();
       if (!gOn && !pOn) return;
@@ -2028,6 +2143,7 @@
           pushHist({ t: 'system', text: '目标无进展，停止' });
           return;
         }
+        // round 表示"当前第几轮"：这里递增 = 进入下一轮（新发出一条 nudge 消息）
         goal.round++;
         saveGoalState();
         renderGoalBar();
@@ -2047,6 +2163,7 @@
         savePlanState();
         renderPlanBar();
       }
+      goalNudgeRetries = 0;
       setStatus('生成中…', 'busy');
       if (!cur) cur = createAssistant();
       if (api.sendMessage) api.sendMessage(nudgeSendText(gOn));
@@ -2621,6 +2738,137 @@
       updateScrollBtn();
     }
   }
+
+  // 稳定贴底：用于初次打开窗口、历史恢复、会话切换、窗口组迁移等场景。
+  // 解决主进程初始 bounds 为 0、异步 layoutView 导致视口延迟撑大、
+  // 以及 Markdown 复杂排版逐帧撑高时，内容停在顶部且 pinBottom 被误判关停的 Bug。
+  var _settleTimer = null;
+  var _settleCleanup = null;
+  // 代次：settleScrollBottom 可能被连续调用（如快速切两次会话、初始化后又立即切会话），
+  // 上一次已入队的 requestAnimationFrame(step) 无法用 clearTimeout 取消，会在下一次
+  // settle 启动后继续执行，与新循环互相覆写 scrollTop 并提前 abort。每次启动自增代次，
+  // 旧循环的所有回调在入口校验代次，发现已过期立即静默退出。
+  var _settleGen = 0;
+  // 辅助判据（覆盖拖拽滚动条）：记录上一次写入后的 scrollTop/scrollHeight/clientHeight。
+  // 仅当 scrollHeight 与 clientHeight 均未变时才比较 scrollTop——视口撑大（clientHeight 变）
+  // 或内容撑高（scrollHeight 变）会触发浏览器对 scrollTop 的自动 clamp，这不是用户滚动，
+  // 若无条件比较 scrollTop 会误判为"用户上滚"而中止 settle（正是本功能要修复的场景）。
+  var _settleExpectTop = -1;
+  var _settleExpectHeight = -1;
+  var _settleExpectClient = -1;
+
+  function settleScrollBottom(force) {
+    if (force) pinBottom = true;
+    if (!pinBottom) return;
+    suppressPin = true;
+    var retries = 0;
+    var maxRetries = 8;
+    _settleGen++;
+    var myGen = _settleGen;
+    if (_settleTimer) { clearTimeout(_settleTimer); _settleTimer = null; }
+    if (_settleCleanup) { _settleCleanup(); _settleCleanup = null; }
+    // 清掉上一轮残留的期望值：否则新一轮第一次 step 会拿旧值比较 scrollTop，
+    // 若期间视口撑大导致 scrollTop 被 clamp，会误判"用户上滚"直接 abort。
+    resetExpect();
+
+    function cleanupListeners() {
+      if (_settleCleanup) { _settleCleanup(); _settleCleanup = null; }
+    }
+    function resetExpect() {
+      _settleExpectTop = -1;
+      _settleExpectHeight = -1;
+      _settleExpectClient = -1;
+    }
+    function abort() {
+      if (myGen !== _settleGen) return; // 旧循环，已被新 settle 取代，不干扰新状态
+      if (_settleTimer) { clearTimeout(_settleTimer); _settleTimer = null; }
+      resetExpect();
+      suppressPin = false;
+      pinBottom = false; // 用户已主动离开底部
+      cleanupListeners();
+      updateScrollBtn();
+    }
+
+    // 主判据：明确的用户滚动意图（滚轮/触屏滑动/方向键）→ 立即停手，尊重用户。
+    // 相比比较 scrollTop 绝对值，这不会被视口撑大/内容撑高导致的浏览器 clamp 误触发。
+    function onUserIntent() { abort(); }
+    function onKeydown(e) {
+      // 输入框/可编辑区内的按键是编辑操作（移动光标、Home 到行首），不是"滚动主区域"意图。
+      // keydown 挂在 window 上，若不排除，打开会话后 1.8s 内在输入框按方向键会误中止 settle。
+      var t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Home') abort();
+    }
+    stream.addEventListener('wheel', onUserIntent, { passive: true });
+    stream.addEventListener('touchmove', onUserIntent, { passive: true });
+    window.addEventListener('keydown', onKeydown);
+    _settleCleanup = function () {
+      stream.removeEventListener('wheel', onUserIntent);
+      stream.removeEventListener('touchmove', onUserIntent);
+      window.removeEventListener('keydown', onKeydown);
+    };
+
+    // 调度下一帧：可见时用 rAF（顺滑），隐藏时 rAF 不触发（浏览器暂停），
+    // 必须降级到 setTimeout，否则 suppressPin 会永久卡在 true（实测踩过）。
+    function scheduleStep(fn) {
+      if (document.hidden) {
+        _settleTimer = setTimeout(fn, 16);
+      } else {
+        requestAnimationFrame(fn);
+      }
+    }
+
+    function step() {
+      if (myGen !== _settleGen) return; // 已被更新的 settle 取代
+      // 页面隐藏时 rAF 挂起、setTimeout 被节流到 ~600ms；此时用户看不到，
+      // 滚动动作无意义，直接一次性完成（省 4 秒延迟 + 避免 suppressPin 长期为真）。
+      if (document.hidden) {
+        stream.scrollTop = stream.scrollHeight;
+        resetExpect();
+        suppressPin = false;
+        cleanupListeners();
+        updateScrollBtn();
+        return;
+      }
+      if (!pinBottom) {
+        resetExpect();
+        suppressPin = false;
+        cleanupListeners();
+        updateScrollBtn();
+        return;
+      }
+      // 辅助判据：布局未变（scrollHeight 与 clientHeight 都相等）时，若 scrollTop 明显小于
+      // 上次写入值，判定为用户拖拽滚动条；布局变了则跳过比较，交由主判据兜底。
+      if (_settleExpectTop >= 0
+          && _settleExpectHeight === stream.scrollHeight
+          && _settleExpectClient === stream.clientHeight
+          && stream.scrollTop < _settleExpectTop - 90) {
+        abort();
+        return;
+      }
+      stream.scrollTop = stream.scrollHeight;
+      _settleExpectTop = stream.scrollTop;
+      _settleExpectHeight = stream.scrollHeight;
+      _settleExpectClient = stream.clientHeight;
+      updateScrollBtn();
+      retries++;
+      if (retries < maxRetries) {
+        if (retries <= 3) {
+          scheduleStep(step);
+        } else {
+          _settleTimer = setTimeout(step, retries * 60);
+        }
+      } else {
+        resetExpect();
+        suppressPin = false;
+        cleanupListeners();
+        stream.scrollTop = stream.scrollHeight;
+        pinBottom = true;
+        updateScrollBtn();
+      }
+    }
+    scheduleStep(step);
+  }
   var scrollBtn = null;
   function updateScrollBtn() {
     if (!scrollBtn) return;
@@ -2723,7 +2971,13 @@
   function onTaskIdle() {
     frameworkDriveUntil = 0;
     lastActivityAt = Date.now();
-    if (toolRunningCount > 0) return; // 工具仍在跑：本轮没完（工具循环会继续）
+    if (toolRunningCount > 0) {
+      // 工具计数仍 >0：可能是真在跑，也可能是 tool-end 丢失的残留账目。
+      // 无论哪种，本轮"AI 已空闲"的事实必须被记录 —— 调度一次带退避的续跑，
+      // 否则计数一旦泄漏，goal 永远等不到下一轮（曾致目标迭代卡在 0）。
+      scheduleGoalNudgeRetry();
+      return;
+    }
     setStatus('就绪', 'ready');
     clearPendingBubble(); // 清掉空的占位气泡（有内容的保留）
   }
@@ -2807,7 +3061,7 @@
         '<div class="think-head"><svg class="caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg><span class="think-label">思考中…</span></div>' +
         '<div class="think-body"></div>' +
       '</div>' +
-      '<div class="body"></div>';
+      '<div class="body" style="display:none"></div>';
     attachAssistantActions(d, function () { return (d.querySelector('.body') || {}).innerText || ''; });
     stream.appendChild(d);
     var thinkEl = d.querySelector('.think');
@@ -2853,6 +3107,7 @@
     var body = _streamRenderBody, text = _streamRenderText;
     if (body && body.isConnected && cur && cur.body === body) {
       body.innerHTML = renderMarkdown(text);
+      removeEmptyPres(body); // 流式渲染期间防残留空 pre
       var c = document.createElement('span');
       c.className = 'streaming-cursor';
       _streamCursorEl = c;
@@ -2910,13 +3165,30 @@
       if (finished) {
         // 收尾帧：绕过节流立即全量渲染（去掉光标），保证结束无延迟
         resetStreamRender();
-        cur.body.innerHTML = renderMarkdown(text);
-        // 标记已渲染：供 onAssistantDone 的去重分支识别（否则同一条回复会被
-        // 全量 renderMarkdown 渲染第二次 = KaTeX+marked+DOM重建 ×2，长回复收尾卡顿主因）
-        lastDoneText = text.trim();
+        var tTrim = text.trim();
+        if (tTrim) {
+          cur.body.style.display = '';
+          cur.body.innerHTML = renderMarkdown(text);
+          removeEmptyPres(cur.body);
+          // 标记已渲染：供 onAssistantDone 的去重分支识别（否则同一条回复会被
+          // 全量 renderMarkdown 渲染第二次 = KaTeX+marked+DOM重建 ×2，长回复收尾卡顿主因）
+          lastDoneText = tTrim;
+        } else {
+          // 收尾帧正文为空白（如仅输出工具块被剥离）→ 清空可能渲染出的空 pre/code 占位，
+          // 避免界面残留无效空白块
+          cur.body.innerHTML = '';
+        }
       } else {
         // 流式帧：节流全量 markdown 渲染（始终带格式）
-        scheduleStreamRender(cur.body, text);
+        if (text.trim()) {
+          cur.body.style.display = '';
+          scheduleStreamRender(cur.body, text);
+        } else {
+          // 流式帧正文为空白 → 不渲染，直接隐藏 body 容器，避免空白的代码框/占位块闪现
+          cur.body.innerHTML = '';
+          cur.body.style.display = 'none';
+          resetStreamRender();
+        }
       }
     }
     scrollBottom(false); // 跟随但不打扰往上翻看
@@ -2933,7 +3205,9 @@
     if (t) lastDoneText = t;
     if (cur) {
       if (t) {
+        cur.body.style.display = '';
         cur.body.innerHTML = renderMarkdown(t);
+        removeEmptyPres(cur.body);
       } else {
         // 纯思考/工具回合：收尾思考块（"思考中…" → "已思考 (N 字)"），
         // 并清掉残留三点（有思考则保留气泡，无内容则整块移除）
@@ -2941,6 +3215,8 @@
           var tl = cur.thinkBody ? cur.thinkBody.textContent : '';
           if (tl && cur.thinkLabel) cur.thinkLabel.textContent = '已思考 (' + countThinkChars(tl) + ' 字)';
         } catch (e) { /* ignore */ }
+        // 纯思考/工具回合：清理可能残留的空 body 占位
+        if (cur.body) cur.body.innerHTML = '';
         clearPendingBubble();
       }
       // 跨轮复位：finished 帧之外的终态路径（assistant-done / tool 收尾）也走这里，
@@ -2956,6 +3232,7 @@
     var d = document.createElement('div');
     d.className = 'msg assistant';
     d.innerHTML = '<div class="prefix">' + PREFIX_SVG + 'Cuckoo</div><div class="body">' + renderMarkdown(t) + '</div>';
+    removeEmptyPres(d);
     attachCopy(d, function () { return t; });
     stream.appendChild(d);
     scrollBottom();
@@ -3061,7 +3338,15 @@
       if (!payload) return;
       lastActivityAt = Date.now();
       switch (payload.type) {
-        case 'user': addUser(payload.text); break;
+        case 'user':
+          // 远程（手机端）发来的用户消息：必须同时渲染 DOM + 写入历史，
+          // 否则手机重连补发历史时看不到自己发过的话（本函数只做 addUser 会丢历史）。
+          // 本地发送路径走 send() 里的 pushHist，不经过这里。
+          if (payload.text && payload.text.trim()) {
+            addUser(payload.text);
+            pushHist({ t: 'user', text: payload.text });
+          }
+          break;
         case 'stream': cancelGoalNudge(); onStream(payload.think, payload.text, payload.finished); break;
         case 'assistant-done': {
           var adRaw = payload.text || '';
@@ -3420,17 +3705,10 @@
     if (!convNavEl) convNavEl = document.getElementById('conv-nav');
     return convNavEl;
   }
-  // 鼠标 hover 到右侧导航区域时，自动平滑滚动到底部，方便快速查看最新消息
-  var convNavHovered = false;
-  document.addEventListener('mouseover', function (e) {
-    var isInNav = e.target && e.target.closest && !!e.target.closest('.conv-nav');
-    if (isInNav && !convNavHovered) {
-      convNavHovered = true;
-      scrollBottom(true); // true = 强制滚到底
-    } else if (!isInNav && convNavHovered) {
-      convNavHovered = false;
-    }
-  });
+  // 注意：曾实现过"hover 右侧导航时自动滚到底部"，但这是反 UX 的——
+  // 用户 hover 导航就是为了点某条历史消息跳过去；自动滚底会让导航随内容一起位移，
+  // 用户根本点不到目标。正确行为：hover 时保持位置不动，让用户看清预览并点击跳转。
+  // 导航自身已通过 updateConvNavActive 高亮"当前可见的第一条"。
   /** 统计字数：中文按字算，英文/数字按单词算，忽略空白和标点 */
   function countThinkChars(text) {
     if (!text) return 0;
@@ -3575,7 +3853,7 @@
         // 无参数 = 查看当前目标（对齐 DSH 的"设置或查看"语义）
         if (goal) {
           appendSystem('当前目标：' + goal.text + '（' + (goal.done ? '已完成' : (goal.paused ? '已暂停' : '进行中')) +
-            ' · 迭代 ' + goal.round + (goal.maxIterations ? '/' + goal.maxIterations : '') + ' · ' + fmtElapsed(goalElapsedMs()) + '）');
+            ' · 迭代 ' + Math.max(1, goal.round || 0) + (goal.maxIterations ? '/' + goal.maxIterations : '') + ' · ' + fmtElapsed(goalElapsedMs()) + '）');
         } else {
           appendSystem('用法：/goal <目标描述> —— 设定后自动多轮推进，目标完成后自动结束；也可点「暂停」中止当前任务、点「退出」彻底停止');
         }
@@ -4495,7 +4773,7 @@
 
   scrollBtn = document.getElementById('scroll-bottom');
   if (scrollBtn) {
-    scrollBtn.addEventListener('click', function () { pinBottom = true; stream.scrollTop = stream.scrollHeight; updateScrollBtn(); });
+    scrollBtn.addEventListener('click', function () { pinBottom = true; settleScrollBottom(true); });
   }
   stream.addEventListener('scroll', function () {
     scheduleConvNavActive(); // rAF 节流：每帧最多重算一次
@@ -4504,10 +4782,31 @@
     updateScrollBtn();
   });
 
+  // 响应式贴底：窗口尺寸变化（如主进程从 0 撑大、最大化、分屏调整）若处于跟随底部状态，则紧贴底部
+  window.addEventListener('resize', function () {
+    if (pinBottom) {
+      suppressPin = true;
+      requestAnimationFrame(function () {
+        stream.scrollTop = stream.scrollHeight;
+        suppressPin = false;
+        updateScrollBtn();
+      });
+    }
+  });
+
+  // 窗口切回聚焦：从后台切回若处于跟随底部状态，对齐底部
+  window.addEventListener('focus', function () {
+    if (pinBottom) {
+      stream.scrollTop = stream.scrollHeight;
+      updateScrollBtn();
+    }
+  });
+
   try { EMPTY_HTML = stream.innerHTML; } catch (e) { /* ignore */ }
   loadPendingTruncate();  // 截断中途重载：恢复待迁移状态
   loadHist();
   restoreHist();
+  settleScrollBottom(true);
   loadGoalState();
   renderGoalBar();
   loadPlanState();
@@ -4522,7 +4821,11 @@
     sendQueue: function () { return sendQueue; },
     enqueue: function (text) { sendQueue.push({ text: text, files: [], hints: [] }); renderSendQueue(); },
     exportState: exportHarnessState,
-    importState: importHarnessState
+    importState: importHarnessState,
+    // 诊断：暴露当前会话 ID 与历史长度，排查"历史存到错误 key"问题
+    state: function () { return { sid: currentSessionId, histLen: history.length, histKey: histKey() }; },
+    // 诊断：滚动状态机内部变量（排查 settle 卡住）
+    scrollState: function () { return { pinBottom: pinBottom, suppressPin: suppressPin, settleGen: _settleGen }; }
   };
 
   // ===== 窗口组切换状态迁移（历史 + 待发队列）=====
@@ -4556,7 +4859,7 @@
       stream.innerHTML = '';
       cur = null;
       restoreHist();
-      scrollBottom(true);
+      settleScrollBottom(true);
     }
     // 2) 待发队列：恢复到输入区
     if (Array.isArray(data.sendQueue) && data.sendQueue.length) {

@@ -43,8 +43,10 @@ const IDB_WAIT_TIMEOUT = 20000;
 const COMPACT_SUMMARY_KEY = 'cuckoo-compact-summary';
 // 压缩标题：段1 从摘要首行「【标题】xxx」解析 → 段3 设为续接会话标题（方案 B）
 const COMPACT_TITLE_KEY = 'cuckoo-compact-title';
-/** 注入新会话的摘要长度上限（防 prompt 膨胀） */
-const MAX_SUMMARY_LEN = 8000;
+/** 注入新会话的摘要长度上限（防 prompt 膨胀）。
+ *  实测 44246 长度提示词被 DeepSeek 拒绝（status=error）；40503 能过。
+ *  基础提示词约 40500，摘要上限必须压到 3000 以内，总长才能落在 43000 安全区。 */
+const MAX_SUMMARY_LEN = 3000;
 
 // 真截断：URL flag（触发 hook 的 IDB 写入拦截 + 页内检测）与跨刷新 pending 数据 key
 const TRUNCATE_URL_FLAG = 'cuckoo-truncate';
@@ -134,24 +136,61 @@ function clearSessionFromIdb(sessionId: string): Promise<void> {
   });
 }
 
-/** 等待 hook 派发的 IDB 写入完成事件 */
-function waitForIdbWrite(timeoutMs: number): Promise<void> {
+/**
+ * 轮询等待 IDB 中出现期望数据（替代死等 hook 事件）。
+ *
+ * 为什么改轮询：hook 是刷新后注入主世界的，若 DeepSeek 写入 IDB 早于 hook 包装 put，
+ * 事件永远不会派发 → 原实现必然干等 20 秒后超时。轮询直接读库，与注入时序无关。
+ *
+ * @param sessionId 会话 ID
+ * @param predicate 数据就绪判定（拿到 list + leaf 后判断）
+ * @param timeoutMs 总超时
+ * @param intervalMs 轮询间隔
+ */
+function waitForIdbMessages(
+  sessionId: string,
+  predicate: (list: MessageItem[], currentMessageId: number | null) => boolean,
+  timeoutMs: number,
+  intervalMs = 200
+): Promise<{ list: MessageItem[]; currentMessageId: number | null }> {
   return new Promise((resolve, reject) => {
     let done = false;
-    const handler = () => {
+    let pollTimer: any = null;
+    let hardTimer: any = null;
+
+    function finish(err: Error | null, data?: any): void {
       if (done) return;
       done = true;
-      window.removeEventListener('cuckoo-idb-history-written', handler);
-      clearTimeout(timer);
-      resolve();
-    };
-    window.addEventListener('cuckoo-idb-history-written', handler);
-    const timer = setTimeout(() => {
-      if (done) return;
-      done = true;
-      window.removeEventListener('cuckoo-idb-history-written', handler);
-      reject(new Error('等待 IDB 写入超时（' + timeoutMs + 'ms）'));
+      if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+      if (hardTimer) { clearTimeout(hardTimer); hardTimer = null; }
+      if (err) reject(err);
+      else resolve(data);
+    }
+
+    // 绝对硬超时（与轮询并行）：getMessagesFromIndexedDB 依赖 IDB open 的
+    // onsuccess/onerror，若两者都不触发则 Promise 永不 settle，check() 会卡在
+    // await 上、后续轮询永不再排期 → 整体永不超时。此定时器兜住该极端场景。
+    hardTimer = setTimeout(() => {
+      finish(new Error('等待 IDB 数据超时（' + timeoutMs + 'ms）'));
     }, timeoutMs);
+
+    async function check(): Promise<void> {
+      if (done) return;
+      try {
+        const data = await getMessagesFromIndexedDB(sessionId);
+        if (done) return; // 等待期间已被硬超时 settle
+        if (predicate(data.list, data.currentMessageId)) {
+          finish(null, data);
+          return;
+        }
+      } catch (_) {
+        // 刷新初期 IDB 可能还没建好/为空，忽略错误继续等
+      }
+      if (done) return;
+      pollTimer = setTimeout(check, intervalMs);
+    }
+
+    check();
   });
 }
 
@@ -363,17 +402,19 @@ async function checkPendingCompact(): Promise<boolean> {
     const sessionId = getSessionIdFromUrl();
     if (!sessionId) throw new Error('无法从 URL 获取 chat_session_id');
 
-    logStep('idb', '等待 DeepSeek 重建 IDB（监听写入事件）');
-    await waitForIdbWrite(IDB_WAIT_TIMEOUT);
-    logStep('idb', '收到 IDB 写入事件');
+    logStep('idb', '等待 DeepSeek 重建 IDB（轮询）');
+    const { list: allMsgs, currentMessageId } = await waitForIdbMessages(
+      sessionId,
+      (list) => list.length > 0,
+      IDB_WAIT_TIMEOUT
+    );
+    logStep('idb', 'IDB 已就绪（' + allMsgs.length + ' 条）');
 
     const headers = getCachedHeaders();
     if (!headers || !headers['authorization']) {
       throw new Error('未获取到认证请求头（请刷新页面后重试）');
     }
 
-    const { list: allMsgs, currentMessageId } = await getMessagesFromIndexedDB(sessionId);
-    if (allMsgs.length === 0) throw new Error('未读取到消息列表');
     const tailIds = pickRecentPairedIds(allMsgs, currentMessageId, 0.2);
     if (tailIds.length === 0) throw new Error('裁剪后无有效消息');
     logStep('api', '全量消息 ' + allMsgs.length + ' 条（叶子=' + (currentMessageId || '?') + '），保留最近 ' + tailIds.length + ' 条（成对）');
@@ -408,25 +449,19 @@ function checkPendingInit(): void {
     projectDir = localStorage.getItem(COMPACT_DIR_KEY);
   } catch (_) {}
   if (!pending) return;
-  try {
-    localStorage.removeItem(PENDING_INIT_KEY);
-    localStorage.removeItem(COMPACT_DIR_KEY);
-  } catch (_) {}
+  // 重要：不在这里 removeItem —— 数据延迟到 initProject 成功回执后再清，
+  // 否则页面刷新 / initProject 报错（如超长被拒）后，摘要和目录会永久丢失、无法重试。
   let parentSessionId = null;
   try { parentSessionId = localStorage.getItem('cuckoo-compact-parent-session'); } catch (_) {}
-  // 读取上一段对话的摘要（若有），作为"前情提要"注入新会话，实现智能续接
   let compactSummary = '';
   try { compactSummary = localStorage.getItem(COMPACT_SUMMARY_KEY) || ''; } catch (_) {}
-  try { localStorage.removeItem(COMPACT_SUMMARY_KEY); } catch (_) {}
-  // 方案 B：读取段1 解析出的续接标题，暂存为新会话标题（等会话 ID 出现时绑定）
   let compactTitle = '';
   try { compactTitle = localStorage.getItem(COMPACT_TITLE_KEY) || ''; } catch (_) {}
-  try { localStorage.removeItem(COMPACT_TITLE_KEY); } catch (_) {}
   const extraPrompt = compactSummary
     ? '以下是上一段对话（因上下文接近上限而被压缩）的摘要，请基于它无缝续接，不要重复已完成的工作：\n\n' + compactSummary
     : '';
   console.log('[Cuckoo Compact] 检测到压缩后待初始化，3 秒后执行；项目目录=' + (projectDir || '(无)') + '，压缩前会话=' + (parentSessionId || '(无)') + '，摘要长度=' + compactSummary.length + '，标题=' + (compactTitle || '(无)'));
-  // 标题暂存：会话 ID 未出现时先存 pendingTitle，待 initProject 后新会话 ID 出现时绑定（覆盖方案 A 继承的父标题）
+  // 标题暂存：会话 ID 未出现时先存 pendingTitle，待 initProject 后新会话 ID 出现时绑定
   if (compactTitle) {
     try {
       const api: any = (window as any).electronAPI;
@@ -438,7 +473,26 @@ function checkPendingInit(): void {
   }
   setTimeout(() => {
     try {
-      (window as any).electronAPI.initProject(projectDir || null, true, extraPrompt, false, parentSessionId);
+      const api: any = (window as any).electronAPI;
+      const p = api.initProject(projectDir || null, true, extraPrompt, false, parentSessionId);
+      if (p && typeof p.then === 'function') {
+        p.then((res: any) => {
+          if (res && res.success) {
+            // 成功注入后清理跨刷新数据
+            try {
+              localStorage.removeItem(PENDING_INIT_KEY);
+              localStorage.removeItem(COMPACT_DIR_KEY);
+              localStorage.removeItem(COMPACT_SUMMARY_KEY);
+              localStorage.removeItem(COMPACT_TITLE_KEY);
+              localStorage.removeItem('cuckoo-compact-parent-session');
+            } catch (_) { /* ignore */ }
+          } else {
+            console.warn('[Cuckoo Compact] initProject 未成功:', res && res.message);
+          }
+        }).catch((e: any) => {
+          console.error('[Cuckoo Compact] initProject 异步异常:', e && e.message);
+        });
+      }
     } catch (err) {
       console.error('[Cuckoo Compact] 压缩后初始化失败:', err);
     }
@@ -501,9 +555,54 @@ function sliceChainUpTo(msgs: MessageItem[], leafId: number | null, targetWebMsg
  *
  * webMsgId / newText 经 localStorage 跨刷新传递，刷新后由 checkPendingTruncate 消费。
  */
-function prepareTruncate(webMsgId: number, newText: string): void {
+/**
+ * 快路径：IDB 里已有目标消息 → 直接造分享并回执，不刷新页面。
+ * 成功返回 true；IDB 未就绪/缺目标消息/无认证头 → 返回 false 交由慢路径刷新兜底。
+ *
+ * 为什么可行：截断点是历史中较早的消息，只要它已在 IDB 的主链上，从（可能略旧的）
+ * 叶子回溯到它得到的链就是正确的"到该消息为止"快照。无需刷新重建全量历史。
+ */
+async function tryFastTruncate(sessionId: string, webMsgId: number, newText: string): Promise<boolean> {
+  try {
+    const headers = getCachedHeaders();
+    if (!headers || !headers['authorization']) {
+      logStep('truncate', '快路径跳过：无认证请求头');
+      return false;
+    }
+    const { list: allMsgs, currentMessageId } = await getMessagesFromIndexedDB(sessionId);
+    if (allMsgs.length === 0) {
+      logStep('truncate', '快路径跳过：IDB 无消息');
+      return false;
+    }
+    const ids = sliceChainUpTo(allMsgs, currentMessageId, webMsgId);
+    if (!ids || ids.length === 0) {
+      logStep('truncate', '快路径跳过：目标消息不在当前主链（需刷新重建）');
+      return false;
+    }
+    logStep('truncate', '快路径命中：IDB 已就绪，直接分享 ' + ids.length + ' 条（到 message_id=' + webMsgId + '）');
+    const shareId = await createShare(sessionId, ids, headers);
+    const shareUrl = location.origin + '/share/' + shareId;
+    logStep('truncate', '快路径完成，分享链接: ' + shareUrl);
+    try { ipcRenderer.send('cuckoo-truncate-share-ready', { shareUrl: shareUrl, shareId: shareId, newText: newText || '' }); } catch (_) {}
+    return true;
+  } catch (err: any) {
+    logStep('truncate', '快路径失败，回退刷新流程: ' + (err && err.message));
+    return false;
+  }
+}
+
+/**
+ * 真截断入口（段1）：优先走快路径（IDB 已就绪，1~3 秒）；
+ * 不满足条件才走慢路径（清 IDB + 刷新，刷新后由 checkPendingTruncate 继续）。
+ */
+async function prepareTruncate(webMsgId: number, newText: string): Promise<void> {
   const sessionId = getSessionIdFromUrl();
   if (!sessionId) throw new Error('无法从 URL 获取 chat_session_id');
+
+  // 快路径：不刷新页面，直接造分享
+  if (await tryFastTruncate(sessionId, webMsgId, newText)) return;
+
+  // 慢路径：存 pending → 清 IDB → 刷新（重建全量历史后精确截断）
   try {
     localStorage.setItem(TRUNCATE_PENDING_KEY, JSON.stringify({ webMsgId: webMsgId, newText: newText || '', ts: Date.now() }));
   } catch (_) { /* ignore */ }
@@ -544,16 +643,18 @@ async function checkPendingTruncate(): Promise<boolean> {
     const sessionId = getSessionIdFromUrl();
     if (!sessionId) throw new Error('无法从 URL 获取 chat_session_id');
 
-    logStep('truncate', '等待 DeepSeek 重建 IDB（监听写入事件）');
-    await waitForIdbWrite(IDB_WAIT_TIMEOUT);
-    logStep('truncate', '收到 IDB 写入事件');
+    logStep('truncate', '等待 DeepSeek 重建 IDB（轮询，等目标消息出现）');
+    const { list: allMsgs, currentMessageId } = await waitForIdbMessages(
+      sessionId,
+      (list) => list.length > 0 && list.some((m) => m.message_id === pending.webMsgId),
+      IDB_WAIT_TIMEOUT
+    );
+    logStep('truncate', 'IDB 已就绪（' + allMsgs.length + ' 条），含目标消息');
 
     const headers = getCachedHeaders();
     if (!headers || !headers['authorization']) {
       throw new Error('未获取到认证请求头（请刷新页面后重试）');
     }
-    const { list: allMsgs, currentMessageId } = await getMessagesFromIndexedDB(sessionId);
-    if (allMsgs.length === 0) throw new Error('未读取到消息列表');
     const ids = sliceChainUpTo(allMsgs, currentMessageId, pending.webMsgId);
     if (!ids || ids.length === 0) {
       throw new Error('截断点不在当前会话主链上（网页可能已变化，请刷新页面后重试）');
@@ -623,16 +724,18 @@ async function checkPendingSwitchShare(): Promise<boolean> {
     const sessionId = getSessionIdFromUrl();
     if (!sessionId) throw new Error('无法从 URL 获取 chat_session_id');
 
-    logStep('switch', '等待 DeepSeek 重建 IDB（监听写入事件）');
-    await waitForIdbWrite(IDB_WAIT_TIMEOUT);
-    logStep('switch', '收到 IDB 写入事件');
+    logStep('switch', '等待 DeepSeek 重建 IDB（轮询）');
+    const { list: allMsgs, currentMessageId } = await waitForIdbMessages(
+      sessionId,
+      (list) => list.length > 0,
+      IDB_WAIT_TIMEOUT
+    );
+    logStep('switch', 'IDB 已就绪（' + allMsgs.length + ' 条）');
 
     const headers = getCachedHeaders();
     if (!headers || !headers['authorization']) {
       throw new Error('未获取到认证请求头（请刷新页面后重试）');
     }
-    const { list: allMsgs, currentMessageId } = await getMessagesFromIndexedDB(sessionId);
-    if (allMsgs.length === 0) throw new Error('未读取到消息列表');
     const ids = pickRecentPairedIds(allMsgs, currentMessageId, 1.0);
     if (ids.length === 0) throw new Error('无有效消息可分享');
     logStep('switch', '全量分享 ' + ids.length + ' 条消息（会话 ' + sessionId + '）');

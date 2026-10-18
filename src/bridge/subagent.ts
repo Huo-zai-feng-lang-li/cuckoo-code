@@ -7,7 +7,8 @@
  */
 import { createRequire } from 'node:module';
 import { extractJsToolBlocks } from './parser/js-detector.js';
-import { onInterceptedResponse, onStream } from './intercept/observer.js';
+import { onInterceptedResponse, onStream, requestAbort } from './intercept/observer.js';
+import { cancelPendingSend } from '../overlay/chat-input.js';
 
 const require = createRequire(import.meta.url);
 const { ipcRenderer } = require('electron');
@@ -72,6 +73,8 @@ export function initSubagentIfNeeded(): SubagentConfig | null {
   console.log('[Cuckoo Code][子代理] 激活：' + cfg.agentName);
 
   // ===== 进度上报（节流）：逐字流 → 主进程 → 父窗口 UI =====
+  // stopped 标志：maxTurns 触发后置 true，让后续所有流式/回复/工具回传都被忽略（彻底停下）
+  let stopped = false;
   let lastPushAt = 0;
   let lastPreview = '';
   function pushProgress(patch: any): void {
@@ -79,6 +82,7 @@ export function initSubagentIfNeeded(): SubagentConfig | null {
   }
   onStream((ev: any) => {
     try {
+      if (stopped) return; // maxTurns 触发后不再上报进度
       const t = (ev && ev.text) || '';
       const th = (ev && ev.think) || '';
       if (!t && !th) return;
@@ -97,6 +101,7 @@ export function initSubagentIfNeeded(): SubagentConfig | null {
   // 监听回复：无工具调用 = 完成；含工具 = 一轮（受 maxTurns 限制）
   let turnCount = 0;
   onInterceptedResponse((text: string) => {
+    if (stopped) return;
     const raw = (text || '').trim();
     if (!raw) return;
     const blocks = extractJsToolBlocks(raw);
@@ -112,7 +117,15 @@ export function initSubagentIfNeeded(): SubagentConfig | null {
     pushProgress({ turn: turnCount, status: 'running', preview: raw.slice(-200) });
     if (cfg.maxTurns && turnCount >= cfg.maxTurns) {
       console.log('[Cuckoo Code][子代理] 达到 maxTurns=' + cfg.maxTurns + '，停止并上报部分结果');
+      // 关键：必须真正停止。原实现上报 partial 后仍继续处理后续回复，
+      // 导致子代理实际跑了多轮才结束（实测 maxTurns=1 却跑了 3 轮）。
+      // stopped=true 让后续所有 onInterceptedResponse 都被忽略，彻底停下。
+      stopped = true;
+      // 同时：取消在途延时发送 + 中止工具回传循环，否则工具结果还会继续投递、触发新一轮
+      try { cancelPendingSend(); } catch (_) { /* ignore */ }
+      try { requestAbort(); } catch (_) { /* ignore */ }
       ipcRenderer.invoke('subagent-response', { text: raw, partial: true, turns: turnCount }).catch(() => {});
+      return;
     } else {
       console.log('[Cuckoo Code][子代理] 第 ' + turnCount + ' 轮，含 ' + blocks.length + ' 个工具块，继续');
     }

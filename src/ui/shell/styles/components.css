@@ -868,11 +868,12 @@
   .ck-ws-archived-projects.open .ck-ws-archived-projects-title::before { content: '▾ '; }
   .ck-ws-archived-projects-items { display: none; }
   .ck-ws-archived-projects.open .ck-ws-archived-projects-items { display: block; }
-  /* 项目悬停卡片（全路径 + 创建时间） */
+  /* 项目悬停卡片（全路径 + 创建时间）：跟随主题（浅色浅底 / 深色深底），不再用反色 */
   .ck-ws-tip {
     position: fixed; z-index: 999;
     max-width: 300px; padding: 12px 14px;
-    background: var(--ck-text); color: var(--ck-bg);
+    background: var(--ck-bg-sub); color: var(--ck-text);
+    border: 1px solid var(--ck-border);
     border-radius: 12px; box-shadow: var(--ck-shadow-lg);
     font-size: 12px; line-height: 1.6; pointer-events: none;
     animation: ck-tip-in .12s ease;

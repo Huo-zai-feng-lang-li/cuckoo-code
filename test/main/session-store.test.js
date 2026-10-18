@@ -152,4 +152,12 @@ test('deleteProjectWorkspace 批量删除项目下全部会话并清理归档标
   assert.strictEqual(store.state.selectedProjectDir, null);
 });
 
+test('updateSessionTitle 正确更新与读取会话标题', () => {
+  const store = makeStore();
+  store.saveSessionDirMapping('sess-title-1', 'C:/proj');
+  store.updateSessionTitle('sess-title-1', '我的新会话标题');
+  const meta = store.getSessionMeta('sess-title-1');
+  assert.strictEqual(meta.title, '我的新会话标题');
+});
+
 

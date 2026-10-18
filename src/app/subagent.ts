@@ -19,8 +19,15 @@ export function injectSubagentDeps(deps: { createWindow: CreateWindowFn; profile
   _profileManager = deps.profileManager;
 }
 
+/** 子代理返回结果：文本 + 是否因达到轮次上限而截断（partial） */
+interface SubagentResult {
+  text: string;
+  /** true = 达到 maxTurns 被截断，text 是半截结果 */
+  partial?: boolean;
+}
+
 /** 等待子代理完成的回调注册表：windowId → resolve */
-const pending = new Map<number, (text: string) => void>();
+const pending = new Map<number, (r: SubagentResult) => void>();
 
 /** 每个 profile 正在跑的子代理数量（用于远程消息拦截等） */
 const runningByProfile = new Map<string, number>();
@@ -110,7 +117,7 @@ export function cancelSubagentsByParent(parentWindowId: number): number {
       }
     } catch (_) { /* ignore */ }
     const resolve = pending.get(windowId);
-    if (resolve) { pending.delete(windowId); resolve('__SUBAGENT_CANCELLED__'); }
+    if (resolve) { pending.delete(windowId); resolve({ text: '__SUBAGENT_CANCELLED__' }); }
     removeRunning(windowId);
     n++;
   }
@@ -129,29 +136,29 @@ function decRunning(profileId: string): void {
 }
 
 /** bridge 侧检测到子代理完成时调用（IPC 入口） */
-export function onSubagentResponse(windowId: number, text: string): void {
+export function onSubagentResponse(windowId: number, text: string, partial?: boolean): void {
   const resolve = pending.get(windowId);
   if (resolve) {
     pending.delete(windowId);
-    resolve(text || '');
+    resolve({ text: text || '', partial: !!partial });
   }
 }
 
 /** 等子代理回复完成（超时兜底） */
-function waitForDone(windowId: number, timeoutMs: number): Promise<string> {
+function waitForDone(windowId: number, timeoutMs: number): Promise<SubagentResult> {
   return new Promise((resolve) => {
     let done = false;
     const timer = setTimeout(() => {
       if (done) return;
       done = true;
       pending.delete(windowId);
-      resolve('__SUBAGENT_TIMEOUT__');
+      resolve({ text: '__SUBAGENT_TIMEOUT__' });
     }, timeoutMs);
-    pending.set(windowId, (text) => {
+    pending.set(windowId, (r) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
-      resolve(text);
+      resolve(r);
     });
   });
 }
@@ -220,11 +227,12 @@ export async function runAgent(opts: {
 
   // 提示词由子代理窗口自己调 initProject 生成（复用初始化流程）
   try {
-    const text = await waitForDone(windowId, timeoutMs);
-    if (text === '__SUBAGENT_TIMEOUT__') throw new Error('子代理执行超时');
-    if (text === '__SUBAGENT_CANCELLED__') throw new Error('子代理已被用户取消');
-    updateRunning(windowId, { status: 'done', preview: (text || '').slice(0, 200) });
-    return text;
+    const r = await waitForDone(windowId, timeoutMs);
+    if (r.text === '__SUBAGENT_TIMEOUT__') throw new Error('子代理执行超时');
+    if (r.text === '__SUBAGENT_CANCELLED__') throw new Error('子代理已被用户取消');
+    updateRunning(windowId, { status: 'done', preview: (r.text || '').slice(0, 200) });
+    // 达轮次上限被截断：显式标注，避免主对话把半截结果当完整结论
+    return r.partial ? '[子代理达到轮次上限，以下为部分结果]\n' + r.text : r.text;
   } catch (err: any) {
     updateRunning(windowId, { status: 'error', error: err && err.message ? err.message : String(err) });
     throw err;
@@ -307,11 +315,14 @@ export async function runGatewayQuery(opts: {
   const timeoutMs = opts.timeoutMs || 300000;
   let hardTimer: any = null;
   try {
-    const text: string = await Promise.race<string>([
+    const r: SubagentResult = await Promise.race<SubagentResult>([
       waitForDone(windowId, timeoutMs),
-      // 硬超时：waitForDone 之外再加一层，保证无论怎样都会往下走（finally 里强制销毁窗口）
-      new Promise<string>((resolve) => { hardTimer = setTimeout(() => resolve('__GATEWAY_HARD_TIMEOUT__'), timeoutMs + 8000); }),
+      // 第二道保险：waitForDone 自带 timer 通常先到（同为 timeoutMs），此层极少触发，
+      // 仅在 waitForDone 的 resolve 路径本身卡死时兜底（finally 里强制销毁窗口）。
+      // 注：网关 maxTurns=null，不会产生 partial，故这里不处理 r.partial。
+      new Promise<SubagentResult>((resolve) => { hardTimer = setTimeout(() => resolve({ text: '__GATEWAY_HARD_TIMEOUT__' }), timeoutMs + 8000); }),
     ]);
+    const text = r.text;
     if (text === '__SUBAGENT_TIMEOUT__' || text === '__GATEWAY_HARD_TIMEOUT__') {
       return { ok: false, error: '等待回复超时' };
     }

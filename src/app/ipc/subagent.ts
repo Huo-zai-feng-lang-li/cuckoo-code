@@ -10,10 +10,10 @@ const { ipcMain } = require('electron');
 
 function registerSubagentIpc(): void {
   // 子代理 bridge 上报最终文本
-  ipcMain.handle('subagent-response', async (event: any, { text }: any) => {
+  ipcMain.handle('subagent-response', async (event: any, { text, partial }: any) => {
     const ctx = windowState.getContextByWebContents(event.sender);
     if (ctx && ctx.win && !ctx.win.isDestroyed()) {
-      onSubagentResponse(ctx.win.id, text || '');
+      onSubagentResponse(ctx.win.id, text || '', !!partial);
     }
     return { success: true };
   });

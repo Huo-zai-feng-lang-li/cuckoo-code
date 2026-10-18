@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import * as windowState from './window.js';
 import * as profileManager from './profile.js';
 import { createSessionStore } from '../session/store.js';
-import { getProvider } from '../providers/registry.js';
+import { getProvider, getProviderByUrl } from '../providers/registry.js';
 import * as updater from '../updater/index.js';
 import * as mcpConfig from '../mcp/config.js';
 import * as mcpClient from '../mcp/client.js';
@@ -459,8 +459,12 @@ function createWindow(profile: any) {
       const hv = c && c.harnessView;
       if (!hv || hv.webContents.isDestroyed()) return; // 懒加载下 view 可能尚未创建
       let sid = '';
-      const provider = c.providerId ? getProvider(c.providerId) : null;
+      // 原实现只用 c.providerId —— 若该字段未设置，sid 恒为空，harness 不加载历史。
+      // 兜底：取不到 providerId 时用 getProviderByUrl 从 URL 识别。
+      let provider = c.providerId ? getProvider(c.providerId) : null;
+      if (!provider) provider = getProviderByUrl(url);
       if (provider && typeof provider.extractSessionId === 'function') sid = provider.extractSessionId(url) || '';
+      console.log('[Cuckoo Code] notifyHarnessSession: url=' + url + ' sid=' + (sid || '(空)') + ' provider=' + (provider ? provider.id : '(无)'));
       hv.webContents.send('harness-event', { type: 'session-changed', sessionId: sid });
     } catch (_) { /* ignore */ }
   };
@@ -1117,6 +1121,11 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSo
       setTimeout(async () => {
         let ready = false;
         try {
+          // 注意：这里【故意不】加工作区信任门。
+          // 源窗口的项目目录必是它自己初始化时选定并已过信任门的（session.ts / shell.ts 入口已覆盖），
+          // 转移时 isWorkspaceTrusted 对已信任目录短路；而"用户当初选了不信任"的情况本就没启用项目级内容，
+          // 再问一次无意义。更关键：限流自动切换（rate-limit-hit）是无人值守路径，
+          // 此处弹模态框会卡死切换流程（switchingProfiles 不释放 → 该窗口再也无法自动切换）。
           // 指定项目目录；不追加"请继续"（isCompaction=false, extraPrompt=''）
           await initProject(false, tctx, projectDir, false, '', false);
           ready = true;

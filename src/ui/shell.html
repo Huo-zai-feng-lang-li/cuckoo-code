@@ -1226,11 +1226,12 @@
   .ck-ws-archived-projects.open .ck-ws-archived-projects-title::before { content: '▾ '; }
   .ck-ws-archived-projects-items { display: none; }
   .ck-ws-archived-projects.open .ck-ws-archived-projects-items { display: block; }
-  /* 项目悬停卡片（全路径 + 创建时间） */
+  /* 项目悬停卡片（全路径 + 创建时间）：跟随主题（浅色浅底 / 深色深底），不再用反色 */
   .ck-ws-tip {
     position: fixed; z-index: 999;
     max-width: 300px; padding: 12px 14px;
-    background: var(--ck-text); color: var(--ck-bg);
+    background: var(--ck-bg-sub); color: var(--ck-text);
+    border: 1px solid var(--ck-border);
     border-radius: 12px; box-shadow: var(--ck-shadow-lg);
     font-size: 12px; line-height: 1.6; pointer-events: none;
     animation: ck-tip-in .12s ease;
@@ -4298,8 +4299,12 @@ paths:            # 可选；省略 = 始终生效
       api.getDirInfo(dir).then((r) => {
         const t = document.getElementById("ws-tip-time");
         if (!t) return;
-        if (r && r.success && r.createdAt) t.textContent = "\u521B\u5EFA\u4E8E " + fmtCreatedAt(r.createdAt);
-        else t.textContent = "\uFF08\u65E0\u6CD5\u8BFB\u53D6\u521B\u5EFA\u65F6\u95F4\uFF09";
+        if (r && r.success && r.createdAt) {
+          const prefix = r.source === "dir" ? "\u76EE\u5F55\u521B\u5EFA\u4E8E " : "\u5DE5\u4F5C\u533A\u521B\u5EFA\u4E8E ";
+          t.textContent = prefix + fmtCreatedAt(r.createdAt);
+        } else {
+          t.textContent = "\uFF08\u65E0\u6CD5\u8BFB\u53D6\u521B\u5EFA\u65F6\u95F4\uFF09";
+        }
       }).catch(() => {
         const t = document.getElementById("ws-tip-time");
         if (t) t.textContent = "\uFF08\u65E0\u6CD5\u8BFB\u53D6\u521B\u5EFA\u65F6\u95F4\uFF09";
@@ -4380,10 +4385,19 @@ paths:            # 可选；省略 = 始终生效
         } else if (act === "delete") {
           if (!api.deleteProjectWorkspace) return;
           const name = baseName(dir);
-          const ok = await ckConfirm("\u786E\u5B9A\u8981\u5220\u9664\u9879\u76EE\u5DE5\u4F5C\u533A\u201C" + name + "\u201D\u53CA\u5176\u6240\u6709\u5BF9\u8BDD\u8BB0\u5F55\u5417\uFF1F\n\uFF08\u4EC5\u79FB\u9664\u5DE5\u4F5C\u533A\u8BB0\u5F55\uFF0C\u4E0D\u4F1A\u5220\u9664\u78C1\u76D8\u5B9E\u9645\u9879\u76EE\u6587\u4EF6\uFF09", "\u5220\u9664\u5DE5\u4F5C\u533A");
+          const ok = await ckConfirm("\u786E\u5B9A\u8981\u5220\u9664\u9879\u76EE\u5DE5\u4F5C\u533A\u201C" + name + "\u201D\u53CA\u5176\u6240\u6709\u5BF9\u8BDD\u8BB0\u5F55\u5417\uFF1F\n\uFF08\u4EC5\u79FB\u9664\u5DE5\u4F5C\u533A\u8BB0\u5F55\u4E0E\u672C\u5730\u7F13\u5B58\uFF0C\u4E0D\u4F1A\u5220\u9664\u78C1\u76D8\u5B9E\u9645\u9879\u76EE\u6587\u4EF6\uFF09", "\u5220\u9664\u5DE5\u4F5C\u533A");
           if (!ok) return;
           try {
-            await api.deleteProjectWorkspace(dir);
+            const r = await api.deleteProjectWorkspace(dir);
+            const ids = r && Array.isArray(r.sessionIds) ? r.sessionIds : [];
+            for (const id of ids) {
+              try {
+                localStorage.removeItem("cuckoo-harness-history-v1:" + id);
+                localStorage.removeItem("cuckoo-harness-goal-v1:" + id);
+                localStorage.removeItem("cuckoo-harness-plan-v1:" + id);
+              } catch (_) {
+              }
+            }
           } catch (_) {
           }
           loadWorkspaces();

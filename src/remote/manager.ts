@@ -231,8 +231,15 @@ function pushHistoryToNewClient(ws: any): Promise<void> {
   return new Promise((resolve) => {
     try {
       const ctx = getTargetContext();
-      if (!ctx || !ctx.win || ctx.win.isDestroyed()) { resolve(); return; }
-      requestHarnessExport(ctx.win.id, 3000).then((state: any) => {
+      if (!ctx || !ctx.win || ctx.win.isDestroyed()) {
+        // 无可用窗口：仍要回空 history，否则客户端永远停在"正在同步对话…"
+        remoteServer.sendToClient(ws, { type: 'history', profileId: '', history: [] });
+        resolve();
+        return;
+      }
+      // 超时从 3s 降到 2s：harness 正常 100ms 内就回（本地实测 12ms），
+      // 拖到 3s 只会让用户多等。真正拿不到时快速回空 history 更好。
+      requestHarnessExport(ctx.win.id, 2000).then((state: any) => {
         if (state && Array.isArray(state.history) && state.history.length) {
           // 先过滤出手机端可渲染的条目（user/assistant/system），再取最近 40 条。
           // 直接 slice(-40) 会因历史里夹杂大量 tool/plan 条目而挤占，实际可见对话极少。
@@ -241,17 +248,31 @@ function pushHistoryToNewClient(ws: any): Promise<void> {
             (e.t === 'user' || e.t === 'assistant' || e.t === 'system') &&
             typeof e.text === 'string' && e.text.trim()
           );
-          if (renderable.length) {
-            remoteServer.sendToClient(ws, {
-              type: 'history',
-              profileId: ctx.profileId || '',
-              history: renderable.slice(-40),
-            });
-          }
+          // 即使没有可渲染历史，也要发一条空 history：
+          // 客户端据此结束"正在同步对话…"过渡态，进入正常空态。
+          // 不发的话客户端只能等 8 秒超时兜底，用户主观感受就是"停在首页好久"。
+          remoteServer.sendToClient(ws, {
+            type: 'history',
+            profileId: ctx.profileId || '',
+            history: renderable.slice(-40),
+          });
+        } else {
+          // harness 未创建 / 导出超时：同样回空 history 让客户端解除同步态
+          remoteServer.sendToClient(ws, {
+            type: 'history',
+            profileId: (ctx && ctx.profileId) || '',
+            history: [],
+          });
         }
         resolve();
-      }).catch(() => resolve());
-    } catch (_) { resolve(); }
+      }).catch(() => {
+        remoteServer.sendToClient(ws, { type: 'history', profileId: (ctx && ctx.profileId) || '', history: [] });
+        resolve();
+      });
+    } catch (_) {
+      remoteServer.sendToClient(ws, { type: 'history', profileId: '', history: [] });
+      resolve();
+    }
   });
 }
 

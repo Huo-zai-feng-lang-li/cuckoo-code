@@ -59,9 +59,21 @@ function scanAgentsRoot(agentsDir: string, source: AgentSource): AgentMeta[] {
     const description = (data.description || firstParagraph(body)).trim();
     if (!name.trim() || !description) continue; // 无名或无描述 → 无法展示，跳过
 
+    // tools 解析：fail-closed——键存在但解析不出有效列表时跳过该代理，
+    // 避免"想限制工具却因格式不识别变成全权限"（YAML 数组式无法被极简解析器识别）。
     let tools: string[] | undefined;
-    if (data.tools) {
-      tools = data.tools.split(',').map((s) => s.trim()).filter(Boolean);
+    if (Object.prototype.hasOwnProperty.call(data, 'tools')) {
+      const rawTools = String(data.tools || '').trim();
+      // 空值（YAML 数组式 / 只写键不写值）、内联数组 [a, b]、YAML 空占位 null/~ 都视为非法格式
+      if (!rawTools || rawTools.startsWith('[') || rawTools === 'null' || rawTools === '~') {
+        console.warn('[agents] ' + ent.name + ' 的 tools 格式无法解析（仅支持逗号分隔），已跳过该代理以避免误授予全部工具');
+        continue;
+      }
+      tools = rawTools.split(',').map((s) => s.trim()).filter(Boolean);
+      if (tools.length === 0) {
+        console.warn('[agents] ' + ent.name + ' 的 tools 解析为空，已跳过该代理');
+        continue;
+      }
     }
 
     let maxTurns: number | undefined;
