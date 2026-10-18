@@ -115,10 +115,12 @@ function checkToken(req: http.IncomingMessage): boolean {
  * 静态资源缓存策略：
  *  - index.html：no-cache（每次都验证，但命中 ETag 返回 304，不传 body）
  *  - 其它资源：public, max-age=31536000, immutable（一年强缓存，二次打开零网络）
- * ETag 用 `W/"<mtimeMs>-<size>"`：编译重新生成文件后自动失效，无需手工改版本。
+ * ETag 用 `W/"<mtimeMs 保留小数>-<size>"`：**必须保留毫秒精度**。
+ * 曾用 Math.floor(mtimeMs) 截断到秒，导致"同一秒内两次编译 + 文件大小不变"时
+ * ETag 不变，浏览器会把旧内容当成新内容（内测高频编译会踩）。
  */
 function etagFor(st: fs.Stats): string {
-  return 'W/"' + Math.floor(st.mtimeMs) + '-' + st.size + '"';
+  return 'W/"' + st.mtimeMs + '-' + st.size + '"';
 }
 
 function cacheControlFor(rel: string): string {

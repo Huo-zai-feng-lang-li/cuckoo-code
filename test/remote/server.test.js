@@ -97,11 +97,16 @@ describe('remote server', () => {
     });
     await new Promise((r) => setTimeout(r, 60));
 
-    // 已移除的 attach 消息：既不应回 attach-result，也不应被当成用户文本
+    // 已移除的 attach 消息：不得产生任何 outbound 消息、不得被当成用户文本、
+    // 不得新增客户端（若 attach 分支被加回且调 onAttach，旧逻辑会回 attach-result → 此断言红）
+    const beforeCount = messages.length;
+    const clientsBefore = getClientCount();
     client.send(JSON.stringify({ type: 'attach', name: 'a.png', mime: 'image/png', data: 'AAAA' }));
     await new Promise((r) => setTimeout(r, 120));
+    assert.strictEqual(messages.length, beforeCount, 'attach 不应产生任何 outbound 消息');
     assert.strictEqual(messages.some((m) => m.type === 'attach-result'), false, '不应再有 attach-result');
     assert.strictEqual(receivedMsg, '', 'attach 不应被当成用户消息转发');
+    assert.strictEqual(getClientCount(), clientsBefore, 'attach 不应影响连接数');
 
     // 连接仍可用：后续 send 正常到达
     client.send(JSON.stringify({ type: 'send', text: 'after-attach' }));

@@ -276,8 +276,9 @@
     sendRaw({ type: 'ping' });
     foregroundProbeTimer = setTimeout(() => {
       foregroundProbeTimer = null;
-      // 探活期间可能已收到 pong（lastPong 被刷新）→ 连接健康，不动
-      if (lastPong > probeAt) return;
+      // 探活期间可能已收到 pong（lastPong 被刷新）→ 连接健康，不动。
+      // 用 >= 而非 >：probeAt 与 pong 的 Date.now() 可能落在同一毫秒，严格大于会误判半开。
+      if (lastPong >= probeAt) return;
       console.warn('[Remote] 回到前台探活超时，判定连接半开，立即重连');
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       reconnectDelay = 1000;
@@ -289,6 +290,8 @@
   // 心跳保活
   setInterval(() => {
     if (!connected) return;
+    // 前台探活正在进行：让它先判定（1.5s 内必有结论），避免心跳与探活双双重连
+    if (foregroundProbeTimer) return;
     if (Date.now() - lastPong > 60000) {
       console.warn('[Remote] 心跳超时，主动重连');
       try { ws.close(); } catch {}
