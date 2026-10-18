@@ -81,5 +81,6 @@
 | 078 | feature | [纯净模式提示词增强](./078-prompt-enhancer.md) | done | (直接主分支) | 2026-10-17 |
 | 081 | fix | [打开窗口/会话自动滚动到底部](./081-auto-scroll-to-bottom.md) | done | (直接主分支) | 2026-10-18 |
 | 082 | fix | [修复纯净模式历史消息编辑未生效缺陷](./082-fix-harness-history-edit.md) | done | (直接主分支) | 2026-10-18 |
+| 083 | fix | [修复停止生成：误点发送按钮 + 假成功](./083-fix-remote-stop.md) | done | fix/083-remote-stop | 2026-10-18 |
 
-共 76 个需求。
+共 77 个需求。

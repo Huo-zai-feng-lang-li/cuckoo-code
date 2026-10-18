@@ -105,6 +105,53 @@ const deepseek = {
   getHookSource() {
     return DEEPSEEK_HOOK;
   },
+
+  /**
+   * 精确定位「停止生成」按钮（供 harness stopGeneration 使用）。
+   *
+   * DeepSeek 输入区主按钮是同一个元素：生成中显示方块图标（可停止），
+   * 空闲时显示箭头图标（= 发送按钮）。若不加区分地点击，空闲时会**误发消息**。
+   *
+   * 判据（真机取证 2026-10-18）：
+   *   方块：<path d="M2 4.88C2 3.68...">
+   *   箭头：<path d="M8.3125 0.980206...">
+   *
+   * 因此只在确认为「生成中」时才返回坐标；空闲/找不到一律 found: false。
+   * 必须自包含：被序列化后注入页面主世界执行。
+   */
+  getStopFn() {
+    return function (doc: any, win: any) {
+      try {
+        var vh = win.innerHeight || 800;
+        var vw = win.innerWidth || 1200;
+        var cands = doc.querySelectorAll('.ds-button--primary, button[class*="ds-button--primary"]');
+        for (var i = 0; i < cands.length; i++) {
+          var el = cands[i];
+          if (!el) continue;
+          var rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+          if (!rect || rect.width === 0 || rect.height === 0) continue;
+          if (rect.left < 0 || rect.top < 0 || rect.left > vw || rect.top > vh) continue;
+          // 判断图标：方块（停止）vs 箭头（发送）
+          var pathEl = el.querySelector ? el.querySelector('svg path') : null;
+          var d = pathEl && pathEl.getAttribute ? (pathEl.getAttribute('d') || '') : '';
+          var isSquare = d.indexOf('M2 4.88') !== -1;
+          var isArrow = d.indexOf('M8.3125') !== -1;
+          if (!isSquare && !isArrow) continue;
+          if (isArrow) {
+            // 空闲态：这是发送按钮，绝不能点
+            return { found: false, generating: false, reason: 'idle-arrow' };
+          }
+          var cx = Math.round(rect.left + rect.width / 2);
+          var cy = Math.round(rect.top + rect.height / 2);
+          return { found: true, generating: true, x: cx, y: cy, tag: 'DIV.ds-button--primary(square)' };
+        }
+        return { found: false, generating: false, reason: 'no-primary-button' };
+      } catch (e) {
+        // 执行出错不表态（generating: null），避免上层误判为"已停止"
+        return { found: false, generating: null, reason: 'error:' + String(e) };
+      }
+    };
+  },
 };
 
 export { deepseek };
