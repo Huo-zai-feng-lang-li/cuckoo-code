@@ -3754,10 +3754,7 @@
     if (!convNavEl) convNavEl = document.getElementById('conv-nav');
     return convNavEl;
   }
-  // 注意：曾实现过"hover 右侧导航时自动滚到底部"，但这是反 UX 的——
-  // 用户 hover 导航就是为了点某条历史消息跳过去；自动滚底会让导航随内容一起位移，
-  // 用户根本点不到目标。正确行为：hover 时保持位置不动，让用户看清预览并点击跳转。
-  // 导航自身已通过 updateConvNavActive 高亮"当前可见的第一条"。
+  // 导航自身通过 updateConvNavActive 高亮"当前可见的第一条"。
   /** 统计字数：中文按字算，英文/数字按单词算，忽略空白和标点 */
   function countThinkChars(text) {
     if (!text) return 0;
