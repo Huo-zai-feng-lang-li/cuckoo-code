@@ -46,6 +46,71 @@ describe('remote server', () => {
     assert.ok(res.body.includes('<!DOCTYPE html>') || res.body.includes('<html'));
   });
 
+  test('静态资源带 ETag，If-None-Match 命中返回 304', async () => {
+    const port = ++portCounter;
+    await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
+
+    const first = await httpGet(port, '/app.js');
+    assert.strictEqual(first.statusCode, 200);
+    assert.ok(first.headers.etag, '应返回 ETag');
+    assert.ok(first.body.length > 0);
+
+    const second = await httpGet(port, '/app.js', { 'if-none-match': first.headers.etag });
+    assert.strictEqual(second.statusCode, 304, '命中 ETag 应返回 304');
+    assert.strictEqual(second.body, '', '304 不应带 body');
+
+    // 多值 If-None-Match（含前导错误值 + 空白）也要能命中
+    const multi = await httpGet(port, '/app.js', { 'if-none-match': '"wrong", ' + first.headers.etag });
+    assert.strictEqual(multi.statusCode, 304, '多值 If-None-Match 应能命中');
+
+    // 不匹配的 ETag 应回 200 全量
+    const miss = await httpGet(port, '/app.js', { 'if-none-match': '"definitely-wrong"' });
+    assert.strictEqual(miss.statusCode, 200, 'ETag 不匹配应回 200');
+    assert.ok(miss.body.length > 0);
+  });
+
+  test('缓存策略：index.html 为 no-cache，其它资源为强缓存', async () => {
+    const port = ++portCounter;
+    await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
+
+    const index = await httpGet(port, '/');
+    assert.strictEqual(index.headers['cache-control'], 'no-cache');
+
+    const js = await httpGet(port, '/app.js');
+    assert.ok(js.headers['cache-control'].includes('immutable'), '静态资源应为 immutable 强缓存');
+    assert.ok(js.headers['cache-control'].includes('max-age='));
+  });
+
+  test('未知消息类型（如已移除的 attach）不影响连接，后续 send 仍正常', async () => {
+    const port = ++portCounter;
+    let receivedMsg = '';
+    await startServer({ onUserMessage: (t) => { receivedMsg = t; } }, port, TEST_TOKEN);
+
+    const client = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${TEST_TOKEN}`);
+    const messages = [];
+    client.on('message', (data) => {
+      try { messages.push(JSON.parse(data.toString())); } catch (_) {}
+    });
+    await new Promise((resolve, reject) => {
+      client.on('open', resolve);
+      client.on('error', reject);
+    });
+    await new Promise((r) => setTimeout(r, 60));
+
+    // 已移除的 attach 消息：既不应回 attach-result，也不应被当成用户文本
+    client.send(JSON.stringify({ type: 'attach', name: 'a.png', mime: 'image/png', data: 'AAAA' }));
+    await new Promise((r) => setTimeout(r, 120));
+    assert.strictEqual(messages.some((m) => m.type === 'attach-result'), false, '不应再有 attach-result');
+    assert.strictEqual(receivedMsg, '', 'attach 不应被当成用户消息转发');
+
+    // 连接仍可用：后续 send 正常到达
+    client.send(JSON.stringify({ type: 'send', text: 'after-attach' }));
+    await new Promise((r) => setTimeout(r, 80));
+    assert.strictEqual(receivedMsg, 'after-attach', '未知消息不应破坏连接');
+
+    await new Promise((resolve) => { client.on('close', resolve); client.close(); });
+  });
+
   test('HTTP 拦截跨目录路径穿越攻击 (403)', async () => {
     const port = ++portCounter;
     await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
