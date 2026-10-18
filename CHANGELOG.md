@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.22] - 2026-10-19
+
 ### Added
 
 - **远程静态资源缓存**（`src/remote/server.ts`）：PWA 静态资源响应加 `ETag`（`W/"<mtimeMs>-<size>"`）与 `If-None-Match` 304 处理；`index.html` 用 `Cache-Control: no-cache`（每次验证但命中 304 不传 body），`app.js`/`style.css`/`marked.umd.js` 用 `max-age=31536000, immutable`。二次打开从每次重下 ~116KB 降到几乎 0 字节。
