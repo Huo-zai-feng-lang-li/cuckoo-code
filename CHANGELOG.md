@@ -11,6 +11,10 @@
 - **点右侧导航条目跳转失效**：`settleScrollBottom` 的后续 `step()` 会把 `scrollTop` 又拉回底部，覆盖 `fastScrollTo`。修复：`fastScrollTo` 开头先中止 settle（`_settleGen++` + 清 timer/listener + `resetExpectVars()`）。
 - **点导航完全无反应（隐藏页面）**：`document.hidden` 时 rAF 被浏览器挂起，`fastScrollTo` 动画永不执行。修复：`hidden` 时直接 `scrollTop = target`。
 - **删除 / 保存修改后不滚到底部**：补 `pinBottom = true; settleScrollBottom(true);`。
+- **隐藏页面下 `scrollBottom` 死锁**（严重）：`_scrollRaf` 是"本帧已排"的合并标记，页面 `document.hidden` 时 rAF 被浏览器挂起、永不回调 → `_scrollRaf` 永不为 null → 后续所有 `scrollBottom` 调用全部 return，流式滚底彻底失效。修复：`hidden` 时直接同步写 `scrollTop`，跳过合并/动画。
+- **隐藏页面下 `resize` 的 `suppressPin` 永久卡住**（严重）：同样因 rAF 挂起，`suppressPin = true` 后永不复位 → 之后所有 `scroll` 事件被短路、`pinBottom` 再也不更新。修复：`hidden` 时同步完成，不设 `suppressPin`。
+- **隐藏页面下导航 active 高亮不更新**：`scheduleConvNavActive` 用 rAF 节流，`hidden` 时不触发。修复：`hidden` 时降级到 `setTimeout`（100ms）。
+- **`_lastScrollTop` 声明位置修正**：原声明在 scroll 事件监听处（`:4851`），但 `scrollBottom`（`:2733`）内部也引用它，若在初始化期间先调用 `scrollBottom` 会读到 `undefined` 导致比较异常。已提到 `pinBottom` 声明旁（`:2747` 附近）。
 
 ### Changed
 

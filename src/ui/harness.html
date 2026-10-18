@@ -2719,8 +2719,11 @@
   // 用状态位而非实时 isNearBottom() 判定，避免内容瞬时增长超过阈值时被误判为
   // "已离开底部"，导致刚点击回到底部后马上又弹出按钮。
   var pinBottom = true;
+  // 上一次已知的 scrollTop：用于区分"用户主动上滚"与"内容增长导致的被动 scroll"。
+  // 必须在 scrollBottom（其内部也会写）之前声明，避免 TDZ / undefined 比较。
+  var _lastScrollTop = 0;
   // 程序化改变内容高度（如工具卡折叠）时，浏览器的 scrollTop clamp 会触发 scroll 事件，
-  // 从而错误地把 pinBottom 改成 true（把正在看历史的位置拉到底）。用此标志抑制该副作用。
+  // 从而错误地把 pinBottom 改成 true（把正在看的历史位置拉到底）。用此标志抑制该副作用。
   var suppressPin = false;
   function isNearBottom() {
     return (stream.scrollHeight - stream.scrollTop - stream.clientHeight) < 90;
@@ -2734,6 +2737,16 @@
     if (force || pinBottom) {
       _scrollForce = _scrollForce || !!force;
       pinBottom = true;
+      // 页面隐藏时 rAF 被浏览器挂起：_scrollRaf 一旦置值就永不回调，
+      // 而 _scrollRaf 是"本帧已排"的合并标记 → 后续所有调用全部 return，
+      // 流式滚底彻底死锁（实测踩过）。hidden 时直接同步写，无需合并/动画。
+      if (document.hidden) {
+        _scrollForce = false;
+        stream.scrollTop = stream.scrollHeight;
+        _lastScrollTop = stream.scrollTop;
+        updateScrollBtn();
+        return;
+      }
       if (_scrollRaf) return; // 本帧已排，合并
       _scrollRaf = requestAnimationFrame(function () {
         _scrollRaf = null;
@@ -2743,6 +2756,7 @@
         // 则放弃滚底，避免把正在翻历史的用户弹回底部。
         if (!must && !pinBottom) { updateScrollBtn(); return; }
         stream.scrollTop = stream.scrollHeight;
+        _lastScrollTop = stream.scrollTop;
         updateScrollBtn();
       });
     } else {
@@ -3834,7 +3848,11 @@
   function scheduleConvNavActive() {
     if (convNavRafPending) return;
     convNavRafPending = true;
-    requestAnimationFrame(function () { convNavRafPending = false; try { updateConvNavActive(); } catch (e) { /* ignore */ } });
+    var fire = function () { convNavRafPending = false; try { updateConvNavActive(); } catch (e) { /* ignore */ } };
+    // 页面隐藏时 rAF 不触发 → active 高亮永远不更新，导航看起来"卡住"。
+    // setTimeout 兜底（hidden 下会被节流到 ~600ms，但至少能更新）。
+    if (document.hidden) setTimeout(fire, 100);
+    else requestAnimationFrame(fire);
   }
   function updateConvNavActive() {
     var convNavEl = getConvNavEl();
@@ -4833,7 +4851,7 @@
   // 背景：流式输出每帧都在追加内容 → scrollHeight 变高 → 浏览器派发 scroll 事件（scrollTop 不变）。
   // 原实现无条件 pinBottom = isNearBottom()，此时距离底部自然变大 → 把"跟随底部"状态自己踩掉，
   // 导致切回窗口时 focus 里的 if (pinBottom) 不成立、不滚底（用户实测：AI 生成中切走再切回不触底）。
-  var _lastScrollTop = stream.scrollTop;
+  _lastScrollTop = stream.scrollTop; // 初始化（声明已提到 pinBottom 附近）
   stream.addEventListener('scroll', function () {
     scheduleConvNavActive(); // rAF 节流：每帧最多重算一次
     if (suppressPin) { _lastScrollTop = stream.scrollTop; return; }
@@ -4855,14 +4873,22 @@
 
   // 响应式贴底：窗口尺寸变化（如主进程从 0 撑大、最大化、分屏调整）若处于跟随底部状态，则紧贴底部
   window.addEventListener('resize', function () {
-    if (pinBottom) {
-      suppressPin = true;
-      requestAnimationFrame(function () {
-        stream.scrollTop = stream.scrollHeight;
-        suppressPin = false;
-        updateScrollBtn();
-      });
+    if (!pinBottom) return;
+    // 页面隐藏时 rAF 不触发：若不兜底，suppressPin 会永久卡在 true，
+    // 之后所有 scroll 事件都被 suppressPin 短路，滚底状态彻底不更新（实测踩过）。
+    if (document.hidden) {
+      stream.scrollTop = stream.scrollHeight;
+      _lastScrollTop = stream.scrollTop;
+      updateScrollBtn();
+      return;
     }
+    suppressPin = true;
+    requestAnimationFrame(function () {
+      stream.scrollTop = stream.scrollHeight;
+      _lastScrollTop = stream.scrollTop;
+      suppressPin = false;
+      updateScrollBtn();
+    });
   });
 
   // 窗口切回聚焦：从后台切回若处于跟随底部状态，对齐底部。
