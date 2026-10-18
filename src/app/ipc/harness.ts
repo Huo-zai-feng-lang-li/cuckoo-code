@@ -290,24 +290,72 @@ async function stopGeneration(ctx: any): Promise<any> {
       }
     } catch (_) { /* 回退内置定位 */ }
     const code = '(' + locateFn.toString() + ')(document, window)';
-    const r = await wc.executeJavaScript(code);
+
+    // 注意：定位失败（抛错/返回 null）不代表"已停止"，不能用来判成功。
+    // 只有明确定位函数表态 generating === false 才算确认已停。
+    const locate = async () => {
+      try { return await wc.executeJavaScript(code); } catch (_) { return null; }
+    };
+
+    const r = await locate();
     console.log('[Cuckoo Harness] stopGeneration 定位结果: ' + JSON.stringify(r));
-    if (r && r.found && typeof r.x === 'number') {
-      let cdpOk = false;
-      try {
-        if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
-        await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.x, y: r.y, button: 'none', clickCount: 0 });
-        await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x, y: r.y, button: 'left', buttons: 1, clickCount: 1 });
-        await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', buttons: 0, clickCount: 1 });
-        cdpOk = true;
-      } catch (e: any) { console.log('[Cuckoo Harness] CDP 失败: ' + (e && e.message)); }
-      if (!cdpOk) {
-        wc.sendInputEvent({ type: 'mouseMove', x: r.x, y: r.y });
-        wc.sendInputEvent({ type: 'mouseDown', x: r.x, y: r.y, button: 'left', clickCount: 1 });
-        wc.sendInputEvent({ type: 'mouseUp', x: r.x, y: r.y, button: 'left', clickCount: 1 });
-      }
-      return { success: true, method: cdpOk ? 'cdp' : 'sendInputEvent' };
+
+    // 守卫：定位函数明确表示「当前没有在生成」→ 不点击（避免误点发送按钮）
+    if (r && r.found === false && r.generating === false) {
+      return { success: false, reason: 'not-generating', detail: r.reason || '' };
     }
+
+    if (r && r.found && typeof r.x === 'number') {
+      // 点击方式说明（真机取证 2026-10-18）：
+      //   CDP Input.dispatchMouseEvent 只会让按钮图标变回箭头，但**流不会停**；
+      //   页面内合成 PointerEvent 序列才能真触发 DeepSeek 的停止逻辑（实测 8 秒仅 +4 帧）。
+      // 因此这里统一用「页面内合成 Pointer 事件」点击，不使用 CDP debugger。
+      const clickInPage = async (x: number, y: number): Promise<boolean> => {
+        const js = '(function(){' +
+          'var el=document.elementFromPoint(' + x + ',' + y + ');' +
+          'if(!el)return false;' +
+          'var opts={bubbles:true,cancelable:true,view:window,clientX:' + x + ',clientY:' + y + ',button:0};' +
+          'try{el.dispatchEvent(new PointerEvent("pointerdown",opts));}catch(e){}' +
+          'try{el.dispatchEvent(new MouseEvent("mousedown",opts));}catch(e){}' +
+          'try{el.dispatchEvent(new PointerEvent("pointerup",opts));}catch(e){}' +
+          'try{el.dispatchEvent(new MouseEvent("mouseup",opts));}catch(e){}' +
+          'try{el.dispatchEvent(new MouseEvent("click",opts));}catch(e){}' +
+          'try{if(typeof el.click==="function")el.click();}catch(e){}' +
+          'return true;' +
+          '})()';
+        try { return !!(await wc.executeJavaScript(js)); } catch (_) { return false; }
+      };
+
+      // 校验：等 400ms 后重新定位。
+      // - 定位函数有 generating 语义（如 DeepSeek getStopFn）：必须明确 generating === false 才算停住；
+      //   定位失败（null / 抛错 / generating 为 null）一律视为"未确认"，不据此报成功。
+      // - 定位函数无 generating 语义（通用 attachStopFn 回退）：退化为"找不到可点的停止按钮 = 已停"，
+      //   与原行为一致，避免把其它平台误判为失败。
+      const hasGeneratingSemantics = !!(r && typeof r.generating === 'boolean');
+      const verify = async (): Promise<boolean> => {
+        await new Promise((res) => setTimeout(res, 400));
+        const again = await locate();
+        if (!again) return false;
+        if (hasGeneratingSemantics) return again.generating === false;
+        return !(again.found && typeof again.x === 'number');
+      };
+
+      if (await clickInPage(r.x, r.y) && await verify()) {
+        return { success: true, method: 'pointer-event' };
+      }
+
+      // 重试一次
+      console.log('[Cuckoo Harness] 首次点击后仍在生成，重试');
+      const again = await locate();
+      if (again && again.found && typeof again.x === 'number') {
+        if (await clickInPage(again.x, again.y) && await verify()) {
+          return { success: true, method: 'pointer-event-retry' };
+        }
+      }
+      return { success: false, reason: 'still-generating' };
+    }
+
+    // 定位失败：尝试 Escape 兜底（部分站点可用）
     wc.sendInputEvent({ type: 'keyDown', keyCode: 'Escape', key: 'Escape' });
     wc.sendInputEvent({ type: 'keyUp', keyCode: 'Escape', key: 'Escape' });
     return { success: false, method: 'escape' };

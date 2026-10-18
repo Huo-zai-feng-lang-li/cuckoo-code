@@ -123,13 +123,19 @@ function onPhoneStop(): void {
   const pid = ctx.profileId || '';
   stopGeneration(ctx)
     .then((r: any) => {
-      // 只有确实点到网页"停止"按钮才算成功；否则不误报"已停止"（避免手机显示停了、电脑还在跑）
+      // 只有确实停住才算成功；否则不误报"已停止"（避免手机显示停了、电脑还在跑）
       if (r && r.success) {
         onAiStop(pid);
-      } else {
-        // 停止未生效：保持执行态（keepBusy），让用户能再试，不误报"已停止"
-        remoteServer.broadcast({ type: 'sys', profileId: pid, keepBusy: true, text: '停止未生效（未找到停止按钮），请在电脑上操作' });
+        return;
       }
+      // 当前没有在生成：不是失败，只是无可停止的任务（也不该保持忙态）
+      if (r && r.reason === 'not-generating') {
+        clearBusy(pid);
+        remoteServer.broadcast({ type: 'sys', profileId: pid, text: '当前没有正在生成的任务' });
+        return;
+      }
+      // 其余失败：保持执行态（keepBusy），让用户能再试，不误报"已停止"
+      remoteServer.broadcast({ type: 'sys', profileId: pid, keepBusy: true, text: '停止未生效（仍在生成），请在电脑上操作' });
     })
     .catch((err: any) => {
       console.error('[Remote] 停止生成失败:', err.message);
