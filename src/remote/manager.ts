@@ -16,7 +16,6 @@ import { hasRunningSubagent } from '../app/subagent.js';
 import * as remoteServer from './server.js';
 import { readConfig } from './config.js';
 import { stopGeneration } from '../app/ipc/harness.js';
-import { cdpAttach } from '../app/ipc/cdp-attach.js';
 import { startTunnel, stopTunnel, getTunnelStatus } from './tunnel.js';
 import { requestHarnessExport } from '../app/ipc/window-groups.js';
 
@@ -243,9 +242,9 @@ function pushHistoryToNewClient(ws: any): Promise<void> {
         resolve();
         return;
       }
-      // 超时从 3s 降到 2s：harness 正常 100ms 内就回（本地实测 12ms），
-      // 拖到 3s 只会让用户多等。真正拿不到时快速回空 history 更好。
-      requestHarnessExport(ctx.win.id, 2000).then((state: any) => {
+      // 超时 800ms：harness 正常 100ms 内就回（本地实测 12ms）。
+      // 手机端每次重连都会走这里，拖长只会放大"同步中"等待，快速回空 history 更好。
+      requestHarnessExport(ctx.win.id, 800).then((state: any) => {
         if (state && Array.isArray(state.history) && state.history.length) {
           // 先过滤出手机端可渲染的条目（user/assistant/system），再取最近 40 条。
           // 直接 slice(-40) 会因历史里夹杂大量 tool/plan 条目而挤占，实际可见对话极少。
@@ -369,22 +368,6 @@ function onAiError(profileId: string, error?: string): void {
   remoteServer.broadcast({ type: 'ai-error', profileId: pid, error: error || '生成失败' });
 }
 
-/** 手机上传附件（图片等）→ 复用 CDP 上传通道注入 AI 页面 */
-async function onPhoneAttach(file: { name: string; data: string; mime: string }): Promise<{ success: boolean; error?: string }> {
-  const ctx = getTargetContext();
-  if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) {
-    return { success: false, error: '目标窗口不可用' };
-  }
-  try {
-    const r = await cdpAttach(ctx, { name: file.name, data: file.data, mime: file.mime });
-    if (r && r.success) return { success: true };
-    return { success: false, error: (r && r.error) || '上传失败' };
-  } catch (err: any) {
-    console.error('[Remote] 附件上传异常:', err.message);
-    return { success: false, error: err.message || '上传异常' };
-  }
-}
-
 /** 工具状态 */
 function onTool(phase: string, name: string, profileId: string): void {
   if (!remoteServer.isRunning()) return;
@@ -430,7 +413,6 @@ async function initRemote(): Promise<void> {
   const r = await remoteServer.startServer({
     onUserMessage: onPhoneMessage,
     onStop: onPhoneStop,
-    onAttach: onPhoneAttach,
     onListProfiles: listProfiles,
     onGetCurrentProfile: getCurrentProfile,
     onSelectProfile: selectProfile,

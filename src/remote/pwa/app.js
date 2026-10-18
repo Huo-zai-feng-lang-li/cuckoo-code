@@ -10,7 +10,7 @@
   const input = $('input'), sendBtn = $('send'), stopBtn = $('stop'), connDot = $('conn-dot');
   const connText = $('conn-text'), profileLabel = $('profile-label');
   const profileSelect = $('profile-select'), reconnectBtn = $('btn-reconnect'), themeBtn = $('btn-theme');
-  const clearBtn = $('btn-clear'), attachBtn = $('attach'), fileInput = $('file-input');
+  const clearBtn = $('btn-clear');
   const execStatus = $('exec-status'), execText = $('exec-text'), offlineBanner = $('offline-banner');
   const emptyState = $('empty-state'), scrollBottomBtn = $('scroll-bottom-btn'), scrollNewBadge = $('scroll-new-badge');
   const pasteBtn = $('token-paste-btn');
@@ -103,7 +103,7 @@
   /** 同步中过渡态：复用 empty-state 卡片，只改标题文案与可见性。
    *  - true：显示"正在同步对话…"，隐藏快捷指令卡
    *  - false：恢复正常空态（无历史时）或直接移除（有历史时）
-   *  同时设 8 秒兜底：即使服务端历史因故未到，也不能让用户永久看"同步中"。 */
+   *  同时设 2.5 秒兜底：即使服务端历史因故未到，也不能让用户永久看"同步中"。 */
   let syncTimeoutTimer = null;
   function setSyncing(on) {
     if (!emptyState) return;
@@ -116,7 +116,7 @@
       if (titleEl) titleEl.textContent = '正在同步对话…';
       if (descEl) descEl.textContent = '正在从电脑端拉取最近的对话记录，请稍候。';
       if (quickEl) quickEl.style.display = 'none';
-      syncTimeoutTimer = setTimeout(() => { setSyncing(false); }, 8000);
+      syncTimeoutTimer = setTimeout(() => { setSyncing(false); }, 2500);
     } else {
       if (titleEl) titleEl.textContent = 'Cuckoo Remote 已就绪';
       if (descEl) descEl.textContent = '已与电脑端建立低延迟安全直连。随时在手机上发送指令、控制电脑、查看实时生成并随时中断。';
@@ -249,17 +249,49 @@
     }
   });
 
+  // 切回前台：不只看"是否已断开"，还要识别"已连接但半开"（锁屏/切网后 TCP 已死，
+  // ws.readyState 仍是 1，消息会静默丢失）。
+  // 判据不能只看"lastPong 距今多久"：手机切后台时浏览器冻结定时器，pong 本来就会停，
+  // 用时间阈值直接掐连接会把健康连接误杀（见下方 STALE_MS 注释的设计约束）。
+  // 正确做法：回前台先主动发一个 ping，1.5s 内没等到 pong 才判定半开 → 立即重连。
+  const FOREGROUND_PING_TIMEOUT = 1500;
+  let foregroundProbeTimer = null;
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && !connected && token) {
+    if (document.visibilityState !== 'visible' || !token) return;
+    if (!connected) {
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       reconnectDelay = 1000;
       connect();
+      return;
     }
+    if (!ws || ws.readyState !== 1) {
+      // 底层 socket 已不可用：立即重连（不依赖 onclose 是否已回调）
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      reconnectDelay = 1000;
+      connect();
+      return;
+    }
+    if (foregroundProbeTimer) return; // 已有探活在跑，避免重复
+    const probeAt = Date.now();
+    sendRaw({ type: 'ping' });
+    foregroundProbeTimer = setTimeout(() => {
+      foregroundProbeTimer = null;
+      // 探活期间可能已收到 pong（lastPong 被刷新）→ 连接健康，不动。
+      // 用 >= 而非 >：probeAt 与 pong 的 Date.now() 可能落在同一毫秒，严格大于会误判半开。
+      if (lastPong >= probeAt) return;
+      console.warn('[Remote] 回到前台探活超时，判定连接半开，立即重连');
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      reconnectDelay = 1000;
+      try { ws.close(); } catch {}
+      connect();
+    }, FOREGROUND_PING_TIMEOUT);
   });
 
   // 心跳保活
   setInterval(() => {
     if (!connected) return;
+    // 前台探活正在进行：让它先判定（1.5s 内必有结论），避免心跳与探活双双重连
+    if (foregroundProbeTimer) return;
     if (Date.now() - lastPong > 60000) {
       console.warn('[Remote] 心跳超时，主动重连');
       try { ws.close(); } catch {}
@@ -272,7 +304,7 @@
     if (reconnectTimer) return;
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
-      reconnectDelay = Math.min(reconnectDelay * 1.6, 15000);
+      reconnectDelay = Math.min(reconnectDelay * 1.3, 8000);
       connect();
     }, reconnectDelay);
   }
@@ -388,9 +420,6 @@
           addSystem(msg.text);
           if (!msg.keepBusy) { hideExec(); setExecuting(false); }
         }
-        break;
-      case 'attach-result':
-        addSystem(msg.success ? ('已上传：' + (msg.name || '图片')) : ('上传失败：' + (msg.error || '未知错误')));
         break;
       case 'pong':
         lastPong = Date.now();
@@ -575,21 +604,6 @@
     const el = document.createElement('div');
     el.className = 'msg user';
     el.textContent = text;
-    messages.appendChild(el);
-    checkEmptyState();
-    capMessages();
-    scroll(true);
-  }
-
-  function addImageBubble(name, dataUrl) {
-    const el = document.createElement('div');
-    el.className = 'msg user msg-image';
-    el.innerHTML = `
-      <div class="image-bubble">
-        <img src="${dataUrl}" alt="${escapeAttr(name)}" class="uploaded-thumb" />
-        <div class="image-name"><svg width="12" height="12" aria-hidden="true" style="vertical-align:-1px"><use href="#i-image" /></svg> ${escapeHtml(name)}</div>
-      </div>
-    `;
     messages.appendChild(el);
     checkEmptyState();
     capMessages();
@@ -903,33 +917,6 @@
       sendQueue.push(text);
       showOffline('离线中，消息将在重连后自动发送');
     }
-  }
-
-  // ===== 图片上传 =====
-  if (attachBtn && fileInput) {
-    fileInput.addEventListener('change', () => {
-      const f = fileInput.files && fileInput.files[0];
-      fileInput.value = '';
-      if (!f) return;
-      handleUpload(f);
-    });
-  }
-
-  function handleUpload(file) {
-    if (!connected) { addSystem('未连接电脑，无法上传'); return; }
-    if (file.size > 8 * 1024 * 1024) { addSystem('文件过大（上限 8MB）'); return; }
-    const reader = new FileReader();
-    addSystem('正在上传：' + (file.name || '图片') + '…');
-    reader.onload = () => {
-      const dataUrl = String(reader.result || '');
-      addImageBubble(file.name || 'image.png', dataUrl);
-      const comma = dataUrl.indexOf(',');
-      const b64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
-      const ok = sendRaw({ type: 'attach', name: file.name || 'image.png', mime: file.type || 'image/png', data: b64 });
-      if (!ok) addSystem('上传失败：连接已断开');
-    };
-    reader.onerror = () => addSystem('读取图片文件失败');
-    reader.readAsDataURL(file);
   }
 
   sendBtn.addEventListener('click', doSend);

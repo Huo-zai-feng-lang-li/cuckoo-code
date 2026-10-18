@@ -35,8 +35,6 @@ interface ServerDeps {
   onUserMessage: (text: string) => void;
   /** 收到手机"停止生成"请求 */
   onStop?: () => void;
-  /** 收到手机上传附件（base64）；返回是否成功 */
-  onAttach?: (file: { name: string; data: string; mime: string }) => Promise<{ success: boolean; error?: string }>;
   /** 取窗口列表（供手机端选择器） */
   onListProfiles?: () => any[];
   /** 取当前目标窗口 id */
@@ -113,20 +111,50 @@ function checkToken(req: http.IncomingMessage): boolean {
   return !!(url && safeTokenEqual(url.searchParams.get('token')));
 }
 
+/**
+ * 静态资源缓存策略：
+ *  - index.html：no-cache（每次都验证，但命中 ETag 返回 304，不传 body）
+ *  - 其它资源：public, max-age=31536000, immutable（一年强缓存，二次打开零网络）
+ * ETag 用 `W/"<mtimeMs 保留小数>-<size>"`：**必须保留毫秒精度**。
+ * 曾用 Math.floor(mtimeMs) 截断到秒，导致"同一秒内两次编译 + 文件大小不变"时
+ * ETag 不变，浏览器会把旧内容当成新内容（内测高频编译会踩）。
+ */
+function etagFor(st: fs.Stats): string {
+  return 'W/"' + st.mtimeMs + '-' + st.size + '"';
+}
+
+function cacheControlFor(rel: string): string {
+  return rel === 'index.html' ? 'no-cache' : 'public, max-age=31536000, immutable';
+}
+
 /** 静态文件响应（PWA 资源；防路径穿越）。异步读盘，避免阻塞主进程事件循环 */
-async function serveStatic(res: http.ServerResponse, pathname: string): Promise<void> {
+async function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, pathname: string): Promise<void> {
   let decoded = pathname;
   try { decoded = decodeURIComponent(pathname); } catch (_) {}
   const rel = decoded === '/' ? 'index.html' : decoded.replace(/^\//, '');
   const abs = path.resolve(PWA_DIR, rel);
   const prefix = PWA_DIR.endsWith(path.sep) ? PWA_DIR : PWA_DIR + path.sep;
   if (abs !== PWA_DIR && !abs.startsWith(prefix)) { res.writeHead(403); res.end('forbidden'); return; }
-  let isFile = false;
-  try { isFile = (await fs.promises.stat(abs)).isFile(); } catch (_) { isFile = false; }
-  if (!isFile) { res.writeHead(404); res.end('not found'); return; }
+  let st: fs.Stats | null = null;
+  try { st = await fs.promises.stat(abs); } catch (_) { st = null; }
+  if (!st || !st.isFile()) { res.writeHead(404); res.end('not found'); return; }
+
+  const etag = etagFor(st);
+  const cacheControl = cacheControlFor(rel);
+  const inm = req.headers['if-none-match'];
+  if (typeof inm === 'string' && inm.split(',').some((v) => v.trim() === etag)) {
+    res.writeHead(304, { 'ETag': etag, 'Cache-Control': cacheControl });
+    res.end();
+    return;
+  }
+
   try {
     const buf = await fs.promises.readFile(abs);
-    res.writeHead(200, { 'Content-Type': guessMime(abs), 'Cache-Control': 'no-cache' });
+    res.writeHead(200, {
+      'Content-Type': guessMime(abs),
+      'Cache-Control': cacheControl,
+      'ETag': etag,
+    });
     res.end(buf);
   } catch (err: any) {
     // 客户端可能已断开/已发头，避免 ERR_HTTP_HEADERS_SENT
@@ -154,11 +182,11 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   }
   // 静态资源（页面本身不敏感；连 WS 时才鉴权）
   // serveStatic 为异步（非阻塞主进程），内部已兜底所有异常，此处防御性 catch
-  void serveStatic(res, url.pathname).catch(() => {});
+  void serveStatic(req, res, url.pathname).catch(() => {});
 }
 
 /** WS 单条消息上限（防超大文本放大 JSON/IPC/渲染成本） */
-const MAX_WS_MSG = 12 * 1024 * 1024; // 12MB（含 base64 图片，编码后约 1.33x）
+const MAX_WS_MSG = 2 * 1024 * 1024; // 2MB（手机端传图已移除，仅文本消息）
 const MAX_TEXT_LEN = 100000; // 文本消息上限 10 万字符
 
 /** WS 消息处理 */
@@ -192,17 +220,6 @@ function handleWsMessage(ws: any, raw: any): void {
   if (msg.type === 'stop') {
     try { deps.onStop && deps.onStop(); } catch (_) {}
     return;
-  }
-  if (msg.type === 'attach') {
-    const name = typeof msg.name === 'string' ? msg.name : 'image.png';
-    const data = typeof msg.data === 'string' ? msg.data : '';
-    const mime = typeof msg.mime === 'string' ? msg.mime : 'application/octet-stream';
-    if (!data) return;
-    const reply = (r: any) => { try { ws.send(JSON.stringify({ type: 'attach-result', name, ...r })); } catch (_) {} };
-    if (!deps.onAttach) { reply({ success: false, error: 'unsupported' }); return; }
-    Promise.resolve(deps.onAttach({ name, data, mime }))
-      .then((r) => reply(r || { success: false }))
-      .catch((err) => reply({ success: false, error: (err && err.message) || 'attach-failed' }));
   }
 }
 

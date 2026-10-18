@@ -141,7 +141,15 @@ export function initRemoteBridge(): void {
     if (!text) return;
     // 上报给 harness 显示用户气泡（否则纯净模式可见历史与实际上下文分叉）
     try { ipcRenderer.invoke('harness-event-report', { type: 'user', text }).catch(() => {}); } catch (_) { /* ignore */ }
-    sendToChat(text, '远程', undefined).catch(() => {});
+    // 必须检查返回值：sendToChat 可能返回 false（找不到输入框 / 被停止信号 cancelPendingSend 取消）。
+    // 手机端已乐观显示用户气泡，若这里静默失败，手机会误以为已发送、AI 却收不到。
+    sendToChat(text, '远程', undefined).then((ok) => {
+      if (!ok) {
+        report({ type: 'sys', text: '消息未发出（输入框未就绪或被停止取消），请重试' });
+      }
+    }).catch((err: any) => {
+      report({ type: 'sys', text: '消息发送失败：' + ((err && err.message) || String(err)) });
+    });
   });
 }
 
