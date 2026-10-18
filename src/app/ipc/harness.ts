@@ -209,7 +209,11 @@ async function activateShareSession(wc: any, shareUrl: string, newText: string, 
       return m ? m[1] : '';
     } catch (_) { return ''; }
   }
-  for (let attempt = 0; attempt < 6; attempt++) {
+  // ⚠️ 只能发一次！原实现每轮（800ms）都发，而分享页克隆成活会话需 2~3 秒，
+  // 导致同一文本被发 3~4 次 —— 用户看到导航栏出现多个相同的消息（实测踩过）。
+  // 现在：未发送过 + textarea 就绪 → 发一次并标记；之后只轮询 URL 等变活。
+  let sent = false;
+  for (let attempt = 0; attempt < 15; attempt++) {
     await new Promise((r) => setTimeout(r, 800));
     if (wc.isDestroyed()) return;
     const url = wc.getURL() || '';
@@ -218,15 +222,16 @@ async function activateShareSession(wc: any, shareUrl: string, newText: string, 
       bindProjectDirToNewSid(extractSid(url));
       return;
     }
-    // 检查页面是否渲染出输入框（未渲染就再等一轮，不浪费发送尝试）
+    if (sent) continue; // 已发过，只等 URL 变化
     let ready = false;
     try {
       ready = await wc.executeJavaScript('!!document.querySelector("textarea")');
     } catch (_) { /* ignore */ }
     if (!ready) continue;
     try {
-      console.log('[Cuckoo Harness] 在分享页发送新消息（第 ' + (attempt + 1) + ' 次）');
+      console.log('[Cuckoo Harness] 在分享页发送新消息（仅一次）');
       wc.send('harness-user-message', { text: newText });
+      sent = true;
     } catch (_) { /* ignore */ }
   }
   // 全部重试后仍未变活 → 兜底导航回原会话（避免用户卡在静态分享页）

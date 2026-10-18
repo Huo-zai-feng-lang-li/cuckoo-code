@@ -1253,6 +1253,9 @@
       }
     }
     try { updateConvNav(); } catch (e) { /* ignore */ }
+    // 删除后滚到底部：用户操作完应看到最新状态（最底部那一条）
+    pinBottom = true;
+    settleScrollBottom(true);
     var remaining = stream.querySelectorAll('.msg, .tool');
     if (!remaining.length) showEmptyState();
   }
@@ -1333,21 +1336,19 @@
     bar.className = 'msg-edit-bar';
 
     if (!isLatest) {
-      // 历史中间消息：提供取消、填入输入框（引用）、从此处截断重发、以及就地保存修改
+      // 历史中间消息：取消 / 填入输入框（引用） / 从此处截断重发
+      // （已移除"保存修改"——只改本地不通知 AI，无实际意义）
       bar.innerHTML = '<button class="msg-edit-btn msg-edit-cancel">取消</button>' +
         '<button class="msg-edit-btn msg-edit-quote" title="将文字填入底部输入框，保留现有对话历史">填入输入框</button>' +
-        '<button class="msg-edit-btn msg-edit-truncate danger" title="丢弃此消息之后的所有对话，从此处重新接续生成">从此处截断重发</button>' +
-        '<button class="msg-edit-btn msg-edit-save-only primary" title="仅修改本条消息文字并保存，保留后续所有对话">保存修改</button>';
+        '<button class="msg-edit-btn msg-edit-truncate danger" title="丢弃此消息之后的所有对话，从此处重新接续生成">从此处截断重发</button>';
     } else if (hasRepliedAfter) {
-      // 最后一轮已完成（后面有 assistant）：改这条等价于"改历史分支"，
-      // 应提供截断重发（真截断开新会话 / 本地降级物理截断）。
+      // 最后一轮已完成（后面有 assistant）：改这条等价于"改历史分支"，必须截断重发
+      // （已移除"仅保存"——它只改本地，AI 服务端上下文不变，用户看着改了但 AI 不知道，无实际意义）
       bar.innerHTML = '<button class="msg-edit-btn msg-edit-cancel">取消</button>' +
-        '<button class="msg-edit-btn msg-edit-save-only" title="仅修改本条提问文字并保存，不重新向 AI 发送">仅保存</button>' +
         '<button class="msg-edit-btn msg-edit-truncate danger" title="丢弃这条提问及其回答，从此处重新接续生成">从此处截断重发</button>';
     } else {
-      // 真正的最后一条待发送消息（还没回复）：极简丝滑，取消 / 仅保存 / 重新发送
+      // 真正的最后一条待发送消息（还没回复）：取消 / 重新发送
       bar.innerHTML = '<button class="msg-edit-btn msg-edit-cancel">取消</button>' +
-        '<button class="msg-edit-btn msg-edit-save-only" title="仅修改本条提问文字并保存，不重新向 AI 发送">仅保存</button>' +
         '<button class="msg-edit-btn msg-edit-save primary" title="修改本条提问并重新向 AI 发送">重新发送</button>';
     }
 
@@ -1362,24 +1363,9 @@
       bubbleEl.innerHTML = esc(origText) + renderBubbleChips(msgEl.__ckChips);
       attachUserActions(msgEl, bubbleEl, function () { return origText; }, histItem);
     }
-    function doSaveOnly() {
-      var newText = ta.value.trim();
-      if (!newText || newText === origText) { cancel(); return; }
-      if (histItem) {
-        histItem.text = newText;
-      } else {
-        for (var j = history.length - 1; j >= 0; j--) {
-          if (history[j].t === 'user' && history[j].text === origText) {
-            history[j].text = newText;
-            break;
-          }
-        }
-      }
-      saveHist();
-      bubbleEl.innerHTML = esc(newText) + renderBubbleChips(msgEl.__ckChips);
-      attachUserActions(msgEl, bubbleEl, function () { return newText; }, histItem);
-      try { updateConvNav(); } catch (e) { /* ignore */ }
-    }
+    // 注：曾实现 doSaveOnly（"仅保存"/"保存修改"）——只改 DOM + localStorage，
+    // 但 AI 服务端上下文不变，用户改了 AI 也不知道，无实际意义，已移除。
+    // 想改内容让 AI 知道 → 用"从此处截断重发"；待发送消息 → 用"重新发送"。
     function doSubmitLatest() {
       var newText = ta.value.trim();
       if (!newText || newText === origText) { cancel(); return; }
@@ -1440,7 +1426,8 @@
     ta.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        if (isLatest) doSubmitLatest(); else doSaveOnly();
+        // Ctrl+Enter：最后一条待发送 → 重新发送；历史消息 → 截断重发（原 doSaveOnly 已移除）
+        if (isLatest) doSubmitLatest(); else doTruncate();
       } else if (e.key === 'Escape') {
         e.preventDefault();
         cancel();
@@ -1451,13 +1438,6 @@
     bar.querySelector('.msg-edit-cancel').addEventListener('click', function (e) {
       e.stopPropagation(); cancel();
     });
-
-    var btnSaveOnly = bar.querySelector('.msg-edit-save-only');
-    if (btnSaveOnly) {
-      btnSaveOnly.addEventListener('click', function (e) {
-        e.stopPropagation(); doSaveOnly();
-      });
-    }
 
     if (isLatest) {
       if (!hasRepliedAfter) {
@@ -1546,6 +1526,9 @@
         }
       }
     }
+    // 删除后滚到底部：用户操作完应看到最新状态（最底部那一条）
+    pinBottom = true;
+    settleScrollBottom(true);
     var remaining = stream.querySelectorAll('.msg, .tool');
     if (!remaining.length) showEmptyState();
   }
@@ -2784,6 +2767,12 @@
   var _settleExpectTop = -1;
   var _settleExpectHeight = -1;
   var _settleExpectClient = -1;
+  /** 清空 settle 的期望值（模块级，供 fastScrollTo 等外部逻辑复用） */
+  function resetExpectVars() {
+    _settleExpectTop = -1;
+    _settleExpectHeight = -1;
+    _settleExpectClient = -1;
+  }
 
   function settleScrollBottom(force) {
     if (force) pinBottom = true;
@@ -2892,6 +2881,9 @@
         cleanupListeners();
         stream.scrollTop = stream.scrollHeight;
         pinBottom = true;
+        // 同步 _lastScrollTop：settle 写入了 scrollTop，若不更新，scroll 事件里的
+        // "cur < _lastScrollTop - 1" 判据会用旧值比较，可能误判用户上滚
+        _lastScrollTop = stream.scrollTop;
         updateScrollBtn();
       }
     }
@@ -3729,6 +3721,21 @@
   // ===== 右侧对话快捷导航（用户消息锚点）=====
   // 注意：#conv-nav 在 <script> 之后解析，脚本执行时可能尚不存在 → 惰性获取
   var convNavEl = null;
+  // hover 右侧导航 → 平滑滚到底部，展示最新消息。
+  // 说明：导航面板是 fixed 定位，不随内容滚动，所以滚底不会让导航"跑掉"，
+  // 用户仍可继续点击任意历史锚点跳转。
+  var convNavHovered = false;
+  document.addEventListener('mouseover', function (e) {
+    var isInNav = e.target && e.target.closest && !!e.target.closest('.conv-nav');
+    if (isInNav && !convNavHovered) {
+      convNavHovered = true;
+      pinBottom = true;
+      settleScrollBottom(true);
+      _lastScrollTop = stream.scrollTop;
+    } else if (!isInNav && convNavHovered) {
+      convNavHovered = false;
+    }
+  });
   function getConvNavEl() {
     if (!convNavEl) convNavEl = document.getElementById('conv-nav');
     return convNavEl;
@@ -3748,12 +3755,26 @@
   var fastScrollToken = 0;
   function fastScrollTo(el) {
     if (!el) return;
+    // 点击导航跳转 = 明确的"离开底部"意图，必须先中止 settle，
+    // 否则 settle 的后续 step 会把 scrollTop 又拉回底部，覆盖本次跳转（实测踩过）。
+    pinBottom = false;
+    suppressPin = false;
+    _settleGen++;
+    if (_settleTimer) { clearTimeout(_settleTimer); _settleTimer = null; }
+    if (_settleCleanup) { try { _settleCleanup(); } catch (_) {} _settleCleanup = null; }
+    resetExpectVars();
     var target = el.offsetTop - 12;
     var start = stream.scrollTop;
     var dist = target - start;
     if (Math.abs(dist) < 2) { stream.scrollTop = target; return; }
     // 连点：自增令牌，旧动画帧检测到令牌过期即停止，避免多个 rAF 循环互相覆盖
     var token = ++fastScrollToken;
+    // 页面隐藏时 rAF 被浏览器挂起，动画永不执行 → 直接瞬时到位（实测踩过：
+    // harness 在 WebContentsView 里始终 hidden，点导航完全无反应）。
+    if (document.hidden) {
+      stream.scrollTop = target;
+      return;
+    }
     var dur = 180, t0 = performance.now();
     function ease(x) { return 1 - Math.pow(1 - x, 3); }
     function step(now) {
@@ -4801,12 +4822,34 @@
 
   scrollBtn = document.getElementById('scroll-bottom');
   if (scrollBtn) {
-    scrollBtn.addEventListener('click', function () { pinBottom = true; settleScrollBottom(true); });
+    scrollBtn.addEventListener('click', function () {
+      pinBottom = true;
+      settleScrollBottom(true);
+      // settle 是异步的，这里先同步一次，防 _lastScrollTop 落后
+      _lastScrollTop = stream.scrollTop;
+    });
   }
+  // 记录上一次已知的 scrollTop，用于区分"用户主动上滚"与"内容增长导致的被动 scroll"。
+  // 背景：流式输出每帧都在追加内容 → scrollHeight 变高 → 浏览器派发 scroll 事件（scrollTop 不变）。
+  // 原实现无条件 pinBottom = isNearBottom()，此时距离底部自然变大 → 把"跟随底部"状态自己踩掉，
+  // 导致切回窗口时 focus 里的 if (pinBottom) 不成立、不滚底（用户实测：AI 生成中切走再切回不触底）。
+  var _lastScrollTop = stream.scrollTop;
   stream.addEventListener('scroll', function () {
     scheduleConvNavActive(); // rAF 节流：每帧最多重算一次
-    if (suppressPin) return; // 折叠等程序化高度变化引发的滚动，不改跟随状态
-    pinBottom = isNearBottom();
+    if (suppressPin) { _lastScrollTop = stream.scrollTop; return; }
+    // 关键判据：scrollTop 变小 = 用户真的往上滚了（内容增长不会让 scrollTop 变小）
+    //   - scrollTop 变小 → 用户主动离开底部 → pinBottom = false
+    //   - scrollTop 不变或变大 → 内容增长 / 自动贴底的被动 scroll → 保持 pinBottom 原值
+    var cur = stream.scrollTop;
+    if (cur < _lastScrollTop - 1) {
+      pinBottom = false;
+    } else if (isNearBottom()) {
+      // 用户主动滚回底部附近（含点击回到底部按钮、滚轮下滚）→ 恢复跟随
+      pinBottom = true;
+    }
+    // 注：cur > _lastScrollTop 且不在底部附近 → 可能是"内容变矮导致 clamp"或"用户中途停顿"，
+    // 此时既不设 true 也不设 false，保留原状态，避免抖动。
+    _lastScrollTop = cur;
     updateScrollBtn();
   });
 
@@ -4822,10 +4865,13 @@
     }
   });
 
-  // 窗口切回聚焦：从后台切回若处于跟随底部状态，对齐底部
+  // 窗口切回聚焦：从后台切回若处于跟随底部状态，对齐底部。
+  // 注：pinBottom 现在由 scroll 事件的"scrollTop 是否变小"判据维护，
+  // 内容增长期间不会被踩成 false，所以这里 if (pinBottom) 能正确触发。
   window.addEventListener('focus', function () {
     if (pinBottom) {
       stream.scrollTop = stream.scrollHeight;
+      _lastScrollTop = stream.scrollTop;
       updateScrollBtn();
     }
   });

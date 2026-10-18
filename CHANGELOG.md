@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [0.10.19] - 2026-10-18
+
+### Fixed
+
+- **截断重发时同一消息被重复发送 3~4 次**（严重）：`activateShareSession` 每 800ms 一轮、最多 6 轮，每轮只要分享页 textarea 就绪就发 `harness-user-message`。分享页克隆成活会话需 2~3 秒，循环在变活前已发送 3~4 次 → 用户导航栏出现多个相同消息。修复：加 `sent` 标志只发一次；轮次上限 6→15，之后仅轮询 URL 等变活。
+- **AI 生成中切到其他窗口再切回，不自动滚到底部**（严重）：`stream` 的 `scroll` 事件无条件 `pinBottom = isNearBottom()`。流式输出使 `scrollHeight` 持续增长 → 浏览器派发 scroll 事件（`scrollTop` 未变）→ 距底变远 → `pinBottom` 被自己踩成 false → 切回时 `if (pinBottom)` 不成立、不滚底。修复：记录 `_lastScrollTop`，仅当 `scrollTop` 变小（用户真的上滚）才置 false；内容增长导致的被动 scroll 保留原状态。
+- **点右侧导航条目跳转失效**：`settleScrollBottom` 的后续 `step()` 会把 `scrollTop` 又拉回底部，覆盖 `fastScrollTo`。修复：`fastScrollTo` 开头先中止 settle（`_settleGen++` + 清 timer/listener + `resetExpectVars()`）。
+- **点导航完全无反应（隐藏页面）**：`document.hidden` 时 rAF 被浏览器挂起，`fastScrollTo` 动画永不执行。修复：`hidden` 时直接 `scrollTop = target`。
+- **删除 / 保存修改后不滚到底部**：补 `pinBottom = true; settleScrollBottom(true);`。
+
+### Changed
+
+- **移除「仅保存 / 保存修改」按钮**：该按钮只改 DOM + localStorage，**AI 服务端上下文完全不变**——用户改了 AI 也不知道，下次引用历史仍是原文，无实际意义。移除后历史消息编辑只保留「取消 / 填入输入框 / 从此处截断重发」；最后一条已完成消息保留「取消 / 从此处截断重发」；待发送消息保留「取消 / 重新发送」。`Ctrl+Enter` 在历史消息上改为触发截断重发（原为 `doSaveOnly`）。
+
+### Added
+
+- **hover 右侧对话导航自动滚到底部**：`mouseover` 检测到进入 `.conv-nav` 区域即 `settleScrollBottom(true)`，展示最新消息。导航面板是 fixed 定位，不随内容滚动，hover 滚底不影响后续点选历史锚点。
+
 ## [0.10.18] - 2026-10-18
 
 ### Fixed

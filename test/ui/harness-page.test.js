@@ -257,21 +257,19 @@ test('消息气泡：最后一条重发与历史消息截断重发/填入输入�
   assert.ok(/\.msg-edit-btn \{/.test(html), '应有 .msg-edit-btn 样式');
 });
 
-test('消息气泡：历史消息就地保存修改与本地截断重发兜底', () => {
-  // 1. 历史消息编辑栏提供就地保存按钮
-  assert.ok(script.includes('msg-edit-save-only'), '应提供仅保存/保存修改按钮');
-  assert.ok(script.includes('function doSaveOnly'), '应有 doSaveOnly 函数');
+test('消息气泡：历史消息编辑（仅保存已移除，改为截断重发 + 本地兜底）', () => {
+  // 1. 「仅保存 / 保存修改」已移除 —— 它只改 DOM + localStorage，AI 服务端上下文不变，
+  //    用户改了 AI 也不知道，无实际意义（详见 harness.html 里 doSaveOnly 的注释）。
+  assert.ok(!script.includes('msg-edit-save-only'), '「仅保存 / 保存修改」按钮应已移除');
+  assert.ok(!script.includes('function doSaveOnly'), 'doSaveOnly 函数应已移除');
 
-  // 2. 就地保存修改应更新历史并落盘
   const editIdx = script.indexOf('function editUserMessage');
   const editBody = script.slice(editIdx, editIdx + 6000);
-  assert.ok(editBody.includes('histItem.text = newText'), 'doSaveOnly 应更新 histItem.text');
-  assert.ok(editBody.includes('saveHist()'), 'doSaveOnly 应调用 saveHist 持久化');
 
-  // 3. 历史中间消息 Ctrl+Enter 提交为安全就地保存
-  assert.ok(editBody.includes('if (isLatest) doSubmitLatest(); else doSaveOnly();'), '历史消息快捷键应默认为就地保存修改');
+  // 2. 历史消息 Ctrl+Enter 提交改为截断重发（原为 doSaveOnly）
+  assert.ok(editBody.includes('if (isLatest) doSubmitLatest(); else doTruncate();'), '历史消息快捷键应为截断重发');
 
-  // 4. doTruncate 本地兜底链路完整
+  // 3. doTruncate 本地兜底链路完整
   assert.ok(editBody.includes('truncateUserMessage(msgEl, histItem)'), '无 webMsgId 时应回退到本地物理截断');
   assert.ok(editBody.includes('input.value = newText'), '截断后应将新文本填入输入框');
   assert.ok(editBody.includes('send()'), '截断后应重新触发发送生成');
