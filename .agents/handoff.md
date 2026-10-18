@@ -38,8 +38,8 @@
 
 ## 待办
 
-- [ ] **合并 `fix/083-remote-stop` 到 master**
-- [ ] **递增版本 + 更新 CHANGELOG + 打 tag 发版**（用户已多次要求，v0.10.19 的发版也未执行）
+- [x] **合并 `fix/083-remote-stop` 到 master**（`7b24c2d`）
+- [x] **更新 CHANGELOG + 打 tag v0.10.20 发版**（`be806be`，CI 成功，Release 已发布 Win/Mac 产物）
 - [ ] 用户人工点验（可选）：远程点停止是否真停、空闲点停止是否不再误发
 
 ## 未做（明确记录）
