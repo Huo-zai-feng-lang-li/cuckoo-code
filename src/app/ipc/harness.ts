@@ -179,16 +179,43 @@ function waitForLoad(wc: any, timeoutMs: number): Promise<void> {
   });
 }
 
-async function activateShareSession(wc: any, shareUrl: string, newText: string, fallbackUrl: string): Promise<void> {
+async function activateShareSession(wc: any, shareUrl: string, newText: string, fallbackUrl: string, projectDir?: string | null, providerId?: string | null): Promise<void> {
   // 注意：调用方已 await wc.loadURL(shareUrl)，did-finish-load 已过去。
   // 原实现再调 waitForLoad 会因监听器注册晚于事件而永远等 15s 超时 —— 截断慢的主因。
   // 改为轮询：等前端渲染出输入框 → 发消息 → 检查是否变活，总计最多约 6 秒。
+  //
+  // projectDir：变活后要把当前项目目录绑到**新 sid**。原实现没做 → 新会话
+  // 在 handleUrlChange 里 getProjectDirBySessionId(newSid) 返回空 → 资源管理器
+  // 显示"未选择"（用户反馈的问题）。
+  function bindProjectDirToNewSid(newSid: string): void {
+    if (!newSid || !projectDir) return;
+    try {
+      const ctx = windowState.getContextByWebContents(wc);
+      if (!ctx || !ctx.sessionStore) return;
+      ctx.sessionStore.saveSessionDirMapping(newSid, projectDir);
+      ctx.sessionStore.state.selectedProjectDir = projectDir;
+      try {
+        if (ctx.win && !ctx.win.isDestroyed()) ctx.win.webContents.send('shell-project-dir', projectDir);
+      } catch (_) { /* ignore */ }
+      try { wc.send('project-dir-updated', projectDir); } catch (_) { /* ignore */ }
+      console.log('[Cuckoo Harness] 截断变活后已绑定项目目录到新 sid=' + newSid + ' dir=' + projectDir);
+    } catch (err: any) {
+      console.log('[Cuckoo Harness] 绑定项目目录到新 sid 失败: ' + (err && err.message));
+    }
+  }
+  function extractSid(url: string): string {
+    try {
+      const m = url.match(/\/a\/chat\/s\/([a-f0-9-]+)/i);
+      return m ? m[1] : '';
+    } catch (_) { return ''; }
+  }
   for (let attempt = 0; attempt < 6; attempt++) {
     await new Promise((r) => setTimeout(r, 800));
     if (wc.isDestroyed()) return;
     const url = wc.getURL() || '';
     if (/\/a\/chat\/s\//.test(url)) {
       console.log('[Cuckoo Harness] 分享会话已激活: ' + url);
+      bindProjectDirToNewSid(extractSid(url));
       return;
     }
     // 检查页面是否渲染出输入框（未渲染就再等一轮，不浪费发送尝试）
@@ -460,6 +487,21 @@ function registerHarnessIpc(): void {
     const wc = ctx.view.webContents;
     const newText = (payload && payload.newText) || '';
     console.log('[Cuckoo Harness] 真截断请求 webMsgId=' + webMsgId);
+
+    // 关键：截断会激活出**新 sid**，需要把当前项目目录绑定到新会话。
+    // 原实现没做 → 新 sid 出现时 handleUrlChange 里 getProjectDirBySessionId(newSid) 返回空
+    // → selectedProjectDir = null → 资源管理器显示"未选择"（用户反馈的问题）。
+    //
+    // ⚠️ 不能用 state.pendingProjectDir：截断流程中途会**刷新页面重建 IDB**，
+    // 刷新后 URL 仍是原会话 → handleUrlChange 会把 pendingProjectDir 消费并绑到旧 sid 上，
+    // 等变活成新 sid 时它已空 → 新 sid 照样找不到目录（实测踩过）。
+    // 正确做法：记住当前目录（内存），在 activateShareSession 检测到变活后**显式**绑到新 sid。
+    let curProjectDir: string | null = null;
+    try {
+      if (ctx.sessionStore && ctx.sessionStore.state) {
+        curProjectDir = ctx.sessionStore.state.selectedProjectDir || null;
+      }
+    } catch (_) { /* ignore */ }
     // 记录当前会话 id（供失败"返回原会话"）
     let prevSid = '';
     try {
@@ -478,7 +520,7 @@ function registerHarnessIpc(): void {
             const provider = ctx.providerId ? getProvider(ctx.providerId) : null;
             if (provider && provider.sessionUrlBase && prevSid) fallbackUrl = provider.sessionUrlBase + prevSid;
           } catch (_) { /* ignore */ }
-          activateShareSession(wc, lateR.shareUrl, lateR.newText, fallbackUrl).catch((err: any) => {
+          activateShareSession(wc, lateR.shareUrl, lateR.newText, fallbackUrl, curProjectDir, ctx.providerId).catch((err: any) => {
             console.log('[Cuckoo Harness] 迟到回执激活失败: ' + (err && err.message));
           });
         }
@@ -491,7 +533,9 @@ function registerHarnessIpc(): void {
     // 段1 + 段2：AI 页面清 IDB + 刷新 → 刷新后渲染进程截断分享 → 回执 shareUrl
     const r = await requestTruncateReady(wc, webMsgId, newText);
     if (!r || !r.shareUrl) {
-      // 超时：保留 lateHandler 一段时间（AI 页面可能马上回报结果）
+      // 超时：保留 lateHandler 一段时间（AI 页面可能马上回报结果）。
+      // 注意：pendingProjectDir 不在这里清 —— 迟到回执仍可能导航到新会话并需要绑定目录；
+      // 5 分钟定时器会兜底清理未消费的 pendingProjectDir。
       setTimeout(() => { truncateLateHandler = null; }, 120000);
       return { success: false, error: (r && r.error) || '截断分享失败', prevSessionId: prevSid };
     }
@@ -512,7 +556,7 @@ function registerHarnessIpc(): void {
         const provider = ctx.providerId ? getProvider(ctx.providerId) : null;
         if (provider && provider.sessionUrlBase && prevSid) fallbackUrl = provider.sessionUrlBase + prevSid;
       } catch (_) { /* ignore */ }
-      activateShareSession(wc, r.shareUrl, newText, fallbackUrl).catch((err: any) => {
+      activateShareSession(wc, r.shareUrl, newText, fallbackUrl, curProjectDir, ctx.providerId).catch((err: any) => {
         console.log('[Cuckoo Harness] 激活分享会话失败: ' + (err && err.message));
       });
     }

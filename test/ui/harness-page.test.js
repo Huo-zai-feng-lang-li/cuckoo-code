@@ -311,3 +311,13 @@ test('目标续跑：退避有上限，不会无限循环', () => {
 });
 
 
+
+test('历史消息编辑：三态按钮组（中间/已完成末轮/待发送）', () => {
+  const idx = script.indexOf('function editUserMessage');
+  assert.ok(idx > 0, '应有 editUserMessage');
+  const body = script.slice(idx, idx + 2500);
+  assert.ok(body.includes('msg-edit-truncate danger'), '中间消息应有截断重发');
+  assert.ok(body.includes('msg-edit-quote'), '中间消息应有填入输入框');
+  assert.ok(/hasRepliedAfter/.test(body), '应区分最后一轮是否已回复');
+  assert.ok(body.includes('msg-edit-save primary'), '待发送消息应有重新发送');
+});

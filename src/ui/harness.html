@@ -1308,6 +1308,19 @@
   function editUserMessage(msgEl, bubbleEl, origText, histItem) {
     if (bubbleEl.querySelector('.ck-mledit')) return;
     var isLatest = isLatestUserMessage(msgEl);
+    // 额外判定：最后一轮是否已完成（后面有 assistant 回复）。
+    // 语义区分：
+    //  - 后面有更晚的 user → 历史中间消息，改它必然要截断（不能污染后续对话）
+    //  - 是最后一条 user，但后面有 assistant → 这一轮已完成，改它等价于"改历史分支"，应提供截断重发
+    //  - 是最后一条 user，后面无 assistant → 刚发出去还没回复（或发送失败），重新发送即可
+    var hasRepliedAfter = false;
+    if (isLatest) {
+      var probe = msgEl.nextElementSibling;
+      while (probe) {
+        if (probe.classList && probe.classList.contains('assistant')) { hasRepliedAfter = true; break; }
+        probe = probe.nextElementSibling;
+      }
+    }
 
     // 进入编辑态时先移除悬浮操作条，避免遮挡与误触
     var oldActions = msgEl.querySelector('.msg-actions');
@@ -1319,17 +1332,23 @@
     var bar = document.createElement('div');
     bar.className = 'msg-edit-bar';
 
-    if (isLatest) {
-      // 最后一条消息：极简丝滑，直接取消、仅保存或重新发送
-      bar.innerHTML = '<button class="msg-edit-btn msg-edit-cancel">取消</button>' +
-        '<button class="msg-edit-btn msg-edit-save-only" title="仅修改本条提问文字并保存，不重新向 AI 发送">仅保存</button>' +
-        '<button class="msg-edit-btn msg-edit-save primary" title="修改本条提问并重新向 AI 发送">重新发送</button>';
-    } else {
+    if (!isLatest) {
       // 历史中间消息：提供取消、填入输入框（引用）、从此处截断重发、以及就地保存修改
       bar.innerHTML = '<button class="msg-edit-btn msg-edit-cancel">取消</button>' +
         '<button class="msg-edit-btn msg-edit-quote" title="将文字填入底部输入框，保留现有对话历史">填入输入框</button>' +
         '<button class="msg-edit-btn msg-edit-truncate danger" title="丢弃此消息之后的所有对话，从此处重新接续生成">从此处截断重发</button>' +
         '<button class="msg-edit-btn msg-edit-save-only primary" title="仅修改本条消息文字并保存，保留后续所有对话">保存修改</button>';
+    } else if (hasRepliedAfter) {
+      // 最后一轮已完成（后面有 assistant）：改这条等价于"改历史分支"，
+      // 应提供截断重发（真截断开新会话 / 本地降级物理截断）。
+      bar.innerHTML = '<button class="msg-edit-btn msg-edit-cancel">取消</button>' +
+        '<button class="msg-edit-btn msg-edit-save-only" title="仅修改本条提问文字并保存，不重新向 AI 发送">仅保存</button>' +
+        '<button class="msg-edit-btn msg-edit-truncate danger" title="丢弃这条提问及其回答，从此处重新接续生成">从此处截断重发</button>';
+    } else {
+      // 真正的最后一条待发送消息（还没回复）：极简丝滑，取消 / 仅保存 / 重新发送
+      bar.innerHTML = '<button class="msg-edit-btn msg-edit-cancel">取消</button>' +
+        '<button class="msg-edit-btn msg-edit-save-only" title="仅修改本条提问文字并保存，不重新向 AI 发送">仅保存</button>' +
+        '<button class="msg-edit-btn msg-edit-save primary" title="修改本条提问并重新向 AI 发送">重新发送</button>';
     }
 
     bubbleEl.innerHTML = '';
@@ -1441,9 +1460,18 @@
     }
 
     if (isLatest) {
-      bar.querySelector('.msg-edit-save').addEventListener('click', function (e) {
-        e.stopPropagation(); doSubmitLatest();
-      });
+      if (!hasRepliedAfter) {
+        // 最后一条待发送消息：绑定"重新发送"
+        bar.querySelector('.msg-edit-save').addEventListener('click', function (e) {
+          e.stopPropagation(); doSubmitLatest();
+        });
+      } else {
+        // 最后一轮已完成：绑定"从此处截断重发"
+        var btnLatestTrunc = bar.querySelector('.msg-edit-truncate');
+        if (btnLatestTrunc) btnLatestTrunc.addEventListener('click', function (e) {
+          e.stopPropagation(); doTruncate();
+        });
+      }
     } else {
       var btnQuote = bar.querySelector('.msg-edit-quote');
       if (btnQuote) btnQuote.addEventListener('click', function (e) {

@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.10.18] - 2026-10-18
+
+### Fixed
+
+- **截断重发后资源管理器显示"未选择"**：截断会激活出**新 sid**，但流程没把当前项目目录绑到新会话 → `handleUrlChange` 里 `getProjectDirBySessionId(newSid)` 返回空 → `selectedProjectDir = null`。修复：`harness-truncate` 记住当前目录（内存局部变量），`activateShareSession` 检测到变活后显式 `saveSessionDirMapping(newSid, projectDir)` 并广播 `shell-project-dir` 事件。
+  - 踩坑记录：曾尝试用 `state.pendingProjectDir` 兜底，但截断流程中途会**刷新页面重建 IDB**，刷新后 URL 仍是原会话 → `pendingProjectDir` 被消费并绑到**旧 sid**，等变活成新 sid 时已空。必须显式绑定。
+- **最后一轮已完成的消息编辑缺少"从此处截断重发"**：原 `isLatestUserMessage` 只判断"后面有无更晚的 user"，导致最后一轮已完成（有 assistant 回复）的消息也只能"仅保存/重新发送"。语义上改这一轮等价于"改历史分支"，应允许截断重开。
+  - 修复：`editUserMessage` 增加 `hasRepliedAfter` 判定（最后一条 user 后面是否已有 assistant），三态区分：
+    - 历史中间消息（有更晚 user）→ 取消 / 填入输入框 / 从此处截断重发 / 保存修改
+    - 最后一轮已完成（有 assistant 回复）→ 取消 / 仅保存 / 从此处截断重发
+    - 真正待发送（刚发出未回复）→ 取消 / 仅保存 / 重新发送
+
+### Added
+
+- 新增测试：历史消息编辑三态按钮组（中间/已完成末轮/待发送）
+
 ## [0.10.17] - 2026-10-18
 
 ### Fixed
