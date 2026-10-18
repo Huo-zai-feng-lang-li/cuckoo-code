@@ -15,6 +15,10 @@
   - 重连退避 `×1.6 / 上限 15s` → `×1.3 / 上限 8s`
   - 切回前台改为「主动发 ping + 1.5s 短超时等 pong」探活，取代原「只看时间阈值直接掐连接」的思路（避免手机切后台回来误杀健康连接）
 
+### Fixed
+
+- **手机端发送失败无提示**（`src/bridge/remote-bridge.ts`）：远程消息转发调用 `sendToChat` 时忽略返回值。`sendToChat` 可能返回 `false`（找不到输入框，或被停止信号的 `cancelPendingSend` 取消），此时手机端已乐观显示用户气泡、AI 却收不到，且无任何反馈。改为检查返回值，失败时上报系统提示。
+
 ### Removed
 
 - **手机端远程传图**（`src/remote/pwa/*`、`src/remote/server.ts`、`src/remote/manager.ts`）：该功能实际使用频率极低，但链路极重（原图 base64 上限 8MB、CDP 探测点击最多 3 轮 × 2.5s、`waitComposerReady` 最长 12s 轮询），且存在「上传未完成即可发文本」的竞态缺陷。移除后 WS 单条消息上限从 12MB 降到 2MB。桌面端纯净模式本地传图（`src/app/ipc/cdp-attach.ts`）保留不受影响。
