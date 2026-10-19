@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.10.25] - 2026-10-19
+
+### Fixed
+
+- **发版后手机端仍跑旧代码（Cloudflare 边缘缓存）**（`src/remote/server.ts`）：v0.10.22 时静态资源走 `immutable` 一年强缓存，CF 边缘缓存了 `app.js` 等资源（`cf-cache-status: HIT`、`age` 数万秒）；v0.10.23 虽把源站改成 `no-cache`，但 CF 边缘仍返回旧缓存，手机根本到不了电脑。修复：`serveStatic` 在响应 `index.html` 时把 `/app.js` / `/style.css` / `/marked.umd.js` 的引用动态改写为 `?v=<mtime>`；带 `?v=` 的请求走 `immutable`（URL 已随内容变化，缓存安全），不带 `?v=` 的仍走 `no-cache`（过渡兼容）。每次发版 mtime 变 → URL 变 → CF 和浏览器缓存自然失效。
+
 ## [0.10.24] - 2026-10-19
 
 ### Fixed
