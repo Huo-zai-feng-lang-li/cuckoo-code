@@ -290,8 +290,12 @@ async function doDelete(relPath: string, name: string, isDir: boolean): Promise<
 export async function loadFiles(opts?: { force?: boolean }): Promise<void> {
   const listEl = document.getElementById('ft-list');
   if (!listEl || !api.listProjectTree) return;
+  
+  const isForce = opts?.force || filesDirty;
+  if (isForce) filesDirty = false;
+
   // 有缓存且不强制刷新 → 直接渲染，免去 IPC 往返
-  if (!opts?.force && cachedTree.length > 0) {
+  if (!isForce && cachedTree.length > 0) {
     renderList(listEl);
     return;
   }
@@ -382,4 +386,19 @@ document.getElementById('ft-new-folder')?.addEventListener('click', () => doCrea
 // 当前项目目录变化 → 刷新
 if (api.onProjectDir) {
   api.onProjectDir(() => { expanded.clear(); cachedTree = []; loadFiles({ force: true }); });
+}
+
+// 监听目录变化（复用 Git 的 watcher，外部文件变动时自动刷新）
+function isFilesPanelActive(): boolean {
+  const p = document.querySelector('.ck-tab[data-panel="files"]');
+  return !!(p && p.classList.contains('ck-tab-active'));
+}
+if (api.onGitChanged) {
+  api.onGitChanged(() => {
+    if (isFilesPanelActive()) {
+      loadFiles({ force: true });
+    } else {
+      filesDirty = true; // 不在当前面板，标记需要刷新，下次切回来时强刷
+    }
+  });
 }

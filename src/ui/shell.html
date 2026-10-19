@@ -4949,7 +4949,9 @@ paths:            # 可选；省略 = 始终生效
   async function loadFiles(opts) {
     const listEl2 = document.getElementById("ft-list");
     if (!listEl2 || !api.listProjectTree) return;
-    if (!opts?.force && cachedTree.length > 0) {
+    const isForce = opts?.force || filesDirty;
+    if (isForce) filesDirty = false;
+    if (!isForce && cachedTree.length > 0) {
       renderList(listEl2);
       return;
     }
@@ -5037,6 +5039,19 @@ paths:            # 可选；省略 = 始终生效
       expanded.clear();
       cachedTree = [];
       loadFiles({ force: true });
+    });
+  }
+  function isFilesPanelActive() {
+    const p = document.querySelector('.ck-tab[data-panel="files"]');
+    return !!(p && p.classList.contains("ck-tab-active"));
+  }
+  if (api.onGitChanged) {
+    api.onGitChanged(() => {
+      if (isFilesPanelActive()) {
+        loadFiles({ force: true });
+      } else {
+        filesDirty = true;
+      }
     });
   }
 
