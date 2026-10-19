@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.10.36] - 2026-10-20
+
+### Fixed
+
+- **项目文件面板切项目竞态**（`src/ui/shell/scripts/pages/files.ts`）：切项目瞬间若旧项目恰有一次自动刷新在途（`await listProjectTree` 挂起），旧扫描结果返回后会覆盖新项目的 `cachedTree`，用户看到错误项目的文件列表。修复：引入 `filesLoadGeneration` 代际号，切项目时递增；`loadFiles` 拿到 IPC 结果后比对代际，不符则丢弃。
+- **in-flight 守卫被旧请求击穿**（同文件）：切项目时置 `filesLoadInFlight=false` 让新请求开跑，但旧请求的 `finally` 无条件再置一次 `false`，导致后续 watcher 触发的请求与在途新请求并发扫描。修复：`finally` 内加代际判断，仅当代际一致时才清标记。
+- **切项目后短暂显示旧项目树**（同文件）：清空 `cachedTree` 后到新扫描返回前，DOM 仍渲染旧树（大项目可达数秒）。修复：立即插入"加载中…"占位，并补 `cachedTruncated = false` 防残留。
+- **TDZ 隐患**（同文件）：`onProjectDir` 回调引用了其后才用 `let` 声明的三个状态变量，靠 IPC 异步性侥幸不报错。修复：声明上移到回调注册之前。
+
+### Changed
+
+- 切项目刷新改走 `loadFilesCoalesced`（原直接调 `loadFiles`），纳入 in-flight 守卫，避免与 watcher 触发的扫描并发。
+
 ## [0.10.34] - 2026-10-20
 
 ### Fixed

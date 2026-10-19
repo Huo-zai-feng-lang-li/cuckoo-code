@@ -4632,6 +4632,7 @@ paths:            # 可选；省略 = 始终生效
   var cachedTree = [];
   var cachedTruncated = false;
   var filesDirty = false;
+  var filesLoadGeneration = 0;
   var CARET_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>';
   var FOLDER_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
   var FILE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
@@ -4956,8 +4957,10 @@ paths:            # 可选；省略 = 始终生效
       renderList(listEl2);
       return;
     }
+    const gen = filesLoadGeneration;
     try {
       const r = await api.listProjectTree();
+      if (gen !== filesLoadGeneration) return;
       if (!r || !r.success) {
         listEl2.innerHTML = '<div class="ck-list-empty">' + escapeHtml(r && r.error || "\u52A0\u8F7D\u5931\u8D25") + "</div>";
         return;
@@ -5037,13 +5040,6 @@ paths:            # 可选；省略 = 始终生效
       });
     }
   }
-  if (api.onProjectDir) {
-    api.onProjectDir(() => {
-      expanded.clear();
-      cachedTree = [];
-      loadFiles({ force: true });
-    });
-  }
   function isFilesPanelActive() {
     const p = document.querySelector('.ck-tab[data-panel="files"]');
     return !!(p && p.classList.contains("ck-tab-active"));
@@ -5051,6 +5047,23 @@ paths:            # 可选；省略 = 始终生效
   var filesLoadInFlight = false;
   var filesLoadQueued = false;
   var filesLoadTimer = null;
+  if (api.onProjectDir) {
+    api.onProjectDir(() => {
+      filesLoadGeneration++;
+      filesLoadInFlight = false;
+      filesLoadQueued = false;
+      if (filesLoadTimer) {
+        clearTimeout(filesLoadTimer);
+        filesLoadTimer = null;
+      }
+      expanded.clear();
+      cachedTree = [];
+      cachedTruncated = false;
+      const listEl2 = document.getElementById("ft-list");
+      if (listEl2) listEl2.innerHTML = '<div class="ck-list-empty">\u52A0\u8F7D\u4E2D\u2026</div>';
+      void loadFilesCoalesced();
+    });
+  }
   function scheduleFilesRefresh() {
     if (filesLoadTimer) clearTimeout(filesLoadTimer);
     filesLoadTimer = setTimeout(() => {
@@ -5068,11 +5081,12 @@ paths:            # 可选；省略 = 始终生效
       return;
     }
     filesLoadInFlight = true;
+    const gen = filesLoadGeneration;
     try {
       await loadFiles({ force: true });
     } catch (_) {
     } finally {
-      filesLoadInFlight = false;
+      if (gen === filesLoadGeneration) filesLoadInFlight = false;
       if (filesLoadQueued) {
         filesLoadQueued = false;
         void loadFilesCoalesced();

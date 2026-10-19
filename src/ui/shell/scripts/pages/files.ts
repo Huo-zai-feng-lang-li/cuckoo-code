@@ -13,6 +13,8 @@ let cachedTree: TreeNode[] = [];
 let cachedTruncated = false;
 /** 面板未激活时收到磁盘变更 → 打脏标记，切回时强制刷新 */
 let filesDirty = false;
+/** 代际号：切项目时递增，作废所有在途请求（防旧项目扫描结果覆盖新项目树） */
+let filesLoadGeneration = 0;
 
 // VSCode 风格图标（内联 SVG）
 const CARET_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>';
@@ -301,8 +303,12 @@ export async function loadFiles(opts?: { force?: boolean }): Promise<void> {
     renderList(listEl);
     return;
   }
+
+  // 记录发起时的代际：若 IPC 返回时已切项目，丢弃这次结果
+  const gen = filesLoadGeneration;
   try {
     const r = await api.listProjectTree();
+    if (gen !== filesLoadGeneration) return; // 过期响应（项目已切换），丢弃
     if (!r || !r.success) {
       listEl.innerHTML = '<div class="ck-list-empty">' + escapeHtml((r && r.error) || '加载失败') + '</div>';
       return;
@@ -386,11 +392,6 @@ document.getElementById('ft-new-folder')?.addEventListener('click', () => doCrea
   }
 }
 
-// 当前项目目录变化 → 刷新
-if (api.onProjectDir) {
-  api.onProjectDir(() => { expanded.clear(); cachedTree = []; loadFiles({ force: true }); });
-}
-
 // 监听目录变化（复用 Git 的 watcher，外部文件变动时自动刷新）
 function isFilesPanelActive(): boolean {
   const p = document.querySelector('.ck-tab[data-panel="files"]');
@@ -399,9 +400,30 @@ function isFilesPanelActive(): boolean {
 
 // 合并刷新：防止 npm install / 构建等批量文件变动时叠加并发 IPC。
 // Git 侧已有 400ms 防抖，这里再叠 800ms 防抖，并加 in-flight 守卫 + 队列兜底。
+// 注意：这三个状态必须在 onProjectDir 回调注册之前声明（回调里会引用它们），
+// 否则依赖 IPC 异步性来规避 TDZ，属脆弱写法。
 let filesLoadInFlight = false;
 let filesLoadQueued = false;
 let filesLoadTimer: any = null;
+
+// 当前项目目录变化 → 刷新（必须在上面三个状态声明之后注册，回调里会引用它们）
+if (api.onProjectDir) {
+  api.onProjectDir(() => {
+    // 作废所有在途请求：旧项目的扫描结果不能写回新项目的缓存
+    filesLoadGeneration++;
+    filesLoadInFlight = false;
+    filesLoadQueued = false;
+    if (filesLoadTimer) { clearTimeout(filesLoadTimer); filesLoadTimer = null; }
+    expanded.clear();
+    cachedTree = [];
+    cachedTruncated = false;
+    // 立即给用户反馈，避免扫描返回前一直显示旧项目树
+    const listEl = document.getElementById('ft-list');
+    if (listEl) listEl.innerHTML = '<div class="ck-list-empty">加载中…</div>';
+    // 走 coalesced（走 in-flight 守卫），防止与 watcher 触发的扫描并发
+    void loadFilesCoalesced();
+  });
+}
 
 /** 延迟调度一次强制刷新（重复触发会重置计时器） */
 function scheduleFilesRefresh(): void {
@@ -417,11 +439,13 @@ async function loadFilesCoalesced(): Promise<void> {
   if (!isFilesPanelActive()) { filesDirty = true; return; }
   if (filesLoadInFlight) { filesLoadQueued = true; return; }
   filesLoadInFlight = true;
+  // 记录发起代际：若扫描期间切了项目，本次 finally 不得清掉新请求的 in-flight 标记
+  const gen = filesLoadGeneration;
   try {
     await loadFiles({ force: true });
   } catch (_) { /* ignore */ }
   finally {
-    filesLoadInFlight = false;
+    if (gen === filesLoadGeneration) filesLoadInFlight = false;
     if (filesLoadQueued) { filesLoadQueued = false; void loadFilesCoalesced(); }
   }
 }
