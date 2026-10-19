@@ -5007,7 +5007,9 @@ paths:            # 可选；省略 = 始终生效
     }
     return n;
   }
-  document.getElementById("ft-refresh")?.addEventListener("click", () => loadFiles({ force: true }));
+  document.getElementById("ft-refresh")?.addEventListener("click", () => {
+    void loadFilesCoalesced();
+  });
   document.getElementById("ft-collapse-all")?.addEventListener("click", () => {
     expanded.clear();
     const listEl2 = document.getElementById("ft-list");
@@ -5046,10 +5048,41 @@ paths:            # 可选；省略 = 始终生效
     const p = document.querySelector('.ck-tab[data-panel="files"]');
     return !!(p && p.classList.contains("ck-tab-active"));
   }
+  var filesLoadInFlight = false;
+  var filesLoadQueued = false;
+  var filesLoadTimer = null;
+  function scheduleFilesRefresh() {
+    if (filesLoadTimer) clearTimeout(filesLoadTimer);
+    filesLoadTimer = setTimeout(() => {
+      filesLoadTimer = null;
+      void loadFilesCoalesced();
+    }, 800);
+  }
+  async function loadFilesCoalesced() {
+    if (!isFilesPanelActive()) {
+      filesDirty = true;
+      return;
+    }
+    if (filesLoadInFlight) {
+      filesLoadQueued = true;
+      return;
+    }
+    filesLoadInFlight = true;
+    try {
+      await loadFiles({ force: true });
+    } catch (_) {
+    } finally {
+      filesLoadInFlight = false;
+      if (filesLoadQueued) {
+        filesLoadQueued = false;
+        void loadFilesCoalesced();
+      }
+    }
+  }
   if (api.onGitChanged) {
     api.onGitChanged(() => {
       if (isFilesPanelActive()) {
-        loadFiles({ force: true });
+        scheduleFilesRefresh();
       } else {
         filesDirty = true;
       }

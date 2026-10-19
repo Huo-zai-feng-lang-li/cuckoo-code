@@ -357,7 +357,8 @@ function countNodes(nodes: TreeNode[], n: number, limit: number): number {
   return n;
 }
 
-document.getElementById('ft-refresh')?.addEventListener('click', () => loadFiles({ force: true }));
+// 刷新按钮也走合并逻辑，避免用户狂点触发并发扫描
+document.getElementById('ft-refresh')?.addEventListener('click', () => { void loadFilesCoalesced(); });
 // 全部折叠：清空展开状态后重渲染
 document.getElementById('ft-collapse-all')?.addEventListener('click', () => {
   expanded.clear();
@@ -395,12 +396,42 @@ function isFilesPanelActive(): boolean {
   const p = document.querySelector('.ck-tab[data-panel="files"]');
   return !!(p && p.classList.contains('ck-tab-active'));
 }
+
+// 合并刷新：防止 npm install / 构建等批量文件变动时叠加并发 IPC。
+// Git 侧已有 400ms 防抖，这里再叠 800ms 防抖，并加 in-flight 守卫 + 队列兜底。
+let filesLoadInFlight = false;
+let filesLoadQueued = false;
+let filesLoadTimer: any = null;
+
+/** 延迟调度一次强制刷新（重复触发会重置计时器） */
+function scheduleFilesRefresh(): void {
+  if (filesLoadTimer) clearTimeout(filesLoadTimer);
+  filesLoadTimer = setTimeout(() => {
+    filesLoadTimer = null;
+    void loadFilesCoalesced();
+  }, 800);
+}
+
+/** 真正执行：面板不在前台时只打标记，避免无谓 IPC；并发时排队补跑 */
+async function loadFilesCoalesced(): Promise<void> {
+  if (!isFilesPanelActive()) { filesDirty = true; return; }
+  if (filesLoadInFlight) { filesLoadQueued = true; return; }
+  filesLoadInFlight = true;
+  try {
+    await loadFiles({ force: true });
+  } catch (_) { /* ignore */ }
+  finally {
+    filesLoadInFlight = false;
+    if (filesLoadQueued) { filesLoadQueued = false; void loadFilesCoalesced(); }
+  }
+}
+
 if (api.onGitChanged) {
   api.onGitChanged(() => {
     if (isFilesPanelActive()) {
-      loadFiles({ force: true });
+      scheduleFilesRefresh();   // 面板在前台 → 合并防抖刷新
     } else {
-      filesDirty = true; // 不在当前面板，标记需要刷新，下次切回来时强刷
+      filesDirty = true;        // 面板在后台 → 只打标记，不浪费 IPC
     }
   });
 }
