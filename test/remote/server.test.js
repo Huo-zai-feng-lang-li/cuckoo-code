@@ -3,7 +3,7 @@ import { describe, test, afterEach } from 'vitest';
 import assert from 'node:assert';
 import http from 'node:http';
 import { createRequire } from 'node:module';
-import { startServer, stopServer, broadcast, isRunning, getClientCount } from '../../src/remote/server.js';
+import { startServer, stopServer, broadcast, isRunning, getClientCount, cacheControlFor } from '../../src/remote/server.js';
 
 const require = createRequire(import.meta.url);
 const WebSocket = require('ws');
@@ -69,16 +69,24 @@ describe('remote server', () => {
     assert.ok(miss.body.length > 0);
   });
 
-  test('缓存策略：index.html 为 no-cache，其它资源为强缓存', async () => {
+  test('缓存策略：发版必变资源走 no-cache，第三方稳定资源走强缓存', async () => {
     const port = ++portCounter;
     await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
 
-    const index = await httpGet(port, '/');
-    assert.strictEqual(index.headers['cache-control'], 'no-cache');
+    // 每次发版都会变的三个：必须 no-cache（否则更新不生效）
+    for (const p of ['/', '/app.js', '/style.css']) {
+      const r = await httpGet(port, p);
+      assert.strictEqual(r.headers['cache-control'], 'no-cache', p + ' 应为 no-cache');
+      assert.ok(r.headers.etag, p + ' 应有 ETag');
+    }
 
-    const js = await httpGet(port, '/app.js');
-    assert.ok(js.headers['cache-control'].includes('immutable'), '静态资源应为 immutable 强缓存');
-    assert.ok(js.headers['cache-control'].includes('max-age='));
+    // 极少变的资源（icon.svg 随包发布，不随每次发版改动）：可长期强缓存。
+    // 注意：marked.umd.js 编译时才从 node_modules 拷入 out/，测试环境的 src PWA 目录里没有它，
+    // 所以它的 Cache-Control 用纯函数断言（见文件末尾的 cacheControlFor 测试）。
+    const icon = await httpGet(port, '/icon.svg');
+    assert.strictEqual(icon.statusCode, 200);
+    assert.ok(icon.headers['cache-control'].includes('immutable'), 'icon.svg 应为 immutable 强缓存');
+    assert.ok(icon.headers['cache-control'].includes('max-age='));
   });
 
   test('未知消息类型（如已移除的 attach）不影响连接，后续 send 仍正常', async () => {
@@ -194,6 +202,19 @@ describe('remote server', () => {
       client.on('close', resolve);
       client.close();
     });
+  });
+
+  test('cacheControlFor：发版必变资源走 no-cache，其余 immutable', () => {
+    // 这四个随发版必变或文件名不带 hash，必须每次验证
+    for (const rel of ['index.html', 'app.js', 'style.css', 'marked.umd.js']) {
+      assert.strictEqual(cacheControlFor(rel), 'no-cache', rel + ' 应为 no-cache');
+    }
+    // 极少变资源可长期强缓存
+    for (const rel of ['icon.svg', 'manifest.webmanifest']) {
+      const cc = cacheControlFor(rel);
+      assert.ok(cc.includes('immutable'), rel + ' 应为 immutable');
+      assert.ok(cc.includes('max-age=31536000'), rel + ' 应有一年 max-age');
+    }
   });
 
   test('stopServer 能够完整关闭并释放端口，避免重启 EADDRINUSE', async () => {

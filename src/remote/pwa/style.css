@@ -657,6 +657,155 @@ svg { flex-shrink: 0; }
   margin-bottom: 26px;
 }
 
+/* ==========================================================================
+   同步中动画（"正在从电脑端拉取对话"）
+   三环错相扩散 + 中心光晕呼吸 + 数据点外流 + 鸟身扫光。
+   仅同步态显示；就绪态改用 .empty-icon-wrap。
+   ========================================================================== */
+.sync-visual {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  margin-bottom: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 三环错相扩散：用 accent 色、双倍粗、更高初始不透明度，确保肉眼可见 */
+.sync-orbit {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  opacity: 0;
+  animation: syncOrbit 2.6s cubic-bezier(0.25, 0.6, 0.35, 1) infinite;
+}
+
+.sync-orbit-2 { animation-delay: 0.85s; }
+.sync-orbit-3 { animation-delay: 1.7s; }
+
+@keyframes syncOrbit {
+  0%   { transform: scale(0.52); opacity: 0.85; }
+  55%  { opacity: 0.28; }
+  100% { transform: scale(1.18); opacity: 0; }
+}
+
+/* 中心光晕：在鸟背后缓慢呼吸，制造"正在工作"的生命感 */
+.sync-visual::before {
+  content: '';
+  position: absolute;
+  width: 96px;
+  height: 96px;
+  border-radius: 32px;
+  background: radial-gradient(circle, var(--accent-soft) 0%, transparent 70%);
+  animation: syncHalo 2.6s ease-in-out infinite;
+  z-index: 0;
+}
+
+@keyframes syncHalo {
+  0%, 100% { transform: scale(0.85); opacity: 0.5; }
+  50%      { transform: scale(1.1);  opacity: 1; }
+}
+
+.sync-core {
+  position: relative;
+  z-index: 2;
+  width: 66px;
+  height: 66px;
+  border-radius: 22px;
+  background: linear-gradient(155deg, var(--accent) 0%, var(--accent-hover) 100%);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 14px 32px -10px var(--accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  animation: syncCoreBreath 2.6s ease-in-out infinite;
+  overflow: hidden;
+}
+
+/* 鸟身扫光：一条斜向高光缓慢掠过，细节质感的来源 */
+.sync-core::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.42) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: syncShine 2.6s ease-in-out infinite;
+}
+
+@keyframes syncShine {
+  0%   { transform: translateX(-100%); }
+  45%  { transform: translateX(100%); }
+  100% { transform: translateX(100%); }
+}
+
+.sync-core svg { width: 36px; height: 36px; position: relative; z-index: 1; }
+
+@keyframes syncCoreBreath {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.05); }
+}
+
+/* 数据点：从中心向外沿三个方向流动，象征"数据从电脑汇入" */
+.sync-pulse-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+  opacity: 0;
+  animation: syncDot 2.6s cubic-bezier(0.25, 0.6, 0.35, 1) infinite;
+  z-index: 3;
+}
+
+.sync-pulse-dot-1 { animation-delay: 0.2s; --dx: -46px; --dy: -22px; }
+.sync-pulse-dot-2 { animation-delay: 1.05s; --dx: 42px; --dy: -34px; }
+.sync-pulse-dot-3 { animation-delay: 1.9s; --dx: 10px; --dy: 46px; }
+
+@keyframes syncDot {
+  0%   { opacity: 0; transform: translate(0, 0) scale(0.5); }
+  25%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.1); }
+}
+
+/* 文字下方的三点脉动（比静态省略号更有"进行中"感） */
+.sync-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: -18px 0 24px;
+}
+
+.sync-hint-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: syncHintDot 1.2s ease-in-out infinite;
+}
+
+.sync-hint-dot:nth-child(2) { animation-delay: 0.2s; }
+.sync-hint-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes syncHintDot {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  50%      { opacity: 1;    transform: translateY(-2px); }
+}
+
+/* 尊重系统减少动效偏好：停掉所有循环动画，保留静态可辨识形态 */
+@media (prefers-reduced-motion: reduce) {
+  .sync-orbit,
+  .sync-core,
+  .sync-pulse-dot,
+  .sync-hint-dot { animation: none; }
+  .sync-orbit { opacity: 0.18; transform: scale(0.9); }
+  .sync-pulse-dot { display: none; }
+  .sync-hint-dot { opacity: 0.5; }
+}
+
 .quick-prompts-card {
   width: 100%;
   max-width: 372px;
