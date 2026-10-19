@@ -112,71 +112,23 @@ function checkToken(req: http.IncomingMessage): boolean {
 }
 
 /**
- * 静态资源缓存策略（按"多久变一次"分层）：
- *  - no-cache + ETag（每次验证，命中回 304 无 body）：
- *    `index.html` / `app.js` / `style.css`（随每次发版必变）
- *    `marked.umd.js`（文件名不带 hash，node_modules 升级后 URL 不变）
- *  - immutable 一年强缓存：`icon.svg` 等极少变、且改了也不影响逻辑的资源。
- *
- * 教训：早先全部走 immutable，导致**发版后手机仍跑旧代码**——开发时改了同步动画，
- * 浏览器拿的却是旧 CSS，查了半天以为是代码没生效。
- *
+ * 静态资源缓存策略：
+ *  - index.html：no-cache（每次都验证，但命中 ETag 返回 304，不传 body）
+ *  - 其它资源：public, max-age=31536000, immutable（一年强缓存，二次打开零网络）
  * ETag 用 `W/"<mtimeMs 保留小数>-<size>"`：**必须保留毫秒精度**。
  * 曾用 Math.floor(mtimeMs) 截断到秒，导致"同一秒内两次编译 + 文件大小不变"时
- * ETag 不变，浏览器会把旧内容当成新内容。
+ * ETag 不变，浏览器会把旧内容当成新内容（内测高频编译会踩）。
  */
 function etagFor(st: fs.Stats): string {
   return 'W/"' + st.mtimeMs + '-' + st.size + '"';
 }
 
-/** 必须走 no-cache + ETag 验证的资源：
- *  - index.html / app.js / style.css：每次发版必变
- *  - marked.umd.js：文件名不带 hash，node_modules 升级后内容变但 URL 不变。
- *    若走 immutable，浏览器永不重取 → 用户长期拿旧版 marked（解析行为可能已变）。
- *    它的体积经 304 验证代价极小（无 body）。 */
-const ALWAYS_REVALIDATE = new Set(['index.html', 'app.js', 'style.css', 'marked.umd.js']);
-
-/** 导出供单测（纯函数，无副作用） */
-export function cacheControlFor(rel: string): string {
-  return ALWAYS_REVALIDATE.has(rel)
-    ? 'no-cache'
-    : 'public, max-age=31536000, immutable';
-}
-
-/** 需要 URL 版本化（`?v=<mtime>`）的静态资源：文件变了 URL 就变，
- *  Cloudflare 等边缘 CDN 自然缓存不到旧内容。
- *  背景：CF 会把 `immutable` 的响应缓存一年，即使源站后来改成 `no-cache`，
- *  边缘仍返回旧缓存（`cf-cache-status: HIT` + `age` 巨大）——实测踩过：
- *  发版后手机端一直跑旧 app.js，因为 CF 边缘命中了几天前的缓存。 */
-const VERSIONED_ASSETS = ['app.js', 'style.css', 'marked.umd.js'];
-
-/** 资源名 → mtime 版本号缓存（避免每次请求都 stat 三个文件） */
-const assetVersionCache = new Map<string, { mtime: number; size: number; v: number }>();
-
-/** 取某资源的版本号（= mtimeMs 取整）。文件变了版本号就变。 */
-async function assetVersion(name: string): Promise<number> {
-  const abs = path.join(PWA_DIR, name);
-  let st: fs.Stats | null = null;
-  try { st = await fs.promises.stat(abs); } catch (_) { return 0; }
-  const cached = assetVersionCache.get(name);
-  if (cached && cached.mtime === st.mtimeMs && cached.size === st.size) return cached.v;
-  const v = Math.floor(st.mtimeMs);
-  assetVersionCache.set(name, { mtime: st.mtimeMs, size: st.size, v });
-  return v;
-}
-
-/** 把 index.html 里的静态资源引用改成带 `?v=<mtime>` 的版本化 URL */
-async function versionizeHtml(html: string): Promise<string> {
-  const versions = await Promise.all(VERSIONED_ASSETS.map((n) => assetVersion(n)));
-  const map = new Map(VERSIONED_ASSETS.map((n, i) => [n, versions[i]]));
-  return html.replace(
-    /(src|href)="\/(app\.js|style\.css|marked\.umd\.js)"/g,
-    (_m, attr: string, file: string) => attr + '="/' + file + '?v=' + (map.get(file) || 0) + '"'
-  );
+function cacheControlFor(rel: string): string {
+  return rel === 'index.html' ? 'no-cache' : 'public, max-age=31536000, immutable';
 }
 
 /** 静态文件响应（PWA 资源；防路径穿越）。异步读盘，避免阻塞主进程事件循环 */
-async function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, pathname: string, search: URLSearchParams): Promise<void> {
+async function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, pathname: string): Promise<void> {
   let decoded = pathname;
   try { decoded = decodeURIComponent(pathname); } catch (_) {}
   const rel = decoded === '/' ? 'index.html' : decoded.replace(/^\//, '');
@@ -188,12 +140,7 @@ async function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, 
   if (!st || !st.isFile()) { res.writeHead(404); res.end('not found'); return; }
 
   const etag = etagFor(st);
-  // 带 `?v=` 的资源：URL 已按内容版本化，可放心长期强缓存（CF/浏览器都不会拿错）。
-  // 不带 `?v=` 的：走 ALWAYS_REVALIDATE 的 no-cache 策略（过渡兼容 + index.html）。
-  const hasVersion = search.has('v');
-  const cacheControl = hasVersion
-    ? 'public, max-age=31536000, immutable'
-    : cacheControlFor(rel);
+  const cacheControl = cacheControlFor(rel);
   const inm = req.headers['if-none-match'];
   if (typeof inm === 'string' && inm.split(',').some((v) => v.trim() === etag)) {
     res.writeHead(304, { 'ETag': etag, 'Cache-Control': cacheControl });
@@ -202,11 +149,7 @@ async function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, 
   }
 
   try {
-    let buf = await fs.promises.readFile(abs);
-    // index.html 动态注入资源版本号，让后续发版能绕过 CDN 缓存
-    if (rel === 'index.html') {
-      try { buf = Buffer.from(await versionizeHtml(buf.toString('utf8'))); } catch (_) { /* 失败就用原内容 */ }
-    }
+    const buf = await fs.promises.readFile(abs);
     res.writeHead(200, {
       'Content-Type': guessMime(abs),
       'Cache-Control': cacheControl,
@@ -239,7 +182,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   }
   // 静态资源（页面本身不敏感；连 WS 时才鉴权）
   // serveStatic 为异步（非阻塞主进程），内部已兜底所有异常，此处防御性 catch
-  void serveStatic(req, res, url.pathname, url.searchParams).catch(() => {});
+  void serveStatic(req, res, url.pathname).catch(() => {});
 }
 
 /** WS 单条消息上限（防超大文本放大 JSON/IPC/渲染成本） */

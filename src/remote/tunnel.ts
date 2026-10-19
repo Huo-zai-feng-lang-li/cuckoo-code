@@ -113,30 +113,6 @@ export function findCloudflaredBinary(customPath?: string): string | null {
   return process.platform === 'win32' ? 'cloudflared.exe' : 'cloudflared';
 }
 
-/**
- * 构造 cloudflared 启动参数（纯函数，便于单测）。
- *
- * 固定隧道（有 token）：`tunnel run --token <t> --protocol http2`
- * 临时隧道（无 token）：`tunnel --url http://127.0.0.1:<port> --protocol http2`
- *
- * 为何强制 HTTP/2：cloudflared 默认优先 QUIC（UDP 443）。部分运营商对持续 UDP
- * 流量做 QoS，表现为"能连上但慢/频繁断"。HTTP/2 走 TCP 443，与普通 HTTPS 一致，
- * 穿透性与稳定性更好。代价是失去 QUIC 的无队头阻塞——对纯文本消息（几 KB）可忽略。
- */
-export function buildTunnelArgs(opts: TunnelOptions): string[] {
-  const args: string[] = [];
-  if (opts.tunnelToken && opts.tunnelToken.trim()) {
-    args.push('tunnel', 'run', '--token', opts.tunnelToken.trim());
-    // 只在固定隧道加 --protocol http2：这是生产路径，且用户机器上的 cloudflared
-    // 版本可控。临时隧道（quick）常用于快速验证，老版本 cloudflared 可能不认该 flag
-    // 而直接退出（会被自愈逻辑反复重试后放弃），故不加。
-    args.push('--protocol', 'http2');
-  } else {
-    args.push('tunnel', '--url', 'http://127.0.0.1:' + opts.port);
-  }
-  return args;
-}
-
 /** 彻底杀死子进程（兼容跨平台与 Windows 进程树） */
 function killProcTree(proc: ChildProcess | null): void {
   if (!proc || proc.killed) return;
@@ -180,8 +156,15 @@ export function startTunnel(opts: TunnelOptions): Promise<{ ok: boolean; url?: s
 
     currentUrl = '';
     currentError = '';
-    currentMode = opts.tunnelToken && opts.tunnelToken.trim() ? 'fixed' : 'quick';
-    const args = buildTunnelArgs(opts);
+    const args: string[] = [];
+
+    if (opts.tunnelToken && opts.tunnelToken.trim()) {
+      currentMode = 'fixed';
+      args.push('tunnel', 'run', '--token', opts.tunnelToken.trim());
+    } else {
+      currentMode = 'quick';
+      args.push('tunnel', '--url', `http://127.0.0.1:${opts.port}`);
+    }
 
     let myProc: any = null;
     try {

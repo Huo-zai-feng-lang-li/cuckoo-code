@@ -111,36 +111,15 @@
     const titleEl = emptyState.querySelector('.empty-title');
     const descEl = emptyState.querySelector('.empty-desc');
     const quickEl = emptyState.querySelector('.quick-prompts-card');
-    const iconEl = emptyState.querySelector('.empty-icon-wrap');
-    const syncVisual = document.getElementById('sync-visual');
-    const syncHint = document.getElementById('sync-hint');
     if (on) {
-      // 已有消息（重连场景）：不显示同步卡片，静默后台拉历史。
-      // 否则"12 条历史 + 正在同步对话大卡片"会同时出现，观感像卡住。
-      // 早退前必须把残留的同步态视觉复位：emptyState 可能曾被移除又重新插入
-      //（切窗口 resetView → checkEmptyState），此时 syncVisual 可能仍是 visible。
-      if (messages.querySelector('.msg')) {
-        if (syncVisual) syncVisual.classList.add('hidden');
-        if (syncHint) syncHint.classList.add('hidden');
-        if (iconEl) iconEl.classList.remove('hidden');
-        if (quickEl) quickEl.style.display = '';
-        return;
-      }
       if (emptyState.parentNode !== messages) messages.appendChild(emptyState);
-      if (titleEl) titleEl.textContent = '正在同步对话';
-      if (descEl) descEl.textContent = '正在从电脑端拉取最近的对话记录…';
-      // 同步态：用专属动画替换就绪图标，隐藏快捷指令与提示点占位
-      if (iconEl) iconEl.classList.add('hidden');
-      if (syncVisual) syncVisual.classList.remove('hidden');
-      if (syncHint) syncHint.classList.remove('hidden');
+      if (titleEl) titleEl.textContent = '正在同步对话…';
+      if (descEl) descEl.textContent = '正在从电脑端拉取最近的对话记录，请稍候。';
       if (quickEl) quickEl.style.display = 'none';
       syncTimeoutTimer = setTimeout(() => { setSyncing(false); }, 2500);
     } else {
       if (titleEl) titleEl.textContent = 'Cuckoo Remote 已就绪';
       if (descEl) descEl.textContent = '已与电脑端建立低延迟安全直连。随时在手机上发送指令、控制电脑、查看实时生成并随时中断。';
-      if (iconEl) iconEl.classList.remove('hidden');
-      if (syncVisual) syncVisual.classList.add('hidden');
-      if (syncHint) syncHint.classList.add('hidden');
       if (quickEl) quickEl.style.display = '';
       checkEmptyState();
     }
@@ -433,7 +412,7 @@
         break;
       case 'tool':
         if (!isMyProfile(msg.profileId)) break;
-        onToolEvent(msg.phase, msg.name);
+        onToolEvent(msg.phase);
         break;
       case 'sys':
         if (msg.profileId && !isMyProfile(msg.profileId)) break;
@@ -472,35 +451,20 @@
     // 空历史 → 恢复正常空态卡片；有历史 → checkEmptyState() 会移除卡片。
     setSyncing(false);
     if (!Array.isArray(entries) || !entries.length) return;
-    // 已有实时消息 → 不覆盖（"先 history 后 active stream"的保序依赖这条）
-    if (messages.querySelector('.msg')) return;
-
-    // 批量渲染：原实现逐条 addUser/addAi/addSystem，每条都触发
-    // checkEmptyState + capMessages（各一次全量 querySelectorAll）和 scroll(true)（强制 reflow），
-    // 条数一多就是 O(n²)，实测 12 条要等 2 秒。改用 DocumentFragment 一次性插入，
-    // 全量查询与滚动各只做一次。
-    const frag = document.createDocumentFragment();
-    let appended = 0;
+    if (messages.querySelector('.msg')) return; // 已有实时消息 → 不覆盖
     for (let i = 0; i < entries.length; i++) {
       const e = entries[i];
-      if (!e || typeof e !== 'object' || !e.text) continue;
-      if (e.t === 'user') { frag.appendChild(buildUserEl(e.text)); appended++; }
-      else if (e.t === 'assistant') { frag.appendChild(buildAiEl(e.text)); appended++; }
-      else if (e.t === 'system') { frag.appendChild(buildSystemEl(e.text)); appended++; }
+      if (!e || typeof e !== 'object') continue;
+      if (e.t === 'user') {
+        if (e.text) addUser(e.text);
+      } else if (e.t === 'assistant') {
+        if (e.text) addAi(e.text);
+      } else if (e.t === 'system') {
+        if (e.text) addSystem(e.text);
+      }
       // tool / plan：跳过（手机端无工具卡）
     }
-    if (!appended) return;
-    messages.appendChild(frag);
-    checkEmptyState();
-    capMessages();
     scroll(true);
-  }
-
-  /** 窗口显示文本：`窗口名 · 项目名`（无项目名时只显示窗口名） */
-  function profileDisplayName(p) {
-    const name = (p && p.name) || (p && p.id) || '';
-    const proj = p && p.projectName;
-    return proj ? (name + ' · ' + proj) : name;
   }
 
   function syncProfileLabel() {
@@ -526,7 +490,7 @@
     }
     profileSelect.innerHTML = list.map((p) =>
       '<option value="' + escapeAttr(p.id) + '"' + (p.id === fallbackId ? ' selected' : '') + '>' +
-      escapeHtml(profileDisplayName(p)) + '</option>'
+      escapeHtml(p.name || p.id) + '</option>'
     ).join('');
     currentProfileId = fallbackId;
     syncProfileLabel();
@@ -534,7 +498,7 @@
 
   function nameOf(list, id) {
     const p = list.find((x) => x.id === id);
-    return p ? profileDisplayName(p) : (id || '');
+    return (p && p.name) || id || '';
   }
 
   // ===== Markdown 渲染 + XSS 消毒 =====
@@ -636,30 +600,21 @@
     }
   }
 
-  /** 只建元素、不插入 DOM、不做全量查询。供 renderHistory 批量渲染复用。 */
-  function buildUserEl(text) {
+  function addUser(text) {
     const el = document.createElement('div');
     el.className = 'msg user';
     el.textContent = text;
-    return el;
-  }
-
-  function buildSystemEl(text) {
-    const el = document.createElement('div');
-    el.className = 'msg sys';
-    el.textContent = text;
-    return el;
-  }
-
-  function addUser(text) {
-    messages.appendChild(buildUserEl(text));
+    messages.appendChild(el);
     checkEmptyState();
     capMessages();
     scroll(true);
   }
 
   function addSystem(text) {
-    messages.appendChild(buildSystemEl(text));
+    const el = document.createElement('div');
+    el.className = 'msg sys';
+    el.textContent = text;
+    messages.appendChild(el);
     checkEmptyState();
     capMessages();
     scroll();
@@ -815,20 +770,16 @@
     scroll();
   }
 
-  /** 只建 AI 消息元素，不插入 DOM、不做全量查询。供 renderHistory 批量渲染复用。 */
-  function buildAiEl(text) {
+  function addAi(text) {
+    if (!text) return;
     const el = document.createElement('div');
     el.className = 'msg ai';
     el.innerHTML = renderMd(text);
+    // 尾部签名（✦ Cuckoo）：innerHTML 后补上
     el.appendChild(createSigNode());
     decorateContent(el);
     attachActions(el, text);
-    return el;
-  }
-
-  function addAi(text) {
-    if (!text) return;
-    messages.appendChild(buildAiEl(text));
+    messages.appendChild(el);
     checkEmptyState();
     capMessages();
     scroll();
@@ -859,13 +810,8 @@
     el.appendChild(bar);
   }
 
-  function onToolEvent(phase, name) {
-    if (phase !== 'start') return;
-    // 显示具体工具名，手机端才知道 AI 在干什么（bash / read / edit …）。
-    // name 可能为空（旧服务端或未知工具）→ 退回通用文案。
-    const label = name ? ('正在执行：' + name) : '正在调用系统工具…';
-    showExec(label);
-    setExecuting(true);
+  function onToolEvent(phase) {
+    if (phase === 'start') { showExec('正在调用系统工具…'); setExecuting(true); }
   }
 
   // ===== 执行状态条 / 发送停止按钮 =====

@@ -2,39 +2,20 @@
 
 ## [Unreleased]
 
-## [0.10.25] - 2026-10-19
+## [0.10.26] - 2026-10-19
 
-### Fixed
+### Reverted
 
-- **发版后手机端仍跑旧代码（Cloudflare 边缘缓存）**（`src/remote/server.ts`）：v0.10.22 时静态资源走 `immutable` 一年强缓存，CF 边缘缓存了 `app.js` 等资源（`cf-cache-status: HIT`、`age` 数万秒）；v0.10.23 虽把源站改成 `no-cache`，但 CF 边缘仍返回旧缓存，手机根本到不了电脑。修复：`serveStatic` 在响应 `index.html` 时把 `/app.js` / `/style.css` / `/marked.umd.js` 的引用动态改写为 `?v=<mtime>`；带 `?v=` 的请求走 `immutable`（URL 已随内容变化，缓存安全），不带 `?v=` 的仍走 `no-cache`（过渡兼容）。每次发版 mtime 变 → URL 变 → CF 和浏览器缓存自然失效。
+- **整体回退到 v0.10.22 的远程实现**（`src/remote/`、`src/bridge/`）。v0.10.23 ~ v0.10.25 的远程优化（同步渲染批量提速、同步态动画、项目名显示、工具名显示、缓存分层、URL 版本化、隧道 `--protocol http2`）全部撤销。
 
-## [0.10.24] - 2026-10-19
+  **原因**：真机实测确认瓶颈在**网络物理链路**，不在代码——本机直连应用层仅 2ms，隧道往返中位 533ms（506~1067ms 波动）。回退**不会让打开速度变快**（网络成本不变），但用户明确要求回退，按指令执行。
 
-### Fixed
+  **代价（知情记录）**：
+  - 手机端同步等待回到约 2 秒（`renderHistory` 逐条渲染 O(n²)）
+  - 手机端不再显示项目名、工具名、同步态动画
+  - 发版后手机端可能长期跑旧代码（静态资源 `immutable` 强缓存 + Cloudflare 边缘缓存叠加）
 
-- **手机端工具执行仍显示通用文案**（`src/bridge/remote-bridge.ts`、`src/bridge/parser/js-detector.ts`）：v0.10.23 声称"工具执行显示具体工具名"，但 `remote-bridge` 的 `onToolCall` 只上报了 `phase`，没带 `code`，主进程拿到的 `name` 永远是空串，前端只能退化显示"正在调用系统工具…"。修复：新增 `extractFirstToolName(code)` 纯函数（从工具脚本里提取首个工具函数名，支持内置工具 / mcp 前缀 / `log(await xxx(` 包裹三种形态），`remote-bridge` 在 `phase === 'start'` 时提取并上报。补 7 条单测（含 readLines 优先于 read、无工具返回空串、不误判普通函数调用）。
-
-## [0.10.23] - 2026-10-19
-
-### Performance
-
-- **同步对话等待从约 2 秒降到毫秒级**（`src/remote/pwa/app.js`）：根因不是网络（实测服务端 WS open→history 仅 16ms），而是 `renderHistory` 逐条渲染——12 条消息每条都触发 `renderMd` + `decorateContent` + 两次全量 `querySelectorAll('.msg')` + `scroll(true)` 强制 reflow，O(n²)。改为拆出 `buildUserEl`/`buildAiEl`/`buildSystemEl`（只建元素、不插 DOM、不做全量查询），用 `DocumentFragment` 一次性插入，全量查询与滚动各只做一次。
-
-### Added
-
-- **同步态专属动画**（`src/remote/pwa/{index.html,style.css,app.js}`）：三环错相扩散 + 中心光晕呼吸 + 鸟身扫光 + 数据点外流 + 底部三点脉动。深/浅两套主题都已验证；`prefers-reduced-motion` 下退化为静态形态。
-- **手机端显示当前项目名**（`src/remote/manager.ts`、`src/remote/pwa/app.js`）：`listProfiles` 增加 `projectName`（取 `sessionStore.state.selectedProjectDir` 末段），窗口选择器与顶部标签显示 `窗口名 · 项目名`。
-- **电脑端切换项目后手机端自动刷新**（`src/remote/manager.ts`）：项目目录变化不会触发 `onWindowsChanged`，故新增 3 秒一次的内存比对（仅在有客户端连接时执行，只读 `sessionStore` 内存字段，无磁盘 I/O），发现变化即广播新列表。
-
-### Changed
-
-- **工具执行显示具体工具名**（`src/remote/pwa/app.js`）：原来只显示"正在调用系统工具…"，现显示 `正在执行：bash` / `read` / `edit` 等（`onTool` 早已带 `name` 字段，只是前端未使用）。
-- **静态资源缓存改为分层策略**（`src/remote/server.ts`）：`index.html`/`app.js`/`style.css`/`marked.umd.js` 走 `no-cache` + ETag（这几个随发版必变，或文件名不带 hash；走 `immutable` 会导致更新后浏览器长期拿旧内容——本次开发中实测踩到：改了同步动画但手机跑的是旧 CSS）；其余（`icon.svg` 等）保留 `immutable` 一年强缓存。
-- **固定隧道改用 HTTP/2 over TCP**（`src/remote/tunnel.ts`）：新增 `buildTunnelArgs` 纯函数并在固定隧道分支追加 `--protocol http2`。部分运营商对持续 UDP（QUIC）流量做 QoS，表现为"能连上但慢/频繁断"；TCP 443 穿透性更好。临时隧道分支不加，避免老版本 cloudflared 不认该 flag 而反复重启。
-
-### Fixed
-
-- **重连时"历史 + 正在同步大卡片"并存**（`src/remote/pwa/app.js`）：`setSyncing(true)` 在已有消息时不显示同步卡片，并复位残留的同步态视觉（切窗口 `resetView` 会重新插入空态卡片，此前会把旧同步态一起带回来）。
+  **后续如需重新引入**：应先在真实网络下 A/B 验证每一项，尤其是隧道协议选择（QUIC vs HTTP/2），不能仅凭本地测试下结论。
 
 ## [0.10.22] - 2026-10-19
 

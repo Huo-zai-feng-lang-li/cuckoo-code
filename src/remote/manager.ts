@@ -15,7 +15,6 @@ import { getProfileById } from '../app/profile.js';
 import { hasRunningSubagent } from '../app/subagent.js';
 import * as remoteServer from './server.js';
 import { readConfig } from './config.js';
-import { projectNameOf } from './path-util.js';
 import { stopGeneration } from '../app/ipc/harness.js';
 import { startTunnel, stopTunnel, getTunnelStatus } from './tunnel.js';
 import { requestHarnessExport } from '../app/ipc/window-groups.js';
@@ -59,50 +58,6 @@ function isLocallyBusy(pid: string): boolean {
 }
 /** 窗口变化监听器的反注册句柄（防重复注册累积） */
 let disposeWindowsChanged: (() => void) | null = null;
-/** 项目目录变化检测定时器：用户在电脑端切换项目不会触发 windowsChanged，
- *  手机端项目名会停在旧值。这里只在"有客户端连接"时低频比对内存字段（几乎零开销），
- *  发现变化立即广播。注意：session 层不能反向依赖 app 层的 remote，故用此轮询兜底。 */
-let projectWatchTimer: any = null;
-/** 上次广播时的 profileId → projectName 快照 */
-const projectSnapshot = new Map<string, string>();
-
-function refreshProjectSnapshot(): void {
-  projectSnapshot.clear();
-  for (const ctx of windowState.getAllContexts()) {
-    if ((ctx as any).isSubagent) continue;
-    projectSnapshot.set(ctx.profileId, projectNameOf(projectDirOfContext(ctx)));
-  }
-}
-
-function projectWatchTick(): void {
-  if (!remoteServer.isRunning()) return;
-  if (remoteServer.getClientCount() === 0) return; // 无客户端不做事
-  // 只读内存中的 sessionStore.state.selectedProjectDir，**不**调 listProfiles()
-  //（后者会同步读 profile JSON 文件，3 秒一次无谓磁盘 I/O）。
-  const live = new Map<string, string>();
-  for (const ctx of windowState.getAllContexts()) {
-    if ((ctx as any).isSubagent) continue;
-    live.set(ctx.profileId, projectNameOf(projectDirOfContext(ctx)));
-  }
-  // 变化判据必须比对**集合本身**，不能只看 size：
-  // 窗口 A 关闭 + 窗口 B 新开（数量不变）时，只看 size 会漏判，
-  // 快照永久停留在旧 pid 上，之后 B 切换项目就再也不广播了。
-  let changed = false;
-  for (const [pid, cur] of live) {
-    if (!projectSnapshot.has(pid) || projectSnapshot.get(pid) !== cur) { changed = true; break; }
-  }
-  if (!changed) {
-    for (const pid of projectSnapshot.keys()) {
-      if (!live.has(pid)) { changed = true; break; }
-    }
-  }
-  if (!changed) return;
-
-  console.log('[Remote] 检测到项目/窗口变化，刷新手机端窗口列表');
-  projectSnapshot.clear();
-  for (const [pid, name] of live) projectSnapshot.set(pid, name);
-  broadcastProfiles();
-}
 /** 卡"生成中" watchdog 定时器 */
 let busyWatchdogTimer: any = null;
 
@@ -187,32 +142,13 @@ function onPhoneStop(): void {
     });
 }
 
-
-
-/** 从窗口上下文取当前项目目录。
- *  注意：项目目录不在 profile 上（profile 只有账号身份），而是存在
- *  该窗口的 sessionStore.state.selectedProjectDir 里（见 app/cuckoo-host.ts 同名用法）。 */
-function projectDirOfContext(ctx: any): string | undefined {
-  try {
-    const store = ctx && ctx.sessionStore;
-    const dir = store && store.state && store.state.selectedProjectDir;
-    return typeof dir === 'string' && dir ? dir : undefined;
-  } catch (_) {
-    return undefined;
-  }
-}
-
-/** 列出窗口（供手机端选择器）。带 projectName，手机端才看得见当前在哪个项目下。 */
+/** 列出窗口（供手机端选择器） */
 function listProfiles(): any[] {
   const out: any[] = [];
   for (const ctx of windowState.getAllContexts()) {
     if ((ctx as any).isSubagent) continue;
     const p = getProfileById(ctx.profileId);
-    out.push({
-      id: ctx.profileId,
-      name: (p && p.name) || String(ctx.profileId).slice(0, 8),
-      projectName: projectNameOf(projectDirOfContext(ctx)),
-    });
+    out.push({ id: ctx.profileId, name: (p && p.name) || String(ctx.profileId).slice(0, 8) });
   }
   return out;
 }
@@ -474,10 +410,6 @@ async function initRemote(): Promise<void> {
     }
     broadcastProfiles();
   });
-  refreshProjectSnapshot();
-  if (projectWatchTimer) clearInterval(projectWatchTimer);
-  projectWatchTimer = setInterval(projectWatchTick, 3000);
-
   const r = await remoteServer.startServer({
     onUserMessage: onPhoneMessage,
     onStop: onPhoneStop,
@@ -521,8 +453,6 @@ async function initRemote(): Promise<void> {
 /** 停用（同时清理全部流式节流状态，停止隧道子进程，等待底层端口释放） */
 async function stopRemote(): Promise<void> {
   if (busyWatchdogTimer) { clearInterval(busyWatchdogTimer); busyWatchdogTimer = null; }
-  if (projectWatchTimer) { clearInterval(projectWatchTimer); projectWatchTimer = null; }
-  projectSnapshot.clear();
   for (const s of streamStates.values()) {
     if (s.timer) { clearTimeout(s.timer); s.timer = null; }
   }
