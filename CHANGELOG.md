@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.10.39] - 2026-10-20
+
+### Fixed
+
+- **补 v0.10.38 遗漏的版本号**：v0.10.38（超时强制 resolve 修复）打 tag 时忘记同步 `package.json`，导致 CI 用该 tag 构建的安装包内部版本号仍标为 0.10.37，会造成用户端版本显示错误与自动更新混乱。本次修正版本号，代码内容与 v0.10.38 一致（无功能变更）。**v0.10.38 的构建产物请勿使用**，以 v0.10.39 为准。
+
+## [0.10.38] - 2026-10-20
+
+### Fixed
+
+- **工具执行超时后永久卡在"执行中"**（`src/infra/run-captured.ts`）：`spawn` 超时后仅调用 `killProcessTree`，若孙进程继承了 stdout/stderr 管道，`close` 事件永不触发，`runCaptured` 返回的 Promise 永久 pending，`JsRunner` 的工具调用 `await` 一直挂着，界面卡死在"工具调用执行中"。修复：超时杀进程后留 800ms 缓冲，随后强制 `finish(null)`，确保工具循环不挂起。调用方 `bash`/`pwsh` 的 `r.timedOut` 分支不受影响，仍正确报告超时。
+
 ## [0.10.37] - 2026-10-20
 
 ### Fixed
