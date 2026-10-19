@@ -29,6 +29,27 @@ function looksLikeToolScript(code: any): boolean {
 }
 
 /**
+ * 从一段工具脚本里提取首个工具函数名（供远程控制显示"正在执行：bash"）。
+ *
+ * 只用于**展示**，不做执行决策，因此容错优先：
+ * 找不到返回空串，调用方退化为通用文案。
+ * 识别优先级与 looksLikeToolScript 一致：内置白名单 → mcp 前缀 → log(await xxx( 包裹。
+ */
+function extractFirstToolName(code: any): string {
+  const c = code || '';
+  // 1. 内置工具白名单（与 JS_TOOL_CALL_RE 同一组名字）
+  const builtin = /\bawait\s+(readLines|read|write|edit|glob|grep|todoWrite|bash|pwsh|deleteFile|webFetch|mysql|mcpCall|mcpListServers|mcpGetTools|openBrowserWindow|injectJS|attachFile|runAgent|runAgents|goalDone|nameConversation|remember|forgetMemory|createSnapshot|listSnapshots|restoreSnapshot)\s*\(/.exec(c);
+  if (builtin) return builtin[1];
+  // 2. MCP 工具（mcpXxx）
+  const mcp = /\bawait\s+(mcp[A-Za-z_$][\w$]*)\s*\(/.exec(c);
+  if (mcp) return mcp[1];
+  // 3. log(await xxx( 包裹
+  const wrapped = /\blog\s*\(\s*await\s+([A-Za-z_$][\w$]*)\s*\(/.exec(c);
+  if (wrapped) return wrapped[1];
+  return '';
+}
+
+/**
  * 判断原始文本去掉所有围栏代码块后是否只剩空白（整条回复只包含代码块）
  */
 function hasOnlyFences(text: any): boolean {
@@ -132,4 +153,5 @@ export {
   looksLikeToolScript,
   hasOnlyFences,
   extractJsToolBlocks,
+  extractFirstToolName,
 };

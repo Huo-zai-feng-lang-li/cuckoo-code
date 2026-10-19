@@ -11,7 +11,7 @@
  */
 import { createRequire } from 'node:module';
 import { onInterceptedResponse, onToolCall, onStream, onUserStop, onAiError } from './intercept/observer.js';
-import { looksLikeToolScript } from './parser/js-detector.js';
+import { looksLikeToolScript, extractFirstToolName } from './parser/js-detector.js';
 import { sendToChat } from '../overlay/chat-input.js';
 
 const require = createRequire(import.meta.url);
@@ -129,10 +129,12 @@ export function initRemoteBridge(): void {
     }, 0);
   });
 
-  // 5. 工具调用状态 → 上报（仅状态）
+  // 5. 工具调用状态 → 上报（phase + 具体工具名，供手机端显示"正在执行：bash"）
   onToolCall((ev: any) => {
     if (!enabled || !ev) return;
-    report({ type: 'tool', phase: ev.phase || '' });
+    // 只上报 start 的 name：end 阶段手机端已经复位，再报一次没意义
+    const name = ev.phase === 'start' ? extractFirstToolName(ev.code || '') : '';
+    report({ type: 'tool', phase: ev.phase || '', name });
   });
 
   // 6. 手机来消息 → 主进程转发到此 → 发给 AI

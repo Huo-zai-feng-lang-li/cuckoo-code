@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.10.24] - 2026-10-19
+
+### Fixed
+
+- **手机端工具执行仍显示通用文案**（`src/bridge/remote-bridge.ts`、`src/bridge/parser/js-detector.ts`）：v0.10.23 声称"工具执行显示具体工具名"，但 `remote-bridge` 的 `onToolCall` 只上报了 `phase`，没带 `code`，主进程拿到的 `name` 永远是空串，前端只能退化显示"正在调用系统工具…"。修复：新增 `extractFirstToolName(code)` 纯函数（从工具脚本里提取首个工具函数名，支持内置工具 / mcp 前缀 / `log(await xxx(` 包裹三种形态），`remote-bridge` 在 `phase === 'start'` 时提取并上报。补 7 条单测（含 readLines 优先于 read、无工具返回空串、不误判普通函数调用）。
+
 ## [0.10.23] - 2026-10-19
 
 ### Performance
