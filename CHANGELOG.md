@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+## [0.10.31] - 2026-10-20
+
+### Fixed
+
+- **手机端表格无法横向滚动**（`src/remote/pwa/style.css`）：`.msg.ai th, .msg.ai td` 继承了 `.msg.ai` 的 `overflow-wrap: anywhere`，长内容被压窄换行，表格永远不溢出，已有的 `.msg.ai table { overflow-x: auto }` 形同虚设。补 `white-space: nowrap`，表格保持内容原始宽度，横向滚动条才真正触发（与 ChatGPT / Claude 行为一致）。真机实测：表格 `scrollWidth 766 > clientWidth 348`，横滚生效。
+- **手机端系统消息超长内容被静默裁切**（`src/remote/pwa/style.css`）：`.msg.sys` 只有 `max-width: 90%`，缺断词规则。长 URL / token / 错误堆栈会被 `.messages { overflow-x: hidden }` 直接裁掉，且无任何滚动条提示。补 `word-break: break-word` + `overflow-wrap: anywhere`，改为换行显示（系统消息是短文本，正确行为是换行而非滚动）。
+
+### Changed
+
+- **手机端滚动条美化**（`src/remote/pwa/style.css`）：
+  1. 取消 `.messages` 的滚动条隐藏（`scrollbar-width: none` / `-ms-overflow-style: none` / `::-webkit-scrollbar { display: none }` 全部移除）。原实现与"表格 / 代码块靠滚动条表达还有内容"的视觉语言矛盾。
+  2. 新增 Scrollbars 章节：4 个 token（`--sb-track` 透明 / `--sb-thumb` / `--sb-thumb-hover` / `--sb-thumb-active`）+ `--sb-size: 4px`；覆盖 `.messages` / `.msg.ai pre` / `.msg.ai table` / `.think-body` 四个滚动容器。
+  3. 标准属性 `scrollbar-width: thin` + `scrollbar-color`（Firefox 全版本 / Chromium 121+）；WebKit 伪元素细滑块 + 透明轨道 + `border-radius: var(--radius-full)`。
+  4. 三态：默认低透明度、hover 加深、active 用 accent。深色主题覆盖 thumb 为白色低透明度。
+  5. 代码块单独处理：`pre` 永远是深底，滑块固定 `rgba(255,255,255,0.22)`，不跟随明暗主题（否则浅色主题下白底滑块看不清）。`::-webkit-scrollbar-corner` 设为 transparent，消除横纵交汇色块。
+  6. `#input` 的无滚动条规则保留不动（textarea 不该有滚动条）。
+
+  **已知限制**：iOS Safari 自 2021 年起忽略 `::-webkit-scrollbar` 样式，也不支持 `scrollbar-width` / `scrollbar-color`。iPhone 上仍是系统原生滚动条，本次样式不生效；Android Chrome / 桌面 Chromium / Firefox 生效。
+
+  真机实测（Chromium 390x844）：`messages.scrollbarWidth=thin`、`scrollbarColor=rgba(20,23,28,0.2) rgba(0,0,0,0)`、`--sb-thumb-active=#0f9d78`；切深色后 `--sb-thumb=rgba(255,255,255,0.18)` 正常跟随。
+
 ## [0.10.30] - 2026-10-19
 
 ### Changed

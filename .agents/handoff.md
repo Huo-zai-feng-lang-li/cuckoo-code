@@ -1,87 +1,40 @@
-# 最新接续状态 (2026-10-19 15:30)
+# 最新接续状态 (2026-10-20)
 
-## 已发布 v0.10.28（远程两项修复 + 右侧导航滚动修复）
+## 待发布 v0.10.31（手机端滚动条美化 + 表格横滚修复 + 系统消息裁切修复）
 
-**用户决定**：从 v0.10.26（=v0.10.22 代码）中只保留两项有硬实测依据的远程修复，不重做全套优化。
-
-### 本轮保留的改动
+### 本轮改动（`src/remote/pwa/style.css`，唯一文件）
 
 | 项 | 根因 | 修复 |
 |---|---|---|
-| **renderHistory 批量渲染** | 逐条 addUser/addAi/addSystem 每条触发 2 次全量 querySelectorAll + 强制 reflow，O(n²)。实测服务端 WS→history 仅 13ms，瓶颈全在客户端 | 拆 buildUserEl/buildSystemEl/buildAiEl，用 DocumentFragment 一次性插入 |
-| **URL 版本化** | CF 边缘缓存 immutable 资源一年（cf-cache-status: HIT，age 数万秒），源站改 Cache-Control 无效 | index.html 引用改写为 ?v=<mtimeMs>；带版本走 immutable |
-| **右侧导航 × 3** | ① hover 强制正文滚底 ② flex 子项被压扁无溢出 ③ 导航内滚动 tooltip 错位 | 删 hover 监听、.conv-nav-dot 加 flex-shrink:0、区分导航内/正文 scroll |
-| **导航跟随贴底** | 消息多时最新锚点被挤出可视区 | 新增 syncConvNavBottom()，挂 7 个贴底路径 |
+| **表格无法横向滚动** | `.msg.ai th/td` 继承 `.msg.ai` 的 `overflow-wrap: anywhere`，长内容被压窄换行 → 表格永不溢出 → 已有的 `overflow-x: auto` 形同虚设 | 补 `white-space: nowrap`，表格保持原始宽度。真机实测 `scrollW 766 > clientW 348` |
+| **系统消息被静默裁切** | `.msg.sys` 只有 `max-width: 90%`，无断词 → 长 URL/token 被 `.messages { overflow-x: hidden }` 裁掉且无滚动条提示 | 补 `word-break: break-word` + `overflow-wrap: anywhere` |
+| **滚动条美化** | 原 `.messages` 三段式隐藏滚动条，与"表格/代码块靠滚动条表达还有内容"矛盾 | 取消隐藏；新增 Scrollbars 章节：4 token + `--sb-size: 4px`，覆盖 `.messages` / `.msg.ai pre` / `.msg.ai table` / `.think-body`，三态（默认/hover/active 用 accent），深色主题跟随，代码块单独用浅色滑块 |
 
-### 关键教训（本轮的坑）
+### 关键教训 / 限制
 
-1. **CDN 边缘缓存是发版不生效的隐形杀手**：源站改 Cache-Control 对已缓存的边缘无效，只有 URL 变化（?v=/hash）才能绕过。本地直连 127.0.0.1 测不出这类问题。
-2. **ETag 必须反映内嵌资源版本**：npm run compile 用 fs.cpSync 保留源文件 mtime，index.html 编译前后 mtime 完全相同 → 只改 app.js 时 ETag 不变 → 浏览器 304 → 旧 ?v= 继续生效。v0.10.28 修了这个（etagForIndex 把三个资源版本拼进 ETag）。
-3. **网络瓶颈改代码无解**：实测本机应用层 2ms vs 隧道 533ms 中位（506~1067ms 波动）。用户"昨天凌晨快"是网络空闲，不是版本差异。若要提速只能换链路（优选 IP/国内隧道）。
-4. **tag 推送后必须验证指向**：v0.10.27 曾指向 merge commit 而非修复 commit，靠 git ls-remote 对比 sha 才发现，发 v0.10.28 补救。
-
-### 当前版本
-
-- master = `355d167`
-- v0.10.27 → `dbb2333`（不含 ETag 修复，勿用）
-- **v0.10.28 → `355d167`（完整，推荐）**
+1. **iOS Safari 忽略 `::-webkit-scrollbar` 样式**（2021 起），也不支持 `scrollbar-width`/`scrollbar-color`。iPhone 上是系统原生滚动条，本次美化不生效；Android Chrome / 桌面 Chromium / Firefox 生效。
+2. **`.msg.ai` 的 `overflow-wrap: anywhere` 会继承到 `td`**：这是"表格看起来没横向滚动"的隐藏原因，容易被误判为 CSS 没写。
+3. 用户明确"主流 AI APP 一屏显示不完的内容都有横向滚动条"：代码块和表格该横滚（保持内容原宽），普通正文该换行。不要把两类混为一谈。
 
 ### 验证状态
 
 - typecheck / test(1225) / lint(0 errors) / compile 全绿
-- 真机：导航 flex-shrink 生效、可滚（731>533）、贴底跟随（0→198.4=max）；index.html 引用带 ?v=；history 13ms 到达
-- 子代理审查抓出 ETag 未纳入资源版本的漏洞，已修
+- 真机（Chromium 390x844 静态服务器 + injectJS 读 computed style）：
+  - `messages.scrollbarWidth=thin`、`scrollbarColor=rgba(20,23,28,0.2) rgba(0,0,0,0)`
+  - 表格 `scrollW 766 > clientW 348`（横滚生效）、`td.whiteSpace=nowrap`
+  - 系统消息 `scrollW=clientW=315`、`wordBreak=break-word`（换行不裁切）
+  - 深色切换后 `--sb-thumb=rgba(255,255,255,0.18)` 正常跟随
 
 ### 待用户验证
 
-装 v0.10.28 + 手机强刷一次，验证：同步是否变快、导航滚轮是否只滚自己、正文贴底时导航是否跟随。
+装 v0.10.31 + 手机强刷一次，验证：表格能否横滑、系统消息长 URL 是否换行、滚动条是否变细。
 
 ---
 
-1: # 最新接续状态 (2026-10-19 14:00)
-2: 
-3: ## 已整体回退到 v0.10.22（发布 v0.10.26）
-4: 
-5: **用户决定**：v0.10.23 ~ v0.10.25 的远程优化全部撤销，回到 v0.10.22 的远程实现。
-6: 
-7: **回退原因（实测结论，不是猜）**：
-8: | 测试 | 耗时 |
-9: |---|---|
-10: | 本机直连 `127.0.0.1:7799`（应用层） | **2ms** |
-11: | 隧道 `remote.ai95.indevs.in`（网络层） | **中位 533ms，506~1067ms 波动** |
-12: 
-13: **结论**：瓶颈是「乌鲁木齐 → CF 边缘(LAX) → 家宽 → 电脑」的物理往返，代码改不动。
-14: 用户主观感受"昨天凌晨快"很可能是**凌晨网络空闲**，而非版本差异。但用户明确要求回退，已执行。
-15: 
-16: **回退内容**（v0.10.23~25 全部撤销）：
-17: - 同步渲染批量提速（DocumentFragment）
-18: - 同步态动画（三环/扫光/数据点）
-19: - 手机端项目名显示 + 项目切换轮询
-20: - 工具名显示（extractFirstToolName）
-21: - 静态资源缓存分层（no-cache 部分）
-22: - URL 版本化（?v=mtime）
-23: - 隧道 `--protocol http2`
-24: 
-25: **知情代价**：
-26: - 手机端同步等待回到约 2 秒
-27: - 发版后手机可能长期跑旧代码（immutable + CF 边缘缓存叠加，需强刷）
-28: 
-29: **做法**：
-30: ```
-31: git reset --hard origin/master      # 回到 f80c3b8
-32: git checkout v0.10.22 -- .          # 全部文件恢复 v0.10.22 内容
-33: 删除 v0.10.23+ 新增的 4 个文件      # 085 档案 / path-util.ts / 2 个测试
-34: 版本号 → 0.10.26，CHANGELOG 记录回退与代价
-35: ```
-36: 不重写历史（没有 force push），保留 v0.10.23~25 的提交记录便于日后查阅。
-37: 
-38: **若日后想重新做远程优化**：
-39: 1. 先在真实网络下 A/B（尤其是 QUIC vs HTTP/2），不要只靠本地 loopback 结论
-40: 2. 优先解决"发版不生效"（CF 缓存）——这是功能可用性的前提
-41: 3. 网络 RTT 问题只能靠换链路（优选 IP / 国内隧道），代码层已到极限
-42: 
-43: ---
-44: 
-45: 
+## 历史（v0.10.28，2026-10-19）
 
-(End of file - total 45 lines)
+已发布 v0.10.28（远程两项修复 + 右侧导航滚动修复）。v0.10.29 / v0.10.30 又补了右侧导航 hover 平滑滚动。
+
+- master 当前 = v0.10.30 tag = `e89b72b`
+- v0.10.28 → `355d167`（ETag 纳入内嵌资源版本）
+- v0.10.27 → `dbb2333`（不含 ETag 修复，勿用）

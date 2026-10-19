@@ -586,11 +586,7 @@ svg { flex-shrink: 0; }
   flex-direction: column;
   gap: 18px;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
 }
-
-.messages::-webkit-scrollbar { display: none; }
 
 /* Empty state */
 .empty-state {
@@ -764,6 +760,10 @@ svg { flex-shrink: 0; }
   border-radius: var(--radius-full);
   max-width: 90%;
   line-height: 1.45;
+  /* 系统消息是短文本，正确行为是换行而不是滚动；
+     原先缺断词规则，超长 URL/token 会被 .messages 的 overflow-x: hidden 静默裁掉 */
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .msg.ai {
@@ -926,6 +926,10 @@ svg { flex-shrink: 0; }
   border: 1px solid var(--border);
   padding: 8px 12px;
   text-align: left;
+  /* 主流 AI APP 做法：单元格不换行，让表格整体超出屏幕，
+     由 .msg.ai table 的 overflow-x: auto 触发横向滚动，
+     而不是把长内容压窄换行、破坏表格可读性 */
+  white-space: nowrap;
 }
 
 .msg.ai th {
@@ -1289,6 +1293,90 @@ svg { flex-shrink: 0; }
 }
 
 .stop-btn:active { transform: scale(0.9); }
+
+/* ==========================================================================
+   Scrollbars
+   ---------------------------------------------------------------------------
+   细滑块 + 透明轨道 + accent 交互态。跟随明暗主题，不引入新色。
+   注意：iOS Safari 忽略 ::-webkit-scrollbar 样式（用系统原生滚动条），
+   Android Chrome / 桌面 Chromium / Firefox 生效。输入框保持无滚动条。
+   ========================================================================== */
+:root {
+  --sb-track: transparent;
+  --sb-thumb: rgba(20, 23, 28, 0.20);
+  --sb-thumb-hover: rgba(20, 23, 28, 0.34);
+  --sb-thumb-active: var(--accent);
+  --sb-size: 4px;
+}
+
+:root[data-theme="dark"] {
+  --sb-thumb: rgba(255, 255, 255, 0.18);
+  --sb-thumb-hover: rgba(255, 255, 255, 0.32);
+}
+
+/* 标准属性：Firefox 全版本 / Chromium 121+ */
+.messages,
+.msg.ai pre,
+.msg.ai table,
+.think-body {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sb-thumb) var(--sb-track);
+}
+
+/* WebKit：细滑块 + 透明轨道 */
+.messages::-webkit-scrollbar,
+.msg.ai pre::-webkit-scrollbar,
+.msg.ai table::-webkit-scrollbar,
+.think-body::-webkit-scrollbar {
+  width: var(--sb-size);
+  height: var(--sb-size);
+}
+
+.messages::-webkit-scrollbar-track,
+.msg.ai pre::-webkit-scrollbar-track,
+.msg.ai table::-webkit-scrollbar-track,
+.think-body::-webkit-scrollbar-track {
+  background: var(--sb-track);
+}
+
+.messages::-webkit-scrollbar-thumb,
+.msg.ai pre::-webkit-scrollbar-thumb,
+.msg.ai table::-webkit-scrollbar-thumb,
+.think-body::-webkit-scrollbar-thumb {
+  background: var(--sb-thumb);
+  border-radius: var(--radius-full);
+  transition: background 0.18s ease;
+}
+
+.messages::-webkit-scrollbar-thumb:hover,
+.msg.ai pre::-webkit-scrollbar-thumb:hover,
+.msg.ai table::-webkit-scrollbar-thumb:hover,
+.think-body::-webkit-scrollbar-thumb:hover {
+  background: var(--sb-thumb-hover);
+}
+
+.messages::-webkit-scrollbar-thumb:active,
+.msg.ai pre::-webkit-scrollbar-thumb:active,
+.msg.ai table::-webkit-scrollbar-thumb:active,
+.think-body::-webkit-scrollbar-thumb:active {
+  background: var(--sb-thumb-active);
+}
+
+/* 代码块永远是深底，滑块改用浅色叠加，不跟随主题 */
+.msg.ai pre::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+}
+.msg.ai pre::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.36);
+}
+
+/* 横纵交汇角不画色块 */
+.messages::-webkit-scrollbar-corner,
+.msg.ai pre::-webkit-scrollbar-corner,
+.msg.ai table::-webkit-scrollbar-corner,
+.think-body::-webkit-scrollbar-corner {
+  background: transparent;
+}
 
 /* ==========================================================================
    Reduced motion
