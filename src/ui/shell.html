@@ -3217,6 +3217,9 @@ paths:            # 可选；省略 = 始终生效
     return monacoPromise;
   }
   function themeName() {
+    const scheme = document.documentElement.style.colorScheme;
+    if (scheme === "dark") return "vs-dark";
+    if (scheme === "light") return "vs";
     return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "vs-dark" : "vs";
   }
   function onEditorChange(cb) {
@@ -3391,6 +3394,7 @@ paths:            # 可选；省略 = 始终生效
         } catch (_) {
         }
       }
+      window.addEventListener("ck-theme-change", syncMonacoTheme);
     }
   });
 
@@ -9089,6 +9093,7 @@ paths:            # 可选；省略 = 始终生效
       body.style.setProperty(name, value);
       appliedTokens.push(name);
     }
+    window.dispatchEvent(new CustomEvent("ck-theme-change", { detail: { scheme } }));
   }
   function initThemePresenter() {
     const anyApi = api;

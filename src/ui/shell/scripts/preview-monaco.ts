@@ -60,6 +60,9 @@ export function loadMonaco(): Promise<any> {
 
 /** 当前深浅色主题名 */
 function themeName(): string {
+  const scheme = document.documentElement.style.colorScheme;
+  if (scheme === "dark") return "vs-dark";
+  if (scheme === "light") return "vs";
   return (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "vs-dark" : "vs";
 }
 
@@ -143,3 +146,5 @@ export function syncMonacoTheme(): void {
 if (window.matchMedia) {
   try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", syncMonacoTheme); } catch (_) { /* ignore */ }
 }
+// 监听壳页面主题变化（由 theme-presenter.ts 触发）
+window.addEventListener("ck-theme-change", syncMonacoTheme);

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.10.32] - 2026-10-20
+
+### Fixed
+
+- **文件预览（Monaco Editor）未跟随应用内主题**（`src/ui/shell/scripts/preview-monaco.ts`）：`themeName()` 原先只读取 `window.matchMedia("(prefers-color-scheme: dark)")`，若系统是浅色但应用手动切暗黑，Monaco 会保持亮白。改为优先读取 `theme-presenter` 投影到 `document.documentElement.style.colorScheme` 的值。
+- **切换主题时编辑器不实时更新**（`src/ui/shell/scripts/theme-presenter.ts`、`preview-monaco.ts`）：`applyTheme` 应用快照后新增派发 `ck-theme-change` 自定义事件，Monaco 侧监听该事件并调用 `syncMonacoTheme()`，实现即时切换。
+
 ## [0.10.31] - 2026-10-20
 
 ### Fixed

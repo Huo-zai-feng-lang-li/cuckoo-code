@@ -46,6 +46,9 @@ export function applyTheme(snapshot: ThemeSnapshot): void {
     body.style.setProperty(name, value);
     appliedTokens.push(name);
   }
+
+  // 通知其它组件（如 Monaco Editor）主题已变更
+  window.dispatchEvent(new CustomEvent("ck-theme-change", { detail: { scheme } }));
 }
 
 /** 撤掉本 presenter 写的所有东西 */
