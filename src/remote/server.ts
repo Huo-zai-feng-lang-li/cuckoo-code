@@ -112,19 +112,35 @@ function checkToken(req: http.IncomingMessage): boolean {
 }
 
 /**
- * 静态资源缓存策略：
- *  - index.html：no-cache（每次都验证，但命中 ETag 返回 304，不传 body）
- *  - 其它资源：public, max-age=31536000, immutable（一年强缓存，二次打开零网络）
+ * 静态资源缓存策略（按"多久变一次"分层）：
+ *  - no-cache + ETag（每次验证，命中回 304 无 body）：
+ *    `index.html` / `app.js` / `style.css`（随每次发版必变）
+ *    `marked.umd.js`（文件名不带 hash，node_modules 升级后 URL 不变）
+ *  - immutable 一年强缓存：`icon.svg` 等极少变、且改了也不影响逻辑的资源。
+ *
+ * 教训：早先全部走 immutable，导致**发版后手机仍跑旧代码**——开发时改了同步动画，
+ * 浏览器拿的却是旧 CSS，查了半天以为是代码没生效。
+ *
  * ETag 用 `W/"<mtimeMs 保留小数>-<size>"`：**必须保留毫秒精度**。
  * 曾用 Math.floor(mtimeMs) 截断到秒，导致"同一秒内两次编译 + 文件大小不变"时
- * ETag 不变，浏览器会把旧内容当成新内容（内测高频编译会踩）。
+ * ETag 不变，浏览器会把旧内容当成新内容。
  */
 function etagFor(st: fs.Stats): string {
   return 'W/"' + st.mtimeMs + '-' + st.size + '"';
 }
 
-function cacheControlFor(rel: string): string {
-  return rel === 'index.html' ? 'no-cache' : 'public, max-age=31536000, immutable';
+/** 必须走 no-cache + ETag 验证的资源：
+ *  - index.html / app.js / style.css：每次发版必变
+ *  - marked.umd.js：文件名不带 hash，node_modules 升级后内容变但 URL 不变。
+ *    若走 immutable，浏览器永不重取 → 用户长期拿旧版 marked（解析行为可能已变）。
+ *    它的体积经 304 验证代价极小（无 body）。 */
+const ALWAYS_REVALIDATE = new Set(['index.html', 'app.js', 'style.css', 'marked.umd.js']);
+
+/** 导出供单测（纯函数，无副作用） */
+export function cacheControlFor(rel: string): string {
+  return ALWAYS_REVALIDATE.has(rel)
+    ? 'no-cache'
+    : 'public, max-age=31536000, immutable';
 }
 
 /** 静态文件响应（PWA 资源；防路径穿越）。异步读盘，避免阻塞主进程事件循环 */

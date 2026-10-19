@@ -149,12 +149,27 @@
     <main id="messages" class="messages">
       <!-- 空状态引导卡片 -->
       <div id="empty-state" class="empty-state">
+        <!-- 同步中动画：三环错相扩散 + 数据点沿环流动 + 中心鸟呼吸。仅同步态可见 -->
+        <div id="sync-visual" class="sync-visual hidden" aria-hidden="true">
+          <div class="sync-orbit sync-orbit-1"></div>
+          <div class="sync-orbit sync-orbit-2"></div>
+          <div class="sync-orbit sync-orbit-3"></div>
+          <span class="sync-pulse-dot sync-pulse-dot-1"></span>
+          <span class="sync-pulse-dot sync-pulse-dot-2"></span>
+          <span class="sync-pulse-dot sync-pulse-dot-3"></span>
+          <div class="sync-core"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-bird" /></svg></div>
+        </div>
         <div class="empty-icon-wrap">
           <span class="empty-avatar"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-bird" /></svg></span>
           <div class="empty-ring"></div>
         </div>
         <h2 class="empty-title">Cuckoo Remote 已就绪</h2>
         <p class="empty-desc">已与电脑端建立低延迟安全直连。随时在手机上发送指令、控制电脑、查看实时生成并随时中断。</p>
+        <div id="sync-hint" class="sync-hint hidden" aria-hidden="true">
+          <span class="sync-hint-dot"></span>
+          <span class="sync-hint-dot"></span>
+          <span class="sync-hint-dot"></span>
+        </div>
 
         <div class="quick-prompts-card">
           <div class="quick-prompts-label">快捷指令推荐</div>

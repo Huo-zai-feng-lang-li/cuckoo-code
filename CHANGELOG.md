@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+## [0.10.23] - 2026-10-19
+
+### Performance
+
+- **同步对话等待从约 2 秒降到毫秒级**（`src/remote/pwa/app.js`）：根因不是网络（实测服务端 WS open→history 仅 16ms），而是 `renderHistory` 逐条渲染——12 条消息每条都触发 `renderMd` + `decorateContent` + 两次全量 `querySelectorAll('.msg')` + `scroll(true)` 强制 reflow，O(n²)。改为拆出 `buildUserEl`/`buildAiEl`/`buildSystemEl`（只建元素、不插 DOM、不做全量查询），用 `DocumentFragment` 一次性插入，全量查询与滚动各只做一次。
+
+### Added
+
+- **同步态专属动画**（`src/remote/pwa/{index.html,style.css,app.js}`）：三环错相扩散 + 中心光晕呼吸 + 鸟身扫光 + 数据点外流 + 底部三点脉动。深/浅两套主题都已验证；`prefers-reduced-motion` 下退化为静态形态。
+- **手机端显示当前项目名**（`src/remote/manager.ts`、`src/remote/pwa/app.js`）：`listProfiles` 增加 `projectName`（取 `sessionStore.state.selectedProjectDir` 末段），窗口选择器与顶部标签显示 `窗口名 · 项目名`。
+- **电脑端切换项目后手机端自动刷新**（`src/remote/manager.ts`）：项目目录变化不会触发 `onWindowsChanged`，故新增 3 秒一次的内存比对（仅在有客户端连接时执行，只读 `sessionStore` 内存字段，无磁盘 I/O），发现变化即广播新列表。
+
+### Changed
+
+- **工具执行显示具体工具名**（`src/remote/pwa/app.js`）：原来只显示"正在调用系统工具…"，现显示 `正在执行：bash` / `read` / `edit` 等（`onTool` 早已带 `name` 字段，只是前端未使用）。
+- **静态资源缓存改为分层策略**（`src/remote/server.ts`）：`index.html`/`app.js`/`style.css`/`marked.umd.js` 走 `no-cache` + ETag（这几个随发版必变，或文件名不带 hash；走 `immutable` 会导致更新后浏览器长期拿旧内容——本次开发中实测踩到：改了同步动画但手机跑的是旧 CSS）；其余（`icon.svg` 等）保留 `immutable` 一年强缓存。
+- **固定隧道改用 HTTP/2 over TCP**（`src/remote/tunnel.ts`）：新增 `buildTunnelArgs` 纯函数并在固定隧道分支追加 `--protocol http2`。部分运营商对持续 UDP（QUIC）流量做 QoS，表现为"能连上但慢/频繁断"；TCP 443 穿透性更好。临时隧道分支不加，避免老版本 cloudflared 不认该 flag 而反复重启。
+
+### Fixed
+
+- **重连时"历史 + 正在同步大卡片"并存**（`src/remote/pwa/app.js`）：`setSyncing(true)` 在已有消息时不显示同步卡片，并复位残留的同步态视觉（切窗口 `resetView` 会重新插入空态卡片，此前会把旧同步态一起带回来）。
+
 ## [0.10.22] - 2026-10-19
 
 ### Added

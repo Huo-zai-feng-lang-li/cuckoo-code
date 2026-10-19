@@ -83,5 +83,6 @@
 | 082 | fix | [修复纯净模式历史消息编辑未生效缺陷](./082-fix-harness-history-edit.md) | done | (直接主分支) | 2026-10-18 |
 | 083 | fix | [修复停止生成：误点发送按钮 + 假成功](./083-fix-remote-stop.md) | done | fix/083-remote-stop | 2026-10-18 |
 | 084 | perf | [远程提速（静态资源缓存 + 重连/同步优化）与移除手机传图](./084-remote-speedup.md) | in_progress | feat/084-remote-speedup | 2026-10-19 |
+| 085 | perf | [远程体验打磨（同步态动画 + 渲染提速 + 工具名 + 项目名 + http2）](./085-remote-polish.md) | in_progress | feat/085-remote-polish | 2026-10-19 |
 
-共 78 个需求。
+共 79 个需求。
