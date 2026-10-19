@@ -86,6 +86,9 @@ export function runCaptured(
     const timer = setTimeout(() => {
       timedOut = true;
       killProcessTree(child.pid as number, 'SIGKILL');
+      // 兜底：若 kill 后因孙进程继承管道等原因，导致 close 事件迟迟不触发，
+      // 强制 resolve，防止 Promise 永久 pending 卡死工具循环。
+      setTimeout(() => finish(null), 800);
     }, opts.timeout);
     if (typeof timer.unref === 'function') timer.unref();
 
