@@ -18,30 +18,19 @@ updated: 2026-10-19
 
 ## 根因（两个独立缺陷叠加）
 
-### R1：hover 导航即强制正文滚底
+### R1：hover 行为本身是需求，但实现用错了事件
 
-`src/ui/harness.html` 中 conv-nav 区块顶部的 `document.addEventListener('mouseover', …)`（085 修复前位于 :3741-3752，现已删除）
+**用户澄清（2026-10-19）**：鼠标放在右侧导航上时，**正文和导航都应该滚到底**——
+这是明确的产品需求，不是 bug。进入导航的意图就是"我要看最新的"。
 
-```js
-var convNavHovered = false;
-document.addEventListener('mouseover', function (e) {
-  var isInNav = e.target && e.target.closest && !!e.target.closest('.conv-nav');
-  if (isInNav && !convNavHovered) {
-    convNavHovered = true;
-    pinBottom = true;
-    settleScrollBottom(true);   // ← 鼠标进入导航即把正文拉到最底
-    _lastScrollTop = stream.scrollTop;
-  } else if (!isInNav && convNavHovered) {
-    convNavHovered = false;
-  }
-});
-```
+原实现用 `document.addEventListener('mouseover', …)` + `convNavHovered` 去重，
+问题不在"滚到底"这个行为，而在于 **`mouseover` 会持续触发**：用户在导航里
+用滚轮往上翻历史锚点时，鼠标只要还在导航区域内移动，就会被反复拽回底部。
 
-鼠标只要进入导航区域，正文就被强制滚到底。这是"滚轮在导航上，正文却滚到底"的直接原因。
-
-历史意图（注释所述）是"hover 导航 → 回到最新消息"，但该职责已由
-`#scroll-bottom` 按钮与点击导航条目承担，hover 代劳属于越权交互：
-用户想看导航，正文却跑掉了。
+**修正方案**：改用 `mouseenter`（进入导航时触发一次），并同时把导航自身也滚到底。
+- 进入导航 → 正文 + 导航都滚到底（满足需求）
+- 进入后用滚轮翻历史 → 不被拽回（因为 `mouseenter` 只触发一次）
+- 离开再进入 → 再次滚到底（符合直觉）
 
 ### R2：导航条目被压扁，自身无溢出可滚
 
