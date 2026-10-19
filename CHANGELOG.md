@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.10.30] - 2026-10-19
+
+### Changed
+
+- **hover 右侧导航改为平滑滚动**（`src/ui/harness.html`）：v0.10.29 的 hover 行为是瞬间跳到底。新增 `smoothScrollToBottom(el, dur)`（约 220ms cubic ease-out 缓动），正文与导航各自独立动画。用 `WeakMap` 按元素存 token，重复触发时旧动画自动作废，不会两个 rAF 循环抢写 `scrollTop`。触发前先中止可能在跑的 `settle` 重试循环（否则它会把 `scrollTop` 又拉回，与动画互相覆写）。页面隐藏时回退为瞬时到位（用户此时看不到，无影响）。
+
 ## [0.10.29] - 2026-10-19
 
 ### Fixed

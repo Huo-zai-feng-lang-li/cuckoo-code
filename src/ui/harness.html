@@ -3753,7 +3753,7 @@
   // ===== 右侧对话快捷导航（用户消息锚点）=====
   // 注意：#conv-nav 在 <script> 之后解析，脚本执行时可能尚不存在 → 惰性获取
   var convNavEl = null;
-  // 鼠标进入导航 → 正文与导航都滚到底（用户明确要求：进导航就是要看最新）。
+  // 鼠标进入导航 → 正文与导航都平滑滚到底（用户明确要求：进导航就是要看最新）。
   // 用 mouseenter（进入一次触发）而非 mouseover（持续触发）：
   // 进入后用户仍可用滚轮在导航里往上翻历史锚点，不会被反复拽回底部。
   // 离开再进入才会再次触发，符合"想回最新就把鼠标移过去"的直觉。
@@ -3765,10 +3765,40 @@
     convNavHoverBound = true;
     el.addEventListener('mouseenter', function () {
       pinBottom = true;
-      settleScrollBottom(true);
-      _lastScrollTop = stream.scrollTop;
-      syncConvNavBottom();
+      // 先中止可能在跑的 settle（流式贴底的重试循环），否则它会把 scrollTop 又拉回，
+      // 与本次动画互相覆写。settle 状态字段全部复位。
+      _settleGen++;
+      if (_settleTimer) { clearTimeout(_settleTimer); _settleTimer = null; }
+      if (_settleCleanup) { try { _settleCleanup(); } catch (_) {} _settleCleanup = null; }
+      resetExpectVars();
+      suppressPin = false;
+      // 平滑滚到底（约 220ms 缓动）。两个元素独立动画，互不阻塞。
+      smoothScrollToBottom(stream, 220);
+      smoothScrollToBottom(el, 220);
     });
+  }
+  // 平滑滚到底（用于 hover 导航）：约 dur 毫秒 cubic ease-out 缓动。
+  // 用 WeakMap 按元素存 token：重复调用时旧动画自动作废，不会两个 rAF 循环抢写 scrollTop。
+  // 页面隐藏（WebContentsView）时 rAF 被挂起 → 直接瞬时到位，避免动画永不执行。
+  var smoothBottomTokens = new WeakMap();
+  function smoothScrollToBottom(el, dur) {
+    if (!el) return;
+    var target = el.scrollHeight - el.clientHeight;
+    var start = el.scrollTop;
+    if (Math.abs(target - start) < 2) return;
+    var token = (smoothBottomTokens.get(el) || 0) + 1;
+    smoothBottomTokens.set(el, token);
+    if (document.hidden) { el.scrollTop = target; return; }
+    var t0 = performance.now();
+    var d = dur || 220;
+    function ease(x) { return 1 - Math.pow(1 - x, 3); }
+    function step(now) {
+      if (smoothBottomTokens.get(el) !== token) return;
+      var p = Math.min(1, (now - t0) / d);
+      el.scrollTop = start + (target - start) * ease(p);
+      if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
   }
   function getConvNavEl() {
     if (!convNavEl) {
