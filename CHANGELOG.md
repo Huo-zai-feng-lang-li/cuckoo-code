@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.10.27] - 2026-10-19
+
+### Performance
+
+- **远程同步对话渲染提速**（`src/remote/pwa/app.js`）：`renderHistory` 原实现逐条调 `addUser`/`addAi`/`addSystem`，每条都触发 `renderMd` + `decorateContent` + 两次全量 `querySelectorAll('.msg')` + `scroll(true)` 强制 reflow，O(n²)。实测服务端 `WS open → history` 仅 13ms，瓶颈全在客户端。改为拆出 `buildUserEl`/`buildSystemEl`/`buildAiEl`（只建元素不插 DOM），用 `DocumentFragment` 一次性插入，全量查询与滚动各只做一次。保序不变（`if (messages.querySelector('.msg')) return` 保护保留）。
+
+### Fixed
+
+- **发版后手机端仍跑旧代码（Cloudflare 边缘缓存）**（`src/remote/server.ts`）：CF 会把 `immutable` 资源缓存一年（`cf-cache-status: HIT` + `age` 数万秒），源站改 `Cache-Control` 对已缓存的边缘无效。改为 `serveStatic` 响应 `index.html` 时把 `/app.js` / `/style.css` / `/marked.umd.js` 的引用动态改写为 `?v=<mtimeMs>`；带 `?v=` 的请求走 `immutable`，不带 `?v=` 的沿用原策略。每次发版 mtime 变 → URL 变 → CF 和浏览器缓存自然失效。
+- **右侧对话导航滚轮失效**（`src/ui/harness.html`，三个独立缺陷）：
+  1. 删除 `mouseover` 监听——原实现鼠标进入导航就把正文强制滚到底，与"滚轮在导航上只该滚导航自己"直接冲突
+  2. `.conv-nav-dot` 增加 `flex-shrink: 0`——否则条目一多，flex 容器在 `max-height:72%` 约束下把所有 dot 压扁，`scrollHeight == clientHeight` → 没有可滚动溢出，滚轮无处可去
+  3. 导航内滚动时隐藏 tooltip（区分"正文 scroll"与"导航内 scroll"，后者需隐藏否则位置错位）
+- **导航不跟随正文贴底**（`src/ui/harness.html`）：新增 `syncConvNavBottom()`，挂到 7 个贴底路径（`scrollBottom` 两个分支、`settleScrollBottom` 两个分支、`updateConvNav` 新锚点后、scroll 事件恢复贴底分支）。只单向同步（正文→导航），用户仍可单独在导航上滚轮查看历史锚点。
+
 ## [0.10.26] - 2026-10-19
 
 ### Reverted

@@ -860,7 +860,9 @@
   .conv-nav.show { display: flex; }
   /* 悬停整条导航 → 展开为面板 */
   .conv-nav:hover { background: var(--bg-elev); border-color: var(--border); box-shadow: 0 10px 32px var(--shadow-color); }
-  .conv-nav-dot { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 10px; cursor: pointer; max-width: 100%; }
+  /* flex-shrink:0 必须显式声明：否则条目一多，容器在 max-height:72% 约束下会把每个
+     dot 压扁，scrollHeight 被压到等于 clientHeight → 导航自身没有可滚动溢出，滚轮失效。 */
+  .conv-nav-dot { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 10px; cursor: pointer; max-width: 100%; flex-shrink: 0; }
   /* 收起态 dot 仅 3px 高横线，命中区过小 → 鼠标易划过触发 pointerout 打断 tooltip；透明伪元素扩到 ~11px 高（不改视觉布局） */
   .conv-nav-dot::before { content: ''; position: absolute; inset: -4px -6px; }
   .conv-nav-dot .cn-text { display: none; font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
@@ -2728,6 +2730,18 @@
   function isNearBottom() {
     return (stream.scrollHeight - stream.scrollTop - stream.clientHeight) < 90;
   }
+  // 右侧对话导航跟随正文滚到底：导航自身也是独立滚动容器（max-height 72% + overflow-y auto），
+  // 消息轮数多时最新的锚点会被挤到可视区外，看不到。正文贴底时同步把导航也滚到底。
+  // 只单向同步（正文→导航），用户仍可单独在导航上滚轮查看历史锚点。
+  function syncConvNavBottom() {
+    var el = null;
+    try { el = getConvNavEl(); } catch (e) { /* 尚未初始化 */ }
+    if (!el || !el.classList.contains('show')) return;
+    // 仅当导航真的可滚（内容超出可视高度）时才写，避免无谓 reflow
+    if (el.scrollHeight > el.clientHeight + 2) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }
   // rAF 合并滚动：流式每帧都调 scrollBottom，直接设 scrollTop 会每帧强制 reflow；
   // 一帧内多次调用合并为一次，减少长回复下的布局抖动（配合 hook 节流降低）。
   // _scrollForce：本帧内是否有 force 请求（即便 pinBottom 中途被用户上滚改 false，force 仍要滚）。
@@ -2744,6 +2758,7 @@
         _scrollForce = false;
         stream.scrollTop = stream.scrollHeight;
         _lastScrollTop = stream.scrollTop;
+        syncConvNavBottom();
         updateScrollBtn();
         return;
       }
@@ -2757,6 +2772,7 @@
         if (!must && !pinBottom) { updateScrollBtn(); return; }
         stream.scrollTop = stream.scrollHeight;
         _lastScrollTop = stream.scrollTop;
+        syncConvNavBottom();
         updateScrollBtn();
       });
     } else {
@@ -2858,6 +2874,7 @@
         resetExpect();
         suppressPin = false;
         cleanupListeners();
+        syncConvNavBottom();
         updateScrollBtn();
         return;
       }
@@ -2898,6 +2915,7 @@
         // 同步 _lastScrollTop：settle 写入了 scrollTop，若不更新，scroll 事件里的
         // "cur < _lastScrollTop - 1" 判据会用旧值比较，可能误判用户上滚
         _lastScrollTop = stream.scrollTop;
+        syncConvNavBottom();
         updateScrollBtn();
       }
     }
@@ -3735,21 +3753,9 @@
   // ===== 右侧对话快捷导航（用户消息锚点）=====
   // 注意：#conv-nav 在 <script> 之后解析，脚本执行时可能尚不存在 → 惰性获取
   var convNavEl = null;
-  // hover 右侧导航 → 平滑滚到底部，展示最新消息。
-  // 说明：导航面板是 fixed 定位，不随内容滚动，所以滚底不会让导航"跑掉"，
-  // 用户仍可继续点击任意历史锚点跳转。
-  var convNavHovered = false;
-  document.addEventListener('mouseover', function (e) {
-    var isInNav = e.target && e.target.closest && !!e.target.closest('.conv-nav');
-    if (isInNav && !convNavHovered) {
-      convNavHovered = true;
-      pinBottom = true;
-      settleScrollBottom(true);
-      _lastScrollTop = stream.scrollTop;
-    } else if (!isInNav && convNavHovered) {
-      convNavHovered = false;
-    }
-  });
+  // 注：曾在此实现"hover 导航 → 平滑滚到底部"，已移除（085）。
+  // 该行为会让用户一旦把鼠标移向导航、正文就跳到最新消息，与"滚轮在导航上
+  // 只该滚导航自己"直接冲突；回底部职责由 #scroll-bottom 按钮与点击导航条目承担。
   function getConvNavEl() {
     if (!convNavEl) convNavEl = document.getElementById('conv-nav');
     return convNavEl;
@@ -3839,6 +3845,8 @@
       })(i);
     }
     updateConvNavActive();
+    // 新增锚点后若正文处于贴底状态，导航也跟到底（否则新消息的锚点被挤出可视区）
+    if (pinBottom) syncConvNavBottom();
   }
   // 滚动高频：用 rAF 节流，每帧最多重算一次（避免每次 scroll 都 O(N) reflow）
   var convNavRafPending = false;
@@ -4861,6 +4869,7 @@
     } else if (isNearBottom()) {
       // 用户主动滚回底部附近（含点击回到底部按钮、滚轮下滚）→ 恢复跟随
       pinBottom = true;
+      syncConvNavBottom();
     }
     // 注：cur > _lastScrollTop 且不在底部附近 → 可能是"内容变矮导致 clamp"或"用户中途停顿"，
     // 此时既不设 true 也不设 false，保留原状态，避免抖动。
@@ -5265,7 +5274,13 @@
       document.addEventListener('pointerdown', hideTooltip, true);
       // 滚动时隐藏 tooltip（避免错位）；但右侧对话导航是 fixed 定位，滚动不影响它，
       // 且生成中 scrollBottom 会频繁触发 scroll——若一并隐藏，导航 tooltip 一显示就被打断。
-      window.addEventListener('scroll', function () {
+      window.addEventListener('scroll', function (e) {
+        // 导航自身内部滚动（.conv-nav 是独立滚动容器）→ 必须隐藏，否则 tooltip 错位。
+        // 注意：scroll 不冒泡，但 capture 阶段可捕获任意滚动容器的 scroll，target 即滚动元素。
+        var t = e && e.target;
+        if (t && t.closest && t.closest('.conv-nav')) { hideTooltip(); return; }
+        // 正文滚动而 tooltip 挂在导航上时保持显示：生成中 scrollBottom 会频繁触发 scroll，
+        // 否则导航 tooltip 一显示就被打断。
         if (activeTarget && activeTarget.closest && activeTarget.closest('.conv-nav')) return;
         hideTooltip();
       }, true);

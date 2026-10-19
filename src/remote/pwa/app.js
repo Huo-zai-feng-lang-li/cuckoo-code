@@ -451,19 +451,27 @@
     // 空历史 → 恢复正常空态卡片；有历史 → checkEmptyState() 会移除卡片。
     setSyncing(false);
     if (!Array.isArray(entries) || !entries.length) return;
-    if (messages.querySelector('.msg')) return; // 已有实时消息 → 不覆盖
+    // 已有实时消息 → 不覆盖（"先 history 后 active stream"的保序依赖这条）
+    if (messages.querySelector('.msg')) return;
+
+    // 批量渲染：原实现逐条 addUser/addAi/addSystem，每条都触发
+    // checkEmptyState + capMessages（各一次全量 querySelectorAll('.msg')）
+    // 和 scroll(true)（强制 reflow），条数一多就是 O(n²)——实测 12 条要等 2 秒。
+    // 改用 DocumentFragment 一次性插入，全量查询与滚动各只做一次。
+    const frag = document.createDocumentFragment();
+    let appended = 0;
     for (let i = 0; i < entries.length; i++) {
       const e = entries[i];
-      if (!e || typeof e !== 'object') continue;
-      if (e.t === 'user') {
-        if (e.text) addUser(e.text);
-      } else if (e.t === 'assistant') {
-        if (e.text) addAi(e.text);
-      } else if (e.t === 'system') {
-        if (e.text) addSystem(e.text);
-      }
+      if (!e || typeof e !== 'object' || !e.text) continue;
+      if (e.t === 'user') { frag.appendChild(buildUserEl(e.text)); appended++; }
+      else if (e.t === 'assistant') { frag.appendChild(buildAiEl(e.text)); appended++; }
+      else if (e.t === 'system') { frag.appendChild(buildSystemEl(e.text)); appended++; }
       // tool / plan：跳过（手机端无工具卡）
     }
+    if (!appended) return;
+    messages.appendChild(frag);
+    checkEmptyState();
+    capMessages();
     scroll(true);
   }
 
@@ -600,21 +608,30 @@
     }
   }
 
-  function addUser(text) {
+  /** 只建元素、不插入 DOM、不做全量查询。供 renderHistory 批量渲染复用。 */
+  function buildUserEl(text) {
     const el = document.createElement('div');
     el.className = 'msg user';
     el.textContent = text;
-    messages.appendChild(el);
+    return el;
+  }
+
+  function buildSystemEl(text) {
+    const el = document.createElement('div');
+    el.className = 'msg sys';
+    el.textContent = text;
+    return el;
+  }
+
+  function addUser(text) {
+    messages.appendChild(buildUserEl(text));
     checkEmptyState();
     capMessages();
     scroll(true);
   }
 
   function addSystem(text) {
-    const el = document.createElement('div');
-    el.className = 'msg sys';
-    el.textContent = text;
-    messages.appendChild(el);
+    messages.appendChild(buildSystemEl(text));
     checkEmptyState();
     capMessages();
     scroll();
@@ -770,16 +787,22 @@
     scroll();
   }
 
-  function addAi(text) {
-    if (!text) return;
+  /** 只建 AI 消息元素，不插入 DOM、不做全量查询。供 renderHistory 批量渲染复用。
+   *  decorateContent / attachActions 都是纯 DOM 操作（querySelectorAll('pre') /
+   *  createElement / insertBefore / addEventListener），不依赖元素已插入文档。 */
+  function buildAiEl(text) {
     const el = document.createElement('div');
     el.className = 'msg ai';
     el.innerHTML = renderMd(text);
-    // 尾部签名（✦ Cuckoo）：innerHTML 后补上
     el.appendChild(createSigNode());
     decorateContent(el);
     attachActions(el, text);
-    messages.appendChild(el);
+    return el;
+  }
+
+  function addAi(text) {
+    if (!text) return;
+    messages.appendChild(buildAiEl(text));
     checkEmptyState();
     capMessages();
     scroll();
