@@ -11,6 +11,8 @@ const expanded = new Set<string>();
 /** 已加载的树缓存（供搜索用，避免重复 IPC） */
 let cachedTree: TreeNode[] = [];
 let cachedTruncated = false;
+/** 面板未激活时收到磁盘变更 → 打脏标记，切回时强制刷新 */
+let filesDirty = false;
 
 // VSCode 风格图标（内联 SVG）
 const CARET_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>';
