@@ -81,6 +81,37 @@ describe('remote server', () => {
     assert.ok(js.headers['cache-control'].includes('max-age='));
   });
 
+  test('index.html 的静态资源引用带 ?v= 版本号（绕开 CDN 边缘缓存）', async () => {
+    const port = ++portCounter;
+    await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
+
+    const res = await httpGet(port, '/');
+    assert.strictEqual(res.statusCode, 200);
+    // 背景：CF 边缘会长期缓存 immutable 资源，源站改 Cache-Control 也不管用；
+    // 只有 URL 本身变化才能让 CDN 认作新资源。
+    for (const name of ['app.js', 'style.css', 'marked.umd.js']) {
+      const escaped = name.replace('.', '\\.');
+      const re = new RegExp('(src|href)="/' + escaped + '\\?v=\\d+"');
+      const hit = res.body.match(new RegExp('(src|href)="/' + escaped + '[^"]*"'));
+      assert.ok(re.test(res.body), name + ' 应带 ?v=<数字>（实际：' + (hit ? hit[0] : '未找到') + '）');
+    }
+  });
+
+  test('带 ?v= 的资源走 immutable 强缓存（URL 已版本化，可放心长缓存）', async () => {
+    const port = ++portCounter;
+    await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
+
+    const res = await httpGet(port, '/app.js?v=123456');
+    assert.strictEqual(res.statusCode, 200);
+    assert.ok(res.headers['cache-control'].includes('immutable'), '带 ?v= 应为 immutable');
+    assert.ok(res.headers['cache-control'].includes('max-age=31536000'));
+    assert.ok(res.body.length > 0);
+
+    // 不带 ?v= 时仍走原策略（app.js → immutable），行为不变
+    const plain = await httpGet(port, '/app.js');
+    assert.ok(plain.headers['cache-control'].includes('immutable'));
+  });
+
   test('未知消息类型（如已移除的 attach）不影响连接，后续 send 仍正常', async () => {
     const port = ++portCounter;
     let receivedMsg = '';
