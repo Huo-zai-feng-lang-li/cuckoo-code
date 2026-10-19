@@ -227,6 +227,44 @@ describe('remote server', () => {
     });
   });
 
+  test('index.html 的 ETag 纳入内嵌资源版本（只改 app.js 时也应变化）', async () => {
+    const port = ++portCounter;
+    await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
+
+    // 第一次请求：拿 index.html 的 ETag
+    const first = await httpGet(port, '/');
+    assert.strictEqual(first.statusCode, 200);
+    const etag1 = first.headers.etag;
+    assert.ok(etag1, 'index.html 应有 ETag');
+
+    // 模拟"只更新 app.js，index.html 文件本身不变"：
+    // 触碰 app.js 的 mtime（内容不变，但 mtime 变 → 版本号变）
+    const fs = await import('node:fs');
+    const pathMod = await import('node:path');
+    const pwaDir = pathMod.resolve(import.meta.dirname, '..', '..', 'src', 'remote', 'pwa');
+    const appJs = pathMod.join(pwaDir, 'app.js');
+    const st = fs.statSync(appJs);
+    const future = new Date(Date.now() + 60000);
+    fs.utimesSync(appJs, st.atime, future);
+
+    try {
+      // 第二次请求：ETag 必须变（因为内嵌的 app.js 版本变了）
+      const second = await httpGet(port, '/');
+      assert.strictEqual(second.statusCode, 200, 'ETag 变化后应返回 200 而不是 304');
+      assert.notStrictEqual(second.headers.etag, etag1, 'index.html 的 ETag 应随 app.js 版本变化');
+
+      // 带旧 ETag 请求应返回 200（不是 304）
+      const third = await httpGet(port, '/', { 'if-none-match': etag1 });
+      assert.strictEqual(third.statusCode, 200, '旧 ETag 不应命中 304');
+
+      // 带新 ETag 请求应返回 304
+      const fourth = await httpGet(port, '/', { 'if-none-match': second.headers.etag });
+      assert.strictEqual(fourth.statusCode, 304, '新 ETag 应命中 304');
+    } finally {
+      fs.utimesSync(appJs, st.atime, st.mtime);
+    }
+  });
+
   test('stopServer 能够完整关闭并释放端口，避免重启 EADDRINUSE', async () => {
     const port = ++portCounter;
     const r1 = await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);

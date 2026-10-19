@@ -149,14 +149,25 @@ async function assetVersion(name: string): Promise<number> {
   return v;
 }
 
-/** 把 index.html 里的静态资源引用改成带 `?v=<mtime>` 的版本化 URL */
+/** 把 index.html 里的静态资源引用改成带 `?v=<mtime>` 的版本化 URL。
+ *  正则允许单/双引号 + 可选前导斜杠，避免 HTML 改用单引号后静默失效。 */
 async function versionizeHtml(html: string): Promise<string> {
   const versions = await Promise.all(VERSIONED_ASSETS.map((n) => assetVersion(n)));
   const map = new Map(VERSIONED_ASSETS.map((n, i) => [n, versions[i]]));
-  return html.replace(
-    /(src|href)="\/(app\.js|style\.css|marked\.umd\.js)"/g,
-    (_m, attr: string, file: string) => attr + '="/' + file + '?v=' + (map.get(file) || 0) + '"'
-  );
+  const names = VERSIONED_ASSETS.map((n) => n.replace(/\./g, '\\.')).join('|');
+  const re = new RegExp('(src|href)=([\'"])\\/?(' + names + ')\\2', 'g');
+  return html.replace(re, (_m, attr: string, q: string, file: string) => {
+    return attr + '=' + q + '/' + file + '?v=' + (map.get(file) || 0) + q;
+  });
+}
+
+/** index.html 的 ETag：必须**纳入内嵌资源版本**，否则只更新 app.js 时
+ *   index.html 的 mtime/size 不变 → ETag 不变 → 浏览器 304 → 继续用旧 ?v=
+ *   → 版本化形同虚设。
+ *   实测确认 `npm run compile` 用 fs.cpSync 保留源文件 mtime，index.html 确实不变。 */
+async function etagForIndex(st: fs.Stats): Promise<string> {
+  const versions = await Promise.all(VERSIONED_ASSETS.map((n) => assetVersion(n)));
+  return 'W/"' + st.mtimeMs + '-' + st.size + '-' + versions.join('-') + '"';
 }
 
 /** 静态文件响应（PWA 资源；防路径穿越）。异步读盘，避免阻塞主进程事件循环 */
@@ -171,7 +182,9 @@ async function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, 
   try { st = await fs.promises.stat(abs); } catch (_) { st = null; }
   if (!st || !st.isFile()) { res.writeHead(404); res.end('not found'); return; }
 
-  const etag = etagFor(st);
+  // index.html 的 ETag 必须纳入内嵌资源版本（见 etagForIndex 注释）；
+  // 其它资源用自身 stat 即可。
+  const etag = rel === 'index.html' ? await etagForIndex(st) : etagFor(st);
   // 带 `?v=` 的资源：URL 已按内容版本化，可放心长期强缓存（CF/浏览器都不会拿错）。
   // 不带 `?v=` 的：沿用原策略（index.html no-cache，其余 immutable）。
   const hasVersion = search.has('v');
