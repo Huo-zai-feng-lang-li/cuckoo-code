@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.10.28] - 2026-10-19
+
+### Fixed
+
+- **v0.10.27 的 URL 版本化未闭环**（`src/remote/server.ts`）：`index.html` 的 ETag 原来只基于自身 mtime/size，而 `npm run compile` 用 `fs.cpSync` 复制 PWA 时会**保留源文件 mtime**（实测确认 `index.html` 编译前后 mtime 完全相同）。后果：只更新 `app.js` 时 `index.html` 的 ETag 不变 → 浏览器 304 → 继续引用旧的 `?v=` → 版本化形同虚设，CF/浏览器仍可能跑旧代码。
+
+  修复：
+  1. 新增 `etagForIndex(st)`，把 `app.js` / `style.css` / `marked.umd.js` 三个版本号拼进 `index.html` 的 ETag。任一资源变化 → ETag 变化 → 200 + 新 `?v=`。
+  2. `versionizeHtml` 的正则放宽：支持单/双引号、可选前导斜杠，避免 HTML 写法变化后静默失效。
+  3. 补回归测试：触碰 `app.js` 的 mtime 后，`index.html` 的 ETag 必须变化，且旧 ETag 不再命中 304。
+
 ## [0.10.27] - 2026-10-19
 
 ### Performance
