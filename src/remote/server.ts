@@ -40,7 +40,7 @@ interface ServerDeps {
   /** 取当前目标窗口 id */
   onGetCurrentProfile?: () => string;
   /** 切换目标窗口 */
-  onSelectProfile?: (profileId: string) => void;
+  onSelectProfile?: (profileId: string, ws?: any) => void;
   /** 新客户端连入（供主进程补发当前流式状态 + 历史，避免重连后丢消息） */
   onNewClient?: (ws: any) => void;
 }
@@ -268,7 +268,8 @@ function handleWsMessage(ws: any, raw: any): void {
     return;
   }
   if (msg.type === 'select-profile' && typeof msg.profileId === 'string') {
-    try { deps.onSelectProfile && deps.onSelectProfile(msg.profileId); } catch (_) {}
+    // 传入 ws：切换窗口后需要给该客户端补发新窗口的历史
+    try { deps.onSelectProfile && deps.onSelectProfile(msg.profileId, ws); } catch (_) {}
     return;
   }
   if (msg.type === 'stop') {

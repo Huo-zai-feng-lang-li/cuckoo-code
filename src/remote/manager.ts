@@ -160,8 +160,14 @@ function getCurrentProfile(): string {
   return (ctx && ctx.profileId) || '';
 }
 
-function selectProfile(profileId: string): void {
+function selectProfile(profileId: string, ws?: any): void {
   targetProfileId = profileId || '';
+  // 切换窗口后：给该客户端补发新窗口的历史。
+  // 手机端切换时会 resetView() 清空 DOM，若不推历史则一片空白，
+  // 用户必须手动刷新（重连 WS）才会触发 pushHistoryToNewClient。
+  if (ws && ws.readyState === 1) {
+    pushHistoryToNewClient(ws).catch(() => { /* ignore */ });
+  }
 }
 
 /** 节流刷新某窗口的流式文本（增量 delta）。
