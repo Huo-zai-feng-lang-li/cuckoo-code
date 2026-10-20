@@ -977,6 +977,8 @@
     currentProfileId = profileSelect.value;
     syncProfileLabel();
     resetView();
+    // 显示"正在同步对话…"，避免用户看到"已就绪"空态以为没内容
+    setSyncing(true);
     sendRaw({ type: 'select-profile', profileId: profileSelect.value });
   });
 
