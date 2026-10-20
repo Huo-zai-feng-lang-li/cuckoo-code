@@ -10,6 +10,8 @@ vi.mock('../../../src/overlay/chat-input.js', () => ({
   sendMessageToChat: async () => true,
   cancelPendingSend: () => {},
   onMessageDelivered: () => () => {},
+  findInputArea: () => null,
+  getInputText: () => '',
 }));
 // panel/通知等打空，避免 DOM 副作用
 vi.mock('../../../src/overlay/panel.js', () => ({

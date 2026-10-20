@@ -12,7 +12,7 @@
  *  - cuckoo-retry-429-count      429 次数，默认 40；负数=无限
  *  - cuckoo-retry-prompt         提示词文案
  */
-import { sendToChat } from '../../overlay/chat-input.js';
+import { sendToChat, findInputArea, getInputText } from '../../overlay/chat-input.js';
 import { onAiError, onInterceptedResponse } from '../intercept/observer.js';
 import { showToast } from '../../overlay/panel.js';
 import { withLog } from '../../infra/with-log.js';
@@ -204,6 +204,18 @@ let handleError = function handleError(detail: any): void {
       emitRetryState('cancelled');
       return;
     }
+    
+    // 检查输入框：如果用户手动输入了内容，不能覆盖
+    const input = findInputArea();
+    if (input) {
+      const text = getInputText(input).trim();
+      if (text.length > 0) {
+        console.log('[Cuckoo Code][重试] 发现输入框已有用户内容，取消自动重试以免覆盖');
+        emitRetryState('cancelled');
+        return;
+      }
+    }
+
     try {
       sendToChat(cfg.prompt, is429 ? '重试(操作频繁)' : '重试', undefined);
     } catch (e: any) {

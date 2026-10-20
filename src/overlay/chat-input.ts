@@ -557,6 +557,7 @@ export {
   sendCombinedJsResultsToChat,
   cancelPendingSend,
   findInputArea,
+  getInputText,
   isInputVisible,
   sendInitialPromptToInput,
   waitForInitialPromptAndSend,
