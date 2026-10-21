@@ -56,4 +56,8 @@ export function toggleTab(tab: string, visible: boolean): void {
 
 export function initActivitybarVisibility(): void {
   applyActivitybarVisibility();
+  // 插件图标异步挂载 → 重新应用显隐（否则用户隐藏的插件图标会在挂载后重新冒出）
+  window.addEventListener('cuckoo-activitybar-mounted', () => {
+    try { applyActivitybarVisibility(); } catch (_) { /* ignore */ }
+  });
 }

@@ -204,6 +204,10 @@ function mountSlot(m: any): void {
   const spacer = container.querySelector('.ck-ab-spacer');
   if (m.slot === 'activitybar' && spacer) container.insertBefore(el, spacer);
   else container.appendChild(el);
+  // 通用槽位挂到活动栏时也需通知显隐/列表刷新
+  if (m.slot === 'activitybar') {
+    try { window.dispatchEvent(new CustomEvent('cuckoo-activitybar-mounted')); } catch (_) { /* ignore */ }
+  }
 }
 
 function escapeHtml(s: string): string {

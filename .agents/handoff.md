@@ -1,20 +1,20 @@
-# 最新接续状态 (2026-10-20)
+# 最新接续状态 (2026-10-21)
 
-## 已发布 v0.10.39（本轮 9 个提交，含 3 类修复 + 1 次发版事故补救）
+## 已发布 v0.10.43
 
-### 本轮全部改动（9 个提交，v0.10.31 ~ v0.10.39）
+### 本轮改动 (v0.10.43)
 
 | 版本 | 类型 | 内容 | 影响面 |
 |---|---|---|---|
-| v0.10.31 | fix | 手机端表格横滚（td 补 `white-space:nowrap`）+ 系统消息断词 + 滚动条美化 | `src/remote/pwa/style.css` |
-| v0.10.32 | fix | 文件预览（Monaco）跟随应用内主题（不再只读系统 matchMedia） | `preview-monaco.ts` / `theme-presenter.ts` |
-| v0.10.33 | feat | 项目文件面板支持外部变更自动刷新（复用 Git watcher） | `pages/files.ts` |
-| v0.10.34 | fix | 补 v0.10.33 漏写的 `filesDirty` 声明（隐式全局） | 同上 |
-| v0.10.35 | perf | 自动刷新接入合并机制（800ms 防抖 + in-flight 守卫 + 队列） | 同上 |
-| v0.10.36 | fix | 切项目竞态（代际守卫）+ in-flight 击穿 + TDZ + 加载占位 | 同上 |
-| v0.10.37 | docs | 补 CHANGELOG 缺失的 [0.10.35] 章节 | `CHANGELOG.md` |
-| v0.10.38 | fix | **工具超时后永久卡死**：超时杀进程后 800ms 强制 resolve | `src/infra/run-captured.ts` |
-| v0.10.39 | chore | 补 v0.10.38 遗漏的 `package.json` 版本号（代码同 v0.10.38） | `package.json` |
+| v0.10.43 | fix | 合法工具代码块（cuckoo/js）内写 JSON/XML 示例误触格式纠错提示（剥离后再检测） | `src/bridge/intercept/observer.ts` |
+| v0.10.43 | fix | 插件异步挂载到活动栏后重新应用显隐设置，防止隐藏图标复现 | `activitybar-visibility.ts` / `plugin-shell.ts` |
+| v0.10.43 | feat/refactor | 系统 Prompt 重构：ChatGPT/Claude 提示词现代化 + 四大原则 + 统一工具调用与交互边界 | `src/prompt/*.md` |
+
+### 历史版本记录
+- v0.10.42: fix(retry) 发送重试提示词前检查输入框，避免覆盖用户手动输入
+- v0.10.41: fix(remote) 手机端切换窗口时显示正在同步提示
+- v0.10.40: fix(remote) 手机端切窗口后主动补发新窗口历史
+- v0.10.31 ~ v0.10.39: 详见 CHANGELOG.md
 
 ### 关键教训
 

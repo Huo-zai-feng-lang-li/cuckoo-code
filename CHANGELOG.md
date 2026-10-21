@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.10.43] - 2026-10-21
+
+### Fixed
+
+- **合法工具代码块内写 JSON/XML 示例被误判为格式错误**（`src/bridge/intercept/observer.ts`）：AI 在 `cuckoo` / `js` / `javascript` 代码块内部（例如注释、参数说明、字符串模版）包含 JSON 或 XML 片段时，会误触 `looksLikeJsonToolCall` 或 `detectXmlToolCall`，导致系统错误地弹出格式纠正提示。修复：在格式检测前引入 `stripToolBlocks` 先行剥离合法工具容器（含流式输出未闭合代码块），保留外部普通文本及非目标语言块（`json`/`python`）的错误检测，并补齐 5 组回归单元测试。
+- **活动栏隐藏的插件图标异步挂载后重新冒出**（`src/ui/shell/scripts/plugin-shell.ts`、`activitybar-visibility.ts`）：用户在设置中配置隐藏了某个插件的活动栏图标后，因插件为异步加载挂载，页面初始化时执行的显隐规则未覆盖到后续动态插入的 DOM。修复：插件向 `activitybar` 挂载槽位元素后触发 `cuckoo-activitybar-mounted` 全局事件，显隐逻辑监听该事件后自动重新应用规则。
+
+### Changed
+
+- **系统 Prompt 重构与多模型规范对齐**（`src/prompt/chatgpt.md`、`claude.md`、`deepseek.md`、`default.md`）：
+  - ChatGPT 与 Claude 提示词全面现代化：废弃早期"古老后管/单向 js 窗口/小白"等拟真设定，重构为现代高效的 AI 编程助手；引入四大核心原则（先思考再编码、简洁至上、精准外科手术式修改、目标驱动执行）；补齐 `{{TOOLS_LIST}}` 等插槽。
+  - 统一厘清所有平台的"工具调用回合 vs 交互交付回合"边界：工具调用回合聚焦代码块；需要用户决策、主动提问或交付总结时以自然语言回复，不执行冗余代码。
+
 ## [0.10.42] - 2026-10-20
 
 ### Fixed

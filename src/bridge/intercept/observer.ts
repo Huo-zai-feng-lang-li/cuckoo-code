@@ -67,6 +67,18 @@ function requestAbort(): void { abortRequested = true; }
 function clearAbort(): void { abortRequested = false; }
 
 /**
+ * 剥离合法工具容器（cuckoo/js/javascript 代码块），仅用于格式误报检测。
+ * 原因：AI 在 cuckoo 块里写 JSON/XML 示例是正常的（解释/举例），不应触发格式纠正提示。
+ * 不剥离 json/python 等其他块——那些块里出现工具调用语法，仍是真实错误。
+ */
+function stripToolBlocks(text: string): string {
+  if (text.indexOf('```') === -1) return text;
+  return text
+    .replace(/```(?:cuckoo|javascript|js)\s*\n[\s\S]*?```/gi, '')
+    .replace(/```(?:cuckoo|javascript|js)\s*\n[\s\S]*$/gi, '');
+}
+
+/**
  * 识别 XML / DSML / antml 格式的工具调用（DeepSeek 原生格式等）。
  * 返回 { kind, intent } 或 null。intent 为提取到的原始调用意图（供自动纠正重试）。
  * 覆盖：<|DSML|calls>、<|DSML|invoke ...>、<antml:invoke ...>、<invoke name="...">、<parameter name=...>
@@ -214,7 +226,9 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
   }
 
   // 2. JSON 格式工具调用（D11：已废除执行，仅识别并提示改用 cuckoo 代码块）
-  if (looksLikeJsonToolCall(raw)) {
+  // 剥离 cuckoo/js 块后再检测：避免把"块内的 JSON 示例"误判为格式错误
+  const rawForFormatCheck = stripToolBlocks(raw);
+  if (looksLikeJsonToolCall(rawForFormatCheck)) {
     if (formatHintCount >= FORMAT_HINT_MAX) {
       console.log('[Cuckoo Code][拦截] 已连续提示 ' + formatHintCount + ' 次格式问题，停止发送');
       return;
@@ -229,7 +243,7 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
   }
 
   // 3. XML 格式工具调用提示
-  const xmlTool = detectXmlToolCall(raw);
+  const xmlTool = detectXmlToolCall(rawForFormatCheck);
   if (xmlTool) {
     if (formatHintCount >= FORMAT_HINT_MAX) {
       console.log('[Cuckoo Code][拦截] 已连续提示 ' + formatHintCount + ' 次格式问题，停止发送');
@@ -418,4 +432,4 @@ function getLastInterceptedText(): string {
   return lastInterceptedText;
 }
 
-export { startInterceptObserver, processInterceptedResponse, processInlineMarkers, getLastInterceptedText, onInterceptedResponse, onAiError, onToolCall, onStream, onTaskIdle, onUserStop, requestAbort, clearAbort, setSuppressAiNotification };
+export { startInterceptObserver, processInterceptedResponse, processInlineMarkers, getLastInterceptedText, onInterceptedResponse, onAiError, onToolCall, onStream, onTaskIdle, onUserStop, requestAbort, clearAbort, setSuppressAiNotification, stripToolBlocks };

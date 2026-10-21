@@ -8,6 +8,7 @@ import {
   onInterceptedResponse,
   onAiError,
   onTaskIdle,
+  stripToolBlocks,
 } from '../../../src/bridge/intercept/observer.js';
 
 // 收集注册的监听器，测试后统一取消，避免模块级 Set 跨用例泄漏
@@ -300,4 +301,39 @@ test('B-006: cuckoo 块抛语法错误时只执行一次（不重跑 3 次）', 
   await processInterceptedResponse(text, true);
   // 历史实现会重跑 4 次（1+3）；修复后只跑 1 次
   assert.strictEqual(calls, 1, '语法错误不应重跑，executeJs 调用次数=' + calls);
+});
+
+// ========== stripToolBlocks：格式检测前置剥离（防 cuckoo 块内示例误报）==========
+
+test('stripToolBlocks 剥离 cuckoo 块，保留块外文字', () => {
+  const BT3 = String.fromCharCode(96, 96, 96);
+  const input = ['说明文字', BT3 + 'cuckoo', '{"tool":"read"}', BT3, '后续'].join('\n');
+  const out = stripToolBlocks(input);
+  assert.ok(!out.includes('{"tool"'), '块内 JSON 应被剥离');
+  assert.ok(out.includes('说明文字'), '块外文字应保留');
+  assert.ok(out.includes('后续'), '块外后续文字应保留');
+});
+
+test('stripToolBlocks 剥离 js / javascript 块', () => {
+  const BT3 = String.fromCharCode(96, 96, 96);
+  assert.ok(!stripToolBlocks([BT3 + 'js', '{"tool":"x"}', BT3].join('\n')).includes('tool'));
+  assert.ok(!stripToolBlocks([BT3 + 'javascript', '<invoke>', BT3].join('\n')).includes('invoke'));
+});
+
+test('stripToolBlocks 不剥离 json / python 等其他块（真错误不放过）', () => {
+  const BT3 = String.fromCharCode(96, 96, 96);
+  const input = [BT3 + 'json', '{"tool":"read"}', BT3].join('\n');
+  assert.ok(stripToolBlocks(input).includes('{"tool"'), 'json 块不应被剥离');
+});
+
+test('stripToolBlocks 未闭合的 cuckoo 块也剥离（流式截断场景）', () => {
+  const BT3 = String.fromCharCode(96, 96, 96);
+  const input = ['说明', BT3 + 'cuckoo', '{"tool":"read"}'].join('\n');
+  const out = stripToolBlocks(input);
+  assert.ok(!out.includes('{"tool"'), '未闭合块的内部也应剥离');
+});
+
+test('stripToolBlocks 无围栏时原样返回（快速路径不破坏原文）', () => {
+  const input = '{"tool":"read"}';
+  assert.strictEqual(stripToolBlocks(input), input);
 });

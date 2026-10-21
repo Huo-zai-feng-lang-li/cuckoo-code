@@ -6510,6 +6510,12 @@ paths:            # 可选；省略 = 始终生效
   }
   function initActivitybarVisibility() {
     applyActivitybarVisibility();
+    window.addEventListener("cuckoo-activitybar-mounted", () => {
+      try {
+        applyActivitybarVisibility();
+      } catch (_) {
+      }
+    });
   }
 
   // src/ui/shell/scripts/pages/settings.ts
@@ -8941,6 +8947,12 @@ paths:            # 可选；省略 = 始终生效
     const spacer = container.querySelector(".ck-ab-spacer");
     if (m.slot === "activitybar" && spacer) container.insertBefore(el2, spacer);
     else container.appendChild(el2);
+    if (m.slot === "activitybar") {
+      try {
+        window.dispatchEvent(new CustomEvent("cuckoo-activitybar-mounted"));
+      } catch (_) {
+      }
+    }
   }
   function escapeHtml2(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
