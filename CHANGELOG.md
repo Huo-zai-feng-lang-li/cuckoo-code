@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.10.44] - 2026-10-23
+
+### Fixed
+
+- **窗口底栏"对话上下文"显示严重滞后**（`src/overlay/events.ts`、`src/bridge/intercept/observer.ts`、`src/providers/hooks/deepseek.ts`）：底栏只在整轮 AI 回复结束时更新，且优先读 localStorage 缓存（上一轮快照），导致流式生成过程中一直停在旧值。用户看到 3.47 万时实际已进入 10 万量级的 prompt，与官网数字长期对不上。修复：新增 `liveContext` 记录本轮流式实时上下文（仅用于显示，不写缓存、不累加，避免污染累计口径）；显示优先级改为「实时值 > 本会话缓存 > 服务端最近值」；流式收到 `accumulated_token_usage` 即刷新底栏（500ms 节流，`finished` 立即刷）；IPC 推送加签名去重（含 context/cumulative/window/today）避免高频跨窗口广播；子代理窗口仅更新本地 DOM、跳过全窗口广播。
+- **切换会话时旧会话的残余流帧污染新会话底栏**（同上三个文件）：DeepSeek 是 SPA，切换会话不会中断已发起的 fetch，旧会话的流式帧仍在派发。原实现流事件不带会话 ID，导致 A 会话的 token 数被显示到 B 会话的底栏。修复：`dispatchStream` / `observeBody` 增加 `sessionId` 参数，fetch 与 XHR 两条路径分别传入发起时的会话 ID 并透传到 overlay；流帧 sessionId 与当前会话不匹配则丢弃，任一方缺失时放行（向后兼容 ChatGPT/Claude 等不提供该字段的平台）。
+- **手机端远程控制多个思考块同时展开时高度错乱**（`src/remote/pwa/style.css`）：消息容器 `.messages` 是 `flex-direction: column`，而 `.msg.think-block` 带 `overflow: hidden`——按 CSS 规范此时 `min-height: auto` 解析为 `0`，多个思考块展开后总高超出容器可视高度时被 flex 按默认 `flex-shrink: 1` 压扁。实测三个内容高度 377px 的思考块被压缩到 222px，正文被裁切。修复：给 `.msg` 统一加 `flex-shrink: 0`，禁止消息被压缩，改由容器正常滚动。
+
 ## [0.10.43] - 2026-10-21
 
 ### Fixed

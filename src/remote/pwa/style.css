@@ -727,7 +727,14 @@ svg { flex-shrink: 0; }
 /* ==========================================================================
    Message bubbles & markdown
    ========================================================================== */
-.msg { animation: msgEntrance 0.3s var(--ease-out); }
+.msg {
+  /* 消息容器 .messages 是 flex column。子项默认 flex-shrink:1 且 min-height:auto，
+     而 .think-block 带 overflow:hidden（规范下 min-height:auto 解析为 0），
+     多个思考块同时展开、总高超出容器时会被 flex 压扁 → 高度错乱。
+     消息本就不该被压缩，统一禁止 shrink，让容器滚动。 */
+  flex-shrink: 0;
+  animation: msgEntrance 0.3s var(--ease-out);
+}
 
 @keyframes msgEntrance {
   from { opacity: 0; transform: translateY(7px); }
