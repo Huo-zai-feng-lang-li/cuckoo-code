@@ -410,6 +410,8 @@ function startInterceptObserver(): void {
         finished: !!detail.finished,
         // 透传服务端权威 token（DeepSeek）；缺失时为 undefined，下游回退估算
         accumulatedTokens: typeof detail.accumulatedTokens === 'number' ? detail.accumulatedTokens : null,
+        // 发起该流的会话 ID（DeepSeek 提供）；用于丢弃切会话后的残余流帧
+        sessionId: typeof detail.sessionId === 'string' ? detail.sessionId : null,
       });
     } catch (_) { /* ignore */ }
   });

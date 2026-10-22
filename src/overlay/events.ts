@@ -25,6 +25,12 @@ let hooks: {
 } = {};
 // 服务端权威 token 统计（由 bridge 经回调推送，不共享状态）
 let serverTokenUsage: any = null;
+// 本轮流式实时的上下文 token（仅用于显示；不写缓存、不累加，避免污染累计口径）
+let liveContext = 0;
+// 流式刷新节流（ms）
+let lastLiveRefreshAt = 0;
+// 推送给壳页面的去重签名（避免流式期间高频 IPC 广播）
+let lastPushedTokenSig = '';
 
 // ========== 输出速度（TPS）估算 ==========
 // 服务端不给单轮输出 token，只能用流式正文长度估算（见 tps.ts）
@@ -296,26 +302,41 @@ function formatTokenCount(n: number): string {
  */
 function updateConversationTokenDisplay() {
   const countEl = document.getElementById('cuckoo-conv-token-count');
-  // 优先用"当前会话"的缓存值（切会话/刷新后仍能显示该会话的 token）
   const sid = getCurrentSessionId();
   const cached = sid ? getTokenForSession(sid) : { context: 0, cumulative: 0 };
-  const context = (cached.context > 0)
-    ? cached.context
-    : (serverTokenUsage && typeof serverTokenUsage.accumulatedTokens === 'number' ? serverTokenUsage.accumulatedTokens : 0);
+  const serverAcc = (serverTokenUsage && typeof serverTokenUsage.accumulatedTokens === 'number')
+    ? serverTokenUsage.accumulatedTokens : 0;
+  // 显示优先级：本轮流式实时值 > 本会话缓存（上轮快照） > 服务端最近值
+  const context = liveContext > 0 ? liveContext : (cached.context > 0 ? cached.context : serverAcc);
   const cumulative = cached.cumulative || 0;
 
   if (countEl) countEl.textContent = formatTokenCount(context);
 
-  // 同步到壳页面状态条（地址栏下方）：上下文 + 对话累计 + 窗口累计 + 今日累计 + 近 10 日
+  // 子代理窗口：仅更新本地 DOM，不参与跨窗口广播。
+  // 子代理共享父窗口 localStorage，上报虽幂等，但流式期间每 500ms 触发
+  // shell.ts 的 broadcastSystemTotal/broadcastWindowUsage 全窗口广播，纯属冗余开销。
+  if (isSubagentWindow) return;
+
+  const windowCum = getWindowCumulative();
+  const todayCum = getTodayCumulative();
+  // 签名去重：流式期间 context 高频变化，同值不重复触发跨窗口广播。
+  // 必须含 window/today：壳页面 sb-window / sb-today 靠本通道更新，
+  // 其它窗口消耗 token 时本窗口 context/cumulative 可能不变，漏推会导致这两项滞后。
+  const sig = context + ':' + cumulative + ':' + windowCum + ':' + todayCum;
+  if (sig === lastPushedTokenSig) return;
+  lastPushedTokenSig = sig;
   try {
     (window as any).electronAPI.updateTokenUsage(
-      context, cumulative, getWindowCumulative(), getTodayCumulative(), getRecentDaily(10)
+      context, cumulative, windowCum, todayCum, getRecentDaily(10)
     ).catch(() => {});
   } catch (_) {}
 }
 
 /** 供 bridge 在 URL 变化时调用：刷新当前会话的 token 显示 */
 function refreshTokenForCurrentSession(): void {
+  // 会话切换：清空实时值 + 去重签名，回落到新会话的缓存值
+  liveContext = 0;
+  lastPushedTokenSig = '';
   updateConversationTokenDisplay();
 }
 
@@ -393,6 +414,7 @@ function startTokenCounter() {
     // 按当前会话写入缓存（切回来时能显示该会话的值）
     const tokens = serverTokenUsage && serverTokenUsage.accumulatedTokens;
     if (typeof tokens === 'number') {
+      liveContext = tokens; // 结束值即最新上下文
       const sid = getCurrentSessionId();
       if (sid) saveTokenForSession(sid, tokens);
     }
@@ -427,6 +449,23 @@ function startTokenCounter() {
       const acc = ev && typeof ev.accumulatedTokens === 'number' ? ev.accumulatedTokens : null;
       tpsMeter.update(text, finished, acc);
       pushTps();
+      // 实时上下文：流式中收到服务端 acc 就刷新底栏（仅显示，不写缓存/不累加）
+      // 会话归属校验：SPA 切会话不会中断已发起的 fetch，旧会话的残余流帧仍在派发。
+      // 若不带校验，A 会话的 acc 会被显示到 B 会话的底栏。流事件带 sessionId 时必须匹配当前会话。
+      if (typeof acc === 'number' && acc > 0) {
+        const streamSid = (ev && typeof ev.sessionId === 'string') ? ev.sessionId : null;
+        const curSid = getCurrentSessionId();
+        // 匹配放行；任一方缺失时放行（向后兼容：其它平台/旧 hook 不带 sessionId）
+        const sameSession = !streamSid || !curSid || streamSid === curSid;
+        if (sameSession) {
+          liveContext = acc;
+          const now = Date.now();
+          if (finished || now - lastLiveRefreshAt >= 500) {
+            lastLiveRefreshAt = now;
+            updateConversationTokenDisplay();
+          }
+        }
+      }
     } catch (_) { /* ignore */ }
   });
 }

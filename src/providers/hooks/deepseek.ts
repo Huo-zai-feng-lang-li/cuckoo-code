@@ -85,7 +85,7 @@ function install(): void {
   var lastStreamAt = 0;
   // acc：服务端下发的 accumulated_token_usage（= prompt + 已生成输出），
   // 下游用"当前 acc − 本轮起始 acc"得到精确的本轮输出 token 数。
-  function dispatchStream(think, text, finished, acc) {
+  function dispatchStream(think, text, finished, acc, sessionId) {
     var now = Date.now();
     if (!finished && now - lastStreamAt < 40) return;
     lastStreamAt = now;
@@ -95,7 +95,9 @@ function install(): void {
           think: think || '',
           text: text || '',
           finished: !!finished,
-          accumulatedTokens: typeof acc === 'number' ? acc : null
+          accumulatedTokens: typeof acc === 'number' ? acc : null,
+          // 发起该流的会话 ID：切会话后残余流帧据此被下游丢弃（SPA 导航不中断 fetch）
+          sessionId: sessionId || null
         }
       }));
     } catch (e) { /* ignore */ }
@@ -316,7 +318,7 @@ function install(): void {
     return 300000;
   }
 
-  function observeBody(body) {
+  function observeBody(body, sessionId) {
     if (!body) return;
     var reader = body.getReader();
     var decoder = new TextDecoder();
@@ -351,7 +353,7 @@ function install(): void {
         var parsed = parseBlock(frames[i]);
         if (parsed) extractor.consume(parsed);
       }
-      dispatchStream(extractor.think, extractor.text, extractor.finished, extractor.tokenUsage ? extractor.tokenUsage.accumulatedTokens : null);
+      dispatchStream(extractor.think, extractor.text, extractor.finished, extractor.tokenUsage ? extractor.tokenUsage.accumulatedTokens : null, sessionId);
       if (extractor.finished && !dispatched) {
         dispatched = true;
         dispatch(extractor.text, resolveStatus(extractor), extractor.tokenUsage, extractor.msgIds, null, Object.assign({ path: 'feed-finished-frame' }, extractor.snapshot()));
@@ -486,7 +488,7 @@ function install(): void {
                 }
               }).catch(function () { /* 非 JSON，忽略 */ });
             } else {
-              observeBody(response.clone().body);
+              observeBody(response.clone().body, fetchSessionId);
             }
           }
         } catch (e) { /* ignore */ }
@@ -566,7 +568,7 @@ function install(): void {
         var parsed = parseBlock(frames[i]);
         if (parsed) extractor.consume(parsed);
       }
-      dispatchStream(extractor.think, extractor.text, extractor.finished, extractor.tokenUsage ? extractor.tokenUsage.accumulatedTokens : null);
+      dispatchStream(extractor.think, extractor.text, extractor.finished, extractor.tokenUsage ? extractor.tokenUsage.accumulatedTokens : null, reqSessionId);
       if (extractor.finished && !dispatched) {
         dispatched = true;
         wd.stop();
