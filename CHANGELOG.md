@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.10.50] - 2026-10-23
+
+### Fixed
+
+- **模型输出 DSML 格式工具调用时，系统纠正提示反而"教"模型继续用该格式**（`src/bridge/intercept/observer.ts`）：DeepSeek 等模型偶发退化输出原生 tool-calling 格式（`<|DSML|invoke>`），拦截器能正确识别并拒绝执行，但回给模型的纠正提示把 `<|DSML|invoke>` 这类标签**原样写回**了。提示词中出现的语法模式对模型是强信号，等于反向强化错误格式，形成"越纠越错"的循环。修复：提示改为中性表述"你刚才使用了错误格式的工具调用，被系统拒绝"，不再回显具体标签；结尾也从"禁止使用 XML / DSML / antml 格式"改为"禁止使用任何 XML / 标签 / 特殊指令语法"，避免点名格式本身。
+- **DSML 正则漏匹配竖线后带空格的写法**（同上文件）：`<[|｜]+\s*DSML\s*[|｜]+([a-zA-Z]+)` 要求闭合竖线后紧跟标签名，导致 `<|DSML| invoke>` 这种带空格的变体识别不到。修复：补 `\s*` 容忍空白。误匹配面未放大——`<` 与首个竖线之间仍严格要求紧贴。
+- **系统提示词模板里写着完整的 DSML 语法示例，可能反向诱导模型**（`src/prompt/deepseek.md`、`claude.md`、`default.md`）：原句"禁止使用 XML / DSML / antml 等格式（例如 `<|DSML|invoke name="...">`、`<invoke name="...">`...）"在"禁止"的同时把语法完整示范了一遍。修复：去掉具体示例，只保留"禁止使用 XML / DSML / antml 等标签式工具调用语法"的抽象表述。
+
+### Added
+
+- **DSML 识别与纠正提示的回归测试**（`test/bridge/intercept/observer.test.js`）：新增两个用例——① DSML 格式识别，覆盖 `<|DSML|invoke>` 与竖线后带空格的 `<|DSML| invoke>` 两种写法；② 断言纠正提示中**不含** `<|DSML|`，防止标签回显问题回归。测试环境补 `KeyboardEvent` stub（node 环境缺失会导致发送链挂起），并在 `afterEach` 恢复发送延迟配置避免用例间污染。
+
 ## [0.10.48] - 2026-10-23
 
 ### Fixed
