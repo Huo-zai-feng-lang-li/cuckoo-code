@@ -274,6 +274,8 @@
     cursor: pointer; opacity: .8;
   }
   .ck-git-group-act:hover { opacity: 1; text-decoration: underline; }
+  /* 危险动作（如「全部撤销」）：红色常驻可见；防误点靠二次确认弹框，不靠隐藏 */
+  .ck-git-group-act.ck-git-act-danger { color: var(--ck-danger); }
   .ck-git-row {
     display: flex; align-items: center; gap: 6px;
     padding: 3px 10px; cursor: pointer; font-size: 12px;

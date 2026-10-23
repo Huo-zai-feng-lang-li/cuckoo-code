@@ -1754,6 +1754,8 @@
     cursor: pointer; opacity: .8;
   }
   .ck-git-group-act:hover { opacity: 1; text-decoration: underline; }
+  /* 危险动作（如「全部撤销」）：红色常驻可见；防误点靠二次确认弹框，不靠隐藏 */
+  .ck-git-group-act.ck-git-act-danger { color: var(--ck-danger); }
   .ck-git-row {
     display: flex; align-items: center; gap: 6px;
     padding: 3px 10px; cursor: pointer; font-size: 12px;
@@ -8008,10 +8010,11 @@ paths:            # 可选；省略 = 始终生效
     const acts = staged ? '<span class="ck-git-act" data-act="unstage" data-path="' + p + '">\u2212</span>' : '<span class="ck-git-act" data-act="stage" data-path="' + p + '">\uFF0B</span>' + (untracked ? '<span class="ck-git-act" data-act="discard" data-path="' + p + '">\u{1F5D1}</span>' : '<span class="ck-git-act" data-act="restore" data-path="' + p + '">\u21A9</span>');
     return '<div class="ck-git-row" data-path="' + p + '" title="' + p + '"><span class="ck-git-st ' + s.cls + '">' + s.ch + '</span><span class="ck-git-path">' + escapeHtml(it.path) + '</span><span class="ck-git-acts">' + acts + "</span></div>";
   }
-  function groupHtml(key, title, count, act, actLabel) {
+  function groupHtml(key, title, count, act, actLabel, extra) {
     const collapsed = collapsedGroups.has(key);
     const caret = '<span class="ck-git-caret' + (collapsed ? " ck-git-caret-c" : "") + '"></span>';
-    return '<div class="ck-git-group" data-group="' + key + '">' + caret + '<span class="ck-git-group-title">' + title + " (" + count + ')</span><span class="ck-git-group-act" data-act="' + act + '">' + actLabel + "</span></div>";
+    const extraHtml = extra ? '<span class="ck-git-group-act' + (extra.danger ? " ck-git-act-danger" : "") + '" data-act="' + extra.act + '">' + extra.label + "</span>" : "";
+    return '<div class="ck-git-group" data-group="' + key + '">' + caret + '<span class="ck-git-group-title">' + title + " (" + count + ")</span>" + extraHtml + '<span class="ck-git-group-act" data-act="' + act + '">' + actLabel + "</span></div>";
   }
   var lastItems = [];
   function renderList4(items) {
@@ -8026,7 +8029,14 @@ paths:            # 可选；省略 = 始终生效
       if (!collapsedGroups.has("staged")) html += staged.map((i) => rowHtml(i, true)).join("");
     }
     if (changed.length) {
-      html += groupHtml("changed", "\u66F4\u6539", changed.length, "stage-all", "\u5168\u90E8\u6682\u5B58");
+      html += groupHtml(
+        "changed",
+        "\u66F4\u6539",
+        changed.length,
+        "stage-all",
+        "\u5168\u90E8\u6682\u5B58",
+        { act: "discard-all", label: "\u5168\u90E8\u64A4\u9500", danger: true }
+      );
       if (!collapsedGroups.has("changed")) html += changed.map((i) => rowHtml(i, false)).join("");
     }
     if (!staged.length && !changed.length) {
@@ -8163,12 +8173,34 @@ paths:            # 可选；省略 = 始终生效
     await loadGit();
   }
   async function doBulk(act) {
-    try {
-      if (act === "stage-all") await api.gitStageAll?.();
-      else await api.gitUnstageAll?.();
-    } catch (_) {
+    if (act === "discard-all") {
+      const trackedCount = lastItems.filter((i) => i.x !== "?" && i.unstaged).length;
+      const untrackedCount = lastItems.filter((i) => i.x === "?").length;
+      if (trackedCount === 0 && untrackedCount === 0) {
+        await ckAlert("\u66F4\u6539\u533A\u6CA1\u6709\u53EF\u64A4\u9500\u7684\u5185\u5BB9\u3002", "\u5168\u90E8\u64A4\u9500");
+        return;
+      }
+      const parts = [];
+      if (trackedCount > 0) parts.push("\u64A4\u9500 " + trackedCount + " \u4E2A\u5DF2\u8DDF\u8E2A\u6587\u4EF6\u7684\u6539\u52A8");
+      if (untrackedCount > 0) parts.push("\u6C38\u4E45\u5220\u9664 " + untrackedCount + " \u4E2A\u672A\u8DDF\u8E2A\u6587\u4EF6");
+      const ok = await ckConfirm(
+        "\u5C06" + parts.join("\uFF0C\u5E76") + "\u3002\n\n\u6B64\u64CD\u4F5C\u4E0D\u53EF\u6062\u590D\u3002\n\uFF08\u5DF2\u6682\u5B58\u7684\u6539\u52A8\u4E0D\u53D7\u5F71\u54CD\uFF1B\u88AB .gitignore \u5FFD\u7565\u7684\u6587\u4EF6\u4E0D\u4F1A\u88AB\u5220\u9664\uFF09",
+        "\u5168\u90E8\u64A4\u9500"
+      );
+      if (!ok) return;
     }
-    await loadGit();
+    let failed = "";
+    try {
+      let r;
+      if (act === "stage-all") r = await api.gitStageAll?.();
+      else if (act === "unstage-all") r = await api.gitUnstageAll?.();
+      else if (act === "discard-all") r = await api.gitDiscardAll?.();
+      if (r && r.success === false) failed = r.error || "\u672A\u77E5\u9519\u8BEF";
+    } catch (err) {
+      failed = err && err.message || "\u672A\u77E5\u9519\u8BEF";
+    }
+    if (failed) await ckAlert((act === "discard-all" ? "\u64A4\u9500\u5931\u8D25\uFF1A" : "\u64CD\u4F5C\u5931\u8D25\uFF1A") + failed, "Git");
+    await loadGit({ force: true });
   }
   async function doCommit() {
     const msgEl = document.getElementById("git-commit-msg");
@@ -8201,7 +8233,7 @@ paths:            # 可选；省略 = 始终生效
             await doAct(act, p);
             return;
           }
-          if (act === "stage-all" || act === "unstage-all") {
+          if (act === "stage-all" || act === "unstage-all" || act === "discard-all") {
             await doBulk(act);
             return;
           }

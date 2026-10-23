@@ -1,5 +1,53 @@
 # 最新接续状态 (2026-10-23)
 
+## 待发布：087 Git 面板「全部撤销」
+
+### 语义（用户最终确认，重要）
+
+「全部撤销」= **清空更改区** = `git restore -- .` + `git clean -fd`
+- 已跟踪文件 → 从暂存区恢复
+- 未跟踪文件/目录 → 永久删除
+- 不动暂存区（那是「全部取消」的职责）
+- 不删 .gitignore 忽略的文件（`clean` 不带 `-x`）
+
+> 最初按方案 1（只恢复已跟踪文件）实现，用户指出"全部撤销应该是撤销更改区代码"，已改正。
+
+### 改动（分支 feat/087-git-discard-all，未提交）
+
+| 层 | 文件 | 内容 |
+|---|---|---|
+| 主进程 | `src/app/ipc/git.ts` | `git-discard-all` → restore + clean -fd |
+| preload | `src/app/shell-preload.ts` | 暴露 `gitDiscardAll()` |
+| 类型 | `src/ui/shell/scripts/shell-api.ts` | `gitDiscardAll?: () => Promise<any>` |
+| 页面 | `src/ui/shell/scripts/pages/git.ts` | groupHtml extra 参数；changed 分组挂按钮；doBulk 动态确认文案 |
+| 样式 | `src/ui/shell/styles/pages.css` | `.ck-git-act-danger` 红色常驻可见 |
+| 档案 | `docs/requirements/087-git-discard-all.md` | 需求档案 |
+
+### 踩坑（重要，下次别再犯）
+
+1. **验证必须用用户真实数据**。最初只用人造"有已跟踪改动"的仓库验证 git 语义，用户项目里全是未跟踪文件，功能实际空转。验证前先问：用户当前数据下这功能会有效果吗？
+2. **`opacity: 0` 的"悬停显现"设计 = 用户看不见按钮**。用户报"点击没反应"。可见性验证不能只读 `getComputedStyle`，必须截图肉眼看。
+3. **子代理标"低优先级"的问题不能直接放过**。code-reviewer 提过 opacity 问题标为"仅供参考"，我没复核，导致 bug 上线。
+4. **启动实例早于编译完成 → 加载旧产物**。曾因此误判"代码没生效"。重启前比对 `shell.html` 与实例启动时间戳。
+5. **pwsh 模板字符串里写 PowerShell 反引号（`n）会与 JS 模板字符串冲突**，报 "missing ) after argument list"。必须用 `write` 写 .ps1 再执行。
+6. **bash 在 Windows 是 cmd.exe，没有 tail/head**，用 pwsh `Select-Object -Last N`。
+7. **`Remove-Item -Recurse -Force` 会被安全策略拒绝**，删目录用 `node -e "fs.rmSync(...)"`。
+
+### 验证状态
+
+- typecheck / lint(0 errors) / compile 全绿
+- test：129 文件 1230 条通过（首次跑偶发 1 条失败，重跑两次均全过，与 handoff 记录的 run-captured 时序敏感用例一致）
+- 子代理审查：arch-guard 合规；code-reviewer 2 条中等问题已修复
+- 真机端到端（CDP 9444，临时仓库）：按钮可见 → 动态确认文案正确 → 确定后 `git status` 全空、tracked.txt 恢复、未跟踪文件与目录已删、ignored-dir 保留
+- 撤销（取消）路径：改动完好无损
+
+### 已知遗留
+
+- 未做 unmerged 冲突路径的失败提示真机验证（代码有 ckAlert 兜底）
+- 「全部撤销」会删未跟踪文件，属于破坏性操作，靠动态确认文案 + 红色按钮提示
+
+---
+
 ## 已发布 v0.10.44
 
 ### 本轮改动 (v0.10.44)

@@ -45,13 +45,17 @@ function rowHtml(it: GitItem, staged: boolean): string {
   '</div>';
 }
 
-/** 分组头 HTML（含折叠箭头） */
-function groupHtml(key: string, title: string, count: number, act: string, actLabel: string): string {
+/** 分组头 HTML（含折叠箭头）；extra 为可选的第二个动作按钮（如「全部撤销」） */
+function groupHtml(key: string, title: string, count: number, act: string, actLabel: string, extra?: { act: string; label: string; danger?: boolean }): string {
   const collapsed = collapsedGroups.has(key);
   const caret = '<span class="ck-git-caret' + (collapsed ? ' ck-git-caret-c' : '') + '"></span>';
+  const extraHtml = extra
+    ? '<span class="ck-git-group-act' + (extra.danger ? ' ck-git-act-danger' : '') + '" data-act="' + extra.act + '">' + extra.label + '</span>'
+    : '';
   return '<div class="ck-git-group" data-group="' + key + '">' +
     caret +
     '<span class="ck-git-group-title">' + title + ' (' + count + ')</span>' +
+    extraHtml +
     '<span class="ck-git-group-act" data-act="' + act + '">' + actLabel + '</span>' +
   '</div>';
 }
@@ -73,7 +77,8 @@ function renderList(items: GitItem[]): void {
     if (!collapsedGroups.has('staged')) html += staged.map((i) => rowHtml(i, true)).join('');
   }
   if (changed.length) {
-    html += groupHtml('changed', '更改', changed.length, 'stage-all', '全部暂存');
+    html += groupHtml('changed', '更改', changed.length, 'stage-all', '全部暂存',
+      { act: 'discard-all', label: '全部撤销', danger: true });
     if (!collapsedGroups.has('changed')) html += changed.map((i) => rowHtml(i, false)).join('');
   }
   if (!staged.length && !changed.length) {
@@ -217,13 +222,37 @@ async function doAct(act: string, relPath: string): Promise<void> {
   await loadGit();
 }
 
-/** 全部暂存 / 全部取消暂存（走批量 IPC：一条 git 命令，避免几百文件时逐个进程） */
+/** 全部暂存 / 全部取消暂存 / 全部撤销（走批量 IPC：一条 git 命令，避免几百文件时逐个进程） */
 async function doBulk(act: string): Promise<void> {
+  if (act === 'discard-all') {
+    // 撤销「更改区」全部内容：已跟踪文件恢复 + 未跟踪文件删除
+    const trackedCount = lastItems.filter((i) => i.x !== '?' && i.unstaged).length;
+    const untrackedCount = lastItems.filter((i) => i.x === '?').length;
+    if (trackedCount === 0 && untrackedCount === 0) {
+      await ckAlert('更改区没有可撤销的内容。', '全部撤销');
+      return;
+    }
+    const parts: string[] = [];
+    if (trackedCount > 0) parts.push('撤销 ' + trackedCount + ' 个已跟踪文件的改动');
+    if (untrackedCount > 0) parts.push('永久删除 ' + untrackedCount + ' 个未跟踪文件');
+    const ok = await ckConfirm(
+      '将' + parts.join('，并') + '。\n\n此操作不可恢复。\n（已暂存的改动不受影响；被 .gitignore 忽略的文件不会被删除）',
+      '全部撤销'
+    );
+    if (!ok) return;
+  }
+  let failed = '';
   try {
-    if (act === 'stage-all') await api.gitStageAll?.();
-    else await api.gitUnstageAll?.();
-  } catch (_) { /* ignore */ }
-  await loadGit();
+    let r: any;
+    if (act === 'stage-all') r = await api.gitStageAll?.();
+    else if (act === 'unstage-all') r = await api.gitUnstageAll?.();
+    else if (act === 'discard-all') r = await api.gitDiscardAll?.();
+    if (r && r.success === false) failed = r.error || '未知错误';
+  } catch (err: any) { failed = (err && err.message) || '未知错误'; }
+  // 破坏性操作失败必须告知（如 unmerged 冲突路径会让 git restore 整体中止）
+  if (failed) await ckAlert((act === 'discard-all' ? '撤销失败：' : '操作失败：') + failed, 'Git');
+  // 强制重拉：loadGit 在已加载时 early-return，不 force 则本次操作结果要等 watcher 兜底
+  await loadGit({ force: true });
 }
 
 /** 提交 */
@@ -250,7 +279,7 @@ async function doCommit(): Promise<void> {
         const act = actEl.dataset.act;
         const p = actEl.dataset.path;
         if (act === 'stage' || act === 'unstage' || act === 'restore' || act === 'discard') { await doAct(act, p); return; }
-        if (act === 'stage-all' || act === 'unstage-all') {
+        if (act === 'stage-all' || act === 'unstage-all' || act === 'discard-all') {
           await doBulk(act);
           return;
         }

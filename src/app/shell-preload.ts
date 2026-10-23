@@ -156,6 +156,7 @@ const shellAPI = {
   gitStageAll: () => ipcRenderer.invoke('git-stage-all'),
   gitUnstageAll: () => ipcRenderer.invoke('git-unstage-all'),
   gitRestore: (relPath: string) => ipcRenderer.invoke('git-restore', { relPath }),
+  gitDiscardAll: () => ipcRenderer.invoke('git-discard-all'),
   gitDiscardUntracked: (relPath: string) => ipcRenderer.invoke('git-discard-untracked', { relPath }),
   gitCommit: (message: string) => ipcRenderer.invoke('git-commit', { message }),
   gitCurrentBranch: () => ipcRenderer.invoke('git-current-branch'),

@@ -190,6 +190,20 @@ function registerGitIpc(): void {
     return r.success ? { success: true } : { success: false, error: r.stderr.trim() };
   });
 
+  // 全部撤销「更改区」改动（危险）：清空所有未暂存内容
+  //  1. 已跟踪文件：从暂存区恢复到工作区（不动暂存区）
+  //  2. 未跟踪文件与目录：删除（不带 -x，故被 .gitignore 忽略的不会删）
+  // 已暂存的改动不受影响（它们属于「已暂存」区，用「全部取消」处理）。
+  ipcMain.handle('git-discard-all', async (event: any) => {
+    const root = getProjectRoot(event);
+    if (!root) return { success: false, error: '未选择项目目录' };
+    const r1 = await runGit(root, ['restore', '--', '.']);
+    if (!r1.success) return { success: false, error: r1.stderr.trim() };
+    const r2 = await runGit(root, ['clean', '-fd']);
+    if (!r2.success) return { success: false, error: r2.stderr.trim() };
+    return { success: true };
+  });
+
   // 删除未跟踪文件（未跟踪文件无法用 git restore 撤销，只能删除）
   ipcMain.handle('git-discard-untracked', async (event: any, { relPath }: any) => {
     const ctx = windowState.getContextByWebContents(event.sender);
