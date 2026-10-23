@@ -1,195 +1,159 @@
-# 最新接续状态 (2026-10-23)
+# 最新接续状态 (2026-10-23 13:08)
 
-## 已发布 v0.10.48（串行队列超时兜底 + 失败提示补全）
+## 核心进展
 
-### v0.10.48 内容
+Git 面板「全部撤销」功能已完成并发布**四个版本**，全部已推送远端：
 
-| 类型 | 内容 | 影响面 |
+| 版本 | 提交 | 内容 |
 |---|---|---|
-| fix | `runGit` 加 30 秒超时——串行队列无超时的话，一条命令挂死会拖垮整个 Git 面板 | `src/app/ipc/git.ts` |
-| fix | `loadBranch` 失败原因挂 `title`（原来静默显示占位符） | `pages/git.ts` |
-| fix | `loadHistory` 加 `silent` 模式：后台刷新失败只记控制台不弹框，用户主动触发才提示 | `pages/git.ts` |
+| v0.10.45 | `a7a5b4d` | 新增「全部撤销」= 清空更改区 |
+| v0.10.46 | `c6172f3` | 并发守卫（**后证实为误判产物**，保留无害） |
+| v0.10.47 | `58a0c62` | **真因修复**：`runGit` 全局串行队列 + 操作反馈 |
+| v0.10.48 | `ccad99b` | 串行队列超时兜底 + 失败提示补全 |
 
-**验证**：typecheck / lint(0 errors) / compile / test(129 文件) 全绿；真机确认正常路径（暂存/取消/历史 60 条/分支名）全部正常、无残留弹框；人为创建 `.git/index.lock` 制造失败，确认弹框正确显示「操作失败：fatal: Unable to create ... index.lock: File exists」。
+远端 master 与 tag `v0.10.48` 均指向 `ccad99b`。工作区干净（0 改动，无 `.tmp-*` 残留），开发版实例已关闭。
 
-**已知**：test 偶发 1 条失败（时序敏感用例），重跑即过，三次中有两次全绿。
+## 核心动机与背景 (Motivation & Background)
 
----
+用户需求演进三次，每次都纠正了我的理解偏差：
 
-## 已发布 v0.10.47（Git 面板按钮"要点两次"真因修复 + 操作反馈）
-
-### 本轮三个版本
-
-| 版本 | 类型 | 内容 |
-|---|---|---|
-| v0.10.45 | feat | Git 面板新增「全部撤销」= 清空更改区（restore + clean -fd） |
-| v0.10.46 | fix | 批量按钮并发守卫（doBulk 串行队列 + loadGit 请求序号）——**当时误判，非真因** |
-| v0.10.47 | fix | **真因**：`runGit` 无并发控制导致 `.git/index.lock` 竞争；同时补齐操作反馈 |
-
-### 「点一下没反应、要点两次」真因（v0.10.47，重要）
-
-**不是**连点竞态，**也不是** DOM 重建导致 click 丢失（这两个是我先后两次的错误假设）。
-
-真因：`runGit()` 直接 `execFile` 无并发控制。多个 git 命令并发时争抢 `.git/index.lock`，后到者失败返回 `fatal: Unable to create '.git/index.lock': File exists`。关键：**`git status` 也写 index**（刷新 stat 缓存），所以它和 `git add` 并发时同样失败。v0.10.45 之前该失败是静默的，用户只能再点一次碰运气。
-
-修复：`runGit` 改全局串行队列（`gitQueue`），所有 git 命令按发起顺序执行。
-
-**定位过程值得记住**：程序化 `.click()` 8 轮全过（覆盖不到真实时序）→ 改用 CDP `Input.dispatchMouseEvent` 真实鼠标才复现 → 装探针发现 `mousedown/mouseup/click` 全部正常触发（推翻 DOM 重建假设）→ 最后读弹框内容才看到 `index.lock` 报错。
-
-### 操作反馈设计（v0.10.47，三版迭代）
-
-需求：「点击需要等待 2s，可以加 loading，但暗黑的不好看，要加动效」。读了 `impeccable` 技能（Operate 模式）与 `reference/animate.md`（动效服务反馈，装饰是动画债）。
-
-- **第一版（否决）**：面板顶部 2px 通栏进度条 → 窄侧栏里视觉权重过大，紧贴标题被误读成边框渲染错误
-- **第二版（否决）**：分组标题后 9px 小圈，用 `currentColor`（继承 `--ck-text-dim` 灰） → 暗色下像装饰符号，不传达"进行中"
-- **最终版**：分组标题后 10px 小圈，**主色弧线 + 半透明主色轨道**（`border-top-color: var(--ck-primary)`），`.6s` 匀速；动作按钮**不做透明度闪烁**（暗色下反复明暗显廉价），只保留 `pointer-events: none` 阻断重复点击；`prefers-reduced-motion` 降级为静态主色圆点
-
-补充修复：`renderList` 用 `innerHTML` 重建 DOM 会丢掉 `ck-git-loading` 类，已在渲染后补偿。
-
-### 本轮其它修复
-
-- `doAct` / `doCommit` / `doCheckout` 结尾由 `loadGit()` 改 `loadGit({ force: true })`——原实现已加载时 early-return，实际要等 watcher 兜底
-- `doCommit` 提交期间禁用按钮
-- 提交历史行读取 diff 期间加 `ck-git-busy` + `loadingCommitHash` 防重复请求
-
-### 「全部撤销」最终语义（重要）
-
-`git restore -- .` + `git clean -fd`：
+**1. 语义纠正**：「全部撤销」不是「只恢复已跟踪文件」，用户原话——「**不是有全部取消吗？全部撤销应该是撤销更改区代码**」。
+最终语义：`git restore -- .` + `git clean -fd`
 - 已跟踪文件 → 从暂存区恢复
 - 未跟踪文件/目录 → 永久删除
 - 不动暂存区（那是「全部取消」的职责）
-- 不删 .gitignore 忽略的文件（`clean` 不带 `-x`）
-- 动态确认文案：「将撤销 N 个已跟踪文件的改动，并永久删除 M 个未跟踪文件」
+- 不删 `.gitignore` 忽略项（`clean` 不带 `-x`）
 
-### 并发修复（v0.10.46）
+**2. Bug 纠正**：用户先报「点全部暂存→全部取消→全部暂存偶尔不生效，双击就行」，我误判为连点竞态并发布 v0.10.46。用户随后纠正——「**批量按钮快速连点不生效，不是这个。我是说有时候点击全部暂存需要点两下才可以**」。
 
-用户报「全部暂存→全部取消→全部暂存偶尔不生效，双击才行」。根因是我在 v0.10.45 把 `doBulk` 结尾的 `loadGit()` 改成 `loadGit({ force: true })`，**绕过了 watcher 通道已有的 `loadGitCoalesced` 并发守卫**。连点时 git 命令并发（完成顺序不定）+ gitStatus 并发返回（顺序不定）→ 慢的旧结果覆盖新状态。
+**真因（v0.10.47 才找到）**：`runGit()` 直接 `execFile` **无任何并发控制**。多 git 命令并发争抢 `.git/index.lock`，后到者失败返回 `fatal: Unable to create '.git/index.lock': File exists`。关键点：**`git status` 也会写 index**（刷新 stat 缓存），所以它和 `git add` 并发时同样撞车。v0.10.45 之前该失败是静默的，用户只能靠再点一次碰运气。
 
-修复两层：
-1. `bulkChain` 串行队列：批量 git 命令按点击顺序执行
-2. `gitLoadSeq` 请求序号：过期响应直接丢弃，只允许最新一次渲染
+**3. 动效需求**：「点击需要等待 2s，可以加 loading，但暗黑的不好看，要加动效」→ 第一版做好后用户反馈「**动效不好看**」，重做两轮才定稿。
 
-真机验证：模拟 120ms 间隔连点三次（暂存→取消→暂存），最终状态与 DOM 完全一致。
+## 关键设计与实现 (Implementation & Decisions)
 
-### 踩坑（重要，下次别再犯）
+### 1. `runGit` 全局串行队列（`src/app/ipc/git.ts`，真因修复）
 
-1. **验证必须用用户真实数据**。最初只用人造「有已跟踪改动」的仓库验证 git 语义，用户项目里全是未跟踪文件，功能实际空转。
-2. **`opacity: 0` 的「悬停显现」= 用户看不见按钮**。可见性不能只读 `getComputedStyle`，必须截图肉眼看。
-3. **子代理标"低优先级"的问题不能直接放过**。code-reviewer 提过 opacity 问题标为"仅供参考"，我没复核导致 bug 上线。
-4. **改公共函数要考虑所有调用方**。`doBulk` 服务三个按钮，我把刷新改成 force 时没意识到它绕过了并发守卫，引入连点回归。
-5. **启动实例早于编译完成 → 加载旧产物**。重启前比对 `shell.html` 与实例启动时间戳。
-6. **pwsh 模板字符串里写 PowerShell 反引号（`n）会与 JS 模板字符串冲突**，必须用 `write` 写 .ps1 再执行。
-7. **bash 在 Windows 是 cmd.exe**，没有 tail/head；**pwsh 里 `&&` 不合法**，用 `;` 分隔。
-8. **`Remove-Item -Recurse -Force` 会被安全策略拒绝**，删目录用 `node -e "fs.rmSync(...)"`。
-9. **tag 必须在发版提交之后打**。曾先打 tag 再提交版本号，tag 指向了功能提交，只能删除重打。
+```ts
+let gitQueue: Promise<unknown> = Promise.resolve();
+const GIT_TIMEOUT_MS = 30000;
 
-### 验证状态
+function runGit(root, args) {
+  const exec = () => new Promise((resolve) => {
+    execFile('git', args, { cwd: root, maxBuffer: 8*1024*1024, windowsHide: true, timeout: GIT_TIMEOUT_MS }, (err, stdout, stderr) => {
+      if (err) {
+        // 超时被强制终止：给中文提示而非 Node 原始 "Command failed"
+        if (err.killed || err.signal) return resolve({ success: false, stdout: stdout||'', stderr: 'git 命令执行超时（30 秒），已强制终止...' });
+        return resolve({ success: false, stdout: stdout||'', stderr: stderr || err.message });
+      }
+      resolve({ success: true, stdout: stdout||'', stderr: stderr||'' });
+    });
+  });
+  // then(exec, exec)：前一条失败也继续执行下一条，避免一次失败卡死队列
+  const next = gitQueue.then(exec, exec);
+  gitQueue = next.then(() => {}, () => {});
+  return next;
+}
+```
 
-- v0.10.45：typecheck / lint(0 errors) / compile / test(1230) 全绿；子代理审查通过；真机端到端验证（含 .gitignore 保留项）
-- v0.10.46：同样四项全绿；真机连点验证通过
-- 远端确认：master 与 tag v0.10.46 均指向 `c6172f3`
+**超时兜底是必要的**：串行队列的代价是「前一条卡住，后面全等」，没超时的话一条挂死会拖垮整个 Git 面板（比修复前更糟：从「单功能卡住」变成「整个面板卡死」）。
 
-### 未提交的其它改动
+### 2. 操作反馈（`pages/git.ts` + `pages.css`，三版迭代）
 
-`src/prompt/chatgpt.md` 有改动（**属于另一条功能线，未触碰**）。
+读了 `impeccable` 技能的 Operate 模式 + `reference/animate.md`（动效服务反馈，装饰是动画债）。
 
----
-
-## 已发布 v0.10.44
-
-### 语义（用户最终确认，重要）
-
-「全部撤销」= **清空更改区** = `git restore -- .` + `git clean -fd`
-- 已跟踪文件 → 从暂存区恢复
-- 未跟踪文件/目录 → 永久删除
-- 不动暂存区（那是「全部取消」的职责）
-- 不删 .gitignore 忽略的文件（`clean` 不带 `-x`）
-
-> 最初按方案 1（只恢复已跟踪文件）实现，用户指出"全部撤销应该是撤销更改区代码"，已改正。
-
-### 改动（分支 feat/087-git-discard-all，未提交）
-
-| 层 | 文件 | 内容 |
+| 版本 | 方案 | 否决原因 |
 |---|---|---|
-| 主进程 | `src/app/ipc/git.ts` | `git-discard-all` → restore + clean -fd |
-| preload | `src/app/shell-preload.ts` | 暴露 `gitDiscardAll()` |
-| 类型 | `src/ui/shell/scripts/shell-api.ts` | `gitDiscardAll?: () => Promise<any>` |
-| 页面 | `src/ui/shell/scripts/pages/git.ts` | groupHtml extra 参数；changed 分组挂按钮；doBulk 动态确认文案 |
-| 样式 | `src/ui/shell/styles/pages.css` | `.ck-git-act-danger` 红色常驻可见 |
-| 档案 | `docs/requirements/087-git-discard-all.md` | 需求档案 |
+| 一 | 面板顶部 2px 通栏进度条 | 窄侧栏（46~320px）里视觉权重过大，紧贴标题被误读成边框渲染错误 |
+| 二 | 分组标题后 9px 小圈，`currentColor`（继承灰色） | 暗色下像装饰符号，不传达「进行中」 |
+| **三（最终）** | 分组标题后 10px 小圈，**主色弧线 + 半透明主色轨道**，`.6s` 匀速 | ✅ |
 
-### 踩坑（重要，下次别再犯）
+最终 CSS：
+```css
+@keyframes ck-git-spin { to { transform: rotate(360deg); } }
+.ck-git-group.ck-git-loading .ck-git-group-title::after {
+  content: ""; display: inline-block; width: 10px; height: 10px;
+  margin-left: 7px; vertical-align: -2px;
+  border: 1.5px solid color-mix(in srgb, var(--ck-primary) 32%, transparent);
+  border-top-color: var(--ck-primary);
+  border-radius: 50%;
+  animation: ck-git-spin .6s linear infinite;
+}
+```
 
-1. **验证必须用用户真实数据**。最初只用人造"有已跟踪改动"的仓库验证 git 语义，用户项目里全是未跟踪文件，功能实际空转。验证前先问：用户当前数据下这功能会有效果吗？
-2. **`opacity: 0` 的"悬停显现"设计 = 用户看不见按钮**。用户报"点击没反应"。可见性验证不能只读 `getComputedStyle`，必须截图肉眼看。
-3. **子代理标"低优先级"的问题不能直接放过**。code-reviewer 提过 opacity 问题标为"仅供参考"，我没复核，导致 bug 上线。
-4. **启动实例早于编译完成 → 加载旧产物**。曾因此误判"代码没生效"。重启前比对 `shell.html` 与实例启动时间戳。
-5. **pwsh 模板字符串里写 PowerShell 反引号（`n）会与 JS 模板字符串冲突**，报 "missing ) after argument list"。必须用 `write` 写 .ps1 再执行。
-6. **bash 在 Windows 是 cmd.exe，没有 tail/head**，用 pwsh `Select-Object -Last N`。
-7. **`Remove-Item -Recurse -Force` 会被安全策略拒绝**，删目录用 `node -e "fs.rmSync(...)"`。
+配套决策：
+- **不对整块内容降透明度**——暗色下整块发灰会显得像坏掉
+- **不做透明度闪烁**——反复明暗交替显廉价，只保留 `pointer-events: none` 阻断重复点击
+- `prefers-reduced-motion` 降级为静态主色圆点
 
-### 验证状态
+### 3. 忙碌态用引用计数 + DOM 重建补偿（关键细节）
 
-- typecheck / lint(0 errors) / compile 全绿
-- test：129 文件 1230 条通过（首次跑偶发 1 条失败，重跑两次均全过，与 handoff 记录的 run-captured 时序敏感用例一致）
-- 子代理审查：arch-guard 合规；code-reviewer 2 条中等问题已修复
-- 真机端到端（CDP 9444，临时仓库）：按钮可见 → 动态确认文案正确 → 确定后 `git status` 全空、tracked.txt 恢复、未跟踪文件与目录已删、ignored-dir 保留
-- 撤销（取消）路径：改动完好无损
+```ts
+let gitBusyCount = 0;
+function setGitBusy(on: boolean): void {
+  gitBusyCount = Math.max(0, gitBusyCount + (on ? 1 : -1));
+  document.querySelectorAll('.ck-tab[data-panel="git"] .ck-git-group').forEach((g) => {
+    if (gitBusyCount > 0) g.classList.add('ck-git-loading');
+    else g.classList.remove('ck-git-loading');
+  });
+}
+```
 
-### 已知遗留
+**必须用计数而非布尔**：并发操作时布尔会被先完成的那个提前清掉。
 
-- 未做 unmerged 冲突路径的失败提示真机验证（代码有 ckAlert 兜底）
-- 「全部撤销」会删未跟踪文件，属于破坏性操作，靠动态确认文案 + 红色按钮提示
+**`renderList` 里必须补偿**：`listEl.innerHTML = html` 重建 DOM 会丢掉运行时添加的 `ck-git-loading` 类：
+```ts
+listEl.innerHTML = html;
+if (gitBusyCount > 0) {
+  listEl.querySelectorAll('.ck-git-group').forEach((g) => g.classList.add('ck-git-loading'));
+}
+```
 
----
+### 4. 失败提示补全（v0.10.48）
 
-## 已发布 v0.10.44
+- `loadBranch` 失败原因挂元素 `title`（原来静默显示占位符 `—`）
+- `loadHistory(opts?: { silent?: boolean })`：用户主动触发失败才弹框，后台自动刷新（watcher/切项目）失败只记 `console.warn`，避免反复弹框骚扰
+- `doAct` / `doCommit` / `doCheckout` 结尾统一 `loadGit({ force: true })`——原来 `loadGit()` 在已加载时 early-return，实际要等 watcher 兜底（400ms 防抖甚至不触发）
 
-### 本轮改动 (v0.10.44)
+### 5. 并发守卫（v0.10.46，误判产物但保留）
 
-| 版本 | 类型 | 内容 | 影响面 |
-|---|---|---|---|
-| v0.10.44 | fix | 窗口底栏"对话上下文"实时刷新（原只在整轮结束更新，流式中一直停在旧值） | `src/overlay/events.ts` |
-| v0.10.44 | fix | 切会话时旧会话残余流帧污染新会话底栏（SPA 切会话不中断 fetch） | `events.ts` / `observer.ts` / `hooks/deepseek.ts` |
-| v0.10.44 | fix | 手机端多个思考块同时展开时被 flex 压扁、正文裁切 | `src/remote/pwa/style.css` |
+`bulkChain` 串行队列 + `gitLoadSeq` 请求序号（丢弃过期响应）+ `bulkInProgress` 屏蔽 watcher 刷新。虽非真因，但确实减少了无效并发，无害保留。
 
-### 关键实现
+## 待办事项 (Next Steps)
 
-- **底栏实时刷新**：新增 `liveContext`（仅显示，不写缓存/不累加）；显示优先级 `实时 > 本会话缓存 > 服务端最近值`；`onStream` 收到 acc 即刷新（500ms 节流，finished 立即刷）；IPC 签名去重；子代理窗口跳过广播。
-- **跨会话隔离**：`dispatchStream`/`observeBody` 加 `sessionId` 参数（fetch 传 `fetchSessionId`、XHR 传 `reqSessionId`），observer 透传，overlay 校验不匹配则丢弃；任一方缺失放行（兼容 ChatGPT/Claude）。
-- **思考块高度**：根因是 `.messages` 为 flex column + `.think-block` 的 `overflow:hidden` 使 `min-height:auto` 解析为 0，被 `flex-shrink:1` 压扁。修复：`.msg` 统一加 `flex-shrink: 0`。实测三块 377px→222px 的压扁已消除。
+- [ ] **CI 构建结果需用户自行确认**（v0.10.45~v0.10.48 四次 tag 触发，我看不到 GitHub Actions 状态）
+- [ ] **unmerged 冲突路径未真机验证**：`git restore` 遇 unmerged 会整体中止，代码有 `ckAlert` 兜底但未实测
+- [ ] `index.lock` 是概率性 bug，10 次真机操作只能证明改善，无法证明 100% 消除（串行化原理上已根除该并发路径）
+- [ ] 用户项目 `yfcode` 里有 12 个 `.playwright-cli/*.yml` 未跟踪文件，建议加进该仓库的 `.gitignore`
 
-### 验证状态
+## 关键上下文
 
-- typecheck / test(129 文件 1230 条) / lint(0 errors) / compile 全绿
-- 真机（开发版干净实例，CDP 注入）：
-  - 同会话 acc=54321 → 底栏 2.26万 → 5.43万 实时跟随
-  - 异会话 acc=999888 → 底栏不动，正确拦截
-  - 思考块：修复前三块均 222px，修复后均 377px；逐块独立展开/收起正常（open 377 / closed 38）；user/ai/sys 三类消息无回归
+- **目录**: `D:\Desktop\Super-File\cuckoo-code`
+- **分支**: `master`
+- **主要文件**:
+  - `src/app/ipc/git.ts` —— `runGit`（串行队列 + 超时）、`git-discard-all` handler
+  - `src/ui/shell/scripts/pages/git.ts` —— `doBulk`/`doBulkInner`、`setGitBusy`、`withBusy`、`loadGit`、`loadHistory`、`loadBranch`、`doAct`、`doCommit`、`doCheckout`、`showCommit`
+  - `src/ui/shell/styles/pages.css` —— `.ck-git-loading`、`.ck-git-spinning`、`.ck-git-busy`、`.ck-git-act-danger`
+  - `src/app/shell-preload.ts` —— `gitDiscardAll`
+  - `src/ui/shell/scripts/shell-api.ts` —— 类型声明
+  - `docs/requirements/087-git-discard-all.md` —— 需求档案
+- **需求档案编号**: 087（下一份用 088）
 
-### 关键教训（重要，下次别再踩）
+## 踩坑记录（重要，下次别再犯）
 
-1. **杀 electron 进程别用 bash 后台任务的 PID**：`Stop-Process -Id <bash任务PID>` 杀不掉 electron 主进程。曾因此让最早实例（PID 7988）一直霸占 9444 端口，后续"重启"全部失败，CDP 一直连僵尸进程跑旧代码，白白排查了十几轮。
-   **正确做法**：`Get-NetTCPConnection -LocalPort 9444 -State Listen` 查真实占用者再杀；或 `Get-CimInstance Win32_Process` 按命令行筛选 `cuckoo-dev-verify` 全部清理。
-2. **验证前先确认端口占用者已更换**，否则所有探针结果都不可信。
-3. **CDP 注入要注意 execution context**：overlay 与页面脚本同在 isolated world，页面主世界是另一个 context，注入/读取必须选对。
-4. `test/infra/run-captured.test.js` 的 A-006 用例偶发超时失败（进程时序敏感），单独重跑即过，非真实回归。
+1. **先取证再下结论**。我对「要点两下」误判两次（先判连点竞态、再判 DOM 重建），真因是 `.git/index.lock` 竞争，靠**读弹框内容**才定位。
+2. **程序化 `.click()` 覆盖不到真实交互**。必须用 CDP `Input.dispatchMouseEvent`（mouseMoved/mousePressed/mouseReleased）才能复现时序相关 bug。
+3. **PowerShell 输出会吞前导空格**，导致误读 `git status` 的 `M ` vs ` M`。判断暂存状态用 `git status --porcelain=v1 | ForEach-Object { '[' + $_ + ']' }` 加括号才看得清。
+4. **验证必须用用户真实数据**。最初只用人造「有已跟踪改动」的仓库验证，用户项目全是未跟踪文件，功能实际空转。
+5. **`opacity: 0` 的「悬停显现」= 用户看不见按钮**。可见性不能只读 `getComputedStyle`，必须截图肉眼看。
+6. **子代理标「低优先级」的问题不能直接放过**。code-reviewer 提过 opacity 问题标为「仅供参考」，我没复核导致 bug 上线。
+7. **改公共函数要考虑所有调用方**。`doBulk` 服务三个按钮，改刷新逻辑时引入过回归。
+8. **启动实例早于编译完成 → 加载旧产物**。重启前比对 `shell.html` 与实例启动时间戳。
+9. **pwsh 模板字符串里写 PowerShell 反引号（\`n）会与 JS 模板字符串冲突**，必须用 `write` 写 .ps1 再执行。
+10. **bash 在 Windows 是 cmd.exe**，没有 tail/head；**pwsh 里 `&&` 不合法**，用 `;` 分隔；**`Remove-Item -Recurse -Force` 会被安全策略拒绝**，删目录用 `node -e "fs.rmSync(...)"`。
+11. **tag 必须在发版提交之后打**。曾先打 tag 再提交版本号，指向错误 commit，只能删除重打。
+12. **测试偶发 1 条失败**（`test/agents` 或 `test/infra/run-captured` 时序敏感用例），重跑即过，非回归。
 
-### 已知遗留（有意不修）
+## 历史版本（v0.10.44 及之前）
 
-- 底栏实时刷新只验证了 DeepSeek（ChatGPT/Claude 不下发 accumulatedTokens，走原路径，理论无回归但未真机跑）
-- 500ms 节流未做长时间（10 分钟级）压测
-- 跨会话中断为 CDP 模拟派发，非真实"生成中手动切会话"
-
-### 历史版本
-
-- v0.10.43: 工具代码块内 JSON/XML 误触纠错、插件显隐、系统 Prompt 重构
-- v0.10.42: fix(retry) 发送重试提示词前检查输入框
-- v0.10.41 / v0.10.40: 手机端切窗口同步提示 / 补发历史
-- v0.10.31 ~ v0.10.39: 详见 CHANGELOG.md
-
----
-
-## 历史（v0.10.30 及之前）
-
-见 CHANGELOG.md。master 在 v0.10.30 时为 `e89b72b`。
+见 `CHANGELOG.md`。

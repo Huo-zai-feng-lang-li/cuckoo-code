@@ -46,6 +46,7 @@ name: project
 
 - **打 tag 发版前，必须先汇总上次 tag 之后的全部提交并写入 `CHANGELOG.md`**（遵循已有 Keep a Changelog 格式：Added/Changed/Fixed/Performance 等分类）。
 - 版本号三处一致：`package.json` / `CHANGELOG.md` 顶部 / git tag（`vX.Y.Z`）。
+- **版本号禁止含数字 4**（任意位置，任一段）：递增时遇到含 4 的号直接跳过。例：`0.10.48` 之后应为 `0.10.50`（`0.10.49` 含 4 须跳过），`0.10.39` 之后直接跳 `0.10.50`。三处必须同步跳过，不得只在某一处改。
 - CI 已配好（`.github/workflows/release.yml`）：push tag（`v*`）→ 自动构建 Win+Mac → 创建 Release。
 - **禁止漏更 CHANGELOG**（v0.8.12 曾漏记一次，事后补写）。
 

@@ -43,7 +43,7 @@ globs: '*'
 - **D12 工具契约**：名字四处一致（`apiMetas.name` = `super()` 首参 = `bootstrap` 的 `__call` 首参 = `globalThis.xxx`）
 - **窗口结构**：操作 AI 页面用 `ctx.view.webContents`，不是 `ctx.win.webContents`
 - **加 IPC**：`src/app/ipc/<领域>.ts` 导出 `register<领域>Ipc()` → 注册到 `ipc/index.ts` → preload 暴露 → shell-api 补类型
-- **发版**：CHANGELOG 用 Keep a Changelog 格式；版本号三处一致（package.json / CHANGELOG 顶部 / git tag）；tag 触发 CI
+- **发版**：CHANGELOG 用 Keep a Changelog 格式；版本号三处一致（package.json / CHANGELOG 顶部 / git tag）；**版本号禁止含数字 4（遇 4 跳过）**；tag 触发 CI
 
 ## 四、任务交付清单
 
