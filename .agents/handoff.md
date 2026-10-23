@@ -16,6 +16,12 @@
 
 **关键取舍**：`stripToolBlocks` 曾尝试剥离所有围栏，被既有测试「不剥离 json/python 块（真错误不放过）」否决 → 回退，尊重项目「宁可误报不漏报」原则。
 
+**发版闭环**（2026-10-23 18:42 取证）：
+- 本地 master = origin/master = `2ee9c60`，领先提交 0
+- tag `v0.10.51` → `a504f52`
+- CI：Build and Release success、Quality success、Coverage success
+- Release `v0.10.51` 已发布（非 draft/prerelease），12 个产物齐全（win exe 194.5MB + mac x64/arm64 dmg/zip + blockmap + latest.yml）
+
 **真机验证已闭环**（2026-10-23 18:37，实例 PID 2988 启动 18:36:42 > 产物 18:36:41）：
 
 | 场景 | 期望 | 实测 |
