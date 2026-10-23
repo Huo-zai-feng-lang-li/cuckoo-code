@@ -1,6 +1,85 @@
 # 最新接续状态 (2026-10-23)
 
-## 待发布：087 Git 面板「全部撤销」
+## 已发布 v0.10.47（Git 面板按钮"要点两次"真因修复 + 操作反馈）
+
+### 本轮三个版本
+
+| 版本 | 类型 | 内容 |
+|---|---|---|
+| v0.10.45 | feat | Git 面板新增「全部撤销」= 清空更改区（restore + clean -fd） |
+| v0.10.46 | fix | 批量按钮并发守卫（doBulk 串行队列 + loadGit 请求序号）——**当时误判，非真因** |
+| v0.10.47 | fix | **真因**：`runGit` 无并发控制导致 `.git/index.lock` 竞争；同时补齐操作反馈 |
+
+### 「点一下没反应、要点两次」真因（v0.10.47，重要）
+
+**不是**连点竞态，**也不是** DOM 重建导致 click 丢失（这两个是我先后两次的错误假设）。
+
+真因：`runGit()` 直接 `execFile` 无并发控制。多个 git 命令并发时争抢 `.git/index.lock`，后到者失败返回 `fatal: Unable to create '.git/index.lock': File exists`。关键：**`git status` 也写 index**（刷新 stat 缓存），所以它和 `git add` 并发时同样失败。v0.10.45 之前该失败是静默的，用户只能再点一次碰运气。
+
+修复：`runGit` 改全局串行队列（`gitQueue`），所有 git 命令按发起顺序执行。
+
+**定位过程值得记住**：程序化 `.click()` 8 轮全过（覆盖不到真实时序）→ 改用 CDP `Input.dispatchMouseEvent` 真实鼠标才复现 → 装探针发现 `mousedown/mouseup/click` 全部正常触发（推翻 DOM 重建假设）→ 最后读弹框内容才看到 `index.lock` 报错。
+
+### 操作反馈设计（v0.10.47，三版迭代）
+
+需求：「点击需要等待 2s，可以加 loading，但暗黑的不好看，要加动效」。读了 `impeccable` 技能（Operate 模式）与 `reference/animate.md`（动效服务反馈，装饰是动画债）。
+
+- **第一版（否决）**：面板顶部 2px 通栏进度条 → 窄侧栏里视觉权重过大，紧贴标题被误读成边框渲染错误
+- **第二版（否决）**：分组标题后 9px 小圈，用 `currentColor`（继承 `--ck-text-dim` 灰） → 暗色下像装饰符号，不传达"进行中"
+- **最终版**：分组标题后 10px 小圈，**主色弧线 + 半透明主色轨道**（`border-top-color: var(--ck-primary)`），`.6s` 匀速；动作按钮**不做透明度闪烁**（暗色下反复明暗显廉价），只保留 `pointer-events: none` 阻断重复点击；`prefers-reduced-motion` 降级为静态主色圆点
+
+补充修复：`renderList` 用 `innerHTML` 重建 DOM 会丢掉 `ck-git-loading` 类，已在渲染后补偿。
+
+### 本轮其它修复
+
+- `doAct` / `doCommit` / `doCheckout` 结尾由 `loadGit()` 改 `loadGit({ force: true })`——原实现已加载时 early-return，实际要等 watcher 兜底
+- `doCommit` 提交期间禁用按钮
+- 提交历史行读取 diff 期间加 `ck-git-busy` + `loadingCommitHash` 防重复请求
+
+### 「全部撤销」最终语义（重要）
+
+`git restore -- .` + `git clean -fd`：
+- 已跟踪文件 → 从暂存区恢复
+- 未跟踪文件/目录 → 永久删除
+- 不动暂存区（那是「全部取消」的职责）
+- 不删 .gitignore 忽略的文件（`clean` 不带 `-x`）
+- 动态确认文案：「将撤销 N 个已跟踪文件的改动，并永久删除 M 个未跟踪文件」
+
+### 并发修复（v0.10.46）
+
+用户报「全部暂存→全部取消→全部暂存偶尔不生效，双击才行」。根因是我在 v0.10.45 把 `doBulk` 结尾的 `loadGit()` 改成 `loadGit({ force: true })`，**绕过了 watcher 通道已有的 `loadGitCoalesced` 并发守卫**。连点时 git 命令并发（完成顺序不定）+ gitStatus 并发返回（顺序不定）→ 慢的旧结果覆盖新状态。
+
+修复两层：
+1. `bulkChain` 串行队列：批量 git 命令按点击顺序执行
+2. `gitLoadSeq` 请求序号：过期响应直接丢弃，只允许最新一次渲染
+
+真机验证：模拟 120ms 间隔连点三次（暂存→取消→暂存），最终状态与 DOM 完全一致。
+
+### 踩坑（重要，下次别再犯）
+
+1. **验证必须用用户真实数据**。最初只用人造「有已跟踪改动」的仓库验证 git 语义，用户项目里全是未跟踪文件，功能实际空转。
+2. **`opacity: 0` 的「悬停显现」= 用户看不见按钮**。可见性不能只读 `getComputedStyle`，必须截图肉眼看。
+3. **子代理标"低优先级"的问题不能直接放过**。code-reviewer 提过 opacity 问题标为"仅供参考"，我没复核导致 bug 上线。
+4. **改公共函数要考虑所有调用方**。`doBulk` 服务三个按钮，我把刷新改成 force 时没意识到它绕过了并发守卫，引入连点回归。
+5. **启动实例早于编译完成 → 加载旧产物**。重启前比对 `shell.html` 与实例启动时间戳。
+6. **pwsh 模板字符串里写 PowerShell 反引号（`n）会与 JS 模板字符串冲突**，必须用 `write` 写 .ps1 再执行。
+7. **bash 在 Windows 是 cmd.exe**，没有 tail/head；**pwsh 里 `&&` 不合法**，用 `;` 分隔。
+8. **`Remove-Item -Recurse -Force` 会被安全策略拒绝**，删目录用 `node -e "fs.rmSync(...)"`。
+9. **tag 必须在发版提交之后打**。曾先打 tag 再提交版本号，tag 指向了功能提交，只能删除重打。
+
+### 验证状态
+
+- v0.10.45：typecheck / lint(0 errors) / compile / test(1230) 全绿；子代理审查通过；真机端到端验证（含 .gitignore 保留项）
+- v0.10.46：同样四项全绿；真机连点验证通过
+- 远端确认：master 与 tag v0.10.46 均指向 `c6172f3`
+
+### 未提交的其它改动
+
+`src/prompt/chatgpt.md` 有改动（**属于另一条功能线，未触碰**）。
+
+---
+
+## 已发布 v0.10.44
 
 ### 语义（用户最终确认，重要）
 

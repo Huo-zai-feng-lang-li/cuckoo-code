@@ -85,6 +85,10 @@ function renderList(items: GitItem[]): void {
     html = '<div class="ck-list-empty">没有改动</div>';
   }
   listEl.innerHTML = html;
+  // 重建 DOM 会丢掉"进行中"的转圈指示：若有操作在飞，给新分组补回加载态
+  if (gitBusyCount > 0) {
+    listEl.querySelectorAll('.ck-git-group').forEach((g) => g.classList.add('ck-git-loading'));
+  }
   hasStagedFiles = staged.length > 0;
   updateCommitBtn();
 }
@@ -200,10 +204,37 @@ async function doCheckout(branch: string): Promise<void> {
     if (r && !r.success) { await ckAlert('切换失败：' + (r.error || '未知错误'), 'Git'); return; }
     if (listEl) listEl.classList.add('ck-hidden');
     historyLoaded = false; lastHistorySig = ''; // 切分支后提交历史不同，需重拉
-    await loadGit();
+    await loadGit({ force: true });
     if (historyOpen) await loadHistory();
   } catch (err: any) {
     await ckAlert('切换失败：' + (err && err.message), 'Git');
+  }
+}
+
+/** 进行中的 git 操作计数：>0 时分组标题显示转圈。
+ *  用计数而非布尔，避免并发操作相互提前清掉指示。 */
+let gitBusyCount = 0;
+
+/** 开启/关闭"进行中"指示（引用计数）。
+ *  指示锚定在分组标题上转小圈，而不是顶部通栏进度条——
+ *  窄侧栏里横条会被误读成边框渲染错误。 */
+function setGitBusy(on: boolean): void {
+  gitBusyCount = Math.max(0, gitBusyCount + (on ? 1 : -1));
+  const groups = document.querySelectorAll('.ck-tab[data-panel="git"] .ck-git-group');
+  groups.forEach((g) => {
+    if (gitBusyCount > 0) g.classList.add('ck-git-loading');
+    else g.classList.remove('ck-git-loading');
+  });
+}
+
+/** 操作期间显示"进行中"指示并阻断重复点击，避免用户以为没反应而反复点。
+ *  注意：不降低内容透明度——暗色主题下整块发灰会显得像坏掉。 */
+async function withBusy<T>(fn: () => Promise<T>): Promise<T> {
+  setGitBusy(true);
+  try {
+    return await fn();
+  } finally {
+    setGitBusy(false);
   }
 }
 
@@ -216,21 +247,28 @@ async function doAct(act: string, relPath: string): Promise<void> {
     const ok = await ckConfirm('确定删除未跟踪文件「' + relPath + '」？此操作不可恢复。', '删除文件');
     if (!ok) return;
   }
-  try {
-    let r: any;
-    if (act === 'stage') r = await api.gitStage!(relPath);
-    else if (act === 'unstage') r = await api.gitUnstage!(relPath);
-    else if (act === 'restore') r = await api.gitRestore!(relPath);
-    else if (act === 'discard') r = await api.gitDiscardUntracked!(relPath);
-    if (r && !r.success) await ckAlert('操作失败：' + (r.error || '未知错误'), 'Git');
-  } catch (err: any) {
-    await ckAlert('操作失败：' + (err && err.message), 'Git');
-  }
-  await loadGit();
+  await withBusy(async () => {
+    try {
+      let r: any;
+      if (act === 'stage') r = await api.gitStage!(relPath);
+      else if (act === 'unstage') r = await api.gitUnstage!(relPath);
+      else if (act === 'restore') r = await api.gitRestore!(relPath);
+      else if (act === 'discard') r = await api.gitDiscardUntracked!(relPath);
+      if (r && !r.success) await ckAlert('操作失败：' + (r.error || '未知错误'), 'Git');
+    } catch (err: any) {
+      await ckAlert('操作失败：' + (err && err.message), 'Git');
+    }
+  });
+  // 强制刷新：loadGit 已加载时会 early-return，不 force 只能等 watcher 兜底（有延迟甚至不触发）
+  await loadGit({ force: true });
 }
 
 /** 批量操作串行队列：快速连点（暂存→取消→暂存）时避免 git 命令并发执行导致状态错乱 */
 let bulkChain: Promise<void> = Promise.resolve();
+/** 批量操作进行中：期间屏蔽 watcher 触发的刷新。
+ *  原因：git 操作会改 .git/index 触发 watcher，其 gitStatus 可能在命令完成前发起，
+ *  拿到旧数据却因序号更大而胜出，导致 UI 显示未生效（用户需点两次）。 */
+let bulkInProgress = false;
 
 /** 全部暂存 / 全部取消暂存 / 全部撤销（走批量 IPC：一条 git 命令，避免几百文件时逐个进程） */
 function doBulk(act: string): Promise<void> {
@@ -258,6 +296,11 @@ async function doBulkInner(act: string): Promise<void> {
     if (!ok) return;
   }
   let failed = '';
+  bulkInProgress = true;
+  setGitBusy(true);
+  // 只给被点击的按钮加脉冲，不整块降透明度
+  const busyAct = document.querySelector('[data-act="' + act + '"]');
+  if (busyAct) busyAct.classList.add('ck-git-busy-act');
   try {
     let r: any;
     if (act === 'stage-all') r = await api.gitStageAll?.();
@@ -265,6 +308,11 @@ async function doBulkInner(act: string): Promise<void> {
     else if (act === 'discard-all') r = await api.gitDiscardAll?.();
     if (r && r.success === false) failed = r.error || '未知错误';
   } catch (err: any) { failed = (err && err.message) || '未知错误'; }
+  finally {
+    bulkInProgress = false;
+    setGitBusy(false);
+    if (busyAct) busyAct.classList.remove('ck-git-busy-act');
+  }
   // 破坏性操作失败必须告知（如 unmerged 冲突路径会让 git restore 整体中止）
   if (failed) await ckAlert((act === 'discard-all' ? '撤销失败：' : '操作失败：') + failed, 'Git');
   // 强制重拉：loadGit 在已加载时 early-return，不 force 则本次操作结果要等 watcher 兜底
@@ -276,12 +324,22 @@ async function doCommit(): Promise<void> {
   const msgEl = document.getElementById('git-commit-msg') as any;
   const msg = msgEl ? String(msgEl.value || '').trim() : '';
   if (!msg) { await ckAlert('请填写提交信息', '提交'); return; }
-  const r = await api.gitCommit!(msg);
-  if (!r || !r.success) { await ckAlert('提交失败：' + ((r && r.error) || '未知错误'), '提交'); return; }
-  if (msgEl) msgEl.value = '';
+  const commitBtn = document.getElementById('git-commit-btn') as any;
+  let failed = '';
+  if (commitBtn) commitBtn.disabled = true; // 提交中禁止重复点击
+  try {
+    const r = await api.gitCommit!(msg);
+    if (!r || !r.success) failed = (r && r.error) || '未知错误';
+    else if (msgEl) msgEl.value = '';
+  } catch (err: any) {
+    failed = (err && err.message) || '未知错误';
+  } finally {
+    if (commitBtn) commitBtn.disabled = false;
+  }
+  if (failed) { await ckAlert('提交失败：' + failed, '提交'); updateCommitBtn(); return; }
   await ckAlert('提交成功', 'Git');
   historyLoaded = false; lastHistorySig = ''; // 新提交出现，历史需重拉
-  await loadGit();
+  await loadGit({ force: true });
   if (historyOpen) await loadHistory();
 }
 
@@ -317,9 +375,34 @@ async function doCommit(): Promise<void> {
     });
   }
   const refreshBtn = document.getElementById('git-refresh');
-  if (refreshBtn) refreshBtn.addEventListener('click', () => { loadGit(); });
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async () => {
+      // 立即转圈：git status 有延迟，没有反馈用户会以为按钮坏了而反复点
+      if (refreshBtn.classList.contains('ck-git-spinning')) return; // 转圈中忽略重复点击
+      refreshBtn.classList.add('ck-git-spinning');
+      setGitBusy(true);
+      try {
+        await loadGit({ force: true });
+        if (historyOpen) await loadHistory();
+      } finally {
+        refreshBtn.classList.remove('ck-git-spinning');
+        setGitBusy(false);
+      }
+    });
+  }
   const branchBar = document.getElementById('git-branch-bar');
-  if (branchBar) branchBar.addEventListener('click', () => { toggleBranchList(); });
+  if (branchBar) {
+    branchBar.addEventListener('click', async () => {
+      if (branchBar.classList.contains('ck-git-busy')) return; // 加载中忽略重复点击
+      branchBar.classList.add('ck-git-busy');
+      setGitBusy(true);
+      try { await toggleBranchList(); }
+      finally {
+        branchBar.classList.remove('ck-git-busy');
+        setGitBusy(false);
+      }
+    });
+  }
   const branchList = document.getElementById('git-branch-list');
   if (branchList) {
     branchList.addEventListener('click', async (e: any) => {
@@ -569,9 +652,18 @@ function closeCommitDiff(): void {
   try { api.setWebviewHidden?.(false); } catch (_) { /* ignore */ }
 }
 
+/** 加载中的提交 hash（防止大提交重复点击叠加请求） */
+let loadingCommitHash = '';
+
 /** 查看某次提交的完整 diff（弹框着色展示） */
 async function showCommit(hash: string): Promise<void> {
   if (!api.gitShowCommitDiff) { await ckAlert('当前版本不支持查看 diff', 'Git'); return; }
+  if (loadingCommitHash) return; // 已有请求在飞，忽略重复点击
+  loadingCommitHash = hash;
+  // 给被点击的行加忙碌态：大提交读取可能耗时，没有反馈用户会以为没反应而反复点
+  const rowEl = document.querySelector('.ck-git-commit-row[data-hash="' + hash + '"]');
+  if (rowEl) rowEl.classList.add('ck-git-busy');
+  setGitBusy(true);
   try {
     const r = await api.gitShowCommitDiff(hash);
     if (!r || !r.success) { await ckAlert('读取提交失败：' + ((r && r.error) || '未知错误'), 'Git'); return; }
@@ -580,6 +672,10 @@ async function showCommit(hash: string): Promise<void> {
     openCommitDiff(firstLine.trim() || ('提交 ' + hash.slice(0, 8)), r.text || '(无内容)', !!r.truncated);
   } catch (err: any) {
     await ckAlert('读取提交失败：' + (err && err.message), 'Git');
+  } finally {
+    loadingCommitHash = '';
+    setGitBusy(false);
+    if (rowEl) rowEl.classList.remove('ck-git-busy');
   }
 }
 
@@ -645,6 +741,9 @@ async function loadGitCoalesced(): Promise<void> {
 }
 if (api.onGitChanged) {
   api.onGitChanged(() => {
+    // 批量操作进行中：git 命令会改 .git/index 触发这里，此时 gitStatus 可能读到旧状态，
+    // 若让它并发执行会覆盖操作后的正确结果 → 屏蔽，由 doBulk 完成后自己刷新。
+    if (bulkInProgress) return;
     if (isGitPanelActive()) {
       // 面板激活：合并刷新（loadGit 内含 refreshBadge + 列表）
       loadGitCoalesced();

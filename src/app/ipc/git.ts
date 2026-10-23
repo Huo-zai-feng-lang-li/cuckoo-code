@@ -64,14 +64,26 @@ function getProjectRoot(event: any): string | null {
   return rootDir ? path.resolve(rootDir) : null;
 }
 
+/**
+ * git 命令全局串行队列。
+ * 原因：git 写操作（add/reset/restore/commit）与 git status 都会争抢 .git/index.lock。
+ * git status 为刷新 stat 缓存也会写 index，因此它和写操作并发时同样会导致
+ * "fatal: Unable to create '.git/index.lock': File exists"，表现为用户点了按钮没反应。
+ * 串行化后所有 git 命令按发起顺序执行，从根上消除锁竞争。
+ */
+let gitQueue: Promise<unknown> = Promise.resolve();
+
 /** 执行 git 命令（参数数组，cwd=项目根），返回 { success, stdout, stderr } */
 function runGit(root: string, args: string[]): Promise<{ success: boolean; stdout: string; stderr: string }> {
-  return new Promise((resolve) => {
+  const exec = () => new Promise<{ success: boolean; stdout: string; stderr: string }>((resolve) => {
     execFile('git', args, { cwd: root, maxBuffer: 8 * 1024 * 1024, windowsHide: true }, (err: any, stdout: string, stderr: string) => {
       if (err) return resolve({ success: false, stdout: stdout || '', stderr: stderr || err.message });
       resolve({ success: true, stdout: stdout || '', stderr: stderr || '' });
     });
   });
+  const next = gitQueue.then(exec, exec);
+  gitQueue = next.then(() => {}, () => {});
+  return next;
 }
 
 /** 还原 git 带引号路径的转义（\\" → "、\\n → 换行、\\ooo → 八进制字节） */

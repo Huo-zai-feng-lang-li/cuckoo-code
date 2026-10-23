@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.10.47] - 2026-10-23
+
+### Fixed
+
+- **点击 Git 面板按钮偶尔需要点两次才生效**（`src/app/ipc/git.ts`）：`runGit()` 直接 `execFile` 没有任何并发控制，多个 git 命令同时执行会争抢 `.git/index.lock`，后到者直接失败并返回 `fatal: Unable to create '.git/index.lock': File exists`。关键点在于 **`git status` 也会写 index**（刷新 stat 缓存），所以它和 `git add` 并发时同样会失败——这就是"有时候点一下没反应"的来源（v0.10.45 之前失败是静默的，用户只能靠再点一次碰运气）。修复：`runGit` 改为全局串行队列，所有 git 命令按发起顺序执行，从根上消除锁竞争。真机验证：连续 5 轮真实鼠标 stage/unstage 往返 10/10 全部正确（修复前第 3 步即失败）。
+- **操作进行中无任何视觉反馈**（`src/ui/shell/scripts/pages/git.ts`、`src/ui/shell/styles/pages.css`）：git 操作常有 1-2 秒延迟，期间界面毫无变化，用户会以为按钮坏了而反复点击。修复：在分组标题后显示一个小转圈（主色弧线 + 半透明轨道），锚定在操作对象上；刷新按钮转圈；动作按钮期间阻断重复点击。刻意**不使用顶部通栏进度条**——46px~320px 的窄侧栏里横条视觉权重过大，紧贴标题时会被误读成边框渲染错误；也**不对整块内容降透明度**——暗色主题下整块发灰会显得像坏掉。同时补齐 `renderList` 的加载态补偿（`innerHTML` 重建会丢掉运行时添加的类），并提供 `prefers-reduced-motion` 降级（转圈改为静态主色圆点）。
+- **单文件操作、提交、切换分支后列表刷新滞后**（同上文件）：`doAct` / `doCommit` / `doCheckout` 结尾调用 `loadGit()` 未加 `force`，而 `loadGit` 在已加载时会直接 early-return，实际要等文件监听兜底（400ms 防抖，甚至可能不触发）。修复：统一改为 `loadGit({ force: true })`。
+
 ## [0.10.46] - 2026-10-23
 
 ### Fixed

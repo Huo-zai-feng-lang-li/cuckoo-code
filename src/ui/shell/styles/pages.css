@@ -305,6 +305,53 @@
   .ck-git-act:hover { background: var(--ck-primary-soft); color: var(--ck-primary); }
   /* Git 改动列表：保证最小可见高度，历史展开时也不会被挤没 */
   .ck-list.ck-git { flex: 1 1 auto; min-height: 130px; overflow-y: auto; }
+  /* ===== 操作反馈 =====
+     不使用顶部通栏进度条：在 46px~320px 的窄侧栏里横条视觉权重过大，
+     紧贴标题时会被误读成边框/渲染错误（实测截图反馈"不好看"）。
+     改为把反馈锚定在"操作对象"上——分组标题后转一个小圈，
+     位置固定、不挤占按钮、不改变内容外观。 */
+  @keyframes ck-git-spin { to { transform: rotate(360deg); } }
+
+  /* 分组标题后的小转圈：仅在有操作进行时出现。
+     用主色而非继承的灰色——灰色小圈在暗色下像装饰符号，不传达"进行中"。 */
+  .ck-git-group.ck-git-loading .ck-git-group-title::after {
+    content: "";
+    display: inline-block;
+    width: 10px; height: 10px;
+    margin-left: 7px;
+    vertical-align: -2px;
+    border: 1.5px solid color-mix(in srgb, var(--ck-primary) 32%, transparent);
+    border-top-color: var(--ck-primary);
+    border-radius: 50%;
+    animation: ck-git-spin .6s linear infinite;
+  }
+
+  /* 刷新按钮转圈 */
+  #git-refresh.ck-git-spinning svg { animation: ck-git-spin .8s linear infinite; }
+
+  /* 被点击的动作按钮：仅阻断重复点击，保持原样。
+     不做透明度闪烁——暗色下反复明暗交替显得廉价，且转圈已足够传达"进行中"。 */
+  .ck-git-group-act.ck-git-busy-act,
+  .ck-git-act.ck-git-busy-act {
+    pointer-events: none;
+  }
+
+  /* 分支栏加载中：阻断重复点击，仅轻微提示（不整块变灰） */
+  .ck-git-branch.ck-git-busy { pointer-events: none; }
+
+  /* 提交行加载中：阻断重复点击 */
+  .ck-git-commit-row.ck-git-busy { pointer-events: none; }
+
+  /* 无障碍：减少动效时，转圈改为静态主色圆点 */
+  @media (prefers-reduced-motion: reduce) {
+    .ck-git-group.ck-git-loading .ck-git-group-title::after {
+      animation: none;
+      border-color: var(--ck-primary);
+      background: var(--ck-primary);
+      opacity: .55;
+    }
+    #git-refresh.ck-git-spinning svg { animation: none; opacity: .6; }
+  }
   /* ===== 提交历史 ===== */
   /* 自适应：无改动文件时铺满底部；有改动文件时与改动列表分配空间 */
   .ck-git-history { border-top: 1px solid var(--ck-border-soft);
