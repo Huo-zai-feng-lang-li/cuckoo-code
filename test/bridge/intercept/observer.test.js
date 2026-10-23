@@ -9,6 +9,7 @@ import {
   onAiError,
   onTaskIdle,
   stripToolBlocks,
+  stripInlineCodeAndQuotes,
 } from '../../../src/bridge/intercept/observer.js';
 import { state } from '../../../src/overlay/state.js';
 
@@ -402,4 +403,59 @@ test('stripToolBlocks 未闭合的 cuckoo 块也剥离（流式截断场景）',
 test('stripToolBlocks 无围栏时原样返回（快速路径不破坏原文）', () => {
   const input = '{"tool":"read"}';
   assert.strictEqual(stripToolBlocks(input), input);
+});
+
+// ========== stripInlineCodeAndQuotes：正文引用不误判 ==========
+
+test('stripInlineCodeAndQuotes 剥离行内代码', () => {
+  const input = '旧提示会回显 `<invoke name="x">` 标签';
+  const out = stripInlineCodeAndQuotes(input);
+  assert.ok(!out.includes('invoke'), '行内代码内的标签应被剥离');
+  assert.ok(out.includes('旧提示会回显'), '行内代码外的文字应保留');
+});
+
+test('stripInlineCodeAndQuotes 剥离引用块整行', () => {
+  const input = ['正常说明', '> <invoke name="x">', '后续说明'].join('\n');
+  const out = stripInlineCodeAndQuotes(input);
+  assert.ok(!out.includes('invoke'), '引用块内的标签应被剥离');
+  assert.ok(out.includes('正常说明'), '引用块外的文字应保留');
+});
+
+test('stripInlineCodeAndQuotes 不剥离正文中的裸标签（真错误不放过）', () => {
+  const input = '<invoke name="bash"></invoke>';
+  assert.ok(stripInlineCodeAndQuotes(input).includes('invoke'), '裸标签不应被剥离');
+});
+
+test('processInterceptedResponse：正文行内引用标签不触发纠错', async () => {
+  // 捕获发送内容
+  let sent = 0;
+  globalThis.window = {
+    location: { href: '' },
+    addEventListener: () => {},
+    getComputedStyle: () => ({ display: 'block', visibility: 'visible', opacity: '1' }),
+    electronAPI: {
+      showAiNotification: () => Promise.resolve(),
+      sendEnterToChat: async () => true,
+    },
+  };
+  globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+  const ta = {
+    tagName: 'TEXTAREA', focus: () => {}, dispatchEvent: () => {}, getAttribute: () => null,
+    _v: '',
+    get value() { return this._v; },
+    set value(v) { this._v = v; if (v) sent++; },
+  };
+  globalThis.document = {
+    querySelectorAll: (sel) => sel === 'textarea' ? [ta] : [],
+    querySelector: () => null,
+    getElementById: () => null,
+    createElement: () => ({ id: '', className: '', textContent: '', style: {}, classList: { add() {}, remove() {} } }),
+    body: { appendChild: () => {} },
+  };
+  state.sendDelayMin = 0;
+  state.sendDelayMax = 0;
+
+  await processInterceptedResponse('这段说明里提到 `<invoke name="x">` 这个写法，但它只是引用', true);
+  await new Promise(r => setTimeout(r, 120));
+  assert.strictEqual(sent, 0, '正文行内引用不应触发纠错发送');
 });

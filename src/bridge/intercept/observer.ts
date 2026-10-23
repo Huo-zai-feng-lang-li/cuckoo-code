@@ -79,6 +79,22 @@ function stripToolBlocks(text: string): string {
 }
 
 /**
+ * 剥离行内代码与引用块，仅用于格式误报检测。
+ *
+ * 原因：AI 在正文里讨论/举例工具调用语法是正常的（"旧提示会回显 xxx 标签"、
+ * "例如 \`<invoke name=\"x\">\`"），不应被误判为真实工具调用。
+ * 真实工具调用通常是整条回复独立的标签结构，而非嵌在中文句子里的引用。
+ */
+function stripInlineCodeAndQuotes(text: string): string {
+  if (!text) return text;
+  return text
+    // 行内代码：单个反引号包裹、不跨行（三反引号块已由 stripToolBlocks 处理）
+    .replace(/`[^`\n]*`/g, '')
+    // 引用块：行首 > 开头的整行（引用他人/历史内容）
+    .replace(/^[ \t]*>.*$/gm, '');
+}
+
+/**
  * 识别 XML / DSML / antml 格式的工具调用（DeepSeek 原生格式等）。
  * 返回 { kind, intent } 或 null。intent 为提取到的原始调用意图（供自动纠正重试）。
  * 覆盖：<|DSML|calls>、<|DSML|invoke ...>、<antml:invoke ...>、<invoke name="...">、<parameter name=...>
@@ -227,7 +243,7 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
 
   // 2. JSON 格式工具调用（D11：已废除执行，仅识别并提示改用 cuckoo 代码块）
   // 剥离 cuckoo/js 块后再检测：避免把"块内的 JSON 示例"误判为格式错误
-  const rawForFormatCheck = stripToolBlocks(raw);
+  const rawForFormatCheck = stripInlineCodeAndQuotes(stripToolBlocks(raw));
   if (looksLikeJsonToolCall(rawForFormatCheck)) {
     if (formatHintCount >= FORMAT_HINT_MAX) {
       console.log('[Cuckoo Code][拦截] 已连续提示 ' + formatHintCount + ' 次格式问题，停止发送');
@@ -435,4 +451,4 @@ function getLastInterceptedText(): string {
   return lastInterceptedText;
 }
 
-export { startInterceptObserver, processInterceptedResponse, processInlineMarkers, getLastInterceptedText, onInterceptedResponse, onAiError, onToolCall, onStream, onTaskIdle, onUserStop, requestAbort, clearAbort, setSuppressAiNotification, stripToolBlocks };
+export { startInterceptObserver, processInterceptedResponse, processInlineMarkers, getLastInterceptedText, onInterceptedResponse, onAiError, onToolCall, onStream, onTaskIdle, onUserStop, requestAbort, clearAbort, setSuppressAiNotification, stripToolBlocks, stripInlineCodeAndQuotes };
