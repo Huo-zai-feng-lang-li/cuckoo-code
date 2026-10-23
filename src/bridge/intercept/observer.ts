@@ -69,7 +69,8 @@ function clearAbort(): void { abortRequested = false; }
 /**
  * 剥离合法工具容器（cuckoo/js/javascript 代码块），仅用于格式误报检测。
  * 原因：AI 在 cuckoo 块里写 JSON/XML 示例是正常的（解释/举例），不应触发格式纠正提示。
- * 不剥离 json/python 等其他块——那些块里出现工具调用语法，仍是真实错误。
+ * 不剥离 json/python 等其他块——那些块里出现工具调用语法，仍是真实错误
+ * （项目取舍：宁可误报不漏报，确保模型用错格式时能被纠正）。
  */
 function stripToolBlocks(text: string): string {
   if (text.indexOf('```') === -1) return text;
@@ -91,13 +92,28 @@ function stripInlineCodeAndQuotes(text: string): string {
     // 行内代码：单个反引号包裹、不跨行（三反引号块已由 stripToolBlocks 处理）
     .replace(/`[^`\n]*`/g, '')
     // 引用块：行首 > 开头的整行（引用他人/历史内容）
-    .replace(/^[ \t]*>.*$/gm, '');
+    .replace(/^[ \t]*>.*$/gm, '')
+    // 中文引号包裹（「」『』“”，不跨行）：AI 用中文标点举例时最常见
+    // 取舍：若模型用中文标点包裹真实工具调用，会被当作引用放过（不提示）。
+    // 现实中真调用不会用中文标点包裹，且不跨行的限制保证多行裸标签仍能检出。
+    .replace(/「[^「」\n]*」/g, '')
+    .replace(/『[^『』\n]*』/g, '')
+    .replace(/“[^“”\n]*”/g, '')
+    // 中文括号包裹（不跨行）：同上
+    .replace(/（[^（）\n]*）/g, '')
+    // Markdown 表格行：整行以 | 开头且含 | 分隔，属结构化展示而非调用
+    .replace(/^[ \t]*\|.*\|[ \t]*$/gm, '');
 }
 
 /**
  * 识别 XML / DSML / antml 格式的工具调用（DeepSeek 原生格式等）。
  * 返回 { kind, intent } 或 null。intent 为提取到的原始调用意图（供自动纠正重试）。
  * 覆盖：<|DSML|calls>、<|DSML|invoke ...>、<antml:invoke ...>、<invoke name="...">、<parameter name=...>
+ */
+/**
+ * 注意：返回的 kind / intent 目前**仅用于真值判断**，提示文案不再消费它们
+ * （曾把 intent 原文回显给模型，造成二次污染与读不通的提示，已移除）。
+ * 保留字段是为将来日志/诊断可能用到，不要据此以为下游还依赖具体值。
  */
 function detectXmlToolCall(raw: string): { kind: string; intent: string } | null {
   const t = raw || '';
@@ -268,14 +284,17 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
     formatHintCount++;
     console.log('[Cuckoo Code][拦截] 检测到 XML/DSML 格式工具调用（第 ' + formatHintCount + ' 次提示）');
     // 不把具体的 xmlTool.kind（如 <|DSML|invoke>）写进提示，避免二次污染 AI 上下文
+    // 不回显 intent 原文：它是标签的原始属性串（如 name="zzz"），
+    // 拼进提示既读不通（属性不是「想执行的操作」），也属二次污染。
     const hint = '你刚才使用了错误格式的工具调用，被系统拒绝。' +
-      (xmlTool.intent ? '你原本想执行：' + xmlTool.intent + '。' : '') +
       '请改用 ' + BT + BT + BT + 'cuckoo' + BT + BT + BT + ' 代码块重新执行该操作。禁止使用任何 XML / 标签 / 特殊指令语法。';
     sendMessageToChat(hint, 'XML工具调用纠正');
     return;
   }
 
   // 4. 普通文本回复：任务完成，退出工具循环
+  // 格式正确 → 清零连续错误计数（否则跨任务累计 10 次后永久静默，真出错也不提示）
+  formatHintCount = 0;
   console.log('[Cuckoo Code][拦截] 正常文本回复，未检测到工具调用');
   if (!suppressAiNotification) {
     try {

@@ -459,3 +459,123 @@ test('processInterceptedResponse：正文行内引用标签不触发纠错', asy
   await new Promise(r => setTimeout(r, 120));
   assert.strictEqual(sent, 0, '正文行内引用不应触发纠错发送');
 });
+const INV = "<invoke name=\"zzz\"></invoke>";
+
+
+
+// ========== 088：中文标点举例 / 伪代码不误报 ==========
+
+test('stripInlineCodeAndQuotes 剥离中文引号包裹内容', () => {
+  const input = '这个对象形如「{tool: "bash", args: []}」时要注意';
+  const out = stripInlineCodeAndQuotes(input);
+  assert.ok(!out.includes('tool'), '中文引号内内容应被剥离');
+  assert.ok(out.includes('这个对象形如'), '引号外文字应保留');
+});
+
+test('stripInlineCodeAndQuotes 剥离中文括号包裹内容', () => {
+  const input = '举例说明（' + INV + '）结束';
+  const out = stripInlineCodeAndQuotes(input);
+  assert.ok(!out.includes('invoke'), '中文括号内内容应被剥离');
+  assert.ok(out.includes('举例说明'), '括号外文字应保留');
+});
+
+test('stripInlineCodeAndQuotes 剥离 Markdown 表格行', () => {
+  const input = ['正常说明', '| 格式 | ' + INV + ' |', '后续说明'].join('\n');
+  const out = stripInlineCodeAndQuotes(input);
+  assert.ok(!out.includes('invoke'), '表格行内的标签应被剥离');
+  assert.ok(out.includes('正常说明'), '表格外文字应保留');
+});
+
+test('looksLikeJsonToolCall：伪代码无合法值时不命中', async () => {
+  const { looksLikeJsonToolCall } = await import('../../../src/bridge/parser/json-detector.js');
+  assert.strictEqual(looksLikeJsonToolCall('{tool: ...}'), false, '省略号不是合法 JSON 值');
+  assert.strictEqual(looksLikeJsonToolCall('{tool: 伪代码}'), false, '中文不是合法 JSON 值');
+});
+
+test('looksLikeJsonToolCall：真实 JSON 工具调用仍命中', async () => {
+  const { looksLikeJsonToolCall } = await import('../../../src/bridge/parser/json-detector.js');
+  assert.strictEqual(looksLikeJsonToolCall('{"tool": "bash", "args": {}}'), true);
+  assert.strictEqual(looksLikeJsonToolCall("{'toolName': 'read'}"), true);
+  assert.strictEqual(looksLikeJsonToolCall('{"tool": [1,2]}'), true);
+});
+
+test('processInterceptedResponse：中文引号内伪代码不触发 JSON 纠错', async () => {
+  let sent = 0;
+  globalThis.window = {
+    location: { href: '' },
+    addEventListener: () => {},
+    getComputedStyle: () => ({ display: 'block', visibility: 'visible', opacity: '1' }),
+    electronAPI: { showAiNotification: () => Promise.resolve(), sendEnterToChat: async () => true },
+  };
+  globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+  const ta = {
+    tagName: 'TEXTAREA', focus: () => {}, dispatchEvent: () => {}, getAttribute: () => null,
+    _v: '', get value() { return this._v; }, set value(v) { this._v = v; if (v) sent++; },
+  };
+  globalThis.document = {
+    querySelectorAll: (sel) => sel === 'textarea' ? [ta] : [],
+    querySelector: () => null,
+    getElementById: () => null,
+    createElement: () => ({ id: '', className: '', textContent: '', style: {}, classList: { add() {}, remove() {} } }),
+    body: { appendChild: () => {} },
+  };
+  state.sendDelayMin = 0;
+  state.sendDelayMax = 0;
+
+  await processInterceptedResponse('正文举例：「这个对象形如 {tool: "bash"}」而已', true);
+  await new Promise(r => setTimeout(r, 120));
+  assert.strictEqual(sent, 0, '中文引号内伪代码不应触发纠错');
+});
+
+test('XML 纠错提示不回显标签属性串（intent）', async () => {
+  let captured = '';
+  class FakeTextarea {}
+  Object.defineProperty(FakeTextarea.prototype, 'value', {
+    set(v) { this._v = v; if (v) captured = v; },
+    get() { return this._v; },
+    configurable: true,
+  });
+  const ta = Object.assign(new FakeTextarea(), {
+    tagName: 'TEXTAREA', focus: () => {}, dispatchEvent: () => {}, getAttribute: () => null,
+  });
+  globalThis.window = {
+    location: { href: '' },
+    addEventListener: () => {},
+    getComputedStyle: () => ({ display: 'block', visibility: 'visible', opacity: '1' }),
+    HTMLTextAreaElement: FakeTextarea,
+    HTMLInputElement: FakeTextarea,
+    electronAPI: { showAiNotification: () => Promise.resolve(), sendEnterToChat: async () => true },
+  };
+  globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+  globalThis.document = {
+    querySelectorAll: (sel) => sel === 'textarea' ? [ta] : [],
+    querySelector: () => null,
+    getElementById: () => null,
+    createElement: () => ({ id: '', className: '', textContent: '', style: {}, classList: { add() {}, remove() {} } }),
+    body: { appendChild: () => {} },
+  };
+  state.sendDelayMin = 0;
+  state.sendDelayMax = 0;
+
+  await processInterceptedResponse(INV, true);
+  await new Promise(r => setTimeout(r, 120));
+  assert.ok(captured.length > 0, '应发送纠错提示');
+  assert.ok(!captured.includes('zzz'), '提示不得回显属性串 name="zzz"');
+  assert.ok(!captured.includes('你原本想执行'), '提示不得包含「你原本想执行」前缀');
+});
+
+const INV2 = "<invoke name=\"y\">";
+
+test('中文标点剥离不跨行：多行裸标签仍被检出（真错误不放过）', () => {
+  // 中文引号只剥单行内容，未闭合的多行标签不应被吞掉
+  const input = '举例「未闭合的引号开始\n' + INV2 + '\n然后继续';
+  const out = stripInlineCodeAndQuotes(input);
+  assert.ok(out.includes('invoke'), '跨行的裸标签应保留，确保真错误仍能检出');
+});
+
+test('中文标点剥离不吞噬相邻裸标签', () => {
+  const input = '「这是引用」' + INV2;
+  const out = stripInlineCodeAndQuotes(input);
+  assert.ok(!out.includes('这是引用'), '引号内应被剥离');
+  assert.ok(out.includes('invoke'), '引号外的裸标签应保留');
+});
