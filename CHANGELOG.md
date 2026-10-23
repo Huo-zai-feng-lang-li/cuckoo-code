@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.10.46] - 2026-10-23
+
+### Fixed
+
+- **快速连点 Git 面板批量按钮（全部暂存 / 全部取消 / 全部撤销）导致操作不生效，需点两次**（`src/ui/shell/scripts/pages/git.ts`）：`doBulk` 直接调用 `loadGit({ force: true })`，绕过了 watcher 通道已有的 `loadGitCoalesced` 并发守卫。快速连点时多个 `git add`/`git reset` 命令并发执行（完成顺序不定），多个 `git status` 请求并发返回（顺序不定），慢的旧结果覆盖了新状态，界面显示过期数据。修复：`doBulk` 改为串行队列（`bulkChain`），保证批量 git 命令按点击顺序执行；`loadGit` 增加请求序号守卫（`gitLoadSeq`），过期响应直接丢弃，只允许最新一次渲染。
+
 ## [0.10.45] - 2026-10-23
 
 ### Added
