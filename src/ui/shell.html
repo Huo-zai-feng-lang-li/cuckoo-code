@@ -8055,10 +8055,12 @@ paths:            # 可选；省略 = 始终生效
     btn.disabled = !(hasMsg && hasStagedFiles);
   }
   var gitLoaded = false;
+  var gitLoadSeq = 0;
   async function loadGit(opts) {
     const listEl2 = document.getElementById("git-list");
     if (!listEl2) return;
     if (!opts?.force && gitLoaded) return;
+    const mySeq = ++gitLoadSeq;
     if (!gitWatcherStarted && api.gitWatchStart) {
       api.gitWatchStart().then((r) => {
         gitWatcherStarted = !!(r && r.success);
@@ -8073,6 +8075,7 @@ paths:            # 可选；省略 = 始终生效
     }
     try {
       const r = await api.gitStatus();
+      if (mySeq !== gitLoadSeq) return;
       if (!r || !r.success) {
         listEl2.innerHTML = '<div class="ck-list-empty">' + escapeHtml(r && r.error || "\u8BFB\u53D6\u5931\u8D25") + "</div>";
         refreshBadge(0);
@@ -8089,6 +8092,7 @@ paths:            # 可选；省略 = 始终生效
         }
       }
     } catch (err) {
+      if (mySeq !== gitLoadSeq) return;
       listEl2.innerHTML = '<div class="ck-list-empty">' + escapeHtml(err.message || "\u8BFB\u53D6\u5931\u8D25") + "</div>";
       refreshBadge(0);
     }
@@ -8172,7 +8176,15 @@ paths:            # 可选；省略 = 始终生效
     }
     await loadGit();
   }
-  async function doBulk(act) {
+  var bulkChain = Promise.resolve();
+  function doBulk(act) {
+    const next = bulkChain.then(() => doBulkInner(act));
+    bulkChain = next.then(() => {
+    }, () => {
+    });
+    return next;
+  }
+  async function doBulkInner(act) {
     if (act === "discard-all") {
       const trackedCount = lastItems.filter((i) => i.x !== "?" && i.unstaged).length;
       const untrackedCount = lastItems.filter((i) => i.x === "?").length;

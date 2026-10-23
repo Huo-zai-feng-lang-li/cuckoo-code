@@ -106,6 +106,8 @@ function updateCommitBtn(): void {
  *                   默认 false=有缓存直接复用（切 tab 用）。
  */
 let gitLoaded = false;
+/** 请求序号：并发调用时只允许最新一次渲染，避免慢的旧请求覆盖新结果 */
+let gitLoadSeq = 0;
 
 export async function loadGit(opts?: { force?: boolean }): Promise<void> {
   const listEl = document.getElementById('git-list');
@@ -113,6 +115,9 @@ export async function loadGit(opts?: { force?: boolean }): Promise<void> {
   // 已加载过且不强制 → 跳过 IPC 和 DOM 重建（用独立标志，不依赖 lastItems.length：
   // 项目无改动时 lastItems 为空，用 length>0 判断会漏掉"无改动"场景）
   if (!opts?.force && gitLoaded) return;
+  // 并发守卫：doBulk 直接刷新、watcher 推送、手动刷新可能同时发起，
+  // 慢的旧请求后返回会用旧数据覆盖新结果（表现为"点了不生效，再点一次才对"）。
+  const mySeq = ++gitLoadSeq;
   // 首次加载时启动项目目录 watcher（自动刷新用）。
   // 注意：只在成功后才置 flag——未选目录等失败情况保持 false，下次 loadGit 可重试。
   if (!gitWatcherStarted && api.gitWatchStart) {
@@ -124,6 +129,7 @@ export async function loadGit(opts?: { force?: boolean }): Promise<void> {
   if (!api.gitStatus) { listEl.innerHTML = '<div class="ck-list-empty">Git 功能不可用</div>'; return; }
   try {
     const r = await api.gitStatus();
+    if (mySeq !== gitLoadSeq) return; // 已有更新的请求，丢弃本次结果
     if (!r || !r.success) {
       listEl.innerHTML = '<div class="ck-list-empty">' + escapeHtml((r && r.error) || '读取失败') + '</div>';
       refreshBadge(0);
@@ -136,6 +142,7 @@ export async function loadGit(opts?: { force?: boolean }): Promise<void> {
     // 提交历史默认展开：首次进入且未加载时拉取
     if (historyOpen && !historyLoaded) { try { await loadHistory(); } catch (_) { /* ignore */ } }
   } catch (err: any) {
+    if (mySeq !== gitLoadSeq) return;
     listEl.innerHTML = '<div class="ck-list-empty">' + escapeHtml(err.message || '读取失败') + '</div>';
     refreshBadge(0);
   }
@@ -222,8 +229,17 @@ async function doAct(act: string, relPath: string): Promise<void> {
   await loadGit();
 }
 
+/** 批量操作串行队列：快速连点（暂存→取消→暂存）时避免 git 命令并发执行导致状态错乱 */
+let bulkChain: Promise<void> = Promise.resolve();
+
 /** 全部暂存 / 全部取消暂存 / 全部撤销（走批量 IPC：一条 git 命令，避免几百文件时逐个进程） */
-async function doBulk(act: string): Promise<void> {
+function doBulk(act: string): Promise<void> {
+  const next = bulkChain.then(() => doBulkInner(act));
+  bulkChain = next.then(() => {}, () => {});
+  return next;
+}
+
+async function doBulkInner(act: string): Promise<void> {
   if (act === 'discard-all') {
     // 撤销「更改区」全部内容：已跟踪文件恢复 + 未跟踪文件删除
     const trackedCount = lastItems.filter((i) => i.x !== '?' && i.unstaged).length;
