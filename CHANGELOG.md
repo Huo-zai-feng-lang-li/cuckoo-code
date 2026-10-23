@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.10.45] - 2026-10-23
+
+### Added
+
+- **源代码管理面板新增「全部撤销」按钮**（`src/app/ipc/git.ts`、`src/app/shell-preload.ts`、`src/ui/shell/scripts/pages/git.ts`、`src/ui/shell/scripts/shell-api.ts`、`src/ui/shell/styles/pages.css`）：位于「更改」分组标题右侧（红色），一键清空更改区。执行 `git restore -- .` + `git clean -fd`——已跟踪文件从暂存区恢复，未跟踪文件与目录永久删除，被 `.gitignore` 忽略的文件不受影响，已暂存的改动不受影响（那属于「全部取消」的职责）。
+  - 点击时按实际内容生成确认文案，例如「将撤销 1 个已跟踪文件的改动，并永久删除 3 个未跟踪文件」，明确告知后果。
+  - 更改区为空时弹纯提示框，不执行任何 git 操作。
+  - 失败（如 unmerged 冲突路径导致 `git restore` 整体中止）时弹错提示，不再静默失败。
+  - 操作完成后强制刷新列表，不依赖文件监听兜底。
+
 ## [0.10.44] - 2026-10-23
 
 ### Fixed
