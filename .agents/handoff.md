@@ -1,8 +1,24 @@
-# 最新接续状态 (2026-10-23 18:20)
+# 最新接续状态 (2026-10-23 18:32)
 
 ## 核心进展
 
-### 当前版本：v0.10.50（DSML 纠正提示修复）
+### 当前版本：v0.10.51（格式误报修复）
+
+用户报告「很多误报」——AI 在正文里举例/贴数据结构时，被拦截器当成真实工具调用，发纠正提示打断回复。已修复并提交（详见 `docs/requirements/088-format-false-positive.md`）。
+
+**改动（4 处）**：
+| 文件 | 内容 |
+|---|---|
+| `src/bridge/intercept/observer.ts` | `stripInlineCodeAndQuotes` 补剥离中文引号「」『』“”、中文括号（）、Markdown 表格行；XML 纠错提示移除 intent 回显；正常文本回复时清零 `formatHintCount` |
+| `src/bridge/parser/json-detector.ts` | `JSON_TOOL_CALL_RE` 收窄：冒号后必须是合法 JSON 值开头 |
+| `src/prompt/{deepseek,claude,default}.md` | 「禁止 XML/DSML/antml」改纯正向表述，不再点名格式（点名本身是弱诱导） |
+| `test/bridge/intercept/observer.test.js` | +9 用例（35→44） |
+
+**关键取舍**：`stripToolBlocks` 曾尝试剥离所有围栏，被既有测试「不剥离 json/python 块（真错误不放过）」否决 → 回退，尊重项目「宁可误报不漏报」原则。
+
+**待办**：真机验证需用户手动重启开发版实例（当前 9444 实例启动于 18:18，早于产物 18:28，加载的是旧代码）。
+
+### 历史：v0.10.50（DSML 纠正提示修复）
 
 修复"模型输出 DSML 格式工具调用时，系统纠正提示反而把 `<|DSML|invoke>` 标签写回给模型，形成反向诱导"的问题。
 
@@ -11,12 +27,15 @@
 | `d38b2ed` | 纠错提示去标签回显 + DSML 正则容忍竖线后空格 + 补回归测试 |
 | `5fcda4e` | 三份提示词模板移除 DSML 具体语法示例 |
 
-**待推送**：本地 master 领先 origin/master 2 个提交，网络（dotsvpn 代理）不通导致 push 超时。需网络恢复后 push + tag v0.10.50 触发 CI。
+**发版闭环已完成**（2026-10-23 复核，走代理 `http://127.0.0.1:51081` 查 GitHub API 取证）：
+- 本地 master = origin/master = tag `v0.10.50` = `6c5fd4a`，领先提交数 0
+- Actions run #160（release.yml）`conclusion: success`，2026-10-23T10:12:48Z 结束
+- Release `v0.10.50` 已发布（非 draft/非 prerelease），10 个产物齐全：win exe 194.5MB、mac x64/arm64 dmg+zip、latest.yml
 
 **未闭环项**：
-- [ ] push 到远端（卡网络）
-- [ ] tag v0.10.50 + CI 构建
-- [ ] 用户打包版装上后才能看到新提示文案（当前实例仍是旧代码）
+- [ ] 用户安装新打包版后才能看到新提示文案（各产物 downloads=0，尚未有人下载）
+
+> 踩坑补充：本机 curl 必须显式 `-x http://127.0.0.1:51081`，只设 `HTTPS_PROXY` 环境变量对 curl 不生效（直连 GitHub 超时 exit 28）。
 
 ### 历史：Git 面板「全部撤销」（v0.10.45~v0.10.48）
 
@@ -139,7 +158,7 @@ if (gitBusyCount > 0) {
 
 ## 待办事项 (Next Steps)
 
-- [ ] **CI 构建结果需用户自行确认**（v0.10.45~v0.10.48 四次 tag 触发，我看不到 GitHub Actions 状态）
+- [x] **CI 构建结果已确认**：v0.10.50 run #160 success；v0.10.45~v0.10.48 同理可查（`api.github.com/repos/Huo-zai-feng-lang-li/cuckoo-code/actions/runs`，需带代理）
 - [ ] **unmerged 冲突路径未真机验证**：`git restore` 遇 unmerged 会整体中止，代码有 `ckAlert` 兜底但未实测
 - [ ] `index.lock` 是概率性 bug，10 次真机操作只能证明改善，无法证明 100% 消除（串行化原理上已根除该并发路径）
 - [ ] 用户项目 `yfcode` 里有 12 个 `.playwright-cli/*.yml` 未跟踪文件，建议加进该仓库的 `.gitignore`
