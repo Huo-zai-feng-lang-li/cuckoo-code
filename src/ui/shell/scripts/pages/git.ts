@@ -158,9 +158,17 @@ async function loadBranch(): Promise<void> {
   if (!nameEl || !api.gitCurrentBranch) return;
   try {
     const r = await api.gitCurrentBranch();
-    nameEl.textContent = (r && r.success) ? (r.branch || '—') : '—';
-  } catch (_) {
+    if (r && r.success) {
+      nameEl.textContent = r.branch || '—';
+      nameEl.removeAttribute('title');
+    } else {
+      // 不再静默：把失败原因挂到 title，鼠标悬停可见；文字仍显示占位符
+      nameEl.textContent = '—';
+      nameEl.title = '读取分支失败：' + ((r && r.error) || '未知错误');
+    }
+  } catch (err: any) {
     nameEl.textContent = '—';
+    nameEl.title = '读取分支失败：' + ((err && err.message) || '未知错误');
   }
 }
 
@@ -446,16 +454,24 @@ function renderHistory(commits: any[]): void {
   }).join('');
 }
 
-/** 拉取提交历史 */
-async function loadHistory(): Promise<void> {
+/** 拉取提交历史
+ *  @param opts.silent true=后台自动刷新（watcher/切项目），失败只打控制台不弹框，
+ *                      避免后台偶发失败反复骚扰用户；用户主动操作时仍弹框。 */
+async function loadHistory(opts?: { silent?: boolean }): Promise<void> {
   const listEl = document.getElementById('git-history-list');
   if (!listEl || !api.gitLog) return;
+  const silent = !!opts?.silent;
   // 仅在首次加载时显示"加载中"；自动刷新时不闪（避免反复清空重绘）
   if (!historyLoaded) listEl.innerHTML = '<div class="ck-git-history-empty">加载中…</div>';
   try {
     const r = await api.gitLog(60);
     if (!r || !r.success) {
-      if (!historyLoaded) listEl.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml((r && r.error) || '读取失败') + '</div>';
+      // 首次加载：列表位置显示错误；已加载过：保留旧列表不闪。
+      // 用户主动触发 → 弹框告知；后台自动刷新 → 只记控制台，不打扰。
+      const msg = (r && r.error) || '读取失败';
+      if (!historyLoaded) listEl.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml(msg) + '</div>';
+      else if (!silent) await ckAlert('读取提交历史失败：' + msg, 'Git');
+      else console.warn('[Git] 后台刷新提交历史失败:', msg);
       return;
     }
     const commits = r.commits || [];
@@ -466,7 +482,10 @@ async function loadHistory(): Promise<void> {
     renderHistory(commits);
     historyLoaded = true;
   } catch (err: any) {
-    listEl.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml(err.message || '读取失败') + '</div>';
+    const msg = (err && err.message) || '读取失败';
+    if (!historyLoaded) listEl.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml(msg) + '</div>';
+    else if (!silent) await ckAlert('读取提交历史失败：' + msg, 'Git');
+    else console.warn('[Git] 后台刷新提交历史失败:', msg);
   }
 }
 
@@ -732,7 +751,7 @@ async function loadGitCoalesced(): Promise<void> {
   gitLoadInFlight = true;
   try {
     await loadGit({ force: true });
-    if (historyOpen) await loadHistory();
+    if (historyOpen) await loadHistory({ silent: true }); // 后台自动刷新，失败不打扰
   } catch (_) { /* ignore */ }
   finally {
     gitLoadInFlight = false;
@@ -764,6 +783,6 @@ if (api.onProjectDir) {
     lastItems = [];
     gitLoaded = false; // 清缓存标志，强制重拉
     loadGit({ force: true });
-    if (historyOpen) loadHistory();
+    if (historyOpen) loadHistory({ silent: true }); // 切项目自动触发，失败不打扰
   });
 }

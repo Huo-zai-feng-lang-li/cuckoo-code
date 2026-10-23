@@ -1,5 +1,21 @@
 # 最新接续状态 (2026-10-23)
 
+## 已发布 v0.10.48（串行队列超时兜底 + 失败提示补全）
+
+### v0.10.48 内容
+
+| 类型 | 内容 | 影响面 |
+|---|---|---|
+| fix | `runGit` 加 30 秒超时——串行队列无超时的话，一条命令挂死会拖垮整个 Git 面板 | `src/app/ipc/git.ts` |
+| fix | `loadBranch` 失败原因挂 `title`（原来静默显示占位符） | `pages/git.ts` |
+| fix | `loadHistory` 加 `silent` 模式：后台刷新失败只记控制台不弹框，用户主动触发才提示 | `pages/git.ts` |
+
+**验证**：typecheck / lint(0 errors) / compile / test(129 文件) 全绿；真机确认正常路径（暂存/取消/历史 60 条/分支名）全部正常、无残留弹框；人为创建 `.git/index.lock` 制造失败，确认弹框正确显示「操作失败：fatal: Unable to create ... index.lock: File exists」。
+
+**已知**：test 偶发 1 条失败（时序敏感用例），重跑即过，三次中有两次全绿。
+
+---
+
 ## 已发布 v0.10.47（Git 面板按钮"要点两次"真因修复 + 操作反馈）
 
 ### 本轮三个版本

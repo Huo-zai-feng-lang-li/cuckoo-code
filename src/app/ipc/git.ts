@@ -73,14 +73,31 @@ function getProjectRoot(event: any): string | null {
  */
 let gitQueue: Promise<unknown> = Promise.resolve();
 
-/** 执行 git 命令（参数数组，cwd=项目根），返回 { success, stdout, stderr } */
+/** 单条 git 命令的超时上限。
+ *  串行队列的代价是"前一条卡住，后面全等"——没超时的话一条挂死会拖垮整个面板。
+ *  30 秒足够覆盖超大仓库的 status/log，超过就是异常，强制终止让队列继续走。 */
+const GIT_TIMEOUT_MS = 30000;
+
+/** 执行 git 命令（参数数组，cwd=项目根），返回 { success, stdout, stderr }
+ *  所有调用都经过全局串行队列，按发起顺序执行。 */
 function runGit(root: string, args: string[]): Promise<{ success: boolean; stdout: string; stderr: string }> {
   const exec = () => new Promise<{ success: boolean; stdout: string; stderr: string }>((resolve) => {
-    execFile('git', args, { cwd: root, maxBuffer: 8 * 1024 * 1024, windowsHide: true }, (err: any, stdout: string, stderr: string) => {
-      if (err) return resolve({ success: false, stdout: stdout || '', stderr: stderr || err.message });
+    execFile('git', args, { cwd: root, maxBuffer: 8 * 1024 * 1024, windowsHide: true, timeout: GIT_TIMEOUT_MS }, (err: any, stdout: string, stderr: string) => {
+      if (err) {
+        // 超时被强制终止：给出可操作的中文提示，而不是 Node 原始的 "Command failed"
+        if (err.killed || err.signal) {
+          return resolve({
+            success: false,
+            stdout: stdout || '',
+            stderr: 'git 命令执行超时（' + GIT_TIMEOUT_MS / 1000 + ' 秒），已强制终止。可能是仓库过大或磁盘繁忙。\n若后续操作报 index.lock 错误，请手动删除 .git/index.lock。',
+          });
+        }
+        return resolve({ success: false, stdout: stdout || '', stderr: stderr || err.message });
+      }
       resolve({ success: true, stdout: stdout || '', stderr: stderr || '' });
     });
   });
+  // 用 then(exec, exec)：即使前一条失败也继续执行下一条，避免一次失败把队列卡死
   const next = gitQueue.then(exec, exec);
   gitQueue = next.then(() => {}, () => {});
   return next;

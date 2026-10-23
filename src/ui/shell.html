@@ -8152,9 +8152,16 @@ paths:            # 可选；省略 = 始终生效
     if (!nameEl || !api.gitCurrentBranch) return;
     try {
       const r = await api.gitCurrentBranch();
-      nameEl.textContent = r && r.success ? r.branch || "\u2014" : "\u2014";
-    } catch (_) {
+      if (r && r.success) {
+        nameEl.textContent = r.branch || "\u2014";
+        nameEl.removeAttribute("title");
+      } else {
+        nameEl.textContent = "\u2014";
+        nameEl.title = "\u8BFB\u53D6\u5206\u652F\u5931\u8D25\uFF1A" + (r && r.error || "\u672A\u77E5\u9519\u8BEF");
+      }
+    } catch (err) {
       nameEl.textContent = "\u2014";
+      nameEl.title = "\u8BFB\u53D6\u5206\u652F\u5931\u8D25\uFF1A" + (err && err.message || "\u672A\u77E5\u9519\u8BEF");
     }
   }
   async function toggleBranchList() {
@@ -8427,14 +8434,18 @@ paths:            # 可选；省略 = 始终生效
       return '<div class="ck-git-commit-row" data-hash="' + h + '" title="' + escapeAttr(c.subject || "") + '"><span class="ck-git-commit-subject">' + escapeHtml(c.subject || "(\u65E0\u63D0\u4EA4\u4FE1\u606F)") + '</span><span class="ck-git-commit-meta">' + escapeHtml(c.short || "") + " \xB7 " + escapeHtml(c.author || "") + " \xB7 " + escapeHtml(c.date || "") + "</span></div>";
     }).join("");
   }
-  async function loadHistory() {
+  async function loadHistory(opts) {
     const listEl2 = document.getElementById("git-history-list");
     if (!listEl2 || !api.gitLog) return;
+    const silent = !!opts?.silent;
     if (!historyLoaded) listEl2.innerHTML = '<div class="ck-git-history-empty">\u52A0\u8F7D\u4E2D\u2026</div>';
     try {
       const r = await api.gitLog(60);
       if (!r || !r.success) {
-        if (!historyLoaded) listEl2.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml(r && r.error || "\u8BFB\u53D6\u5931\u8D25") + "</div>";
+        const msg = r && r.error || "\u8BFB\u53D6\u5931\u8D25";
+        if (!historyLoaded) listEl2.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml(msg) + "</div>";
+        else if (!silent) await ckAlert("\u8BFB\u53D6\u63D0\u4EA4\u5386\u53F2\u5931\u8D25\uFF1A" + msg, "Git");
+        else console.warn("[Git] \u540E\u53F0\u5237\u65B0\u63D0\u4EA4\u5386\u53F2\u5931\u8D25:", msg);
         return;
       }
       const commits = r.commits || [];
@@ -8447,7 +8458,10 @@ paths:            # 可选；省略 = 始终生效
       renderHistory(commits);
       historyLoaded = true;
     } catch (err) {
-      listEl2.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml(err.message || "\u8BFB\u53D6\u5931\u8D25") + "</div>";
+      const msg = err && err.message || "\u8BFB\u53D6\u5931\u8D25";
+      if (!historyLoaded) listEl2.innerHTML = '<div class="ck-git-history-empty">' + escapeHtml(msg) + "</div>";
+      else if (!silent) await ckAlert("\u8BFB\u53D6\u63D0\u4EA4\u5386\u53F2\u5931\u8D25\uFF1A" + msg, "Git");
+      else console.warn("[Git] \u540E\u53F0\u5237\u65B0\u63D0\u4EA4\u5386\u53F2\u5931\u8D25:", msg);
     }
   }
   async function toggleHistory() {
@@ -8685,7 +8699,7 @@ paths:            # 可选；省略 = 始终生效
     gitLoadInFlight = true;
     try {
       await loadGit({ force: true });
-      if (historyOpen) await loadHistory();
+      if (historyOpen) await loadHistory({ silent: true });
     } catch (_) {
     } finally {
       gitLoadInFlight = false;
@@ -8716,7 +8730,7 @@ paths:            # 可选；省略 = 始终生效
       lastItems = [];
       gitLoaded = false;
       loadGit({ force: true });
-      if (historyOpen) loadHistory();
+      if (historyOpen) loadHistory({ silent: true });
     });
   }
 
