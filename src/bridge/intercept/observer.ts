@@ -86,7 +86,7 @@ function stripToolBlocks(text: string): string {
 function detectXmlToolCall(raw: string): { kind: string; intent: string } | null {
   const t = raw || '';
   // DSML（半角 | 与全角 ｜ 都认）
-  const dsml = /<[|｜]+\s*DSML\s*[|｜]+([a-zA-Z]+)\b([^>]*)>/i.exec(t);
+  const dsml = /<[|｜]+\s*DSML\s*[|｜]+\s*([a-zA-Z]+)\b([^>]*)>/i.exec(t);
   if (dsml) {
     const tag = dsml[1];
     const attrs = (dsml[2] || '').trim();
@@ -251,9 +251,10 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
     }
     formatHintCount++;
     console.log('[Cuckoo Code][拦截] 检测到 XML/DSML 格式工具调用（第 ' + formatHintCount + ' 次提示）');
-    const hint = '你刚才使用了错误的工具调用格式（' + xmlTool.kind + '）。' +
+    // 不把具体的 xmlTool.kind（如 <|DSML|invoke>）写进提示，避免二次污染 AI 上下文
+    const hint = '你刚才使用了错误格式的工具调用，被系统拒绝。' +
       (xmlTool.intent ? '你原本想执行：' + xmlTool.intent + '。' : '') +
-      '请改用 ' + BT + BT + BT + 'cuckoo' + BT + BT + BT + ' 代码块重新执行该操作，禁止使用 XML / DSML / antml 格式。';
+      '请改用 ' + BT + BT + BT + 'cuckoo' + BT + BT + BT + ' 代码块重新执行该操作。禁止使用任何 XML / 标签 / 特殊指令语法。';
     sendMessageToChat(hint, 'XML工具调用纠正');
     return;
   }

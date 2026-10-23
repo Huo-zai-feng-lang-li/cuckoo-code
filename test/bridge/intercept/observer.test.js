@@ -10,12 +10,16 @@ import {
   onTaskIdle,
   stripToolBlocks,
 } from '../../../src/bridge/intercept/observer.js';
+import { state } from '../../../src/overlay/state.js';
 
 // 收集注册的监听器，测试后统一取消，避免模块级 Set 跨用例泄漏
 const offs = [];
 function track(off) { offs.push(off); return off; }
 afterEach(() => {
   while (offs.length) offs.pop()();
+  // 恢复发送延迟，避免个别用例改 0 后污染后续
+  state.sendDelayMin = 500;
+  state.sendDelayMax = 1000;
 });
 
 // ---- 测试用 window / document 模拟（外部边界，不是 mock 内部模块）----
@@ -37,6 +41,12 @@ function dispatch(listeners, type, detail) {
 }
 
 function setupGlobals(idMap) {
+  // node 环境无 KeyboardEvent；triggerSend 的 fallback 分支会 new 它
+  if (typeof globalThis.KeyboardEvent === 'undefined') {
+    globalThis.KeyboardEvent = class KeyboardEvent {
+      constructor(type) { this.type = type; }
+    };
+  }
   const { win, listeners } = makeFakeWindow();
   globalThis.window = win;
   globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
@@ -181,6 +191,62 @@ test('processInterceptedResponse：XML 格式工具调用发提示', async () =>
   setupGlobals();
   await processInterceptedResponse('<invoke name="bash"></invoke>');
 });
+
+test('processInterceptedResponse：DSML 格式识别（含竖线后空格）', async () => {
+  setupGlobals();
+  // 旧行为：<|DSML|invoke> 竖线后无空格
+  await processInterceptedResponse('<|DSML|invoke name="test">');
+  // 新增能力：<|DSML| invoke> 竖线后带空格
+  await processInterceptedResponse('<|DSML| invoke name="test">');
+});
+
+test('processInterceptedResponse：纠正提示不回显原始标签（防二次污染）', async () => {
+  // 发送延迟归零：避免串行链挂起污染后续用例
+  state.sendDelayMin = 0;
+  state.sendDelayMax = 0;
+  // 自定义 globals：提供可填充的 textarea，捕获填入内容
+  let captured = '';
+  class FakeTextarea {}
+  Object.defineProperty(FakeTextarea.prototype, 'value', {
+    set(v) { captured = v; },
+    get() { return captured; },
+    configurable: true,
+  });
+  const fakeTextarea = Object.assign(new FakeTextarea(), {
+    tagName: 'TEXTAREA',
+    focus: () => {},
+    dispatchEvent: () => {},
+    getAttribute: () => null,
+  });
+  globalThis.window = {
+    location: { href: '' },
+    addEventListener: () => {},
+    getComputedStyle: () => ({ display: 'block', visibility: 'visible', opacity: '1' }),
+    HTMLTextAreaElement: FakeTextarea,
+    HTMLInputElement: FakeTextarea,
+    electronAPI: {
+      showAiNotification: () => Promise.resolve(),
+      sendEnterToChat: async () => true,
+    },
+  };
+  globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
+  globalThis.document = {
+    querySelectorAll: (sel) => sel === 'textarea' ? [fakeTextarea] : [],
+    querySelector: () => null,
+    getElementById: () => null,
+    createElement: () => ({ id: '', className: '', textContent: '', style: {}, classList: { add() {}, remove() {} } }),
+    body: { appendChild: () => {} },
+  };
+
+  await processInterceptedResponse('<|DSML|invoke name="foo">');
+  await new Promise(r => setTimeout(r, 80));
+
+  assert.ok(captured.length > 0, '应捕获到填入输入框的提示文本');
+  assert.ok(captured.includes('错误格式的工具调用'), '提示应包含纠正说明');
+  assert.ok(!captured.includes('<|DSML|'), '提示不得回显 <|DSML| 标签');
+  assert.ok(!captured.includes('|DSML|'), '提示不得回显 DSML 标记');
+});
+
 
 test('processInterceptedResponse：JS 工具块执行期间显示遮罩，发送结束后隐藏', async () => {
   const mask = makeFakeMask();
