@@ -19,8 +19,8 @@ import { stopGeneration } from '../app/ipc/harness.js';
 import { startTunnel, stopTunnel, getTunnelStatus } from './tunnel.js';
 import { requestHarnessExport } from '../app/ipc/window-groups.js';
 
-/** 流式节流：60ms 推送一次。注意 onStream 的 text 是「全量累积文本」，故直接覆盖。 */
-const STREAM_FLUSH_MS = 60;
+/** 流式节流：30ms 推送一次，提升流式即时感。注意 onStream 的 text 是「全量累积文本」，故直接覆盖。 */
+const STREAM_FLUSH_MS = 30;
 
 /** 每窗口独立的流式状态（防多窗口串扰）。
  *  text = 最新全量累积文本；sent = 上次已广播出去的文本（用于计算 delta）。 */

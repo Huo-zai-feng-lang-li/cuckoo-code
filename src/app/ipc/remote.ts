@@ -6,7 +6,7 @@
 import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { readConfig, writeConfig, resetToken } from '../../remote/config.js';
-import { getPort, isRunning, getClientCount } from '../../remote/server.js';
+import { getPort, isRunning, getClientCount, getClientList } from '../../remote/server.js';
 import { initRemote, stopRemote, onAiStream, onAiReply, onAiStop, onAiError, onTool, getTunnelStatus, broadcastRemoteMode } from '../../remote/manager.js';
 
 const require = createRequire(import.meta.url);
@@ -30,6 +30,7 @@ function registerRemoteIpc(): void {
         running: isRunning(),
         port: getPort(),
         clients: getClientCount(),
+        clientList: getClientList(),
         tunnel: getTunnelStatus(),
       },
     };
@@ -70,6 +71,35 @@ function registerRemoteIpc(): void {
     await initRemote();
     broadcastRemoteMode(isRunning());
     return { success: true, running: isRunning(), port: getPort() };
+  });
+
+  // 查询 IP 归属地详情（带缓存，防止限流）
+  const ipCache = new Map<string, { data: any, expire: number }>();
+  ipcMain.handle('remote-get-ip-detail', async (_e: any, ip: string) => {
+    if (!ip || ip === 'unknown' || ip === '127.0.0.1') return null;
+    
+    // 缓存有效期 12 小时
+    const now = Date.now();
+    const cached = ipCache.get(ip);
+    if (cached && now < cached.expire) return cached.data;
+
+    try {
+      // 请求 ip-api.com 获取详情
+      const res = await fetch(`http://ip-api.com/json/${ip}?lang=zh-CN`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data.status === 'success') {
+        const detail = {
+          country: data.country,
+          region: data.regionName,
+          city: data.city,
+          isp: data.isp,
+        };
+        ipCache.set(ip, { data: detail, expire: now + 12 * 3600 * 1000 });
+        return detail;
+      }
+    } catch (_) { /* ignore */ }
+    return null;
   });
 
   // bridge 初始化时查询启用状态
