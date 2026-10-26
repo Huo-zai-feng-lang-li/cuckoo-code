@@ -205,6 +205,7 @@ export interface ShellAPI {
   openCurrentExternal?: () => Promise<any>;
   // 远程控制
   getRemoteConfig?: () => Promise<any>;
+  getRemoteIpDetail?: (ip: string) => Promise<{ country: string; region: string; city: string; isp: string; scene: string; risk: string; riskDetail: string } | null>;
   saveRemoteConfig?: (data: any) => Promise<any>;
   resetRemoteToken?: () => Promise<any>;
   restartRemote?: () => Promise<any>;
