@@ -19,8 +19,8 @@ import { stopGeneration } from '../app/ipc/harness.js';
 import { startTunnel, stopTunnel, getTunnelStatus } from './tunnel.js';
 import { requestHarnessExport } from '../app/ipc/window-groups.js';
 
-/** 流式节流：60ms 推送一次。注意 onStream 的 text 是「全量累积文本」，故直接覆盖。 */
-const STREAM_FLUSH_MS = 60;
+/** 流式节流：30ms 推送一次，提升流式即时感。注意 onStream 的 text 是「全量累积文本」，故直接覆盖。 */
+const STREAM_FLUSH_MS = 30;
 
 /** 每窗口独立的流式状态（防多窗口串扰）。
  *  text = 最新全量累积文本；sent = 上次已广播出去的文本（用于计算 delta）。 */
@@ -248,9 +248,9 @@ function pushHistoryToNewClient(ws: any): Promise<void> {
         resolve();
         return;
       }
-      // 超时 800ms：harness 正常 100ms 内就回（本地实测 12ms）。
-      // 手机端每次重连都会走这里，拖长只会放大"同步中"等待，快速回空 history 更好。
-      requestHarnessExport(ctx.win.id, 800).then((state: any) => {
+      // 超时 300ms：注意这是本地 IPC（主进程与 harnessView 的 webContents.send），与手机网络无关。
+      // 弱网不影响此超时。超时风险仅来自电脑端主进程繁忙，超时后回空 history 兜底。
+      requestHarnessExport(ctx.win.id, 300).then((state: any) => {
         if (state && Array.isArray(state.history) && state.history.length) {
           // 先过滤出手机端可渲染的条目（user/assistant/system），再取最近 40 条。
           // 直接 slice(-40) 会因历史里夹杂大量 tool/plan 条目而挤占，实际可见对话极少。
