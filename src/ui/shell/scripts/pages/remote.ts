@@ -36,9 +36,11 @@ function updateDirectUrl(publicUrl: string, tunnelUrl: string, port: number, tok
     directEl.value = '';
     return;
   }
+  let safePort = port;
+  if (isNaN(safePort) || safePort < 1 || safePort > 65535) safePort = 7799;
   let base = (publicUrl || '').trim();
   if (!base && tunnelUrl) base = tunnelUrl.trim();
-  if (!base) base = 'http://127.0.0.1:' + (port || 7799);
+  if (!base) base = 'http://127.0.0.1:' + safePort;
   base = base.replace(/\/+$/, '');
   directEl.value = base + '/?token=' + encodeURIComponent(token);
 }
@@ -72,6 +74,57 @@ export async function loadRemote(): Promise<void> {
   } catch (_) { /* ignore */ }
 }
 
+// 定时器：用于自动刷新在线设备数（采用 Gen 判活防并发竞态）
+let refreshTimer: any = null;
+let refreshGen = 0;
+
+async function pollStatus(gen: number): Promise<void> {
+  if (gen !== refreshGen) return;
+  if (!api.getRemoteConfig) {
+    if (gen === refreshGen) refreshTimer = null;
+    return;
+  }
+  try {
+    const r = await api.getRemoteConfig();
+    if (gen !== refreshGen) return;
+    
+    if (r && r.success && r.status && r.status.running) {
+      renderRemoteStatus(r.status.running, r.status.clients);
+      // 成功，排下一轮
+      if (gen === refreshGen) {
+        refreshTimer = setTimeout(() => { void pollStatus(gen); }, 3000);
+      }
+    } else {
+      // 服务已停止或查询失败，终止链式轮询
+      if (gen === refreshGen) refreshTimer = null;
+    }
+  } catch (_) {
+    // 异常容错：终止轮询，防止死循环
+    if (gen === refreshGen) refreshTimer = null;
+  }
+}
+
+function startAutoRefresh(): void {
+  stopAutoRefresh();
+  refreshGen++;
+  const gen = refreshGen;
+  refreshTimer = setTimeout(() => { void pollStatus(gen); }, 3000);
+}
+
+function stopAutoRefresh(): void {
+  refreshGen++;
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
+}
+
+// 页面加载时，先拉一次状态
+loadRemote().then(() => startAutoRefresh());
+
+// 监听页面卸载（如果适用，但壳页面通常不卸载）
+// window.addEventListener('beforeunload', stopAutoRefresh);
+
 const rmSave = document.getElementById('rm-save') as HTMLButtonElement | null;
 if (rmSave) rmSave.addEventListener('click', async () => {
   if (!api.saveRemoteConfig) return;
@@ -81,7 +134,8 @@ if (rmSave) rmSave.addEventListener('click', async () => {
   const tunnelEnabledEl = document.getElementById('rm-tunnel-enabled') as HTMLInputElement | null;
   const tunnelTokenEl = document.getElementById('rm-tunnel-token') as HTMLInputElement | null;
 
-  const port = parseInt(portEl ? portEl.value : '7799', 10) || 7799;
+  let port = parseInt(portEl ? portEl.value : '7799', 10);
+  if (isNaN(port) || port < 1 || port > 65535) port = 7799;
   const payload = {
     enabled: !!(enabledEl && enabledEl.checked),
     port,
@@ -94,10 +148,7 @@ if (rmSave) rmSave.addEventListener('click', async () => {
     const r = await api.saveRemoteConfig(payload);
     if (r && r.success) {
       await loadRemote();
-      if (payload.enabled) {
-        setTimeout(() => loadRemote(), 1500);
-        setTimeout(() => loadRemote(), 3500);
-      }
+      startAutoRefresh();
       ckAlert(payload.enabled ? '远程服务配置已保存并生效' : '已保存（远程服务已停用）');
     } else {
       ckAlert('保存失败：' + ((r && r.error) || '未知错误'));
@@ -111,8 +162,7 @@ if (rmRestart) rmRestart.addEventListener('click', async () => {
   try {
     await api.restartRemote();
     await loadRemote();
-    setTimeout(() => loadRemote(), 1500);
-    setTimeout(() => loadRemote(), 3500);
+    startAutoRefresh();
     ckAlert('远程服务已重启');
   } catch (_) { /* ignore */ }
 });

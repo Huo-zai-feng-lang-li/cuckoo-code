@@ -180,6 +180,7 @@ export function startTunnel(opts: TunnelOptions): Promise<{ ok: boolean; url?: s
     }
 
     let resolved = false;
+    let fatalStartError = false; // 提前声明
 
     const onExit = (code: number | null, signal: string | null) => {
       // 只处理"自己这一代"的退出；若是旧代（已被 stop / 新 start 取代）则完全忽略，
@@ -201,7 +202,6 @@ export function startTunnel(opts: TunnelOptions): Promise<{ ok: boolean; url?: s
 
     myProc.on('exit', onExit);
     // 致命启动错误（找不到/无法执行二进制）：不进入自动重启（重试无意义）
-    let fatalStartError = false;
     myProc.on('error', (err: any) => {
       if (myGen !== tunnelGen) return; // 旧代（已被 stop / 新 start 取代）忽略，防污染状态
       if (err.code === 'ENOENT' || err.code === 'EACCES') fatalStartError = true;
@@ -216,9 +216,24 @@ export function startTunnel(opts: TunnelOptions): Promise<{ ok: boolean; url?: s
     });
 
     const checkOutput = (data: Buffer) => {
+      if (myGen !== tunnelGen) return; // 旧代被取代后，忽略残留缓冲区的输出
+      const text = data.toString('utf-8');
+      
+      // 拦截致命错误（如 Token 格式错误），防止无意义重启
+      if (text.includes('failed to parse token') || text.includes('incorrect usage') || text.includes('Provided Tunnel token is not valid')) {
+        fatalStartError = true;
+        currentError = 'Token 格式错误或无效，请检查是否正确复制了完整凭证';
+        if (opts.onError) opts.onError(currentError);
+        if (!resolved) {
+          resolved = true;
+          if (pendingStartTimer) { clearTimeout(pendingStartTimer); pendingStartTimer = null; }
+          resolve({ ok: false, error: currentError });
+        }
+        return;
+      }
+
       // 性能防护：若已有 URL 或固定隧道模式，直接跳过正则匹配，降低 CPU 消耗
       if (currentUrl || currentMode === 'fixed') return;
-      const text = data.toString('utf-8');
       const match = text.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/i);
       if (match) {
         currentUrl = match[0];

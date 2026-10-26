@@ -5985,9 +5985,11 @@ paths:            # 可选；省略 = 始终生效
       directEl.value = "";
       return;
     }
+    let safePort = port;
+    if (isNaN(safePort) || safePort < 1 || safePort > 65535) safePort = 7799;
     let base = (publicUrl || "").trim();
     if (!base && tunnelUrl) base = tunnelUrl.trim();
-    if (!base) base = "http://127.0.0.1:" + (port || 7799);
+    if (!base) base = "http://127.0.0.1:" + safePort;
     base = base.replace(/\/+$/, "");
     directEl.value = base + "/?token=" + encodeURIComponent(token);
   }
@@ -6018,6 +6020,47 @@ paths:            # 可选；省略 = 始终生效
     } catch (_) {
     }
   }
+  var refreshTimer = null;
+  var refreshGen = 0;
+  async function pollStatus(gen) {
+    if (gen !== refreshGen) return;
+    if (!api.getRemoteConfig) {
+      if (gen === refreshGen) refreshTimer = null;
+      return;
+    }
+    try {
+      const r = await api.getRemoteConfig();
+      if (gen !== refreshGen) return;
+      if (r && r.success && r.status && r.status.running) {
+        renderRemoteStatus(r.status.running, r.status.clients);
+        if (gen === refreshGen) {
+          refreshTimer = setTimeout(() => {
+            void pollStatus(gen);
+          }, 3e3);
+        }
+      } else {
+        if (gen === refreshGen) refreshTimer = null;
+      }
+    } catch (_) {
+      if (gen === refreshGen) refreshTimer = null;
+    }
+  }
+  function startAutoRefresh() {
+    stopAutoRefresh();
+    refreshGen++;
+    const gen = refreshGen;
+    refreshTimer = setTimeout(() => {
+      void pollStatus(gen);
+    }, 3e3);
+  }
+  function stopAutoRefresh() {
+    refreshGen++;
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+      refreshTimer = null;
+    }
+  }
+  loadRemote().then(() => startAutoRefresh());
   var rmSave = document.getElementById("rm-save");
   if (rmSave) rmSave.addEventListener("click", async () => {
     if (!api.saveRemoteConfig) return;
@@ -6026,7 +6069,8 @@ paths:            # 可选；省略 = 始终生效
     const publicUrlEl = document.getElementById("rm-public-url");
     const tunnelEnabledEl = document.getElementById("rm-tunnel-enabled");
     const tunnelTokenEl = document.getElementById("rm-tunnel-token");
-    const port = parseInt(portEl ? portEl.value : "7799", 10) || 7799;
+    let port = parseInt(portEl ? portEl.value : "7799", 10);
+    if (isNaN(port) || port < 1 || port > 65535) port = 7799;
     const payload = {
       enabled: !!(enabledEl && enabledEl.checked),
       port,
@@ -6038,10 +6082,7 @@ paths:            # 可选；省略 = 始终生效
       const r = await api.saveRemoteConfig(payload);
       if (r && r.success) {
         await loadRemote();
-        if (payload.enabled) {
-          setTimeout(() => loadRemote(), 1500);
-          setTimeout(() => loadRemote(), 3500);
-        }
+        startAutoRefresh();
         ckAlert(payload.enabled ? "\u8FDC\u7A0B\u670D\u52A1\u914D\u7F6E\u5DF2\u4FDD\u5B58\u5E76\u751F\u6548" : "\u5DF2\u4FDD\u5B58\uFF08\u8FDC\u7A0B\u670D\u52A1\u5DF2\u505C\u7528\uFF09");
       } else {
         ckAlert("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (r && r.error || "\u672A\u77E5\u9519\u8BEF"));
@@ -6055,8 +6096,7 @@ paths:            # 可选；省略 = 始终生效
     try {
       await api.restartRemote();
       await loadRemote();
-      setTimeout(() => loadRemote(), 1500);
-      setTimeout(() => loadRemote(), 3500);
+      startAutoRefresh();
       ckAlert("\u8FDC\u7A0B\u670D\u52A1\u5DF2\u91CD\u542F");
     } catch (_) {
     }
