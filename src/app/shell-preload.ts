@@ -271,6 +271,7 @@ const shellAPI = {
   openCurrentExternal: () => ipcRenderer.invoke('open-current-external'),
   // ========== 远程控制 ==========
   getRemoteConfig: () => ipcRenderer.invoke('remote-get-config'),
+  getRemoteIpDetail: (ip: string) => ipcRenderer.invoke('remote-get-ip-detail', ip),
   saveRemoteConfig: (data: any) => ipcRenderer.invoke('remote-save-config', { data }),
   resetRemoteToken: () => ipcRenderer.invoke('remote-reset-token'),
   restartRemote: () => ipcRenderer.invoke('remote-restart'),
