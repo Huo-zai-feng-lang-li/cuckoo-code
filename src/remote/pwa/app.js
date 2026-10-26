@@ -192,9 +192,11 @@
       clearTimeout(foregroundProbeTimer);
       foregroundProbeTimer = null;
     }
-    // 如果是因为切前台强制重连，且之前是连着的，不要切到“重连中”状态，做到无感
-    const wasConnected = connected;
-    if (!wasConnected) setConn('connecting');
+    // 只要页面有消息，或者本地有缓存，就绝对不显示“重连中”
+    const hasMessages = !!messages.querySelector('.msg') || (loadHistoryCache() || []).length > 0;
+    if (!hasMessages) {
+      setConn('connecting');
+    }
     const gen = ++wsGen;
     if (ws) {
       const oldWs = ws;
@@ -232,7 +234,10 @@
     sock.onclose = () => {
       if (gen !== wsGen) return;
       connected = false;
-      setConn('off');
+      // 如果页面上已经有消息，不要在顶部显示“已离线”，保持原样静默重连
+      if (!messages.querySelector('.msg')) {
+        setConn('off');
+      }
       hideExec();
       setExecuting(false);
       // 清理未完成的探活定时器，避免它在断连后再次触发重连
