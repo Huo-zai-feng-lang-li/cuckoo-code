@@ -51,7 +51,13 @@ let currentPort = 0;
 let currentToken = '';
 let heartbeatTimer: any = null;
 let deps: ServerDeps = { onUserMessage: () => {} };
-const clients = new Set<any>();
+interface ClientInfo {
+  ip: string;
+  ua: string;
+  connectedAt: number;
+  clientId?: string;
+}
+const clients = new Map<any, ClientInfo>();
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -253,6 +259,22 @@ function handleWsMessage(ws: any, raw: any): void {
   let msg: any;
   try { msg = JSON.parse(rawStr); } catch (_) { return; }
   if (!msg || typeof msg.type !== 'string') return;
+
+  if (msg.type === 'auth') {
+    const cid = typeof msg.clientId === 'string' ? msg.clientId : '';
+    if (cid && /^[A-Za-z0-9_-]{1,64}$/.test(cid)) {
+      const info = clients.get(ws);
+      if (info) info.clientId = cid;
+      for (const [oldWs, oldInfo] of clients.entries()) {
+        if (oldWs !== ws && oldInfo.clientId === cid) {
+          try { oldWs.terminate(); } catch (_) {}
+          clients.delete(oldWs);
+        }
+      }
+    }
+    return;
+  }
+
   if (msg.type === 'ping') {
     try { ws.send(JSON.stringify({ type: 'pong' })); } catch (_) {}
     return;
@@ -279,8 +301,14 @@ function handleWsMessage(ws: any, raw: any): void {
 }
 
 /** 建立 WS 连接后的初始化握手 */
-function onWsConnection(ws: any): void {
-  clients.add(ws);
+function onWsConnection(ws: any, req: any): void {
+  let ip = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  if (Array.isArray(ip)) ip = ip[0];
+  if (typeof ip === 'string' && ip.includes(',')) ip = ip.split(',')[0].trim();
+  if (typeof ip === 'string' && ip.startsWith('::ffff:')) ip = ip.substring(7);
+  if (typeof ip !== 'string' || !ip) ip = 'unknown';
+  const ua = req.headers['user-agent'] || 'unknown';
+  clients.set(ws, { ip, ua, connectedAt: Date.now() });
   ws.isAlive = true;
   ws.missedPongs = 0;
   try {
@@ -303,15 +331,15 @@ function onWsConnection(ws: any): void {
  *  给足恢复时间，避免"熄屏几分钟回来必断"。真正的半开连接由约 120s 兜底清理。 */
 function startHeartbeat(): any {
   return setInterval(() => {
-    for (const c of clients) {
-      if (c.isAlive === false) {
-        c.missedPongs = (c.missedPongs || 0) + 1;
-        if (c.missedPongs >= 3) { try { c.terminate(); } catch (_) {} clients.delete(c); continue; }
+    for (const ws of clients.keys()) {
+      if (ws.isAlive === false) {
+        ws.missedPongs = (ws.missedPongs || 0) + 1;
+        if (ws.missedPongs >= 3) { try { ws.terminate(); } catch (_) {} clients.delete(ws); continue; }
       } else {
-        c.missedPongs = 0;
+        ws.missedPongs = 0;
       }
-      c.isAlive = false;
-      try { c.ping(); } catch (_) {}
+      ws.isAlive = false;
+      try { ws.ping(); } catch (_) {}
     }
   }, 30000);
 }
@@ -338,9 +366,11 @@ function startServer(d: ServerDeps, port: number, token: string): Promise<{ ok: 
       }
       wss.handleUpgrade(req, socket, head, (ws: any) => { wss.emit('connection', ws, req); });
     });
-    wss.on('connection', onWsConnection);
+    wss.on('connection', (ws: any, req: any) => onWsConnection(ws, req));
     httpServer.on('error', (err: any) => {
       httpServer = null; wss = null; currentPort = 0;
+      if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+      clients.clear();
       resolve({ ok: false, error: err.message });
     });
     httpServer.listen(port, '127.0.0.1', () => {
@@ -358,7 +388,7 @@ function startServer(d: ServerDeps, port: number, token: string): Promise<{ ok: 
 function stopServer(): Promise<void> {
   return new Promise((resolve) => {
     if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
-    for (const c of clients) { try { c.terminate(); } catch (_) {} }
+    for (const ws of clients.keys()) { try { ws.terminate(); } catch (_) {} }
     clients.clear();
 
     const oldWss = wss;
@@ -396,8 +426,8 @@ function stopServer(): Promise<void> {
 function broadcast(payload: any): void {
   if (clients.size === 0) return;
   const msg = JSON.stringify(payload);
-  for (const c of clients) {
-    try { if (c.readyState === 1) c.send(msg); } catch (_) {}
+  for (const ws of clients.keys()) {
+    try { if (ws.readyState === 1) ws.send(msg); } catch (_) {}
   }
 }
 
@@ -410,5 +440,13 @@ function getPort(): number { return currentPort; }
 function isRunning(): boolean { return !!httpServer; }
 function getClientCount(): number { return clients.size; }
 
-export { startServer, stopServer, broadcast, sendToClient, getPort, isRunning, getClientCount };
+function getClientList() {
+  const list: any[] = [];
+  for (const [ws, info] of clients.entries()) {
+    list.push({ ip: info.ip, ua: info.ua, connectedAt: info.connectedAt });
+  }
+  return list;
+}
+
+export { startServer, stopServer, broadcast, sendToClient, getPort, isRunning, getClientCount, getClientList };
 export type { ServerDeps };
