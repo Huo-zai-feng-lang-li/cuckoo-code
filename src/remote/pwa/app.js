@@ -192,9 +192,11 @@
       clearTimeout(foregroundProbeTimer);
       foregroundProbeTimer = null;
     }
-    // 如果是因为切前台强制重连，且之前是连着的，不要切到“重连中”状态，做到无感
-    const wasConnected = connected;
-    if (!wasConnected) setConn('connecting');
+    // 只要页面有消息，或者本地有缓存，就绝对不显示“重连中”
+    const hasMessages = !!messages.querySelector('.msg') || (loadHistoryCache() || []).length > 0;
+    if (!hasMessages) {
+      setConn('connecting');
+    }
     const gen = ++wsGen;
     if (ws) {
       const oldWs = ws;
@@ -232,7 +234,10 @@
     sock.onclose = () => {
       if (gen !== wsGen) return;
       connected = false;
-      setConn('off');
+      // 如果页面上已经有消息，不要在顶部显示“已离线”，保持原样静默重连
+      if (!messages.querySelector('.msg')) {
+        setConn('off');
+      }
       hideExec();
       setExecuting(false);
       // 清理未完成的探活定时器，避免它在断连后再次触发重连
@@ -246,7 +251,11 @@
         return;
       }
 
-      showOffline('连接已断开，正在自动重连…');
+      // 如果页面有消息或本地有缓存，绝不弹出恶心的“已断开”橙色横幅
+      const hasCache = (loadHistoryCache() || []).length > 0;
+      if (!messages.querySelector('.msg') && !hasCache) {
+        showOffline('连接已断开，正在自动重连…');
+      }
       // 失败 3 次以上时，在后台静默探测是否是令牌被电脑端重置（401）
       if (++failStreak >= 3 && failStreak % 3 === 0) {
         fetch('/api/ping', {
@@ -285,33 +294,14 @@
   const FOREGROUND_PING_TIMEOUT = 1200;
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible' || !token) return;
-    if (!connected) {
-      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-      reconnectDelay = 1000;
-      connect();
-      return;
-    }
-    if (!ws || ws.readyState !== 1) {
-      // 底层 socket 已不可用：立即重连（不依赖 onclose 是否已回调）
-      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-      reconnectDelay = 1000;
-      connect();
-      return;
-    }
-    if (foregroundProbeTimer) return; // 已有探活在跑，避免重复
-    const probeAt = Date.now();
-    sendRaw({ type: 'ping' });
-    foregroundProbeTimer = setTimeout(() => {
+    // 只要切回前台，直接清理并强制发起新连接，实现秒回（不走探活超时）
+    if (foregroundProbeTimer) {
+      clearTimeout(foregroundProbeTimer);
       foregroundProbeTimer = null;
-      // 探活期间可能已收到 pong（lastPong 被刷新）→ 连接健康，不动。
-      // 用 >= 而非 >：probeAt 与 pong 的 Date.now() 可能落在同一毫秒，严格大于会误判半开。
-      if (lastPong >= probeAt) return;
-      console.warn('[Remote] 回到前台探活超时，判定连接半开，立即重连');
-      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-      reconnectDelay = 1000;
-      try { ws.close(); } catch {}
-      connect();
-    }, FOREGROUND_PING_TIMEOUT);
+    }
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    reconnectDelay = 1000;
+    connect(true);
   });
 
   // 心跳保活
