@@ -17,13 +17,12 @@
 
 | 作用域 | 路径 | 说明 |
 |---|---|---|
-| **项目级** | `<项目根>/.agents/rules/<name>.md` | 随仓库走，团队共享（**推荐**，多 AI 工具统一入口） |
-| **项目级**（旧） | `<项目根>/.cuckoo/rules/<name>.md` | 兼容未迁移项目（优先 `.agents/rules/`，不存在才回退到这里） |
-| **用户级** | `~/.cuckoo/rules/<name>.md` | 所有项目通用 |
+| **项目级** | `<项目根>/.agents/rules/<name>.md` | 随仓库走，团队共享（多 AI 工具统一入口） |
+| **用户级** | `~/.agents/rules/<name>.md` | 所有项目通用 |
 
 - 扫描 rules 目录下的 `.md` 文件（一层）
 - **同名规则都生效**（用户级 + 项目级不覆盖，靠**路径**区分）
-- 项目级目录**二选一**：优先 `.agents/rules/`（与其他 AI 工具如 Codex/Cursor 统一），不存在则回退 `.cuckoo/rules/`
+- 项目级路径已统一为 `.agents/rules/`，不再回退旧的 `.cuckoo/rules/`
 
 ## 三、规则文件格式
 
@@ -66,7 +65,7 @@ paths:
 **AI 实际看到的示例**（读 `src/api/user.ts`）：
 
 ```
-【规则「api-rules」｜路径 C:\项目\.cuckoo\rules\api-rules.md】
+【规则「api-rules」｜路径 C:\项目\.agents\rules\api-rules.md】
 # API 开发规则
 - 所有接口必须校验入参
 

@@ -2,9 +2,8 @@
  * 规则扫描：项目级 + 用户级目录 → RuleMeta[]
  *
  * 目录约定：
- *  - 项目级：`<projectDir>/.agents/rules/*.md`（新，优先；对齐多 AI 工具统一入口）
- *            回退 `<projectDir>/.cuckoo/rules/*.md`（旧，兼容未迁移项目）
- *  - 用户级：`~/.cuckoo/rules/*.md`
+ *  - 项目级：`<projectDir>/.agents/rules/*.md`（多 AI 工具统一入口，不回退旧路径）
+ *  - 用户级：`~/.agents/rules/*.md`
  *
  * 规则：
  *  - 只扫 rules 目录的直接子目录（一层）

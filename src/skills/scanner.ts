@@ -1,9 +1,9 @@
 /**
  * 技能扫描：项目级 + 用户级目录 → SkillMeta[]
  *
- * 目录约定（对齐 Claude Code）：
- *  - 项目级：`<projectDir>/.cuckoo/skills/<name>/SKILL.md`
- *  - 用户级：`~/.cuckoo/skills/<name>/SKILL.md`
+ * 目录约定（对齐 Claude Code / 多 AI 工具）：
+ *  - 项目级：`<projectDir>/.agents/skills/<name>/SKILL.md`
+ *  - 用户级：`~/.agents/skills/<name>/SKILL.md`
  *
  * 规则：
  *  - 只扫 skills 目录的**直接子目录**（一层），不递归

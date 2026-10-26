@@ -10,15 +10,15 @@
  * }
  *
  * 路径：
- *  - 项目级：<projectDir>/.cuckoo/mcp.json
- *  - 用户级：~/.cuckoo/mcp.json
+ *  - 项目级：<projectDir>/.agents/mcp.json
+ *  - 用户级：~/.agents/mcp.json
  * 同名 server 项目级覆盖用户级。
  *
  * 启用状态单独存（不污染主流格式）：
- *  - 项目级：<projectDir>/.cuckoo/mcp-state.json
- *  - 用户级：~/.cuckoo/mcp-state.json
+ *  - 项目级：<projectDir>/.agents/mcp-state.json
+ *  - 用户级：~/.agents/mcp-state.json
  *
- * 首次迁移：~/.cuckoo/mcp.json 不存在时，把旧 userData/mcp.json 复制过去（旧文件保留不动）。
+ * 首次迁移：~/.agents/mcp.json 不存在时，把旧 userData/mcp.json 复制过去（旧文件保留不动）。
  */
 import fs from 'node:fs';
 import path from 'node:path';

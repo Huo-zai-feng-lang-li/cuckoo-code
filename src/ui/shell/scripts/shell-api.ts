@@ -63,7 +63,7 @@ export interface ShellAPI {
   createSnapshot?: (projectDir: string, name: string, description?: string) => Promise<any>;
   restoreSnapshot?: (id: string) => Promise<any>;
   deleteSnapshot?: (id: string) => Promise<any>;
-  // 全局规则（用户级 ~/.cuckoo/rules/）
+  // 全局规则（用户级 ~/.agents/rules/）
   listRules?: () => Promise<any>;
   createRule?: (fileName: string, content: string) => Promise<any>;
   saveRule?: (fileName: string, content: string, expectedHash: string) => Promise<any>;

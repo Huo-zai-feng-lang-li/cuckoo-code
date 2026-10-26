@@ -12,8 +12,8 @@ AI 判断任务与某技能相关时，会**用 `read` 读取该 SKILL.md 全文
 
 | 作用域 | 路径 | 说明 |
 |---|---|---|
-| **项目级** | `<项目根>/.cuckoo/skills/<name>/SKILL.md` | 随仓库走，团队共享 |
-| **用户级** | `~/.cuckoo/skills/<name>/SKILL.md` | 所有项目通用 |
+| **项目级** | `<项目根>/.agents/skills/<name>/SKILL.md` | 随仓库走，团队共享 |
+| **用户级** | `~/.agents/skills/<name>/SKILL.md` | 所有项目通用 |
 
 - 只扫描 skills 目录的**直接子目录**（一层），不递归
 - 每个子目录必须有 `SKILL.md`
@@ -38,7 +38,7 @@ allowed-tools: read, edit, bash
 2. ...
 
 ## 附带脚本
-运行：`bash("node .cuckoo/skills/my-skill/run.js")`
+运行：`bash("node .agents/skills/my-skill/run.js")`
 ```
 
 ### frontmatter 字段
@@ -59,7 +59,7 @@ allowed-tools: read, edit, bash
 
 ## 五、完整示例
 
-`.cuckoo/skills/commit-helper/SKILL.md`：
+`.agents/skills/commit-helper/SKILL.md`：
 
 ```markdown
 ---

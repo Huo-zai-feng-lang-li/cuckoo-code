@@ -124,7 +124,7 @@
 | 文件 | 职责 |
 |---|---|
 | `skills/frontmatter.ts` | 极简 YAML frontmatter 解析（零依赖） |
-| `skills/scanner.ts` | 扫描 `.cuckoo/skills/<name>/SKILL.md`（项目级 + 用户级），解析 name/description |
+| `skills/scanner.ts` | 扫描 `.agents/skills/<name>/SKILL.md`（项目级 + 用户级），解析 name/description |
 | `skills/prompt.ts` | 生成系统提示词的「可用技能」章节 |
 | `skills/index.ts` | 模块入口 |
 | `agents/scanner.ts` | 扫描 `.cuckoo/agents/<name>.md`（项目级 + 用户级），解析 name/description/tools/maxTurns |
@@ -186,7 +186,7 @@
 
 ## src/rules/ —— 规则系统（对齐 Claude Code）
 
-> 项目级 `.agents/rules/` + 用户级 `~/.cuckoo/rules/`。规则可带 `paths` 绑定文件路径，
+> 项目级 `.agents/rules/` + 用户级 `~/.agents/rules/`。规则可带 `paths` 绑定文件路径，
 > 只在 AI 读到相关文件时注入（区别于无 paths 的规则始终注入）。
 
 | 文件 | 职责 |

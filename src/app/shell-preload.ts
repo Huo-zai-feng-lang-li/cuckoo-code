@@ -292,7 +292,7 @@ const shellAPI = {
     ipcRenderer.invoke('create-snapshot', { projectDir, name, description }),
   restoreSnapshot: (id: string) => ipcRenderer.invoke('restore-snapshot', { id }),
   deleteSnapshot: (id: string) => ipcRenderer.invoke('delete-snapshot', { id }),
-  // ========== 全局规则（用户级 ~/.cuckoo/rules/）==========
+  // ========== 全局规则（用户级 ~/.agents/rules/）==========
   listRules: () => ipcRenderer.invoke('rules-list'),
   createRule: (fileName: string, content: string) => ipcRenderer.invoke('rules-create', { fileName, content }),
   saveRule: (fileName: string, content: string, expectedHash: string) => ipcRenderer.invoke('rules-save', { fileName, content, expectedHash }),

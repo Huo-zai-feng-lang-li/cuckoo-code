@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.10.52] - 2026-10-26
+
+### Changed
+
+- **规则 / 技能 / MCP 三类配置入口统一到 `.agents/`**（`src/rules/scanner.ts`、`src/skills/scanner.ts`、`src/mcp/config.ts`）：
+  - 项目级规则：`<项目根>/.agents/rules/*.md`（不再回退旧的 `.cuckoo/rules/`）
+  - 项目级技能：`<项目根>/.agents/skills/<name>/SKILL.md`
+  - 项目级 MCP：`<项目根>/.agents/mcp.json` + `.agents/mcp-state.json`
+  - 用户级规则：`~/.agents/rules/*.md`（原 `~/.cuckoo/rules/`）
+  - 用户级技能：`~/.agents/skills/<name>/SKILL.md`（原 `~/.cuckoo/skills/`）
+  - 用户级 MCP：`~/.agents/mcp.json`（原 `~/.cuckoo/mcp.json`）
+  - 与 Claude Code / Codex / Cursor 等工具的目录约定对齐，便于多 AI 工具共享同一份配置。
+- **用户数据目录不变**：`memories.json`、`remote.json`、`snapshots/`、`plugins/`、`theme-state.json` 等运行时数据仍在 `~/.cuckoo/`；项目级子代理仍在 `.cuckoo/agents/`；`CUCKOO.md` 仍优先读 `.cuckoo/CUCKOO.md`。
+
+
 ## [0.10.51] - 2026-10-23
 
 ### Fixed
