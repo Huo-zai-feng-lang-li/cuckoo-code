@@ -23,6 +23,7 @@
   let reconnectTimer = null;
   let failStreak = 0;
   let lastPong = Date.now(); // 心跳：最近一次 pong 时间
+  let foregroundProbeTimer = null; // 切前台探活定时器
   const MAX_QUEUE = 50;
   const sendQueue = []; // 断线暂存
 
@@ -176,9 +177,19 @@
     return proto + '//' + location.host + '/ws';
   }
 
-  function connect() {
+  function connect(force = false) {
+    // 增加并发防抖：如果是强制重连，先置空 ws 并打断旧的回调链
+    if (!force && ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+    if (foregroundProbeTimer) {
+      clearTimeout(foregroundProbeTimer);
+      foregroundProbeTimer = null;
+    }
     const gen = ++wsGen;
-    if (ws) { try { ws.close(); } catch {} }
+    if (ws) {
+      const oldWs = ws;
+      ws = null; // 立即剥离引用，防止后续异步回调复用它
+      try { oldWs.close(); } catch {}
+    }
     setConn('connecting');
     let sock;
     try {
@@ -212,6 +223,11 @@
       setConn('off');
       hideExec();
       setExecuting(false);
+      // 清理未完成的探活定时器，避免它在断连后再次触发重连
+      if (foregroundProbeTimer) {
+        clearTimeout(foregroundProbeTimer);
+        foregroundProbeTimer = null;
+      }
 
       if (!token) {
         showLogin();
@@ -255,7 +271,6 @@
   // 用时间阈值直接掐连接会把健康连接误杀（见下方 STALE_MS 注释的设计约束）。
   // 正确做法：回前台先主动发一个 ping，1.5s 内没等到 pong 才判定半开 → 立即重连。
   const FOREGROUND_PING_TIMEOUT = 1500;
-  let foregroundProbeTimer = null;
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible' || !token) return;
     if (!connected) {
@@ -366,6 +381,7 @@
         showExec('正在生成回复…');
         setExecuting(true);
         streamingText = '';
+        STREAM_MD_INTERVAL = 120; // 新一轮对话，重置渲染节流间隔
         streamingEl = null;
         streamNode = null;
         // 只重置引用，**不动历史 think DOM**（上一轮的思考块应保留在会话里）
@@ -724,9 +740,8 @@
   // 用 ~80ms 节流控制性能（逐帧全量 renderMd 会累积 O(n²)；节流一次可控）。
   let streamMdTimer = null;
   let lastStreamMdAt = 0;
-  // 节流间隔：~80ms 一次全量 markdown 渲染，与电脑端 harness 对齐。
-  // 既保证流式期间始终带格式、肉眼流畅，又把渲染次数较逐帧降约 5 倍（长回复不卡）。
-  const STREAM_MD_INTERVAL = 80;
+  // 节流间隔：动态调整。短文本 120ms 刷新保持手感，长文本 250ms 刷新防止手机 CPU 卡顿。
+  let STREAM_MD_INTERVAL = 120;
   function cancelStreamMd() {
     if (streamMdTimer) { clearTimeout(streamMdTimer); streamMdTimer = null; }
   }
@@ -760,6 +775,12 @@
     // 但**不在此处折叠思考块**——否则正文一出思考就消失，用户来不及看。
     // 折叠统一推迟到收尾（finishThink），流式期间保持思考可见。
     sawText = true;
+    // 动态调整渲染间隔：字数越多，解析 Markdown 越耗时，稍微拉长间隔防卡顿
+    if (streamingText.length > 1500) {
+      STREAM_MD_INTERVAL = 250;
+    } else if (streamingText.length > 500) {
+      STREAM_MD_INTERVAL = 180;
+    }
     scheduleStreamMd();
     scroll();
   }
@@ -970,7 +991,7 @@
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     reconnectDelay = 1000;
     failStreak = 0;
-    connect();
+    connect(true); // 强制重连，忽略当前可能处于 CONNECTING/OPEN 的假死状态
   });
 
   profileSelect.addEventListener('change', () => {

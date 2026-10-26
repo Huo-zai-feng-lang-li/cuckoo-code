@@ -5954,11 +5954,145 @@ paths:            # 可选；省略 = 始终生效
 
   // src/ui/shell/scripts/pages/remote.ts
   init_shared();
-  function renderRemoteStatus(running, clients) {
+  function renderRemoteStatus(running, clients, clientList) {
     const dot = document.getElementById("rm-dot");
     const txt = document.getElementById("rm-status-text");
     if (dot) dot.className = "fs-dot" + (running ? " connected" : "");
-    if (txt) txt.textContent = running ? "\u8FD0\u884C\u4E2D" + (clients ? "\uFF08" + clients + " \u53F0\u8BBE\u5907\u5728\u7EBF\uFF09" : "") : "\u672A\u542F\u52A8";
+    if (txt) {
+      if (!running) {
+        txt.innerHTML = "\u672A\u542F\u52A8";
+      } else if (clients && clients > 0) {
+        txt.innerHTML = '\u8FD0\u884C\u4E2D\uFF08<a href="#" id="rm-view-clients" style="color:var(--ck-primary);text-decoration:underline;">' + clients + " \u53F0\u8BBE\u5907\u5728\u7EBF</a>\uFF09";
+        const link = document.getElementById("rm-view-clients");
+        if (link) {
+          link.onclick = (e) => {
+            e.preventDefault();
+            showClientDetails(clientList || []);
+          };
+        }
+      } else {
+        txt.textContent = "\u8FD0\u884C\u4E2D";
+      }
+    }
+  }
+  function parseDeviceInfo(ua) {
+    let os = "\u672A\u77E5\u7CFB\u7EDF", browser = "\u672A\u77E5\u6D4F\u89C8\u5668", icon = "\u{1F4BB}";
+    if (/iPhone/.test(ua)) {
+      os = "iOS";
+      icon = "\u{1F4F1}";
+    } else if (/iPad/.test(ua)) {
+      os = "iPadOS";
+      icon = "\u{1F4F1}";
+    } else if (/Android/.test(ua)) {
+      os = "Android";
+      icon = "\u{1F4F1}";
+    } else if (/Windows/.test(ua)) {
+      os = "Windows";
+      icon = "\u{1F4BB}";
+    } else if (/Macintosh/.test(ua)) {
+      os = "macOS";
+      icon = "\u{1F4BB}";
+    } else if (/Linux/.test(ua)) {
+      os = "Linux";
+      icon = "\u{1F4BB}";
+    }
+    if (/Edg\//.test(ua)) browser = "Edge";
+    else if (/MicroMessenger/.test(ua)) browser = "\u5FAE\u4FE1";
+    else if (/Chrome\//.test(ua)) browser = "Chrome";
+    else if (/Safari\//.test(ua)) browser = "Safari";
+    else if (/Firefox\//.test(ua)) browser = "Firefox";
+    return { os, browser, icon };
+  }
+  function showClientDetails(list) {
+    if (!list || !list.length) return;
+    const old = document.getElementById("rm-client-modal");
+    if (old) old.remove();
+    const mask = document.createElement("div");
+    mask.id = "rm-client-modal";
+    mask.className = "ck-modal-mask";
+    mask.style.position = "fixed";
+    mask.style.inset = "0";
+    mask.style.background = "rgba(0,0,0,0.5)";
+    mask.style.zIndex = "9999";
+    mask.style.display = "flex";
+    mask.style.alignItems = "center";
+    mask.style.justifyContent = "center";
+    const box = document.createElement("div");
+    box.className = "ck-modal-box";
+    box.style.background = "var(--ck-surface)";
+    box.style.border = "1px solid var(--ck-border)";
+    box.style.borderRadius = "12px";
+    box.style.width = "320px";
+    box.style.maxWidth = "90vw";
+    box.style.maxHeight = "80vh";
+    box.style.overflow = "hidden";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.boxShadow = "0 12px 32px rgba(0,0,0,0.3)";
+    const header = document.createElement("div");
+    header.style.padding = "16px 20px";
+    header.style.borderBottom = "1px solid var(--ck-border)";
+    header.style.display = "flex";
+    header.style.justifyContent = "space-between";
+    header.style.alignItems = "center";
+    header.innerHTML = `<h3 style="margin:0; font-size:15px; color:var(--ck-text);">\u5728\u7EBF\u8BBE\u5907 (${list.length})</h3>`;
+    const closeBtn = document.createElement("button");
+    closeBtn.textContent = "\u2715";
+    closeBtn.style.background = "transparent";
+    closeBtn.style.border = "none";
+    closeBtn.style.color = "var(--ck-text-dim)";
+    closeBtn.style.fontSize = "16px";
+    closeBtn.style.cursor = "pointer";
+    closeBtn.onclick = () => mask.remove();
+    header.appendChild(closeBtn);
+    const content = document.createElement("div");
+    content.style.padding = "12px";
+    content.style.overflowY = "auto";
+    content.style.display = "flex";
+    content.style.flexDirection = "column";
+    content.style.gap = "10px";
+    for (const c of list) {
+      const ip = typeof c.ip === "string" ? c.ip : "unknown";
+      const ua = typeof c.ua === "string" ? c.ua : "";
+      const info = parseDeviceInfo(ua);
+      const item = document.createElement("div");
+      item.style.background = "var(--ck-bg)";
+      item.style.padding = "12px";
+      item.style.borderRadius = "8px";
+      item.style.border = "1px solid var(--ck-border)";
+      item.style.display = "flex";
+      item.style.alignItems = "center";
+      item.style.gap = "12px";
+      const iconEl = document.createElement("div");
+      iconEl.style.fontSize = "24px";
+      iconEl.textContent = info.icon;
+      const infoEl = document.createElement("div");
+      infoEl.style.flex = "1";
+      infoEl.style.overflow = "hidden";
+      const ipEl = document.createElement("div");
+      ipEl.style.fontFamily = "monospace";
+      ipEl.style.fontSize = "13px";
+      ipEl.style.color = "var(--ck-text)";
+      ipEl.style.fontWeight = "500";
+      ipEl.textContent = ip;
+      const detailEl = document.createElement("div");
+      detailEl.style.fontSize = "12px";
+      detailEl.style.color = "var(--ck-text-dim)";
+      detailEl.style.marginTop = "2px";
+      detailEl.textContent = `${info.os} \xB7 ${info.browser}`;
+      infoEl.appendChild(ipEl);
+      infoEl.appendChild(detailEl);
+      item.appendChild(iconEl);
+      item.appendChild(infoEl);
+      content.appendChild(item);
+    }
+    box.appendChild(header);
+    box.appendChild(content);
+    mask.appendChild(box);
+    mask.onclick = (e) => {
+      if (e.target === mask) mask.remove();
+    };
+    document.body.appendChild(mask);
   }
   function renderTunnelStatus(tunnel) {
     const dot = document.getElementById("rm-tunnel-dot");
@@ -6015,7 +6149,7 @@ paths:            # 可选；省略 = 始终生效
       const effectivePublicUrl = c.publicUrl || (publicUrlEl ? publicUrlEl.value : "");
       const tunnelUrl = s.tunnel && s.tunnel.url ? s.tunnel.url : "";
       updateDirectUrl(effectivePublicUrl, tunnelUrl, c.port || 7799, c.token || "");
-      renderRemoteStatus(!!s.running, s.clients);
+      renderRemoteStatus(!!s.running, s.clients, s.clientList);
       renderTunnelStatus(s.tunnel);
     } catch (_) {
     }
@@ -6032,7 +6166,7 @@ paths:            # 可选；省略 = 始终生效
       const r = await api.getRemoteConfig();
       if (gen !== refreshGen) return;
       if (r && r.success && r.status && r.status.running) {
-        renderRemoteStatus(r.status.running, r.status.clients);
+        renderRemoteStatus(r.status.running, r.status.clients, r.status.clientList);
         if (gen === refreshGen) {
           refreshTimer = setTimeout(() => {
             void pollStatus(gen);
