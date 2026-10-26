@@ -113,12 +113,13 @@ function clearUpdatePending(): void {
 }
 
 /**
- * 统一的"安装并重启"入口：写标记（并发保护）+ 静默安装。
- * isSilent=true 传 /S 跳过 NSIS 向导；isForceRunAfter=true 装完自动重启。
+ * 统一的"安装并重启"入口：写标记（并发保护）+ 交互式安装。
+ * isSilent=false 会弹出 NSIS 安装向导，让用户确认路径，避免静默安装乱丢到 C 盘。
+ * isForceRunAfter=true 装完自动重启。
  */
 function installAndRestart(targetVersion?: string): void {
   markUpdatePending(targetVersion);
-  try { autoUpdater.quitAndInstall(true, true); } catch (err: any) {
+  try { autoUpdater.quitAndInstall(false, true); } catch (err: any) {
     console.error('[Updater] quitAndInstall 失败:', err && err.message);
     clearUpdatePending(); // 安装没发起，清标记避免误拦下次启动
   }
