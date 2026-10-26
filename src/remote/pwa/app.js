@@ -23,6 +23,7 @@
   let reconnectTimer = null;
   let failStreak = 0;
   let lastPong = Date.now(); // 心跳：最近一次 pong 时间
+  let foregroundProbeTimer = null; // 切前台探活定时器
   const MAX_QUEUE = 50;
   const sendQueue = []; // 断线暂存
 
@@ -176,9 +177,15 @@
     return proto + '//' + location.host + '/ws';
   }
 
-  function connect() {
+  function connect(force = false) {
+    // 增加并发防抖：如果是强制重连，先置空 ws 并打断旧的回调链
+    if (!force && ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
     const gen = ++wsGen;
-    if (ws) { try { ws.close(); } catch {} }
+    if (ws) {
+      const oldWs = ws;
+      ws = null; // 立即剥离引用，防止后续异步回调复用它
+      try { oldWs.close(); } catch {}
+    }
     setConn('connecting');
     let sock;
     try {
@@ -212,6 +219,11 @@
       setConn('off');
       hideExec();
       setExecuting(false);
+      // 清理未完成的探活定时器，避免它在断连后再次触发重连
+      if (foregroundProbeTimer) {
+        clearTimeout(foregroundProbeTimer);
+        foregroundProbeTimer = null;
+      }
 
       if (!token) {
         showLogin();
@@ -255,7 +267,6 @@
   // 用时间阈值直接掐连接会把健康连接误杀（见下方 STALE_MS 注释的设计约束）。
   // 正确做法：回前台先主动发一个 ping，1.5s 内没等到 pong 才判定半开 → 立即重连。
   const FOREGROUND_PING_TIMEOUT = 1500;
-  let foregroundProbeTimer = null;
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible' || !token) return;
     if (!connected) {
@@ -970,7 +981,7 @@
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     reconnectDelay = 1000;
     failStreak = 0;
-    connect();
+    connect(true); // 强制重连，忽略当前可能处于 CONNECTING/OPEN 的假死状态
   });
 
   profileSelect.addEventListener('change', () => {

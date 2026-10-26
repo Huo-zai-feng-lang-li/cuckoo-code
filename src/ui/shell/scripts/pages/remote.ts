@@ -3,11 +3,46 @@
  */
 import { api, ckAlert } from '../shared.js';
 
-function renderRemoteStatus(running: boolean, clients?: number): void {
+function renderRemoteStatus(running: boolean, clients?: number, clientList?: any[]): void {
   const dot = document.getElementById('rm-dot');
   const txt = document.getElementById('rm-status-text');
   if (dot) dot.className = 'fs-dot' + (running ? ' connected' : '');
-  if (txt) txt.textContent = running ? ('运行中' + (clients ? '（' + clients + ' 台设备在线）' : '')) : '未启动';
+  if (txt) {
+    if (!running) {
+      txt.innerHTML = '未启动';
+    } else if (clients && clients > 0) {
+      txt.innerHTML = '运行中（<a href="#" id="rm-view-clients" style="color:var(--ck-primary);text-decoration:underline;">' + clients + ' 台设备在线</a>）';
+      const link = document.getElementById('rm-view-clients');
+      if (link) {
+        link.onclick = (e) => {
+          e.preventDefault();
+          showClientDetails(clientList || []);
+        };
+      }
+    } else {
+      txt.textContent = '运行中';
+    }
+  }
+}
+
+function showClientDetails(list: any[]): void {
+  if (!list || !list.length) return;
+  const msgs: string[] = [];
+  for (const c of list) {
+    const ip = typeof c.ip === 'string' ? c.ip : 'unknown';
+    let ua = typeof c.ua === 'string' ? c.ua : '';
+    if (ua.includes('iPhone')) ua = 'iPhone / Safari';
+    else if (ua.includes('Android')) ua = 'Android / 浏览器';
+    else if (ua.includes('Windows')) ua = 'Windows PC';
+    else if (ua.includes('Mac OS')) ua = 'Mac';
+    else if (ua.length > 20) ua = ua.substring(0, 20) + '...';
+    msgs.push(`${ip}（${ua || '未知设备'}）`);
+  }
+  let text = '当前在线设备:\n' + msgs.join('\n');
+  if (msgs.length > 10) {
+    text = '当前在线设备（前 10 台）:\n' + msgs.slice(0, 10).join('\n') + '\n...等共 ' + msgs.length + ' 台';
+  }
+  ckAlert(text);
 }
 
 function renderTunnelStatus(tunnel?: any): void {
@@ -69,7 +104,7 @@ export async function loadRemote(): Promise<void> {
     const effectivePublicUrl = c.publicUrl || (publicUrlEl ? publicUrlEl.value : '');
     const tunnelUrl = s.tunnel && s.tunnel.url ? s.tunnel.url : '';
     updateDirectUrl(effectivePublicUrl, tunnelUrl, c.port || 7799, c.token || '');
-    renderRemoteStatus(!!s.running, s.clients);
+    renderRemoteStatus(!!s.running, s.clients, s.clientList);
     renderTunnelStatus(s.tunnel);
   } catch (_) { /* ignore */ }
 }
@@ -89,7 +124,7 @@ async function pollStatus(gen: number): Promise<void> {
     if (gen !== refreshGen) return;
     
     if (r && r.success && r.status && r.status.running) {
-      renderRemoteStatus(r.status.running, r.status.clients);
+      renderRemoteStatus(r.status.running, r.status.clients, r.status.clientList);
       // 成功，排下一轮
       if (gen === refreshGen) {
         refreshTimer = setTimeout(() => { void pollStatus(gen); }, 3000);
