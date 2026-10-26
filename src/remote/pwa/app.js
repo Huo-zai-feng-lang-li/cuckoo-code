@@ -192,9 +192,11 @@
       clearTimeout(foregroundProbeTimer);
       foregroundProbeTimer = null;
     }
-    // 如果是因为切前台强制重连，且之前是连着的，不要切到“重连中”状态，做到无感
-    const wasConnected = connected;
-    if (!wasConnected) setConn('connecting');
+    // 只有页面完全空白（没有历史消息）时，才显示“重连中”；有消息就静默连
+    const hasMessages = !!messages.querySelector('.msg');
+    if (!hasMessages) {
+      setConn('connecting');
+    }
     const gen = ++wsGen;
     if (ws) {
       const oldWs = ws;
