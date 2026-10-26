@@ -16,6 +16,12 @@
   const pasteBtn = $('token-paste-btn');
 
   let token = localStorage.getItem('cuckoo-token') || '';
+  // 为当前浏览器标签页生成唯一 ID，用于服务端去重
+  let clientId = localStorage.getItem('cuckoo-client-id');
+  if (!clientId) {
+    clientId = 'c_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
+    localStorage.setItem('cuckoo-client-id', clientId);
+  }
   let ws = null;
   let connected = false;
   let wsGen = 0;
@@ -23,6 +29,7 @@
   let reconnectTimer = null;
   let failStreak = 0;
   let lastPong = Date.now(); // 心跳：最近一次 pong 时间
+  let foregroundProbeTimer = null; // 切前台探活定时器
   const MAX_QUEUE = 50;
   const sendQueue = []; // 断线暂存
 
@@ -176,10 +183,22 @@
     return proto + '//' + location.host + '/ws';
   }
 
-  function connect() {
+  function connect(force = false) {
+    // 增加并发防抖：如果是强制重连，先置空 ws 并打断旧的回调链
+    if (!force && ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+    if (foregroundProbeTimer) {
+      clearTimeout(foregroundProbeTimer);
+      foregroundProbeTimer = null;
+    }
+    // 如果是因为切前台强制重连，且之前是连着的，不要切到“重连中”状态，做到无感
+    const wasConnected = connected;
+    if (!wasConnected) setConn('connecting');
     const gen = ++wsGen;
-    if (ws) { try { ws.close(); } catch {} }
-    setConn('connecting');
+    if (ws) {
+      const oldWs = ws;
+      ws = null; // 立即剥离引用，防止后续异步回调复用它
+      try { oldWs.close(); } catch {}
+    }
     let sock;
     try {
       // D-005：token 通过 Sec-WebSocket-Protocol（cuckoo.<token>）传递，不进 URL。
@@ -191,6 +210,8 @@
     ws = sock;
     sock.onopen = () => {
       if (gen !== wsGen) { try { sock.close(); } catch {} return; }
+      // 发送设备唯一 ID，通知服务端清理旧僵尸连接
+      try { sock.send(JSON.stringify({ type: 'auth', clientId })); } catch {}
       connected = true;
       failStreak = 0;
       lastPong = Date.now();
@@ -212,6 +233,11 @@
       setConn('off');
       hideExec();
       setExecuting(false);
+      // 清理未完成的探活定时器，避免它在断连后再次触发重连
+      if (foregroundProbeTimer) {
+        clearTimeout(foregroundProbeTimer);
+        foregroundProbeTimer = null;
+      }
 
       if (!token) {
         showLogin();
@@ -255,7 +281,6 @@
   // 用时间阈值直接掐连接会把健康连接误杀（见下方 STALE_MS 注释的设计约束）。
   // 正确做法：回前台先主动发一个 ping，1.5s 内没等到 pong 才判定半开 → 立即重连。
   const FOREGROUND_PING_TIMEOUT = 1500;
-  let foregroundProbeTimer = null;
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible' || !token) return;
     if (!connected) {
@@ -366,6 +391,7 @@
         showExec('正在生成回复…');
         setExecuting(true);
         streamingText = '';
+        STREAM_MD_INTERVAL = 120; // 新一轮对话，重置渲染节流间隔
         streamingEl = null;
         streamNode = null;
         // 只重置引用，**不动历史 think DOM**（上一轮的思考块应保留在会话里）
@@ -392,6 +418,13 @@
         finishStreaming(msg.text || '');
         hideExec();
         setExecuting(false);
+        // 更新本地缓存，确保刷新后能秒出最新记录
+        const cache = loadHistoryCache();
+        if (cache) {
+          cache.push({ t: 'assistant', text: msg.text || '' });
+          if (cache.length > 50) cache.shift();
+          saveHistoryCache(cache);
+        }
         break;
       case 'ai-stop':
         if (!isMyProfile(msg.profileId)) break;
@@ -446,13 +479,36 @@
   /** 渲染电脑端补发的对话历史（新客户端连入时）。
    *  若页面已有消息（说明正在实时收流），则跳过，避免覆盖实时内容。
    *  只渲染 user/assistant/system 三类文本消息；tool/plan 在手机端无对应卡片，跳过。 */
-  function renderHistory(entries) {
-    // 无论是否有内容，历史回执到达即结束"同步中"状态。
-    // 空历史 → 恢复正常空态卡片；有历史 → checkEmptyState() 会移除卡片。
+  function getHistoryKey() {
+    return 'cuckoo-history-' + (currentProfileId || 'default');
+  }
+  function saveHistoryCache(entries) {
+    try { localStorage.setItem(getHistoryKey(), JSON.stringify(entries)); } catch {}
+  }
+  function loadHistoryCache() {
+    try { const s = localStorage.getItem(getHistoryKey()); return s ? JSON.parse(s) : null; } catch { return null; }
+  }
+
+  function renderHistory(entries, isCache = false) {
     setSyncing(false);
     if (!Array.isArray(entries) || !entries.length) return;
-    // 已有实时消息 → 不覆盖（"先 history 后 active stream"的保序依赖这条）
-    if (messages.querySelector('.msg')) return;
+    
+    if (!isCache) {
+      // 如果是真实网络回执，先重置流式状态并移除僵尸气泡
+      if (streamingEl) { try { streamingEl.remove(); } catch {} }
+      streamingEl = null;
+      streamNode = null;
+      streamingText = '';
+      resetThink();
+      cancelStreamMd();
+
+      // 再清空容器
+      messages.innerHTML = '';
+      saveHistoryCache(entries.slice(-50));
+    } else {
+      // 缓存渲染时，如果已经有消息了，就不重复渲染
+      if (messages.querySelector('.msg')) return;
+    }
 
     // 批量渲染：原实现逐条 addUser/addAi/addSystem，每条都触发
     // checkEmptyState + capMessages（各一次全量 querySelectorAll('.msg')）
@@ -724,9 +780,8 @@
   // 用 ~80ms 节流控制性能（逐帧全量 renderMd 会累积 O(n²)；节流一次可控）。
   let streamMdTimer = null;
   let lastStreamMdAt = 0;
-  // 节流间隔：~80ms 一次全量 markdown 渲染，与电脑端 harness 对齐。
-  // 既保证流式期间始终带格式、肉眼流畅，又把渲染次数较逐帧降约 5 倍（长回复不卡）。
-  const STREAM_MD_INTERVAL = 80;
+  // 节流间隔：动态调整。短文本 120ms 刷新保持手感，长文本 250ms 刷新防止手机 CPU 卡顿。
+  let STREAM_MD_INTERVAL = 120;
   function cancelStreamMd() {
     if (streamMdTimer) { clearTimeout(streamMdTimer); streamMdTimer = null; }
   }
@@ -760,6 +815,12 @@
     // 但**不在此处折叠思考块**——否则正文一出思考就消失，用户来不及看。
     // 折叠统一推迟到收尾（finishThink），流式期间保持思考可见。
     sawText = true;
+    // 动态调整渲染间隔：字数越多，解析 Markdown 越耗时，稍微拉长间隔防卡顿
+    if (streamingText.length > 1500) {
+      STREAM_MD_INTERVAL = 250;
+    } else if (streamingText.length > 500) {
+      STREAM_MD_INTERVAL = 180;
+    }
     scheduleStreamMd();
     scroll();
   }
@@ -860,11 +921,18 @@
   // ===== 自动滚动与回到底部 FAB =====
   let stickToBottom = true;
   let hasNewWhileScrolled = false;
-  const BOTTOM_THRESHOLD = 80;
+  const BOTTOM_THRESHOLD = 50;
 
   function isNearBottom() {
     return messages.scrollHeight - messages.scrollTop - messages.clientHeight <= BOTTOM_THRESHOLD;
   }
+
+  // 移动端：只要用户手指触碰聊天区，立刻认为用户要接管滚动，停止自动贴底
+  messages.addEventListener('touchstart', () => {
+    stickToBottom = false;
+    if (scrollTimer) { cancelAnimationFrame(scrollTimer); scrollTimer = null; }
+    updateScrollBtn();
+  }, { passive: true });
 
   function updateScrollBtn() {
     if (!scrollBottomBtn) return;
@@ -888,6 +956,8 @@
 
   if (scrollBottomBtn) {
     scrollBottomBtn.addEventListener('click', () => {
+      stickToBottom = true;
+      if (scrollTimer) { cancelAnimationFrame(scrollTimer); scrollTimer = null; }
       messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
       hasNewWhileScrolled = false;
       if (scrollNewBadge) scrollNewBadge.classList.add('hidden');
@@ -970,7 +1040,7 @@
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     reconnectDelay = 1000;
     failStreak = 0;
-    connect();
+    connect(true); // 强制重连，忽略当前可能处于 CONNECTING/OPEN 的假死状态
   });
 
   profileSelect.addEventListener('change', () => {
@@ -996,6 +1066,14 @@
 
   if (token) {
     showApp();
+    
+    // 启动时先用本地缓存极速渲染，实现秒开看历史
+    const cached = loadHistoryCache();
+    if (cached && cached.length) {
+      renderHistory(cached, true);
+      setSyncing(false);
+    }
+    
     connect();
   } else {
     showLogin();
