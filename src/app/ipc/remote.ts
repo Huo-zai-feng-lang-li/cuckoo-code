@@ -6,7 +6,7 @@
 import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { readConfig, writeConfig, resetToken } from '../../remote/config.js';
-import { getPort, isRunning, getClientCount } from '../../remote/server.js';
+import { getPort, isRunning, getClientCount, getClientList } from '../../remote/server.js';
 import { initRemote, stopRemote, onAiStream, onAiReply, onAiStop, onAiError, onTool, getTunnelStatus, broadcastRemoteMode } from '../../remote/manager.js';
 
 const require = createRequire(import.meta.url);
@@ -30,6 +30,7 @@ function registerRemoteIpc(): void {
         running: isRunning(),
         port: getPort(),
         clients: getClientCount(),
+        clientList: getClientList(),
         tunnel: getTunnelStatus(),
       },
     };
