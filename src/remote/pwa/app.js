@@ -288,20 +288,31 @@
 
   // 切回前台：不只看"是否已断开"，还要识别"已连接但半开"（锁屏/切网后 TCP 已死，
   // ws.readyState 仍是 1，消息会静默丢失）。
-  // 判据不能只看"lastPong 距今多久"：手机切后台时浏览器冻结定时器，pong 本来就会停，
-  // 用时间阈值直接掐连接会把健康连接误杀（见下方 STALE_MS 注释的设计约束）。
-  // 正确做法：回前台先主动发一个 ping，1.5s 内没等到 pong 才判定半开 → 立即重连。
   const FOREGROUND_PING_TIMEOUT = 1200;
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible' || !token) return;
-    // 只要切回前台，直接清理并强制发起新连接，实现秒回（不走探活超时）
-    if (foregroundProbeTimer) {
-      clearTimeout(foregroundProbeTimer);
-      foregroundProbeTimer = null;
+    
+    // 1. 已断开：直接发起重连
+    if (!connected || !ws || ws.readyState !== 1) {
+      if (foregroundProbeTimer) {
+        clearTimeout(foregroundProbeTimer);
+        foregroundProbeTimer = null;
+      }
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      reconnectDelay = 1000;
+      connect(true);
+      return;
     }
-    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-    reconnectDelay = 1000;
-    connect(true);
+    
+    // 2. 显示上还连着：先发个 ping 探活（避免健康连接被频繁重连导致页面刷屏）
+    if (foregroundProbeTimer) clearTimeout(foregroundProbeTimer);
+    try { ws.send(JSON.stringify({ type: 'ping' })); } catch {}
+    
+    foregroundProbeTimer = setTimeout(() => {
+      foregroundProbeTimer = null;
+      console.warn('[Remote] 前台探活超时，判定连接半开，强制重连');
+      connect(true);
+    }, FOREGROUND_PING_TIMEOUT);
   });
 
   // 心跳保活
@@ -447,6 +458,10 @@
         break;
       case 'pong':
         lastPong = Date.now();
+        if (foregroundProbeTimer) {
+          clearTimeout(foregroundProbeTimer);
+          foregroundProbeTimer = null;
+        }
         break;
     }
   }
@@ -494,7 +509,17 @@
     if (!Array.isArray(entries) || !entries.length) return;
     
     if (!isCache) {
-      // 如果是真实网络回执，先重置流式状态并移除僵尸气泡
+      // 1. 判断缓存是否完全一致：如果本地已经渲染了消息，且服务端传来的与本地缓存完全一致，跳过重绘
+      if (messages.querySelector('.msg')) {
+        const cacheStr = JSON.stringify(entries.slice(-50));
+        const localStr = localStorage.getItem(getHistoryKey());
+        if (localStr === cacheStr) {
+          console.log('[Remote] 历史一致，跳过重绘');
+          return;
+        }
+      }
+
+      // 2. 如果是真实网络回执，先重置流式状态并移除僵尸气泡
       if (streamingEl) { try { streamingEl.remove(); } catch {} }
       streamingEl = null;
       streamNode = null;
@@ -502,7 +527,7 @@
       resetThink();
       cancelStreamMd();
 
-      // 再清空容器
+      // 3. 再清空容器
       messages.innerHTML = '';
       saveHistoryCache(entries.slice(-50));
     } else {
@@ -528,7 +553,8 @@
     messages.appendChild(frag);
     checkEmptyState();
     capMessages();
-    scroll(true);
+    // 4. 重绘后保持滚动位置：如果之前在最底部，继续贴底；如果用户在上面看历史，就不强制拽回底部
+    scroll();
   }
 
   function syncProfileLabel() {
