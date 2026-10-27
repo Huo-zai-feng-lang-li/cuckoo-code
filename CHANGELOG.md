@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.101] - 2026-10-28
+
+### Fixed
+- 修复 GitHub Actions 安卓打包中 sdkmanager 找不到组件的问题，显式使用 Runner 自带的 sdkmanager 安装 API 34 并接受许可。
+
 ## [0.10.100] - 2026-10-28
 
 ### Fixed
