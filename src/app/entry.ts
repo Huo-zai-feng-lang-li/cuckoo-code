@@ -1625,15 +1625,21 @@ if (!gotSingleInstanceLock) {
     // 命中标记 → 提示并退出，等新版本启动后自动放行（见 updater.isUpdatePending）。
     try {
       if (updater.isUpdatePending()) {
-        dialog.showMessageBoxSync({
-          type: 'info',
-          title: '更新进行中',
-          message: 'Cuckoo Code 正在更新，请稍候…',
-          detail: '更新完成后应用会自动重启，无需手动操作。',
-          buttons: ['知道了'],
+        const { response } = dialog.showMessageBoxSync({
+          type: 'warning',
+          title: '更新未完成',
+          message: '检测到上次更新未完成',
+          detail: '可能是取消了管理员授权或安装被中断。你可以继续使用当前版本，或稍后重试更新。',
+          buttons: ['继续使用', '退出'],
+          defaultId: 0,
+          cancelId: 0,
         });
-        app.quit();
-        return;
+        if (response === 1) {
+          app.quit();
+          return;
+        }
+        // 用户选择继续使用，清理标记放行
+        updater.clearUpdatePending();
       }
     } catch (_) { /* ignore */ }
     setupAppMenu();

@@ -26,13 +26,15 @@ autoUpdater.autoDownload = false; // 检测到更新后不自动下载，等用�
 autoUpdater.autoInstallOnAppQuit = true; // 退出时自动安装（支持 NSIS）
 
 // ========== 状态标志 ==========
-let updateChecked = false;       // 是否已执行过检查
 let updateDownloaded = false;    // 是否已下载完成
 let isDownloading = false;       // 是否正在下载（防并发锁）
+let isChecking = false;          // 是否正在检查更新（防并发锁）
+let isInstalling = false;        // 是否正在发起安装（防并发）
 let downloadedVersion = '';      // 已下载的新版本号（供安装时写标记）
 let isManualCheck = false;       // 是否是用户手动触发的检查
 let autoInstallAfterDownload = false; // 下载完成后是否自动重启安装（用户选了"立即更新"）
 let mainWindowRef: any = null;   // 主窗口引用（用于弹出对话框）
+let downloadStartTime = 0;       // 下载开始时间（防死锁）
 
 /** 设置主窗口引用，用于对话框定位 */
 function setMainWindow(win: any): void {
@@ -118,10 +120,15 @@ function clearUpdatePending(): void {
  * isSilent=true 传 /S 跳过 NSIS 向导；isForceRunAfter=true 装完自动重启。
  */
 function installAndRestart(targetVersion?: string): void {
+  if (isInstalling) return;
+  isInstalling = true;
   markUpdatePending(targetVersion);
-  try { autoUpdater.quitAndInstall(true, true); } catch (err: any) {
+  try { 
+    autoUpdater.quitAndInstall(true, true); 
+  } catch (err: any) {
     console.error('[Updater] quitAndInstall 失败:', err && err.message);
     clearUpdatePending(); // 安装没发起，清标记避免误拦下次启动
+    isInstalling = false;
   }
 }
 
@@ -255,9 +262,18 @@ async function showUpdateErrorDialog(error: any, isManual: boolean): Promise<boo
 
 /** 手动检查更新入口 */
 async function checkForUpdates(): Promise<void> {
-  if (isDownloading) {
-    showNotification('正在下载', '更新正在下载中，请稍候…');
+  if (isChecking) {
+    showNotification('检查中', '正在检查更新，请稍候…');
     return;
+  }
+  if (isDownloading) {
+    if (downloadStartTime && Date.now() - downloadStartTime > 15 * 60 * 1000) {
+      console.warn('[Updater] 下载疑似死锁超时，重置状态放行');
+      isDownloading = false;
+    } else {
+      showNotification('正在下载', '更新正在下载中，请稍候…');
+      return;
+    }
   }
   if (updateDownloaded) {
     // 已有下载完成的更新，直接提示安装（原生模态对话框）
@@ -278,12 +294,12 @@ async function checkForUpdates(): Promise<void> {
   }
 
   isManualCheck = true;
-  updateChecked = false;
+  isChecking = true;
   try {
     await autoUpdater.checkForUpdates();
   } catch (error: any) {
     console.error('[Updater] 检查更新异常:', error);
-    await showUpdateErrorDialog(error, true);
+    // 错误统一由 autoUpdater.on('error') 处理，这里不重复弹窗
   }
 }
 
@@ -298,10 +314,13 @@ autoUpdater.on('checking-for-update', () => {
 
 autoUpdater.on('update-available', async (info: any) => {
   console.log('[Updater] 发现新版本:', info.version);
+  isChecking = false;
   if (isDownloading) {
     console.log('[Updater] 已在下载中，忽略重复的 update-available 事件');
     return;
   }
+  // 先上锁，避免弹窗等待期间触发二次检查或二次下载
+  isDownloading = true;
   // 原生模态对话框（屏幕中央）。下载进度由壳页面状态栏展示，不在此弹窗内。
   const idx = await showNativeDialog({
     type: 'info',
@@ -315,7 +334,7 @@ autoUpdater.on('update-available', async (info: any) => {
   if (idx === 0) {
     // 用户选「立即更新」→ 自动下载，下载完自动重启安装（见 update-downloaded）
     autoInstallAfterDownload = true;
-    isDownloading = true;
+    downloadStartTime = Date.now();
     showNotification('开始更新', '正在下载 v' + info.version + '…', 'update');
     sendProgress({ state: 'downloading', percent: 0, version: info.version });
     autoUpdater.downloadUpdate().catch((err) => {
@@ -326,11 +345,13 @@ autoUpdater.on('update-available', async (info: any) => {
   } else {
     // 用户选「稍后」→ 不下载
     isManualCheck = false;
+    isDownloading = false; // 释放锁
   }
 });
 
 autoUpdater.on('update-not-available', () => {
   console.log('[Updater] 已是最新版本');
+  isChecking = false;
   if (isManualCheck) {
     showNotification('已是最新版本', '当前已是最新版本。');
   }
@@ -353,6 +374,7 @@ autoUpdater.on('download-progress', (progressObj: any) => {
 
 autoUpdater.on('update-downloaded', (info: any) => {
   isDownloading = false;
+  isChecking = false;
   updateDownloaded = true;
   downloadedVersion = (info && info.version) || '';
   console.log('[Updater] 新版本已下载:', info.version);
@@ -389,16 +411,19 @@ autoUpdater.on('update-downloaded', (info: any) => {
 
 autoUpdater.on('error', async (error: any) => {
   isDownloading = false;
+  isChecking = false;
   console.error('[Updater] 更新错误:', error);
   sendProgress({ state: 'error', error: (error && error.message) || '更新出错' });
   const shouldRetry = await showUpdateErrorDialog(error, isManualCheck);
   if (shouldRetry) {
     // 用户点击重试
     isManualCheck = true;
+    isChecking = true;
     setTimeout(() => {
       autoUpdater.checkForUpdates().catch((err) => {
         console.error('[Updater] 重试检查更新失败:', err);
         isManualCheck = false;
+        isChecking = false;
       });
     }, 1000);
   } else {
@@ -419,11 +444,13 @@ function initAutoUpdater(win: any): void {
   // 应用启动后延迟 5 秒检查，避免影响启动速度
   setTimeout(() => {
     console.log('[Updater] 启动自动检查更新');
-    if (isDownloading || updateDownloaded) {
-      console.log('[Updater] 正在下载或已下载，跳过启动自动检查');
+    if (isChecking || isDownloading || updateDownloaded) {
+      console.log('[Updater] 正在检查/下载/已下载，跳过启动自动检查');
       return;
     }
+    isChecking = true;
     autoUpdater.checkForUpdates().catch((error: any) => {
+      isChecking = false;
       console.error('[Updater] 启动检查更新失败:', error);
     });
   }, 5000);
