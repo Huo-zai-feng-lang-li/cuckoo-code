@@ -16,6 +16,7 @@
   const pasteBtn = $('token-paste-btn');
 
   let token = localStorage.getItem('cuckoo-token') || '';
+  const DRAFT_KEY = 'cuckoo-draft';
   // 为当前浏览器标签页生成唯一 ID，用于服务端去重
   let clientId = localStorage.getItem('cuckoo-client-id');
   if (!clientId) {
@@ -1076,6 +1077,7 @@
     input.value = '';
     autoGrow();
     syncSendBtn();
+    try { localStorage.removeItem(DRAFT_KEY); } catch {}
     if (sendRaw({ type: 'send', text })) {
       showExec('正在生成回复…');
       setExecuting(true);
@@ -1107,7 +1109,17 @@
     if (executing) { sendBtn.disabled = true; return; }
     sendBtn.disabled = !input.value.trim();
   }
-  input.addEventListener('input', () => { autoGrow(); syncSendBtn(); });
+  input.addEventListener('input', () => {
+    autoGrow();
+    syncSendBtn();
+    try {
+      if (input.value) {
+        localStorage.setItem(DRAFT_KEY, input.value);
+      } else {
+        localStorage.removeItem(DRAFT_KEY);
+      }
+    } catch {}
+  });
   syncSendBtn();
 
   reconnectBtn.addEventListener('click', () => {
@@ -1131,6 +1143,16 @@
   function escapeAttr(s) { return escapeHtml(s); }
 
   // ===== 启动 =====
+  // 恢复草稿（手机切后台被系统杀进程 reload 时，避免用户打字丢失）
+  try {
+    const draft = localStorage.getItem(DRAFT_KEY);
+    if (draft) {
+      input.value = draft;
+      autoGrow();
+      syncSendBtn();
+    }
+  } catch {}
+
   const urlToken = new URLSearchParams(location.search).get('token');
   if (urlToken) {
     token = urlToken;
@@ -1140,20 +1162,28 @@
 
   if (token) {
     showApp();
-    // 启动时初始化 UI 为空态，避免用户等待同步动画
+    // 启动时先不展示同步动画
     setSyncing(false);
     
-    // 启动时先用本地缓存极速渲染，实现秒开看历史
+    // 极速渲染本地缓存
     const cached = loadHistoryCache();
     const hasCache = cached && cached.length;
     if (hasCache) {
-      setConn('on'); // 无感重连：有缓存直接乐观展示“已在线”，后台静默连
+      setConn('on'); // 有缓存时直接显示在线，后台静默握手
       renderHistory(cached, true);
     } else {
       setConn('connecting');
     }
     
+    // 后台发起真正连接
     connect();
+    
+    // 如果是从后台切回前台导致的 reload，稍微提示一下正在拉取最新
+    setTimeout(() => {
+      if (connected === false && hasCache) {
+        console.log('[Remote] 正在后台重新建立连接...');
+      }
+    }, 500);
   } else {
     showLogin();
   }
