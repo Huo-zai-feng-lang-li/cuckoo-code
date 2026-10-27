@@ -89,9 +89,8 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
+      # 删除了 Setup Android SDK，直接使用 GitHub Runner 预装的稳定环境
+      
       - name: Sync Capacitor
         run: npx cap sync android
 
@@ -135,7 +134,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           draft: false
-          make_latest: true    # 自动设为 Latest（更新检查走 /releases/latest，必须为最新）
+          make_latest: true
           generate_release_notes: true
           files: |
             dist/*.exe

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.99] - 2026-10-27
+
+### Fixed
+- 修复 GitHub Actions 安卓构建环境拉取失败的问题（降级 Android SDK 编译目标到稳定版 34，并移除失效的 setup-android 插件）。
+
 ## [0.10.98] - 2026-10-27
 
 ### Added
