@@ -34,7 +34,7 @@ let downloadedVersion = '';      // 已下载的新版本号（供安装时写�
 let isManualCheck = false;       // 是否是用户手动触发的检查
 let autoInstallAfterDownload = false; // 下载完成后是否自动重启安装（用户选了"立即更新"）
 let mainWindowRef: any = null;   // 主窗口引用（用于弹出对话框）
-let downloadStartTime = 0;       // 下载开始时间（防死锁）
+let lastProgressTime = 0;        // 最近一次下载进度时间（防误判）
 
 /** 设置主窗口引用，用于对话框定位 */
 function setMainWindow(win: any): void {
@@ -267,8 +267,8 @@ async function checkForUpdates(): Promise<void> {
     return;
   }
   if (isDownloading) {
-    if (downloadStartTime && Date.now() - downloadStartTime > 15 * 60 * 1000) {
-      console.warn('[Updater] 下载疑似死锁超时，重置状态放行');
+    if (lastProgressTime && Date.now() - lastProgressTime > 15 * 60 * 1000) {
+      console.warn('[Updater] 下载疑似死锁超时（15分钟无进展），重置状态放行');
       isDownloading = false;
     } else {
       showNotification('正在下载', '更新正在下载中，请稍候…');
@@ -299,6 +299,7 @@ async function checkForUpdates(): Promise<void> {
     await autoUpdater.checkForUpdates();
   } catch (error: any) {
     console.error('[Updater] 检查更新异常:', error);
+    isChecking = false; // 兜底复位，防止 error 事件未触发导致永久卡死
     // 错误统一由 autoUpdater.on('error') 处理，这里不重复弹窗
   }
 }
@@ -334,7 +335,7 @@ autoUpdater.on('update-available', async (info: any) => {
   if (idx === 0) {
     // 用户选「立即更新」→ 自动下载，下载完自动重启安装（见 update-downloaded）
     autoInstallAfterDownload = true;
-    downloadStartTime = Date.now();
+    lastProgressTime = Date.now();
     showNotification('开始更新', '正在下载 v' + info.version + '…', 'update');
     sendProgress({ state: 'downloading', percent: 0, version: info.version });
     autoUpdater.downloadUpdate().catch((err) => {
@@ -359,6 +360,7 @@ autoUpdater.on('update-not-available', () => {
 });
 
 autoUpdater.on('download-progress', (progressObj: any) => {
+  lastProgressTime = Date.now();
   const percent = Math.round(progressObj.percent);
   console.log('[Updater] 下载进度:', percent + '%');
   // 只推给壳页面状态栏（实时进度条），不弹系统通知——
@@ -412,6 +414,7 @@ autoUpdater.on('update-downloaded', (info: any) => {
 autoUpdater.on('error', async (error: any) => {
   isDownloading = false;
   isChecking = false;
+  isInstalling = false;
   console.error('[Updater] 更新错误:', error);
   sendProgress({ state: 'error', error: (error && error.message) || '更新出错' });
   const shouldRetry = await showUpdateErrorDialog(error, isManualCheck);

@@ -506,7 +506,11 @@
 
   function renderHistory(entries, isCache = false) {
     setSyncing(false);
-    if (!Array.isArray(entries) || !entries.length) return;
+    if (!Array.isArray(entries) || !entries.length) {
+      messages.innerHTML = '';
+      checkEmptyState();
+      return;
+    }
     
     if (!isCache) {
       // 1. 判断缓存是否完全一致：如果本地已经渲染了消息，且服务端传来的与本地缓存完全一致，跳过重绘
