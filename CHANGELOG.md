@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.103] - 2026-10-28
+
+### Fixed
+- 修复 Android SDK 编译版本问题：因 Capacitor 8 强制要求 API 35，将目标版本升级至 35。并在 CI 中强制输出 stacktrace 以便排查问题。
+
 ## [0.10.102] - 2026-10-28
 
 ### Fixed

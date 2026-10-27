@@ -88,10 +88,17 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          cmdline-tools-version: 10.0
-          packages: 'platforms;android-34 build-tools;34.0.0'
+        run: |
+          # 使用预装的 SDK，并安装 API 35 及其构建工具
+          SDKMANAGER=$(find /usr/local/lib/android/sdk/cmdline-tools -name sdkmanager | head -n 1)
+          if [ -z "$SDKMANAGER" ]; then SDKMANAGER="sdkmanager"; fi
+          echo "Using sdkmanager: $SDKMANAGER"
+          
+          # 接受协议
+          yes | $SDKMANAGER --licenses > /dev/null 2>&1 || true
+          
+          # 安装 API 35
+          $SDKMANAGER "platforms;android-35" "build-tools;35.0.0" > /dev/null 2>&1
 
       - name: Sync Capacitor
         run: npx cap sync android
@@ -100,7 +107,8 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          # 强制输出详细信息并在失败时输出 stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace --info
 
       - name: Rename APK
         run: |
