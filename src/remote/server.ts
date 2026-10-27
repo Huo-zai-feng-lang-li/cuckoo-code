@@ -326,15 +326,16 @@ function onWsConnection(ws: any, req: any): void {
   try { deps.onNewClient && deps.onNewClient(ws); } catch (_) {}
 }
 
-/** 服务端心跳：每 30s ping 一次，连续 3 次无 pong（约 120s，含首次）视为死连接并断开。
+/** 服务端心跳：每 30s ping 一次，连续 10 次无 pong（约 300s）视为死连接并断开。
  *  放宽原因：手机端切后台时浏览器会冻结 JS 定时器，其应用层 pong 可能短暂停止；
- *  给足恢复时间，避免"熄屏几分钟回来必断"。真正的半开连接由约 120s 兜底清理。 */
+ *  给足恢复时间，避免"熄屏几分钟回来必断"。 */
+
 function startHeartbeat(): any {
   return setInterval(() => {
     for (const ws of clients.keys()) {
       if (ws.isAlive === false) {
         ws.missedPongs = (ws.missedPongs || 0) + 1;
-        if (ws.missedPongs >= 3) { try { ws.terminate(); } catch (_) {} clients.delete(ws); continue; }
+        if (ws.missedPongs >= 10) { try { ws.terminate(); } catch (_) {} clients.delete(ws); continue; }
       } else {
         ws.missedPongs = 0;
       }

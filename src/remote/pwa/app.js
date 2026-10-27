@@ -192,7 +192,7 @@
       clearTimeout(foregroundProbeTimer);
       foregroundProbeTimer = null;
     }
-    // 只要页面有消息，或者本地有缓存，就绝对不显示“重连中”
+    // 只要页面有消息，或者本地有缓存，就绝对不显示“重连中”，静默直连
     const hasMessages = !!messages.querySelector('.msg') || (loadHistoryCache() || []).length > 0;
     if (!hasMessages) {
       setConn('connecting');
@@ -288,7 +288,7 @@
 
   // 切回前台：不只看"是否已断开"，还要识别"已连接但半开"（锁屏/切网后 TCP 已死，
   // ws.readyState 仍是 1，消息会静默丢失）。
-  const FOREGROUND_PING_TIMEOUT = 1200;
+  const FOREGROUND_PING_TIMEOUT = 500;
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible' || !token) return;
     
@@ -1118,8 +1118,12 @@
     
     // 启动时先用本地缓存极速渲染，实现秒开看历史
     const cached = loadHistoryCache();
-    if (cached && cached.length) {
+    const hasCache = cached && cached.length;
+    if (hasCache) {
+      setConn('on'); // 无感重连：有缓存直接乐观展示“已在线”，后台静默连
       renderHistory(cached, true);
+    } else {
+      setConn('connecting');
     }
     
     connect();
