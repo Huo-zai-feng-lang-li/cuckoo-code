@@ -78,13 +78,13 @@ skills ← agents   （底层共享）
 | **加平台** | 新建 `src/providers/<id>.ts` + hook；注册到 `build-hooks.mjs` 和 `registry.ts` |
 | **改 UI** | 改 `src/overlay/template/overlay.{html,css}` → `npm run compile` |
 | **加设置项** | `overlay/panels/settings.ts`（open/save/reset 三处）+ `overlay.html` |
-| **加 IPC** | 主进程 `src/app/ipc/*.ts` + `bridge/api.ts` 暴露 |
+| **加 IPC** | 新建 `src/app/ipc/<领域>.ts` 导出 `register<领域>Ipc()` → 注册到 `src/app/ipc/index.ts` → 壳页面由 `src/app/shell-preload.ts` 暴露（`shellAPI`）+ `src/ui/shell/scripts/shell-api.ts` 补类型。注：`src/bridge/api.ts` 暴露的是给 **AI 网页**用的 `electronAPI`，不是壳 UI |
 
 ## 七、构建与验证
 
 ```bash
 npm start          # 编译 + 启动 Electron（日志进 wyp/log/）
-npm run compile    # 三步构建：build-hooks → tsc → build-tool-api
+npm run compile    # 8 步构建：copy-monaco → build-hooks → build-sanitizer → tsc → copy-remote-pwa → copy-sandbox-worker → build-tool-api → build-shell
 npm run typecheck  # 两套 tsconfig（主应用 + hooks），0 错误
 npm test           # Vitest 全绿
 npm run lint       # 0 problems
@@ -98,7 +98,7 @@ npm run build:win:local   # 本地打 Windows 包
 
 - **D12 工具契约**：工具是唯一真相源。改 `apiMetas` + `bootstrap()`，`api.d.ts` 与 `bootstrap.generated.ts` **自动生成**。
   - 名字四处一致：`apiMetas.name` = `super()` 首参 = `bootstrap` 里 `__call` 首参 = `globalThis.xxx`
-  - **别手改生成物**：`*.generated.ts`、`src/tools/api.d.ts`
+  - **别手改生成物**：`*.generated.ts`、`src/tools/api.d.ts`、`src/tools/runtime/bootstrap.generated.ts`、`src/ui/shell.html`
 - **窗口结构**：地址栏在 `win.webContents`（壳页面），AI 页面在 `ctx.view`（WebContentsView）。
   操作 AI 页面用 `ctx.view.webContents`，**不是** `ctx.win.webContents`。
 - **Electron 惯用法**：主进程模块用 `createRequire(import.meta.url)` 动态 require，**不可**静态 import 'electron'。

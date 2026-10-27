@@ -11,28 +11,34 @@
 | `npm run lint` | ESLint |
 | `npm run build:win:local` | 本地打 Windows 包 |
 
-## compile 的三步
+## compile 的完整步骤（8 步）
 
 ```
 npm run compile
-  = node scripts/build-hooks.mjs          # ① 打包 hook + 外置模板
-  && tsc -p tsconfig.build.json           # ② TS → out/
-  && node scripts/build-tool-api.mjs      # ③ 生成工具契约 + 沙箱注入
+  = node scripts/copy-monaco.mjs          # ① 复制 monaco 编辑器资源
+  && node scripts/build-hooks.mjs         # ② 打包 hook + 外置模板
+  && node scripts/build-sanitizer.mjs     # ③ 构建 HTML sanitizer
+  && tsc -p tsconfig.build.json           # ④ TS → out/
+  && node scripts/copy-remote-pwa.mjs     # ⑤ 复制 PWA 静态文件 + marked
+  && node scripts/copy-sandbox-worker.mjs # ⑥ 复制沙箱 worker
+  && node scripts/build-tool-api.mjs      # ⑦ 生成工具契约 + 沙箱注入
+  && node scripts/build-shell.mjs         # ⑧ 组装壳页面 shell.html
 ```
 
-**顺序不可换**：③ 依赖 ② 的编译产物（读 `out/src/tools/impl/*.js` 的 `apiMetas`）。
+**顺序约束**：⑦ 依赖 ④ 的编译产物（读 `out/src/tools/impl/*.js` 的 `apiMetas`）；⑧ 依赖 `src/ui/shell/` 源码。
+**改了 `src/ui/shell/**` 必须跑 compile 或 `node scripts/build-shell.mjs`**，否则 `src/ui/shell.html` 不更新。
 
-### ① build-hooks.mjs
+### ② build-hooks.mjs
 
 - **hook**：用 esbuild 把 `src/providers/hooks/*.ts` 打包成自包含 IIFE，写入 `src/providers/generated/hook-sources.ts`。
   - 为何要打包？hook 经 `.toString()` 注入 AI 网页主世界，**只能自包含**。写成正常 TS 模块 + 构建期打包，才能 import 共享的 `shared/sse.ts`。
 - **覆盖层模板**：读 `src/overlay/template/overlay.html` 与 `overlay.css`，写入 `src/overlay/template.generated.ts`。
 
-### ② tsc
+### ④ tsc
 
 编译 `src/**/*.ts` → `out/`（`rootDir: .`，`outDir: out`）。产物结构镜像 `src/`，即 `out/src/...`。**排除 `src/providers/hooks`**（它们由 esbuild 处理，不需 tsc emit）。
 
-### ③ build-tool-api.mjs
+### ⑦ build-tool-api.mjs
 
 - **工具契约**：收集所有工具的 `apiMetas`，按 `order` 排序、按 `category` 分组，生成 `src/tools/api.d.ts`（给 AI 看的 TS 声明）。
 - **沙箱注入**：收集所有工具的 `bootstrap()` 函数，`.toString()` 提取函数体，生成 `src/tools/runtime/bootstrap.generated.ts`。
@@ -45,6 +51,7 @@ npm run compile
 | `src/overlay/template.generated.ts` | `src/overlay/template/overlay.{html,css}` |
 | `src/tools/api.d.ts` | 各工具的 `apiMetas` |
 | `src/tools/runtime/bootstrap.generated.ts` | 各工具的 `bootstrap()` |
+| `src/ui/shell.html` | `src/ui/shell/`（index.html + partials + styles + scripts） |
 
 **生成物已提交到 git**（便于 diff 与直接运行），但**改动应改真源**。
 
