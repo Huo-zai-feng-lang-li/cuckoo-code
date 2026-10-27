@@ -246,7 +246,7 @@
       disconnectTimer = setTimeout(() => {
         disconnectTimer = null;
         setConn('off');
-      }, 1500);
+      }, 5000);
       hideExec();
       setExecuting(false);
       // 清理未完成的探活定时器，避免它在断连后再次触发重连
@@ -876,7 +876,12 @@
    */
   function appendStreaming(delta) {
     if (!delta) return;
-    if (!streamingEl) startStreaming();
+    if (!streamingEl) {
+      startStreaming();
+      // 可能因重连漏掉了 ai-start 消息，补上 UI 状态
+      showExec('正在生成回复…');
+      setExecuting(true);
+    }
     streamingText += delta;
     // 正文已出现：标记 sawText（后续 appendThink 不再自动展开，防 think/text 交替抖动）。
     // 但**不在此处折叠思考块**——否则正文一出思考就消失，用户来不及看。
@@ -962,7 +967,12 @@
   }
 
   function onToolEvent(phase) {
-    if (phase === 'start') { showExec('正在调用系统工具…'); setExecuting(true); }
+    if (phase === 'start') {
+      showExec('正在调用系统工具…');
+      setExecuting(true);
+    } else if (phase === 'end') {
+      showExec('正在生成回复…');
+    }
   }
 
   // ===== 执行状态条 / 发送停止按钮 =====
