@@ -58,7 +58,8 @@ export function initRemoteBridge(): void {
   function stopStreamThrottle(flushText: boolean): void {
     if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
     if (flushText && enabled && (pendingText || pendingThink)) {
-      const clean = stripBlocks(pendingText);
+      let clean = stripBlocks(pendingText);
+      if (!clean && !pendingThink && pendingText) clean = ' ';
       if (clean || pendingThink) { try { report({ type: 'ai-stream', text: clean, think: pendingThink }); } catch (_) { /* ignore */ } }
     }
     pendingText = '';
@@ -76,7 +77,10 @@ export function initRemoteBridge(): void {
       const think = pendingThink;
       pendingText = ''; // 已投递：清空，防下一轮 stop 时重复 flush 上一段全文
       pendingThink = '';
-      const clean = stripBlocks(text);
+      let clean = stripBlocks(text);
+      // 若正文全被剥离（如正在生成工具代码），但原始 text 有值，塞个空格保活
+      // 这样手机端就能立刻建出流式气泡，不至于等到工具执行完才显示。
+      if (!clean && !think && text) clean = ' ';
       if (clean || think) report({ type: 'ai-stream', text: clean, think });
     }, 60);
   });
