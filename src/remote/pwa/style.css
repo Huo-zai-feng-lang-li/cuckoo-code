@@ -1075,6 +1075,12 @@ svg { flex-shrink: 0; }
   margin-top: 9px;
 }
 
+/* 用户消息里的操作栏：靠右对齐，稍微调整间距 */
+.msg.user .msg-actions {
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
 .msg-act {
   background: var(--bg-card);
   border: 1px solid var(--border-strong);

@@ -736,7 +736,11 @@
   function buildUserEl(text) {
     const el = document.createElement('div');
     el.className = 'msg user';
-    el.textContent = text;
+    // 文本包一层，防止复制按钮追加后破坏多行文本排版
+    const content = document.createElement('div');
+    content.textContent = text;
+    el.appendChild(content);
+    attachActions(el, text);
     return el;
   }
 
