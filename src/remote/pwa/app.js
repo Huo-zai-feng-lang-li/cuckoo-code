@@ -27,6 +27,7 @@
   let wsGen = 0;
   let reconnectDelay = 1000;
   let reconnectTimer = null;
+  let disconnectTimer = null; // 断线降级防抖
   let failStreak = 0;
   let lastPong = Date.now(); // 心跳：最近一次 pong 时间
   let foregroundProbeTimer = null; // 切前台探活定时器
@@ -225,6 +226,7 @@
       failStreak = 0;
       lastPong = Date.now();
       reconnectDelay = 1000;
+      if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null; }
       setConn('on');
       hideOffline();
       if (token) { localStorage.setItem('cuckoo-token', token); showApp(); }
@@ -239,8 +241,12 @@
     sock.onclose = () => {
       if (gen !== wsGen) return;
       connected = false;
-      // 状态指示无条件降级（防假在线）；离线横幅依然根据是否有缓存来决定是否弹
-      setConn('off');
+      // 状态指示延迟降级，避免网络瞬断快速重连导致 UI 闪烁
+      if (disconnectTimer) clearTimeout(disconnectTimer);
+      disconnectTimer = setTimeout(() => {
+        disconnectTimer = null;
+        setConn('off');
+      }, 1500);
       hideExec();
       setExecuting(false);
       // 清理未完成的探活定时器，避免它在断连后再次触发重连
