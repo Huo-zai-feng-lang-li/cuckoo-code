@@ -234,10 +234,8 @@
     sock.onclose = () => {
       if (gen !== wsGen) return;
       connected = false;
-      // 如果页面上已经有消息，不要在顶部显示“已离线”，保持原样静默重连
-      if (!messages.querySelector('.msg')) {
-        setConn('off');
-      }
+      // 状态指示无条件降级（防假在线）；离线横幅依然根据是否有缓存来决定是否弹
+      setConn('off');
       hideExec();
       setExecuting(false);
       // 清理未完成的探活定时器，避免它在断连后再次触发重连
@@ -288,7 +286,7 @@
 
   // 切回前台：不只看"是否已断开"，还要识别"已连接但半开"（锁屏/切网后 TCP 已死，
   // ws.readyState 仍是 1，消息会静默丢失）。
-  const FOREGROUND_PING_TIMEOUT = 500;
+  const FOREGROUND_PING_TIMEOUT = 1000;
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible' || !token) return;
     
@@ -318,7 +316,7 @@
   // 心跳保活
   setInterval(() => {
     if (!connected) return;
-    // 前台探活正在进行：让它先判定（1.5s 内必有结论），避免心跳与探活双双重连
+    // 前台探活正在进行：让它先判定（1s 内必有结论），避免心跳与探活双双重连
     if (foregroundProbeTimer) return;
     if (Date.now() - lastPong > 60000) {
       console.warn('[Remote] 心跳超时，主动重连');
