@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.102] - 2026-10-28
+
+### Fixed
+- 修复 GitHub Actions 安卓打包的环境依赖问题（改用官方 setup-android 下载 SDK，并输出完整 stacktrace 以便排查）。
+
 ## [0.10.101] - 2026-10-28
 
 ### Fixed
