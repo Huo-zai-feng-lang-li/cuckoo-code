@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.100] - 2026-10-28
+
+### Fixed
+- 彻底修复 GitHub Actions 安卓构建环境问题：显式绑定 Runner 预装的 Android SDK，并强制使用 Java 17 + Gradle 无守护进程模式构建。
+
 ## [0.10.99] - 2026-10-27
 
 ### Fixed

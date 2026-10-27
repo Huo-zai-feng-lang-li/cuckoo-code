@@ -37,7 +37,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # 缓存自带运行时（uv/node），版本没变则跳过下载
       - name: Cache runtime binaries
         uses: actions/cache@v4
         with:
@@ -47,7 +46,6 @@ jobs:
       - name: Fetch runtime binaries
         run: node scripts/fetch-runtime.mjs
 
-      # 只构建，不发布（发布统一由下方 publish job 负责，避免多 job 各建一个 release）
       - name: Build
         run: npm run ${{ matrix.command }}
 
@@ -87,18 +85,18 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '21'
+          java-version: '17'
 
-      # 删除了 Setup Android SDK，直接使用 GitHub Runner 预装的稳定环境
-      
       - name: Sync Capacitor
         run: npx cap sync android
 
       - name: Build Android APK
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon
 
       - name: Rename APK
         run: |
@@ -112,7 +110,6 @@ jobs:
           path: dist/cuckoo-remote-android.apk
           retention-days: 30
 
-  # 统一发布：等所有平台构建完，下载全部产物，创建/更新唯一的 Release
   publish:
     needs: [build, build-android]
     runs-on: ubuntu-latest
@@ -126,7 +123,6 @@ jobs:
       - name: List files
         run: ls -la dist/
 
-      # 正式版（tag 不含 -beta）：创建正式 Release
       - name: Publish Release
         if: ${{ !contains(github.ref_name, '-beta') }}
         uses: softprops/action-gh-release@v2
