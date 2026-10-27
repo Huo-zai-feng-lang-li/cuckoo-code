@@ -35,6 +35,9 @@
 
   // 当前展示窗口（多窗口隔离：只渲染该 profileId 的消息）
   let currentProfileId = '';
+  // 滚动与回到底部状态（提前声明，避免 renderHistory 时因 TDZ 死区报错）
+  let stickToBottom = true;
+  let hasNewWhileScrolled = false;
   // 当前流式气泡（streamingEl = 气泡容器；streamNode = 内部纯文本容器；streamingText = 累积文本）
   let streamingEl = null;
   let streamNode = null;
@@ -965,8 +968,6 @@
   }
 
   // ===== 自动滚动与回到底部 FAB =====
-  let stickToBottom = true;
-  let hasNewWhileScrolled = false;
   const BOTTOM_THRESHOLD = 50;
 
   function isNearBottom() {
