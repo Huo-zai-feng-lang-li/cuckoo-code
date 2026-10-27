@@ -326,7 +326,7 @@ function onWsConnection(ws: any, req: any): void {
   try { deps.onNewClient && deps.onNewClient(ws); } catch (_) {}
 }
 
-/** 服务端心跳：每 30s ping 一次，连续 8 次无 pong（约 240s）视为死连接并断开。
+/** 服务端心跳：每 30s ping 一次，连续 8 次无 pong（约 270s）视为死连接并断开。
  *  放宽原因：iOS 等系统会把切到后台的标签页彻底挂起（socket 状态冻结），
  *  给足恢复时间，避免"熄屏几分钟回来必断"。 */
 

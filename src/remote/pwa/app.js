@@ -208,6 +208,7 @@
       // D-005：token 通过 Sec-WebSocket-Protocol（cuckoo.<token>）传递，不进 URL。
       sock = new WebSocket(wsUrl(), ['cuckoo.' + token]);
     } catch {
+      setConn('off');
       scheduleReconnect();
       return;
     }
