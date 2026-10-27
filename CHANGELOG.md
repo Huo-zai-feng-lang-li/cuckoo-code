@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.86] - 2026-10-27
+
+### Changed
+- 校准项目文档与规则：修正「加 IPC」链路说明（壳页面走 `src/app/shell-preload.ts`，`bridge/api.ts` 仅给 AI 网页用）；`compile` 由三步补全为完整 8 步；生成物禁改清单补 `bootstrap.generated.ts` 与 `src/ui/shell.html`；为 overlay/bridge 既有的 `session/compaction` 依赖标注「已知例外」。
+
 ## [0.10.85] - 2026-10-27
 
 ### Fixed
