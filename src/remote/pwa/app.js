@@ -531,7 +531,9 @@
       resetThink();
       cancelStreamMd();
 
-      // 3. 再清空容器
+      // 3. 记录滚动状态并清空容器
+      var prevTop = messages.scrollTop;
+      var wasAtBottom = stickToBottom || (messages.scrollHeight - messages.scrollTop - messages.clientHeight <= 50);
       messages.innerHTML = '';
       saveHistoryCache(entries.slice(-50));
     } else {
@@ -557,8 +559,14 @@
     messages.appendChild(frag);
     checkEmptyState();
     capMessages();
-    // 4. 重绘后保持滚动位置：如果之前在最底部，继续贴底；如果用户在上面看历史，就不强制拽回底部
-    scroll();
+    // 4. 重绘后保持滚动位置
+    if (isCache || !wasAtBottom) {
+      messages.scrollTop = prevTop || 0;
+      stickToBottom = false;
+      updateScrollBtn();
+    } else {
+      scroll(true);
+    }
   }
 
   function syncProfileLabel() {
