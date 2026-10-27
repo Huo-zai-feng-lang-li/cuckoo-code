@@ -38,6 +38,7 @@
   // 滚动与回到底部状态（提前声明，避免 renderHistory 时因 TDZ 死区报错）
   let stickToBottom = true;
   let hasNewWhileScrolled = false;
+  const BOTTOM_THRESHOLD = 50;
   // 当前流式气泡（streamingEl = 气泡容器；streamNode = 内部纯文本容器；streamingText = 累积文本）
   let streamingEl = null;
   let streamNode = null;
@@ -514,6 +515,9 @@
       return;
     }
     
+    let prevTop = 0;
+    let wasAtBottom = true;
+    
     if (!isCache) {
       // 1. 判断缓存是否完全一致：如果本地已经渲染了消息，且服务端传来的与本地缓存完全一致，跳过重绘
       if (messages.querySelector('.msg')) {
@@ -534,8 +538,8 @@
       cancelStreamMd();
 
       // 3. 记录滚动状态并清空容器
-      var prevTop = messages.scrollTop;
-      var wasAtBottom = stickToBottom || (messages.scrollHeight - messages.scrollTop - messages.clientHeight <= 50);
+      prevTop = messages.scrollTop;
+      wasAtBottom = stickToBottom || (messages.scrollHeight - messages.scrollTop - messages.clientHeight <= 50);
       messages.innerHTML = '';
       saveHistoryCache(entries.slice(-50));
     } else {
@@ -561,13 +565,21 @@
     messages.appendChild(frag);
     checkEmptyState();
     capMessages();
-    // 4. 重绘后保持滚动位置
-    if (isCache || !wasAtBottom) {
-      messages.scrollTop = prevTop || 0;
+    
+    // 4. 重绘后恢复滚动位置
+    if (isCache) {
+      // 刚打开页面用缓存渲染：直接贴底，让用户看到最新消息
+      stickToBottom = true;
+      scroll(true);
+    } else if (wasAtBottom) {
+      // 网络重推历史且之前就在底部：保持贴底
+      stickToBottom = true;
+      scroll(true);
+    } else {
+      // 网络重推历史且用户正在上面看历史：保留位置，不强制拽底
+      messages.scrollTop = prevTop;
       stickToBottom = false;
       updateScrollBtn();
-    } else {
-      scroll(true);
     }
   }
 
@@ -968,7 +980,6 @@
   }
 
   // ===== 自动滚动与回到底部 FAB =====
-  const BOTTOM_THRESHOLD = 50;
 
   function isNearBottom() {
     return messages.scrollHeight - messages.scrollTop - messages.clientHeight <= BOTTOM_THRESHOLD;
