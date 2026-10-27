@@ -14,6 +14,12 @@
   const execStatus = $('exec-status'), execText = $('exec-text'), offlineBanner = $('offline-banner');
   const emptyState = $('empty-state'), scrollBottomBtn = $('scroll-bottom-btn'), scrollNewBadge = $('scroll-new-badge');
   const pasteBtn = $('token-paste-btn');
+  const scanBtn = $('token-scan-btn');
+  
+  // 识别原生环境，显示扫码按钮
+  if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+    if (scanBtn) scanBtn.style.display = 'block';
+  }
 
   let token = localStorage.getItem('cuckoo-token') || '';
   const DRAFT_KEY = 'cuckoo-draft';
@@ -159,6 +165,45 @@
         }
       } catch {
         $('token-input').focus();
+      }
+    });
+  }
+
+  if (scanBtn) {
+    scanBtn.addEventListener('click', async () => {
+      if (!window.Capacitor || !window.Capacitor.Plugins.BarcodeScanner) {
+        alert('当前环境不支持扫码');
+        return;
+      }
+      try {
+        const { BarcodeScanner } = window.Capacitor.Plugins;
+        const result = await BarcodeScanner.scan();
+        if (result && result.barcodes && result.barcodes.length > 0) {
+          const content = result.barcodes[0].rawValue;
+          if (content && content.startsWith('cuckoo://connect')) {
+            const urlObj = new URL(content.replace('cuckoo://', 'http://'));
+            const tk = urlObj.searchParams.get('token');
+            const host = urlObj.searchParams.get('url');
+            if (tk && host) {
+              $('token-input').value = tk;
+              localStorage.setItem('cuckoo-token', tk);
+              // 如果 URL 里有服务器地址，需要改当前页面的 location
+              // 这里简化处理：如果是扫码，假定当前网址已经是对的，或者跳转到 host
+              if (host !== location.origin && host !== location.host) {
+                 window.location.href = host + '?token=' + tk;
+              } else {
+                 verifyAndConnect(tk);
+              }
+            } else {
+              alert('二维码格式错误：缺少参数');
+            }
+          } else {
+            alert('无效的 Cuckoo 二维码');
+          }
+        }
+      } catch (err) {
+        console.error('扫码失败', err);
+        alert('扫码失败：' + err.message);
       }
     });
   }
@@ -311,6 +356,11 @@
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       reconnectDelay = 1000;
       connect(true);
+      return;
+    }
+    
+    // 原生 App：系统不会杀进程，WebSocket 通常是一直连着的，不需要发 ping 探活
+    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
       return;
     }
     
@@ -1152,6 +1202,33 @@
   function escapeAttr(s) { return escapeHtml(s); }
 
   // ===== 启动 =====
+  // 原生环境初始化（保活与通知）
+  if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+    const { KeepAlive, App } = window.Capacitor.Plugins;
+    if (KeepAlive) {
+      KeepAlive.start().catch((err) => console.warn('[Remote] 启动保活服务失败:', err));
+      KeepAlive.checkBatteryOptimization().then((res) => {
+        if (!res.ignoring) {
+          setTimeout(() => {
+            if (confirm('为了保持后台不断连，请将 Cuckoo Code 设置为“无限制”电池优化。点击确定前往设置。')) {
+              KeepAlive.requestIgnoreBatteryOptimization();
+            }
+          }, 1000);
+        }
+      }).catch(() => {});
+    }
+    if (App) {
+      App.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) {
+          console.log('[Remote] 原生环境切回前台，检查连接状态');
+          if (!connected || !ws || ws.readyState !== 1) {
+            connect(true);
+          }
+        }
+      });
+    }
+  }
+
   // 恢复草稿（手机切后台被系统杀进程 reload 时，避免用户打字丢失）
   try {
     const draft = localStorage.getItem(DRAFT_KEY);

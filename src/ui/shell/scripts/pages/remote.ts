@@ -2,6 +2,7 @@
  * 远程控制页：配置、启动/停止、固定隧道托管、免密直达链接与令牌管理。
  */
 import { api, ckAlert } from '../shared.js';
+import QRCode from 'qrcode';
 
 function renderRemoteStatus(running: boolean, clients?: number, clientList?: any[]): void {
   const dot = document.getElementById('rm-dot');
@@ -346,6 +347,70 @@ if (rmRestart) rmRestart.addEventListener('click', async () => {
     startAutoRefresh();
     ckAlert('远程服务已重启');
   } catch (_) { /* ignore */ }
+});
+
+const rmShowQr = document.getElementById('rm-show-qr') as HTMLButtonElement | null;
+if (rmShowQr) rmShowQr.addEventListener('click', async () => {
+  const directEl = document.getElementById('rm-direct-url') as HTMLInputElement | null;
+  if (!directEl || !directEl.value) {
+    ckAlert('尚未生成直达链接，请先启用远程服务');
+    return;
+  }
+  
+  // 将 http(s) 替换为 cuckoo:// 协议，供原生 App 识别
+  const appUrl = directEl.value.replace(/^https?:\/\//, 'cuckoo://');
+  
+  // 移除旧弹窗
+  const old = document.getElementById('rm-qr-modal');
+  if (old) old.remove();
+
+  const mask = document.createElement('div');
+  mask.id = 'rm-qr-modal';
+  mask.className = 'ck-modal-mask';
+  mask.style.position = 'fixed';
+  mask.style.inset = '0';
+  mask.style.background = 'rgba(0,0,0,0.6)';
+  mask.style.zIndex = '9999';
+  mask.style.display = 'flex';
+  mask.style.alignItems = 'center';
+  mask.style.justifyContent = 'center';
+
+  const box = document.createElement('div');
+  box.style.background = 'var(--ck-surface)';
+  box.style.border = '1px solid var(--ck-border)';
+  box.style.borderRadius = '16px';
+  box.style.padding = '24px';
+  box.style.display = 'flex';
+  box.style.flexDirection = 'column';
+  box.style.alignItems = 'center';
+  box.style.boxShadow = '0 12px 32px rgba(0,0,0,0.4)';
+  
+  const title = document.createElement('h3');
+  title.textContent = '手机扫码连接';
+  title.style.margin = '0 0 16px 0';
+  title.style.color = 'var(--ck-text)';
+  title.style.fontSize = '16px';
+  box.appendChild(title);
+  
+  const canvas = document.createElement('canvas');
+  box.appendChild(canvas);
+  
+  try {
+    await QRCode.toCanvas(canvas, appUrl, { width: 240, margin: 2, color: { dark: '#000000', light: '#ffffff' } });
+  } catch (err) {
+    ckAlert('二维码生成失败');
+  }
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'ck-btn ck-btn-secondary';
+  closeBtn.textContent = '关闭';
+  closeBtn.style.marginTop = '20px';
+  closeBtn.onclick = () => mask.remove();
+  box.appendChild(closeBtn);
+
+  mask.appendChild(box);
+  mask.onclick = (e) => { if (e.target === mask) mask.remove(); };
+  document.body.appendChild(mask);
 });
 
 const rmCopyDirect = document.getElementById('rm-copy-direct-url') as HTMLButtonElement | null;

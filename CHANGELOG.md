@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.10.98] - 2026-10-27
+
+### Added
+- **Android 原生 App 适配**：引入 Capacitor 套壳，新增后台保活服务（Foreground Service），彻底解决切后台被系统杀进程导致的长连接断开问题。
+- **扫码连接**：电脑端远程控制面板新增生成二维码按钮，手机端 App 支持扫码直连，免去输入 32 位令牌的繁琐操作。
+- **CI 自动打包 APK**：每次 GitHub Release 将自动构建出 cuckoo-remote-android.apk，可直接下载安装。
+
 ## [0.10.97] - 2026-10-27
 
 ### Performance

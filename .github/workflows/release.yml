@@ -63,9 +63,59 @@ jobs:
             dist/latest*.yml
           retention-days: 30
 
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Sync version from tag
+        run: node scripts/sync-version.js
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Build Android APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Rename APK
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/debug/app-debug.apk dist/cuckoo-remote-android.apk
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-android
+          path: dist/cuckoo-remote-android.apk
+          retention-days: 30
+
   # 统一发布：等所有平台构建完，下载全部产物，创建/更新唯一的 Release
   publish:
-    needs: build
+    needs: [build, build-android]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -93,3 +143,4 @@ jobs:
             dist/*.zip
             dist/*.dmg
             dist/latest*.yml
+            dist/*.apk
