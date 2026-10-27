@@ -1113,16 +1113,21 @@
     if (executing) { sendBtn.disabled = true; return; }
     sendBtn.disabled = !input.value.trim();
   }
+  let draftTimer = null;
   input.addEventListener('input', () => {
     autoGrow();
     syncSendBtn();
-    try {
-      if (input.value) {
-        localStorage.setItem(DRAFT_KEY, input.value);
-      } else {
-        localStorage.removeItem(DRAFT_KEY);
-      }
-    } catch {}
+    if (draftTimer) clearTimeout(draftTimer);
+    draftTimer = setTimeout(() => {
+      draftTimer = null;
+      try {
+        if (input.value) {
+          localStorage.setItem(DRAFT_KEY, input.value);
+        } else {
+          localStorage.removeItem(DRAFT_KEY);
+        }
+      } catch {}
+    }, 500);
   });
   syncSendBtn();
 
