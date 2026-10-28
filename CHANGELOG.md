@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.10.150] - 2026-10-28
+
+### Changed
+- 发送与上传节奏默认区间统一调整为 1~10 秒（原多处默认值互相矛盾：代码兜底 0.5~1 秒、恢复默认 2~4 秒），降低触发风控概率。
+
+### Fixed
+- 修复 `android/app/build.gradle` 被误写入 read 工具输出（`<path>` 包装 + 行号前缀）导致 Android APK 构建失败的问题。
+- ESLint 忽略 Capacitor 同步产物目录 `android/app/src/main/assets/**`，消除 27 个误报 error。
+
 ## [0.10.144] - 2026-10-28
 
 ### Fixed

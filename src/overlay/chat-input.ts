@@ -19,11 +19,11 @@ function getCurrentProvider(): any {
 }
 
 /**
- * 生成随机等待时间（ms），范围由 state 配置（默认 2-4 秒）
+ * 生成随机等待时间（ms），范围由 state 配置（默认 1-10 秒）
  */
 function randomDelay(): number {
-  const min = typeof state.sendDelayMin === 'number' ? state.sendDelayMin : 500;
-  const max = typeof state.sendDelayMax === 'number' ? state.sendDelayMax : 1000;
+  const min = typeof state.sendDelayMin === 'number' ? state.sendDelayMin : 1000;
+  const max = typeof state.sendDelayMax === 'number' ? state.sendDelayMax : 10000;
   if (min >= max) return min;
   return Math.floor(Math.random() * (max - min)) + min;
 }

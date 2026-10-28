@@ -33,7 +33,9 @@ const COMMON_GLOBALS = {
 
 export default [
   {
-    ignores: ['node_modules/**', 'dist/**', 'dist-verify/**', 'out/**', 'build/**', 'wyp/**', 'coverage/**', '**/*.d.ts', 'src/ui/vendor/**', 'custom-providers/**', '.agents/**'],
+    ignores: ['node_modules/**', 'dist/**', 'dist-verify/**', 'out/**', 'build/**', 'wyp/**', 'coverage/**', '**/*.d.ts', 'src/ui/vendor/**', 'custom-providers/**', '.agents/**',
+      // Capacitor 同步生成的 Android 产物（android/.gitignore 已忽略，勿参与 lint）
+      'android/app/src/main/assets/**'],
   },
   js.configs.recommended,
   {

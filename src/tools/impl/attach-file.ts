@@ -244,8 +244,8 @@ class AttachFileTool extends Tool {
     const fileName = path.basename(absPath);
     const mimeType = guessMimeType(fileName);
     const base64 = buffer.toString('base64');
-    const minDelay = Number.isFinite(attachDelayMin) ? attachDelayMin : 500;
-    const maxDelay = Number.isFinite(attachDelayMax) ? attachDelayMax : 1000;
+    const minDelay = Number.isFinite(attachDelayMin) ? attachDelayMin : 1000;
+    const maxDelay = Number.isFinite(attachDelayMax) ? attachDelayMax : 10000;
     const waitMs = maxDelay > minDelay ? Math.floor(Math.random() * (maxDelay - minDelay)) + minDelay : minDelay;
     const code = buildInjectCode(base64, fileName, mimeType, UPLOAD_TIMEOUT_MS, waitMs);
 
