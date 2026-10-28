@@ -2892,10 +2892,10 @@ paths:            # 可选；省略 = 始终生效
                 </div>
                 <div class="ck-collapse-body cuckoo-hidden" data-collapse-body="subagent">
                   <div class="ck-set-field">
-                    <span class="ck-set-key">并发上限（1~10）</span>
+                    <span class="ck-set-key">单账号并发上限（1~10）</span>
                     <input type="number" class="ck-set-input" id="st-max-concurrent-agents" min="1" max="10" step="1" />
                   </div>
-                  <p class="ck-about-tip">同时运行的子代理 + 网关总上限，按账号独立计算（不同账号互不影响）。</p>
+                  <p class="ck-about-tip">同一账号下，同时运行的子代理 + 网关名额上限。不同账号互不影响。</p>
                   <div class="ck-set-field">
                     <span class="ck-set-key">启动间隔区间（秒，0 = 不等待）</span>
                     <div class="ck-set-inline">
@@ -2904,7 +2904,7 @@ paths:            # 可选；省略 = 始终生效
                       <input type="number" class="ck-set-input" id="st-agent-start-interval-max" min="0" step="1" />
                     </div>
                   </div>
-                  <p class="ck-about-tip">两次子代理启动之间的随机等待时间，越低越防封但吞吐越慢。只影响新任务启动，不打断正在跑的子代理。</p>
+                  <p class="ck-about-tip">两次子代理启动之间的随机等待时间，越大越防封但吞吐越慢。只影响新任务启动，不打断正在跑的子代理。</p>
                 </div>
               </div>
 
