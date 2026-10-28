@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.107] - 2026-10-28
+
+### Fixed
+- 恢复并彻底修复 Android APK 打包流水线。
+
 ## [0.10.105] - 2026-10-28
 
 ### Added & Performance
