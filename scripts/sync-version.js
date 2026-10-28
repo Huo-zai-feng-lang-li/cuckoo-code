@@ -55,21 +55,3 @@ if (fs.existsSync(gradlePath)) {
   fs.writeFileSync(gradlePath, gradle, 'utf8');
   console.log('[sync-version] android/app/build.gradle -> versionCode ' + versionCode + ', versionName ' + version);
 }
-
-// 更新 Android build.gradle 的 versionCode 和 versionName
-const gradlePath = path.join(root, 'android', 'app', 'build.gradle');
-if (fs.existsSync(gradlePath)) {
-  let gradle = fs.readFileSync(gradlePath, 'utf8');
-  
-  const parts = version.split('.').map(Number);
-  const major = parts[0] || 0;
-  const minor = parts[1] || 0;
-  const patch = parts[2] || 0;
-  const versionCode = major * 1000000 + minor * 1000 + patch;
-
-  gradle = gradle.replace(/versionCode\s+\d+/, `versionCode ${versionCode}`);
-  gradle = gradle.replace(/versionName\s+"[^"]+"/, `versionName "${version}"`);
-  
-  fs.writeFileSync(gradlePath, gradle, 'utf8');
-  console.log('[sync-version] android/app/build.gradle -> versionCode ' + versionCode + ', versionName ' + version);
-}

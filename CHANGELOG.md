@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.140] - 2026-10-28
+
+### Fixed
+- 修复 `sync-version.js` 里 `gradlePath` 重复声明导致的语法错误。现在 Android 打包会自动递增 `versionCode`（如 10140）和 `versionName`。
+
 ## [0.10.139] - 2026-10-28
 
 ### Fixed
