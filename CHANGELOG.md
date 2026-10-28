@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.10.131] - 2026-10-28
+
+### Fixed
+- APK 首次登录时也启动前台保活服务，避免首个会话后台被系统回收。
+- `isNativeShell()` 移除 localhost 兜底，只信 `window.Capacitor`，不再误伤浏览器本地开发。
+- `startNativeKeepAlive()` 整体包 try/catch，保活失败绝不阻断主连接。
+- 断线探测 `/api/ping` 改用 `base()` 拼接，APK 内令牌重置检测恢复生效。
+- 浏览器场景隐藏 `server-input` 行，登录体验与改动前一致。
+
 ## [0.10.130] - 2026-10-28
 
 ### Added

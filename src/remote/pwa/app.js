@@ -30,15 +30,12 @@
   function base() {
     return serverBase || (location.protocol + '//' + location.host);
   }
-  /** 是否运行在 Capacitor 原生壳里（APK） */
+  /** 是否运行在 Capacitor 原生壳里（APK）。只信 window.Capacitor，避免误伤浏览器本地开发 */
   function isNativeShell() {
     const c = window.Capacitor;
-    if (c) {
-      if (typeof c.isNativePlatform === 'function') return c.isNativePlatform();
-      if (c.isNative) return true;
-    }
-    // 兜底：Capacitor 的默认 scheme 是 capacitor: 或 https://localhost
-    return location.protocol === 'capacitor:' || location.hostname === 'localhost';
+    if (!c) return false;
+    if (typeof c.isNativePlatform === 'function') return c.isNativePlatform();
+    return !!c.isNative;
   }
   const DRAFT_KEY = 'cuckoo-draft';
   // 为当前浏览器标签页生成唯一 ID，用于服务端去重
@@ -195,9 +192,14 @@
   (function initServerField() {
     const el = $('server-input');
     if (!el) return;
+    const group = $('server-group');
+    if (!isNativeShell()) {
+      // 浏览器场景：用 location.origin 自动连，不需要用户填地址 → 隐藏整行
+      if (group) group.style.display = 'none';
+      return;
+    }
     if (serverBase) el.value = serverBase;
-    if (isNativeShell() && !serverBase) {
-      // 原生壳里没有 origin 可用，提示必须填写
+    if (!serverBase) {
       el.placeholder = '必填：电脑端地址（如 http://192.168.1.5:7788）';
     }
   })();
@@ -235,6 +237,8 @@
     localStorage.setItem('cuckoo-token', t);
     $('login-err').textContent = '';
     failStreak = 0;
+    // APK 首次登录也要启动前台保活（否则首个会话后台易被系统回收）
+    startNativeKeepAlive();
     connect();
   }
 
@@ -323,7 +327,7 @@
       }
       // 失败 3 次以上时，在后台静默探测是否是令牌被电脑端重置（401）
       if (++failStreak >= 3 && failStreak % 3 === 0) {
-        fetch('/api/ping', {
+        fetch(base() + '/api/ping', {
           cache: 'no-store',
           headers: { Authorization: 'Bearer ' + token },
         })
@@ -1214,19 +1218,19 @@
 
   // ===== 原生保活（仅 APK 生效）=====
   function startNativeKeepAlive() {
-    if (!isNativeShell()) return;
-    const cap = window.Capacitor;
-    // Capacitor 8：手动注册的原生插件需要用 registerPlugin 动态获取代理
-    let plugin = null;
-    if (cap.Plugins && cap.Plugins.KeepAlive) plugin = cap.Plugins.KeepAlive;
-    if (!plugin && typeof cap.registerPlugin === 'function') {
-      try { plugin = cap.registerPlugin('KeepAlive'); } catch {}
-    }
-    if (!plugin) {
-      console.warn('[KeepAlive] 插件不可用，保活功能降级');
-      return;
-    }
     try {
+      if (!isNativeShell()) return;
+      const cap = window.Capacitor || {};
+      // Capacitor 8：手动注册的原生插件需要用 registerPlugin 动态获取代理
+      let plugin = null;
+      if (cap.Plugins && cap.Plugins.KeepAlive) plugin = cap.Plugins.KeepAlive;
+      if (!plugin && typeof cap.registerPlugin === 'function') {
+        try { plugin = cap.registerPlugin('KeepAlive'); } catch {}
+      }
+      if (!plugin) {
+        console.warn('[KeepAlive] 插件不可用，保活功能降级');
+        return;
+      }
       plugin.start()
         .then(() => console.log('[KeepAlive] 前台服务已启动'))
         .catch((e) => console.warn('[KeepAlive] start 失败:', e));
