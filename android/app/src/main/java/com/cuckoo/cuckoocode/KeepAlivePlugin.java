@@ -14,6 +14,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 @CapacitorPlugin(name = "KeepAlive")
 public class KeepAlivePlugin extends Plugin {
+
     @PluginMethod
     public void start(PluginCall call) {
         Intent intent = new Intent(getContext(), ForegroundService.class);

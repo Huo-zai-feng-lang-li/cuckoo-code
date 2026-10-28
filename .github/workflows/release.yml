@@ -9,16 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      max-parallel: 1
-      matrix:
-        include:
-          - os: windows-latest
-            command: build:win:local
-          - os: macos-latest
-            command: build:mac:local
-    runs-on: ${{ matrix.os }}
+  build-win:
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,20 +28,82 @@ jobs:
       - name: Fetch runtime binaries
         run: node scripts/fetch-runtime.mjs
       - name: Build
-        run: npm run ${{ matrix.command }}
+        run: npm run build:win:local
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ matrix.os }}
+          name: dist-win
           path: |
             dist/*.exe
-            dist/*.zip
-            dist/*.dmg
             dist/latest*.yml
           retention-days: 30
 
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Sync version from tag
+        run: node scripts/sync-version.js
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      # 关键：必须先 compile，生成 out/src/remote/pwa，否则 cap sync 报 Could not find web assets directory
+      - name: Compile (generate PWA assets)
+        run: npm run compile
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 10.0
+          packages: 'platforms;android-35 build-tools;35.0.0'
+          accept-android-sdk-licenses: true
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Build Android APK
+        run: |
+          cd android
+          chmod +x gradlew
+          set -o pipefail
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle-build.log
+
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-android
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
+
+      # 无论成功失败，都把 Gradle 完整日志传上来
+      - name: Upload Gradle Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: android/gradle-build.log
+          if-no-files-found: warn
+
   publish:
-    needs: build
+    needs: [build-win, build-android]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -57,6 +111,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+
       - name: Publish Release
         if: ${{ !contains(github.ref_name, '-beta') }}
         uses: softprops/action-gh-release@v2
@@ -68,6 +123,5 @@ jobs:
           generate_release_notes: true
           files: |
             dist/*.exe
-            dist/*.zip
-            dist/*.dmg
             dist/latest*.yml
+            dist/*.apk

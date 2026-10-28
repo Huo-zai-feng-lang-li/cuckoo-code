@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.10.123] - 2026-10-28
+
+### Fixed
+- 恢复完整的 Android 原生工程（含前台服务保活插件），重新对齐 Capacitor 依赖与 SDK 35 编译目标。
+- CI 在 Android 构建前增加 `npm run compile` 以生成 PWA 产物，避免 `cap sync` 找不到 web assets。
+- CI 上传 Gradle 完整构建日志为 artifact，解决报错不可见的问题。
+
 ## [0.10.122] - 2026-10-28
 
 ### Fixed

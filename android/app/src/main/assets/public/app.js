@@ -395,6 +395,7 @@
     switch (msg.type) {
       case 'ready':
       case 'profiles':
+        profilesReady = true;
         updateProfiles(msg.profiles || [], msg.currentProfileId || '');
         break;
       case 'ai-start':
@@ -477,7 +478,8 @@
   }
 
   function isMyProfile(pid) {
-    if (!currentProfileId) return true;
+    // 在收到服务端初始 profiles 之前，保守接受所有消息，避免误丢
+    if (!profilesReady || !currentProfileId) return true;
     return pid === currentProfileId;
   }
 
@@ -512,6 +514,11 @@
       const s = localStorage.getItem('cuckoo-history-' + pid);
       return s ? JSON.parse(s) : null;
     } catch { return null; }
+  }
+  let profilesReady = false; // 标记是否已收到服务端的 profile 列表
+  // 确保 currentProfileId 初始化时同步 last-profile，防止判断失准
+  if (!currentProfileId) {
+    currentProfileId = localStorage.getItem('cuckoo-last-profile') || '';
   }
 
   function renderHistory(entries, isCache = false) {
