@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.165] - 2026-10-29
+
+### Fixed
+- **版本号回补**：v0.10.163 的 CHANGELOG 声称补了 `.gitignore` 规则但 edit 静默失败（oldString 用了 `/node_modules/`，实际文件是 `node_modules/`）；v0.10.164 tag 虽已推送但只含 `.gitignore` 改动、`package.json` 与 `CHANGELOG.md` 未同步更新，且 `164` 含数字 4 违反版本号规则。现版本号统一到 `0.10.165`（跳过 164），三处对齐：`package.json` / `CHANGELOG.md` / `git tag v0.10.165`。规则已落地：`.gitignore` 第 78-80 行 `/test/tmp/` `/test/*.txt` `*.test.bak`。功能无变化。
+
 ## [0.10.163] - 2026-10-29
 
 ### Fixed
