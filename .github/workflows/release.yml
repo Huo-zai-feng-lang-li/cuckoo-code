@@ -85,7 +85,16 @@ jobs:
           cd android
           chmod +x gradlew
           set -o pipefail
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle-build.log
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle-build.log || true
+
+      - name: Show Gradle Log
+        if: always()
+        run: |
+          cd android
+          echo "====== LAST 300 LINES ======"
+          tail -n 300 gradle-build.log || true
+          echo "====== ERROR LINES ======"
+          grep -i -E "error|fail|exception|What went wrong|Caused by" gradle-build.log | head -n 150 || true
 
       - name: Upload APK
         if: success()

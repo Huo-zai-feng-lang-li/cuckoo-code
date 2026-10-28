@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.126] - 2026-10-28
+
+### Fixed
+- CI 的 Gradle 构建日志改为直接内联打印到 output（tail + grep error），彻底解决日志不可见问题。
+
 ## [0.10.125] - 2026-10-28
 
 ### Fixed
