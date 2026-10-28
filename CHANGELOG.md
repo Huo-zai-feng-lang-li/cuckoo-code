@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.10.137] - 2026-10-28
+
+### Fixed
+- 修复电脑端生成二维码图裂的问题，改用 Canvas 直接渲染。
+- 彻底补上 Android 打包版本号自动递增逻辑（versionCode / versionName）。
+
 ## [0.10.136] - 2026-10-28
 
 ### Fixed

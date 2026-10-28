@@ -2712,7 +2712,7 @@ paths:            # 可选；省略 = 始终生效
                   <button class="ck-btn ck-btn-secondary" id="rm-show-qrcode">生成扫码连接</button>
                 </div>
                 <div id="rm-qrcode-wrap" style="display: none; text-align: center; margin-top: 16px; padding: 16px; background: #fff; border-radius: 8px; width: fit-content; margin-left: auto; margin-right: auto;">
-                  <img id="rm-qrcode-img" style="width: 200px; height: 200px; display: block;" alt="扫码连接" />
+                  <div id="rm-qrcode-container" style="width: 200px; height: 200px; margin: 0 auto; display: flex; justify-content: center; align-items: center;"></div>
                   <p style="color: #666; font-size: 13px; margin-top: 10px;">使用 Cuckoo App 扫描此二维码</p>
                 </div>
                 <div class="ck-set-field" style="margin-top: 14px;">
@@ -6277,15 +6277,19 @@ paths:            # 可选；省略 = 始终生效
   });
   var rmShowQrcode = document.getElementById("rm-show-qrcode");
   var rmQrcodeWrap = document.getElementById("rm-qrcode-wrap");
-  var rmQrcodeImg = document.getElementById("rm-qrcode-img");
+  var rmQrcodeContainer = document.getElementById("rm-qrcode-container");
   if (rmShowQrcode) {
     rmShowQrcode.addEventListener("click", async () => {
       const directEl = document.getElementById("rm-direct-url");
       if (!directEl || !directEl.value) return;
       try {
         if (rmQrcodeWrap) rmQrcodeWrap.style.display = "block";
-        const dataUrl = await QRCode.toDataURL(directEl.value, { width: 400, margin: 1 });
-        if (rmQrcodeImg) rmQrcodeImg.src = dataUrl;
+        if (rmQrcodeContainer) {
+          rmQrcodeContainer.innerHTML = "";
+          const canvas = document.createElement("canvas");
+          await QRCode.toCanvas(canvas, directEl.value, { width: 200, margin: 1 });
+          rmQrcodeContainer.appendChild(canvas);
+        }
       } catch (e) {
         console.error("\u751F\u6210\u4E8C\u7EF4\u7801\u5931\u8D25", e);
       }

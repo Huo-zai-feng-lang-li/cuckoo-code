@@ -350,7 +350,7 @@ if (rmRestart) rmRestart.addEventListener('click', async () => {
 
 const rmShowQrcode = document.getElementById('rm-show-qrcode') as HTMLButtonElement | null;
 const rmQrcodeWrap = document.getElementById('rm-qrcode-wrap');
-const rmQrcodeImg = document.getElementById('rm-qrcode-img') as HTMLImageElement | null;
+const rmQrcodeContainer = document.getElementById('rm-qrcode-container');
 
 if (rmShowQrcode) {
   rmShowQrcode.addEventListener('click', async () => {
@@ -358,8 +358,12 @@ if (rmShowQrcode) {
     if (!directEl || !directEl.value) return;
     try {
       if (rmQrcodeWrap) rmQrcodeWrap.style.display = 'block';
-      const dataUrl = await QRCode.toDataURL(directEl.value, { width: 400, margin: 1 });
-      if (rmQrcodeImg) rmQrcodeImg.src = dataUrl;
+      if (rmQrcodeContainer) {
+        rmQrcodeContainer.innerHTML = '';
+        const canvas = document.createElement('canvas');
+        await QRCode.toCanvas(canvas, directEl.value, { width: 200, margin: 1 });
+        rmQrcodeContainer.appendChild(canvas);
+      }
     } catch (e) {
       console.error('生成二维码失败', e);
     }
