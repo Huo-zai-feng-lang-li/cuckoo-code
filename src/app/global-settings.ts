@@ -34,6 +34,11 @@ export interface AgentSettings {
   attachDelayMax: number;
   goalMaxIterations: number;
   ssrfGuard: boolean;
+  /** 子代理并发上限（1~10；默认 3） */
+  maxConcurrentAgents: number;
+  /** 子代理启动间隔区间（秒；0 = 不等待，默认 0） */
+  agentStartIntervalMin: number;
+  agentStartIntervalMax: number;
 }
 
 /**
@@ -60,6 +65,9 @@ export const AGENT_SETTINGS_DEFAULTS: AgentSettings = {
   attachDelayMax: 10,
   goalMaxIterations: 50,
   ssrfGuard: false,
+  maxConcurrentAgents: 3,
+  agentStartIntervalMin: 0,
+  agentStartIntervalMax: 0,
 };
 
 function getUserDir(): string {
@@ -106,6 +114,10 @@ function normalize(raw: any): AgentSettings {
   let amin = Math.min(60, nonNeg(raw.attachDelayMin, d.attachDelayMin));
   let amax = Math.min(60, nonNeg(raw.attachDelayMax, d.attachDelayMax));
   if (amax < amin) amax = amin;
+  // 子代理启动间隔：非负；max < min 时抬到 min
+  const intervalMin = nonNeg(raw.agentStartIntervalMin, d.agentStartIntervalMin);
+  let intervalMax = nonNeg(raw.agentStartIntervalMax, d.agentStartIntervalMax);
+  if (intervalMax < intervalMin) intervalMax = intervalMin;
   return {
     // 严格布尔：只认 true / false，避免文件被手改成 'false'/'0' 时误判为开。
     // 缺字段时回退默认（不能用表达式兜底，否则 undefined 会被判成 false）。
@@ -129,6 +141,15 @@ function normalize(raw: any): AgentSettings {
       return v > 0 ? v : d.goalMaxIterations;
     })(),
     ssrfGuard: raw.ssrfGuard === true,
+    // 子代理并发：1~10（<1 或非数字回退默认 3；>10 压到 10）
+    maxConcurrentAgents: (() => {
+      const v = int(raw.maxConcurrentAgents, d.maxConcurrentAgents);
+      if (v < 1) return d.maxConcurrentAgents;
+      if (v > 10) return 10;
+      return v;
+    })(),
+    agentStartIntervalMin: intervalMin,
+    agentStartIntervalMax: intervalMax,
   };
 }
 

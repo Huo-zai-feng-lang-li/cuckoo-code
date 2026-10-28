@@ -58,6 +58,7 @@ if (RENDERER_LOG_DIR) {
 
 import { registerIpcHandlers } from './ipc/index.js';
 import * as globalSettings from './global-settings.js';
+import { injectSemaphoreConfig } from './agent-semaphore.js';
 import * as taskManager from '../infra/task-manager.js';
 import { buildChromeUserAgent, ensureClientHints } from '../infra/user-agent.js';
 import { initRemote, stopRemote } from '../remote/manager.js';
@@ -883,6 +884,16 @@ function setupAppMenu() {
 
 // ========== 子代理依赖注入 ==========
 injectSubagentDeps({ createWindow, profileManager });
+// 子代理并发闸门的配置来源（并发上限 + 启动间隔）。每次 acquire 时读最新值，
+// 设置页改完新任务立即生效；已在跑的子代理不受影响（不会被打断）。
+injectSemaphoreConfig(() => {
+  const s = globalSettings.readAgentSettings();
+  return {
+    maxConcurrent: s.maxConcurrentAgents,
+    startIntervalMinMs: s.agentStartIntervalMin * 1000,
+    startIntervalMaxMs: s.agentStartIntervalMax * 1000,
+  };
+});
 // 给 runAgent 工具注入执行器（tools 层不依赖 app）
 injectAgentRunner(async ({ agent, task, currentWindowId }: any) => {
   const ctx = windowState.getWindowContext(currentWindowId);

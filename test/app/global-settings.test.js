@@ -32,6 +32,27 @@ test('文件不存在时 readAgentSettings 返回防封默认值', () => {
   assert.strictEqual(s.retryEnabled, true);
   assert.strictEqual(s.retry429Count, 1);
   assert.strictEqual(s.watchdogCount, 1);
+  // 子代理新字段默认值（并发 3、间隔 0 = 保持旧行为）
+  assert.strictEqual(s.maxConcurrentAgents, 3);
+  assert.strictEqual(s.agentStartIntervalMin, 0);
+  assert.strictEqual(s.agentStartIntervalMax, 0);
+});
+
+test('子代理并发：1~10 合法，越界回退/压顶', () => {
+  assert.strictEqual(gs.writeAgentSettings({ maxConcurrentAgents: 5 }).maxConcurrentAgents, 5);
+  assert.strictEqual(gs.writeAgentSettings({ maxConcurrentAgents: 0 }).maxConcurrentAgents, 3, '0 回退默认 3');
+  assert.strictEqual(gs.writeAgentSettings({ maxConcurrentAgents: -2 }).maxConcurrentAgents, 3, '负数回退默认 3');
+  assert.strictEqual(gs.writeAgentSettings({ maxConcurrentAgents: 99 }).maxConcurrentAgents, 10, '超 10 压到 10');
+  assert.strictEqual(gs.writeAgentSettings({ maxConcurrentAgents: 'abc' }).maxConcurrentAgents, 3, '非数字回退默认');
+});
+
+test('子代理启动间隔：非负；max<min 时抬到 min', () => {
+  const s1 = gs.writeAgentSettings({ agentStartIntervalMin: -5, agentStartIntervalMax: 10 });
+  assert.strictEqual(s1.agentStartIntervalMin, 0, '负数归零');
+  assert.strictEqual(s1.agentStartIntervalMax, 10);
+  const s2 = gs.writeAgentSettings({ agentStartIntervalMin: 30, agentStartIntervalMax: 5 });
+  assert.strictEqual(s2.agentStartIntervalMin, 30);
+  assert.strictEqual(s2.agentStartIntervalMax, 30, 'max 应被抬到 min');
 });
 
 test('写入后落盘且可读回', () => {

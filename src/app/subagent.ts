@@ -204,8 +204,8 @@ export async function runAgent(opts: {
   // 并发闸门：子代理复用父 partition（同一登录态 / 浏览器指纹），
   // 同账号多路并发是明显的机器人特征。超出 MAX_CONCURRENT_AGENTS 时排队，
   // 排队超时直接抛错（不静默降级）。
-  await acquireAgentSlot({ parentWindowId: opts.parentWindowId });
-  const releaseSlot = makeAgentReleaser();
+  await acquireAgentSlot({ profileId: opts.parentProfileId, parentWindowId: opts.parentWindowId });
+  const releaseSlot = makeAgentReleaser(opts.parentProfileId);
   let windowId = -1;
   let counted = false;
   try {
@@ -316,11 +316,12 @@ export async function runGatewayQuery(opts: {
   if (!parent) return { ok: false, error: '父 profile 不存在' };
   const projectDir = parentCtx.sessionStore ? parentCtx.sessionStore.state.selectedProjectDir : null;
 
-  // 与子代理共用同一个 3 名额池。网关是插件调用，应快速失败而不是排队挂住调用方。
-  if (!tryAcquireAgentSlot()) {
-    return { ok: false, error: '并发已达上限（子代理 + 网关共 3 个），请稍后重试' };
+  // 与子代理共用**同一账号**的名额池（按 profileId 隔离，不同账号互不影响）。
+  // 网关是插件调用，应快速失败而不是排队挂住调用方。
+  if (!tryAcquireAgentSlot(parentCtx.profileId)) {
+    return { ok: false, error: '并发已达上限（该账号的子代理 + 网关已占满），请稍后重试' };
   }
-  const releaseGatewaySlot = makeAgentReleaser();
+  const releaseGatewaySlot = makeAgentReleaser(parentCtx.profileId);
 
   const subProfile = _profileManager.createSubagentProfile(parent, 'gateway');
   subProfile.subagentConfig = {

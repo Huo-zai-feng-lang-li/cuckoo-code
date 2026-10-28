@@ -18,6 +18,9 @@ const SET_FIELDS: [string, string][] = [
   ['send-delay-max', 'sendDelayMax'],
   ['attach-delay-min', 'attachDelayMin'],
   ['attach-delay-max', 'attachDelayMax'],
+  ['max-concurrent-agents', 'maxConcurrentAgents'],
+  ['agent-start-interval-min', 'agentStartIntervalMin'],
+  ['agent-start-interval-max', 'agentStartIntervalMax'],
 ];
 
 function setVal(id: string, v: any): void {
@@ -76,6 +79,9 @@ function collectSettings(): any {
     sendDelayMax: num('send-delay-max'),
     attachDelayMin: num('attach-delay-min'),
     attachDelayMax: num('attach-delay-max'),
+    maxConcurrentAgents: parseInt(getVal('max-concurrent-agents'), 10) || 0,
+    agentStartIntervalMin: num('agent-start-interval-min'),
+    agentStartIntervalMax: num('agent-start-interval-max'),
   };
 }
 

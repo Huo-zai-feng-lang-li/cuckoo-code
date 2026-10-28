@@ -146,6 +146,11 @@ interface SettingsData {
   goalMaxIterations: number;
   /** 拒绝 webFetch 访问内网/保留地址（默认关闭） */
   ssrfGuard: boolean;
+  /** 子代理并发上限（1~10；默认 3） */
+  maxConcurrentAgents: number;
+  /** 子代理启动间隔区间（秒；0 = 不等待，默认 0） */
+  agentStartIntervalMin: number;
+  agentStartIntervalMax: number;
 }
 
 /** 读取当前设置（UI 单位：秒） */
@@ -176,6 +181,10 @@ function getSettingsData(): SettingsData {
     attachDelayMax: sec(lsGet('cuckoo-attach-delay-max'), 10),
     goalMaxIterations: int(lsGet('cuckoo-goal-max-iterations'), 50),
     ssrfGuard: lsGet('cuckoo-ssrf-guard') === '1',
+    // 子代理并发/间隔：主进程权威源，AI 页面 localStorage 仅作回显缓存
+    maxConcurrentAgents: int(lsGet('cuckoo-max-concurrent-agents'), 3),
+    agentStartIntervalMin: sec(lsGet('cuckoo-agent-start-interval-min'), 0),
+    agentStartIntervalMax: sec(lsGet('cuckoo-agent-start-interval-max'), 0),
   };
 }
 
@@ -238,6 +247,23 @@ function applySettingsData(data: any): { success: boolean; error?: string } {
     if (goalMax !== null) localStorage.setItem('cuckoo-goal-max-iterations', String(goalMax));
     // ssrfGuard 仅当显式提供时才写（避免未传该字段的调用方把它清成 0）
     if (data && data.ssrfGuard !== undefined) localStorage.setItem('cuckoo-ssrf-guard', data.ssrfGuard ? '1' : '0');
+    // 子代理字段：仅当显式提供时才写（同 ssrfGuard 模式，避免误清）
+    if (data && data.maxConcurrentAgents !== undefined && data.maxConcurrentAgents !== null && data.maxConcurrentAgents !== '') {
+      const m = parseInt(data.maxConcurrentAgents, 10);
+      if (!Number.isFinite(m) || m < 1) return { success: false, error: '子代理并发上限必须是 1~10 的整数' };
+      if (m > 10) return { success: false, error: '子代理并发上限不能超过 10' };
+      localStorage.setItem('cuckoo-max-concurrent-agents', String(m));
+    }
+    if (data && data.agentStartIntervalMin !== undefined && data.agentStartIntervalMin !== null && data.agentStartIntervalMin !== '') {
+      const v = secToMs(data.agentStartIntervalMin);
+      if (!Number.isFinite(v) || v < 0) return { success: false, error: '子代理启动间隔必须是非负数字（秒）' };
+      localStorage.setItem('cuckoo-agent-start-interval-min', String(v));
+    }
+    if (data && data.agentStartIntervalMax !== undefined && data.agentStartIntervalMax !== null && data.agentStartIntervalMax !== '') {
+      const v = secToMs(data.agentStartIntervalMax);
+      if (!Number.isFinite(v) || v < 0) return { success: false, error: '子代理启动间隔必须是非负数字（秒）' };
+      localStorage.setItem('cuckoo-agent-start-interval-max', String(v));
+    }
   } catch (err: any) {
     return { success: false, error: '写入失败: ' + err.message };
   }
