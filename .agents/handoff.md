@@ -1,4 +1,4 @@
-# 最新接续状态 (2026-10-28 22:30)
+# 最新接续状态 (2026-10-28 23:40)
 
 ## 核心进展
 
@@ -17,6 +17,14 @@
 5. **停止闭环**：`stopGeneration` 的 not-generating / escape 改为成功；`onPhoneStop` 统一 clearBusy；`requestAbort` 级联 `emitUserStop`；`observer.ts` 中止后丢弃残余帧与工具回传。
 6. **壳页面布局跨窗口同步**：`layout-sync.ts`（新）+ `sidebar.ts` / `activitybar-visibility.ts` / `ui-prefs.ts` / `shell-preload.ts`。
 7. **手机端**：任务完成通知（task-done 与 ai-reply 区分）、电量优化单次引导、停止收尾。
+
+## v0.10.156 追加：子代理并发闸门
+
+- 新增 `src/app/agent-semaphore.ts`：计数信号量，`MAX_CONCURRENT_AGENTS = 3`，超出排队，排队超时（默认 5 分钟）抛错。
+- 名额「直接交接」给队首（不先减再加），避免插队；`makeAgentReleaser()` 幂等释放。
+- `runAgent` 接入闸门（`await acquireAgentSlot()` + `try/finally` 释放），并修复既有计数泄漏：`incRunning` 从 `_createWindow` 之前挪到之后，用 `counted` 标记保证配对。
+- 测试 `test/app/agent-semaphore.test.js`：8 个用例（满额立即进入 / 排队 FIFO / 超时抛错不泄漏 / 空池释放不为负 / 幂等释放 / 交接期间计数不变）。
+- 全量验证：typecheck ✅ / test 131 套件 1275 用例 ✅ / lint 0 errors ✅ / compile ✅。
 
 ## 未闭环项（真机验证，一项都没跑）
 

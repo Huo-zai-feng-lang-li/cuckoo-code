@@ -10,7 +10,7 @@ export const apiMetas: ToolApiMeta[] = [
     order: 14,
     category: 'Agent',
     name: 'runAgent',
-    doc: '把任务委派给一个子代理（独立上下文的 AI 对话）执行，返回子代理的最终结果摘要。适合大范围搜索/分析、独立子任务，避免污染当前上下文。',
+    doc: '把任务委派给一个子代理（独立上下文的 AI 对话）执行，返回子代理的最终结果摘要。适合大范围搜索/分析、独立子任务，避免污染当前上下文。同一时刻最多 3 个子代理在跑，超出会排队。',
     params: 'name: string, task: string',
     returns: 'Promise<string>',
     paramDocs: {
@@ -18,20 +18,20 @@ export const apiMetas: ToolApiMeta[] = [
       task: '要委派的任务描述',
     },
     returnsDoc: '子代理的最终文本结果',
-    throws: '代理不存在、父窗口上下文缺失或执行超时时抛出异常',
+    throws: '代理不存在、父窗口上下文缺失、执行超时或排队超时时抛出异常',
   },
   {
     order: 15,
     category: 'Agent',
     name: 'runAgents',
-    doc: '并行委派多个子代理（每个独立上下文），全部完成后按顺序返回结果。适合多个互不依赖的子任务同时推进，比逐个 runAgent 快得多。',
+    doc: '并行委派多个子代理（每个独立上下文），全部完成后按顺序返回结果。适合多个互不依赖的子任务同时推进，比逐个 runAgent 快得多。同一时刻最多 3 个子代理在跑，超出的会排队等待（排队超时则报错）。',
     params: 'tasks: { name: string, task: string }[]',
     returns: 'Promise<string>',
     paramDocs: {
       tasks: '任务数组，每项 { name: 子代理名, task: 任务描述 }',
     },
     returnsDoc: '各子代理结果的汇总文本（按输入顺序）',
-    throws: 'tasks 为空或格式非法、父窗口上下文缺失时抛出异常',
+    throws: 'tasks 为空或格式非法、父窗口上下文缺失或排队超时时抛出异常',
   },
 ];
 
@@ -92,7 +92,7 @@ class RunAgentsTool extends Tool {
     return {
       name: 'tool:runAgents',
       order: 114,
-      text: '使用 runAgents(tasks) 并行委派多个子代理（tasks 是 { name, task } 数组）。适合多个互不依赖的子任务同时推进，比逐个 runAgent 快。全部完成后按顺序返回结果。',
+      text: '使用 runAgents(tasks) 并行委派多个子代理（tasks 是 { name, task } 数组）。适合多个互不依赖的子任务同时推进，比逐个 runAgent 快。全部完成后按顺序返回结果。注意：同一时刻最多 3 个子代理在跑，超出的会排队等待（排队超时则报错），不要一次委派过多。',
     };
   }
 
@@ -134,7 +134,7 @@ class RunAgentTool extends Tool {
   constructor() {
     super(
       'runAgent',
-      '把任务委派给子代理（独立上下文的 AI 对话），返回结果摘要。适合大范围搜索/分析、独立子任务。',
+      '把任务委派给子代理（独立上下文的 AI 对话），返回结果摘要。适合大范围搜索/分析、独立子任务。同一时刻最多 3 个子代理在跑，超出会排队。',
       {
         type: 'object',
         properties: {
@@ -152,7 +152,7 @@ class RunAgentTool extends Tool {
     return {
       name: 'tool:runAgent',
       order: 113,
-      text: '使用 runAgent(name, task) 把任务委派给子代理。子代理在独立上下文中完成，只把结果摘要返回。',
+      text: '使用 runAgent(name, task) 把任务委派给子代理。子代理在独立上下文中完成，只把结果摘要返回。同一时刻最多 3 个子代理在跑，超出会排队。',
     };
   }
 

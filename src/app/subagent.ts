@@ -7,6 +7,7 @@
  * 依赖注入：createWindow / profileManager 由 entry.ts 注入，避免循环依赖。
  */
 import * as windowState from './window.js';
+import { acquireAgentSlot, makeAgentReleaser } from './agent-semaphore.js';
 
 type CreateWindowFn = (profile: any) => number;
 
@@ -194,39 +195,50 @@ export async function runAgent(opts: {
   // 父会话 ID（发起子代理的那个对话；为 null 时血缘记不了）
   const parentSessionId = (parentStore && parentStore.state && parentStore.state.currentSessionId) || null;
 
-  // 创建子代理窗口（复用父 partition）
+  // 父 profile 先校验：同步快速失败，不占并发队列名额
   const parent = _profileManager.getProfileById(opts.parentProfileId);
   if (!parent) throw new Error('父 profile 不存在: ' + opts.parentProfileId);
-  const subProfile = _profileManager.createSubagentProfile(parent, opts.agentName);
-  subProfile.subagentConfig = {
-    agentName: opts.agentName,
-    task: opts.task,
-    systemPrompt: opts.systemPrompt,
-    tools: opts.tools || null,
-    maxTurns: opts.maxTurns || null,
-    projectDir: projectDir || null, // 传给子代理窗口，供 overlay 显示"当前项目目录"
-  };
-  console.log('[子代理] 启动 ' + opts.agentName + ' (父窗口 ' + opts.parentWindowId + ', 项目目录 ' + (projectDir || '无') + ')');
-  incRunning(opts.parentProfileId);
-  const windowId = _createWindow(subProfile);
-  registerRunning({ windowId, parentWindowId: opts.parentWindowId, agentName: opts.agentName, task: opts.task });
 
-  // 关键：把父窗口的项目目录写入子代理窗口的 sessionStore，
-  // 否则子代理执行工具（execute-js 从 ctx.sessionStore.state.selectedProjectDir 取）
-  // 时 projectDir 为 null，相对路径/初始化状态都会错。
+  // 并发闸门：子代理复用父 partition（同一登录态 / 浏览器指纹），
+  // 同账号多路并发是明显的机器人特征。超出 MAX_CONCURRENT_AGENTS 时排队，
+  // 排队超时直接抛错（不静默降级）。
+  await acquireAgentSlot();
+  const releaseSlot = makeAgentReleaser();
+  let windowId = -1;
+  let counted = false;
   try {
-    const subCtx = windowState.getWindowContext(windowId);
-    if (subCtx && subCtx.sessionStore) {
-      if (projectDir) subCtx.sessionStore.state.selectedProjectDir = projectDir;
-      // 血缘：子代理对话 -> 父对话（会话 ID 出现时自动绑定）
-      if (parentSessionId) {
-        subCtx.sessionStore.state.pendingLineage = { parentId: parentSessionId, kind: 'subagent', agentName: opts.agentName };
+    const subProfile = _profileManager.createSubagentProfile(parent, opts.agentName);
+    subProfile.subagentConfig = {
+      agentName: opts.agentName,
+      task: opts.task,
+      systemPrompt: opts.systemPrompt,
+      tools: opts.tools || null,
+      maxTurns: opts.maxTurns || null,
+      projectDir: projectDir || null, // 传给子代理窗口，供 overlay 显示"当前项目目录"
+    };
+    console.log('[子代理] 启动 ' + opts.agentName + ' (父窗口 ' + opts.parentWindowId + ', 项目目录 ' + (projectDir || '无') + ')');
+    // 必须先创建窗口成功再计数：createWindow 抛错时若已计数，decRunning 会因
+    // 外层 try 尚未进入而永不执行，造成 runningByProfile 计数泄漏。
+    windowId = _createWindow(subProfile);
+    incRunning(opts.parentProfileId);
+    counted = true;
+    registerRunning({ windowId, parentWindowId: opts.parentWindowId, agentName: opts.agentName, task: opts.task });
+
+    // 关键：把父窗口的项目目录写入子代理窗口的 sessionStore，
+    // 否则子代理执行工具（execute-js 从 ctx.sessionStore.state.selectedProjectDir 取）
+    // 时 projectDir 为 null，相对路径/初始化状态都会错。
+    try {
+      const subCtx = windowState.getWindowContext(windowId);
+      if (subCtx && subCtx.sessionStore) {
+        if (projectDir) subCtx.sessionStore.state.selectedProjectDir = projectDir;
+        // 血缘：子代理对话 -> 父对话（会话 ID 出现时自动绑定）
+        if (parentSessionId) {
+          subCtx.sessionStore.state.pendingLineage = { parentId: parentSessionId, kind: 'subagent', agentName: opts.agentName };
+        }
       }
-    }
-  } catch (_) { /* ignore */ }
+    } catch (_) { /* ignore */ }
 
-  // 提示词由子代理窗口自己调 initProject 生成（复用初始化流程）
-  try {
+    // 提示词由子代理窗口自己调 initProject 生成（复用初始化流程）
     const r = await waitForDone(windowId, timeoutMs);
     if (r.text === '__SUBAGENT_TIMEOUT__') throw new Error('子代理执行超时');
     if (r.text === '__SUBAGENT_CANCELLED__') throw new Error('子代理已被用户取消');
@@ -234,27 +246,33 @@ export async function runAgent(opts: {
     // 达轮次上限被截断：显式标注，避免主对话把半截结果当完整结论
     return r.partial ? '[子代理达到轮次上限，以下为部分结果]\n' + r.text : r.text;
   } catch (err: any) {
-    updateRunning(windowId, { status: 'error', error: err && err.message ? err.message : String(err) });
+    if (windowId >= 0) {
+      updateRunning(windowId, { status: 'error', error: err && err.message ? err.message : String(err) });
+    }
     throw err;
   } finally {
-    decRunning(opts.parentProfileId);
-    removeRunning(windowId);
-    // 关闭子代理窗口
-    // 用 destroy()：close() 在隐藏窗口上可能不生效（实测窗口会堆积、最终资源耗尽）
-    try {
-      const ctx = windowState.getWindowContext(windowId);
-      if (ctx && ctx.win && !ctx.win.isDestroyed()) {
-        try { ctx.win.destroy(); }
-        catch (e1) { try { ctx.win.close(); } catch (e2) { /* ignore */ } }
-      }
-    } catch (_) { /* ignore */ }
-    // 通知父窗口刷新工作区列表（子代理的会话/血缘已写入账本）
-    try {
-      const parentCtx = windowState.getWindowContext(opts.parentWindowId);
-      if (parentCtx && parentCtx.win && !parentCtx.win.isDestroyed()) {
-        parentCtx.win.webContents.send('shell-sessions-changed');
-      }
-    } catch (_) { /* ignore */ }
+    if (counted) decRunning(opts.parentProfileId);
+    if (windowId >= 0) {
+      removeRunning(windowId);
+      // 关闭子代理窗口
+      // 用 destroy()：close() 在隐藏窗口上可能不生效（实测窗口会堆积、最终资源耗尽）
+      try {
+        const ctx = windowState.getWindowContext(windowId);
+        if (ctx && ctx.win && !ctx.win.isDestroyed()) {
+          try { ctx.win.destroy(); }
+          catch (e1) { try { ctx.win.close(); } catch (e2) { /* ignore */ } }
+        }
+      } catch (_) { /* ignore */ }
+      // 通知父窗口刷新工作区列表（子代理的会话/血缘已写入账本）
+      try {
+        const parentCtx = windowState.getWindowContext(opts.parentWindowId);
+        if (parentCtx && parentCtx.win && !parentCtx.win.isDestroyed()) {
+          parentCtx.win.webContents.send('shell-sessions-changed');
+        }
+      } catch (_) { /* ignore */ }
+    }
+    // 槽位释放放在最后：即使清理抛错也不会漏放
+    releaseSlot();
   }
 }
 

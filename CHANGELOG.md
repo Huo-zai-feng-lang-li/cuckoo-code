@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.10.156] - 2026-10-28
+
+### Added
+- **子代理并发闸门（防封）**：新增 `src/app/agent-semaphore.ts` 计数信号量，同一时刻最多 **3 个**子代理在跑（与网关 `GATEWAY_MAX_CONCURRENT` 保持一致），超出的排队等待，排队超时（默认 5 分钟）直接报错。此前 `runAgents` 用 `Promise.all` 并发启动，有几个 task 就同时开几个窗口，而子代理复用父 profile 的 partition（同一登录态 / 浏览器指纹），同账号多路并发是明显的机器人特征。
+- 信号量采用「名额直接交接」策略：释放时若队列非空，把名额转交给队首而非先减再加，避免插队窗口；`makeAgentReleaser()` 返回幂等释放器，防重复调用把计数减成负数。
+
+### Fixed
+- **子代理计数泄漏**：`runAgent` 原先在 `_createWindow` 之前就调用 `incRunning`，若创建窗口抛错，`decRunning` 永不执行，`runningByProfile` 计数永久偏高（会误判「该 profile 有子代理在跑」）。已改为窗口创建成功后再计数，并用 `counted` 标记保证加减严格配对。
+
+### Changed
+- `runAgent` / `runAgents` 的工具描述补充并发上限说明，引导模型不要一次委派过多子任务。
+
 ## [0.10.155] - 2026-10-28
 
 ### Added
