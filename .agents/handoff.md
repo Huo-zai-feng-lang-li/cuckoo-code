@@ -1,9 +1,10 @@
 # 会话接续状态
 
 ## 当前版本
-- package.json / CHANGELOG 顶部：**v0.10.122**（2026-10-28）
+- package.json / CHANGELOG 顶部：**v0.10.151**（2026-10-28）
 
 ## 最近完成的工作
+- **v0.10.151**：修复手机 APK 扫码连不上远程的问题。根因是 `src/remote/server.ts` 无任何 CORS 支持——APK（Capacitor）页面 origin 为 `https://localhost`，跨域访问远程域名且带 `Authorization` 头 → 触发 `OPTIONS` 预检 → 服务端在 token 鉴权处直接 401 → 浏览器阻断真实请求 → 手机端提示「无法连接电脑」。修复：`handleRequest` 首行统一设置 CORS 头，并在鉴权前对 `OPTIONS` 直接返回 204；新增 3 条真实 HTTP 集成测试（预检 204、跨域 GET 200、**401 也带 CORS 头**防回归）。
 - **v0.10.85**：恢复自动更新静默安装（不再弹窗）。
 - **文档校准（本轮）**：
   - `.cuckoo/CUCKOO.md`：修正「加 IPC」链路（壳页面走 `src/app/shell-preload.ts`，`bridge/api.ts` 只给 AI 网页）；compile 由"三步"更正为 8 步；生成物禁改清单补 `bootstrap.generated.ts` 与 `src/ui/shell.html`。

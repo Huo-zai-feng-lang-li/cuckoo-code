@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.10.151] - 2026-10-28
+
+### Fixed
+- 修复手机 App（APK）扫码连接远程电脑端失败、提示「无法连接电脑（请确认电脑在线、隧道已开）」的问题。根因是远程 HTTP 服务没有任何 CORS 支持：APK（Capacitor）内页面 origin 为 `https://localhost`，访问远程域名属跨域，携带 `Authorization` 头触发浏览器 `OPTIONS` 预检，而服务端在 token 鉴权处直接返回 401，导致浏览器阻断真实请求、手机端 `fetch` 抛异常。
+- 远程服务在鉴权前放行 CORS 与 `OPTIONS` 预检（返回 204），并让所有响应（含 401/403/404/500 与静态资源）统一携带 `Access-Control-Allow-Origin` 等头。服务使用 Bearer token 鉴权、不使用 Cookie，故 `Access-Control-Allow-Origin: *` 不降低鉴权强度。
+
 ## [0.10.150] - 2026-10-28
 
 ### Changed

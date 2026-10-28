@@ -11,13 +11,13 @@ const WebSocket = require('ws');
 let portCounter = 17800;
 const TEST_TOKEN = 'testtoken1234567890abcdef123456';
 
-function httpGet(port, pathStr, headers = {}) {
+function httpRequest(port, pathStr, { method = 'GET', headers = {} } = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request({
       hostname: '127.0.0.1',
       port,
       path: pathStr,
-      method: 'GET',
+      method,
       headers,
     }, (res) => {
       let data = '';
@@ -27,6 +27,10 @@ function httpGet(port, pathStr, headers = {}) {
     req.on('error', reject);
     req.end();
   });
+}
+
+function httpGet(port, pathStr, headers = {}) {
+  return httpRequest(port, pathStr, { method: 'GET', headers });
 }
 
 describe('remote server', () => {
@@ -172,6 +176,45 @@ describe('remote server', () => {
     });
     assert.strictEqual(resGoodAuth.statusCode, 200);
     assert.deepStrictEqual(JSON.parse(resGoodAuth.body), { ok: true });
+  });
+
+  test('CORS：OPTIONS 预检放行（204 + 允许 Authorization），不被 401 拦截', async () => {
+    const port = ++portCounter;
+    await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
+
+    const res = await httpRequest(port, '/api/ping', {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'https://localhost',
+        'access-control-request-method': 'GET',
+        'access-control-request-headers': 'authorization',
+      },
+    });
+    assert.strictEqual(res.statusCode, 204);
+    assert.strictEqual(res.headers['access-control-allow-origin'], '*');
+    assert.match(String(res.headers['access-control-allow-headers'] || ''), /authorization/i);
+  });
+
+  test('CORS：实际跨域 GET 响应带 Access-Control-Allow-Origin', async () => {
+    const port = ++portCounter;
+    await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
+
+    const res = await httpRequest(port, '/api/ping', {
+      headers: { origin: 'https://localhost', authorization: 'Bearer ' + TEST_TOKEN },
+    });
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.headers['access-control-allow-origin'], '*');
+  });
+
+  test('CORS：鉴权失败(401)的响应也必须带 CORS 头（否则浏览器把 401 吞成 CORS 错误）', async () => {
+    const port = ++portCounter;
+    await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
+
+    const res = await httpRequest(port, '/api/ping', {
+      headers: { origin: 'https://localhost', authorization: 'Bearer wrongtoken' },
+    });
+    assert.strictEqual(res.statusCode, 401);
+    assert.strictEqual(res.headers['access-control-allow-origin'], '*');
   });
 
   test('WebSocket 连接与鉴权：token 错误拒绝，正确则连通并收发', async () => {

@@ -7,8 +7,8 @@ android {
         applicationId "com.cuckoo.cuckoocode"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10150
-        versionName "0.10.150"
+        versionCode 10151
+        versionName "0.10.151"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

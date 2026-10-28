@@ -225,8 +225,22 @@ async function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, 
   }
 }
 
+/** CORS：APK（Capacitor）内页面 origin 为 `https://localhost`，访问本服务属跨域；
+ *  带 Authorization 头会触发浏览器 OPTIONS 预检，必须在鉴权前放行，否则手机端
+ *  fetch 直接抛异常（表现为"无法连接电脑"）。服务本身用 token 鉴权、不使用 cookie，
+ *  故允许任意 Origin 安全（Access-Control-Allow-Origin: * 即可，无需回显）。 */
+function applyCorsHeaders(res: http.ServerResponse): void {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
+
 /** HTTP 请求处理 */
 function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
+  applyCorsHeaders(res);
+  // 预检请求：不携带 token，必须在鉴权前直接放行（否则被 401 拦截 → 手机端连不上）
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   const url = parseUrl(req);
   if (!url) { res.writeHead(400); res.end('bad request'); return; }
   // API / WS 路径需鉴权
