@@ -37,15 +37,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Cache runtime binaries
-        uses: actions/cache@v4
-        with:
-          path: resources/runtime
-          key: runtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/runtime-versions.json') }}
-
-      - name: Fetch runtime binaries
-        run: node scripts/fetch-runtime.mjs
-
       - name: Build
         run: npm run ${{ matrix.command }}
 
@@ -55,7 +46,6 @@ jobs:
           name: dist-${{ matrix.os }}
           path: |
             dist/*.exe
-            dist/*.blockmap
             dist/*.zip
             dist/*.dmg
             dist/latest*.yml
@@ -87,31 +77,42 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      # 利用 Runner 自带的最新 Android SDK，接受许可
-      - name: Accept Android Licenses
-        run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 10.0
+          packages: 'platforms;android-35 build-tools;35.0.0'
+          accept-android-sdk-licenses: true
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
 
       - name: Sync Capacitor
         run: npx cap sync android
 
       - name: Build Android APK
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --stacktrace --info > gradle-build.log 2>&1 || true
+          tail -n 100 gradle-build.log
 
-      - name: Rename APK
-        run: |
-          mkdir -p dist
-          cp android/app/build/outputs/apk/debug/app-debug.apk dist/cuckoo-remote-android.apk
-
-      - name: Upload artifacts
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: dist-android
-          path: dist/cuckoo-remote-android.apk
-          retention-days: 30
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
+
+      - name: Upload Build Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: android/gradle-build.log
 
   publish:
     needs: [build, build-android]
@@ -122,9 +123,6 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-
-      - name: List files
-        run: ls -la dist/
 
       - name: Publish Release
         if: ${{ !contains(github.ref_name, '-beta') }}
@@ -137,7 +135,6 @@ jobs:
           generate_release_notes: true
           files: |
             dist/*.exe
-            dist/*.blockmap
             dist/*.zip
             dist/*.dmg
             dist/latest*.yml
