@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.125] - 2026-10-28
+
+### Fixed
+- 弃用不稳定的 `android-actions/setup-android@v3`，直接使用 GitHub runner 预装 Android SDK，通过 sdkmanager 安装 platform 35 / build-tools 35。
+
 ## [0.10.123] - 2026-10-28
 
 ### Fixed
