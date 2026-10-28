@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.163] - 2026-10-29
+
+### Fixed
+- **仓库清理**：v0.10.162 提交时误把 7 个调试临时文件（`test/rs.txt` / `test/st.txt` / `test/tmp/*`）一并提交。现删除这些文件，并补 `.gitignore` 规则（`test/tmp/`、`test/*.txt`、`*.test.bak`）防止再次误提交。功能无变化。
+
 ## [0.10.162] - 2026-10-29
 
 ### Fixed
