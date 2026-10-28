@@ -378,6 +378,9 @@ function saveAutoCompactConfig() {
     localStorage.setItem('cuckoo-auto-compact-enabled', enabled ? '1' : '0');
     localStorage.setItem('cuckoo-auto-compact-threshold', String(th));
   } catch (_) {}
+  if ((window as any).saveAutoCompactGlobal) {
+    (window as any).saveAutoCompactGlobal(enabled, th);
+  }
   showToast('自动压缩设置已保存：' + (enabled ? '开启，阈值 ' + th + ' 万' : '关闭'), 2500);
 }
 

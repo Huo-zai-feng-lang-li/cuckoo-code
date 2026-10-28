@@ -205,21 +205,21 @@ function init(): void {
         ipcRenderer.send('cuckoo-settings-result', { reqId, ok: false, error: err.message });
       }
     });
-    // 自动压缩配置读写（壳页面 Token 页 → 主进程转发 → 这里读写）
-    ipcRenderer.on('cuckoo-get-autocompact', (_e: any, { reqId }: any) => {
+    // 暴露给 overlay 保存自动压缩配置
+    (window as any).saveAutoCompactGlobal = (enabled: boolean, threshold: number) => {
+      ipcRenderer.invoke('save-autocompact', { data: { enabled, threshold } }).catch(() => {});
+    };
+
+    // 接收主进程的全局设置广播，同步到 localStorage
+    ipcRenderer.on('cuckoo-sync-settings', (_e: any, { data }: any) => {
       try {
-        ipcRenderer.send('cuckoo-autocompact-result', { reqId, ok: true, data: getAutoCompactConfig() });
-      } catch (err: any) {
-        ipcRenderer.send('cuckoo-autocompact-result', { reqId, ok: false, error: err.message });
-      }
-    });
-    ipcRenderer.on('cuckoo-save-autocompact', (_e: any, { reqId, data }: any) => {
-      try {
-        const res = applyAutoCompactConfig(data);
-        ipcRenderer.send('cuckoo-autocompact-result', { reqId, ok: res.success, data: res.data, error: res.error });
-      } catch (err: any) {
-        ipcRenderer.send('cuckoo-autocompact-result', { reqId, ok: false, error: err.message });
-      }
+        if (data.autoCompactEnabled !== undefined) {
+          localStorage.setItem('cuckoo-auto-compact-enabled', data.autoCompactEnabled ? '1' : '0');
+        }
+        if (data.autoCompactThreshold !== undefined) {
+          localStorage.setItem('cuckoo-auto-compact-threshold', String(data.autoCompactThreshold));
+        }
+      } catch (_) { /* ignore */ }
     });
     ipcRenderer.on('cuckoo-trigger-compact', (_e: any, payload: any) => {
       const reqId = payload && payload.reqId;

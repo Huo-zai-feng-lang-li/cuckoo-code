@@ -39,6 +39,10 @@ export interface AgentSettings {
   /** 子代理启动间隔区间（秒；0 = 不等待，默认 0） */
   agentStartIntervalMin: number;
   agentStartIntervalMax: number;
+  /** 自动压缩上下文（默认 false） */
+  autoCompactEnabled: boolean;
+  /** 自动压缩阈值（单位：万 token，默认 80） */
+  autoCompactThreshold: number;
 }
 
 /**
@@ -68,6 +72,8 @@ export const AGENT_SETTINGS_DEFAULTS: AgentSettings = {
   maxConcurrentAgents: 3,
   agentStartIntervalMin: 0,
   agentStartIntervalMax: 0,
+  autoCompactEnabled: false,
+  autoCompactThreshold: 80,
 };
 
 function getUserDir(): string {
@@ -150,6 +156,9 @@ function normalize(raw: any): AgentSettings {
     })(),
     agentStartIntervalMin: intervalMin,
     agentStartIntervalMax: intervalMax,
+    autoCompactEnabled: raw.autoCompactEnabled === undefined ? d.autoCompactEnabled
+      : (raw.autoCompactEnabled === true || raw.autoCompactEnabled === 'true'),
+    autoCompactThreshold: nonNeg(raw.autoCompactThreshold, d.autoCompactThreshold),
   };
 }
 

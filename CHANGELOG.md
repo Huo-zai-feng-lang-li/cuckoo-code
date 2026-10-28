@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.10.166] - 2026-10-29
+
+### Fixed
+- **纯净模式字号跨窗口不实时同步**：此前修改字号仅对发起修改的窗口生效，现遍历所有窗口的 harness 视图进行应用。
+- **自动压缩配置未全局化**：此前自动压缩的开关与阈值存在各窗口自己的 localStorage 中，互不同步。现已加入全局设置 `agent-settings.json`，并接管废弃的本地中转逻辑。任何窗口修改后，主进程落盘并广播给所有窗口，实时生效（`src/app/global-settings.ts`、`src/app/ipc/settings.ts`、`src/bridge/entry.ts`、`src/overlay/events.ts`）。
+
 ## [0.10.165] - 2026-10-29
 
 ### Fixed

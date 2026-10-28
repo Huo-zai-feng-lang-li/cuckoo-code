@@ -173,15 +173,18 @@ function registerSettingsIpc(): void {
     return { success: true, data: def };
   });
 
-  // 自动压缩配置：读（仍按窗口隔离，属纯净模式自身设置，暂不纳入全局）
-  ipcMain.handle('get-autocompact', async (event: any) => {
-    const r = await requestFromAiPage(event, 'cuckoo-get-autocompact');
-    return r.ok ? { success: true, data: r.data } : { success: false, error: r.error };
+  // 自动压缩配置：读（全局通用）
+  ipcMain.handle('get-autocompact', async () => {
+    const s = globalSettings.readAgentSettings();
+    return { success: true, data: { enabled: s.autoCompactEnabled, threshold: s.autoCompactThreshold } };
   });
-  // 自动压缩配置：保存
+  // 自动压缩配置：保存（全局通用）
   ipcMain.handle('save-autocompact', async (event: any, { data }: any) => {
-    const r = await requestFromAiPage(event, 'cuckoo-save-autocompact', data);
-    return r.ok ? { success: true, data: r.data } : { success: false, error: r.error };
+    const th = parseFloat(data.threshold);
+    if (!Number.isFinite(th) || th <= 0) return { success: false, error: '阈值需为正数（万）' };
+    const next = globalSettings.writeAgentSettings({ autoCompactEnabled: !!data.enabled, autoCompactThreshold: th });
+    broadcastSettings(next);
+    return { success: true, data: { enabled: next.autoCompactEnabled, threshold: next.autoCompactThreshold } };
   });
   // 手动触发压缩
   ipcMain.handle('trigger-compact', async (event: any) => {
@@ -199,10 +202,12 @@ function registerSettingsIpc(): void {
   ipcMain.handle('set-ui-prefs', async (event: any, { data }: any) => {
     const next = writePrefs(data || {});
     try {
-      const ctx: any = windowState.getContextByWebContents(event.sender);
-      const hv = ctx && ctx.harnessView;
-      if (hv && hv.webContents && !hv.webContents.isDestroyed()) {
-        applyHarnessZoom(hv.webContents, next.harnessZoom);
+      const contexts = windowState.getAllContexts();
+      for (const ctx of contexts) {
+        const hv = ctx && (ctx as any).harnessView;
+        if (hv && hv.webContents && !hv.webContents.isDestroyed()) {
+          applyHarnessZoom(hv.webContents, next.harnessZoom);
+        }
       }
     } catch (_) { /* ignore */ }
     // 布局变化（侧栏宽度 / 活动栏顺序 / 显隐）→ 广播给所有壳页面（含本窗口，幂等）。
