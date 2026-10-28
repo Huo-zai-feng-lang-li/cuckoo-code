@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.121] - 2026-10-28
+
+### Fixed
+- 移除容易导致编译失败的 `@capacitor-mlkit/barcode-scanning` 依赖，恢复最纯粹的原生外壳构建。
+
 ## [0.10.120] - 2026-10-28
 
 ### Changed
