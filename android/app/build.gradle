@@ -7,8 +7,8 @@ android {
         applicationId "com.cuckoo.cuckoocode"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10153
-        versionName "0.10.153"
+        versionCode 10166
+        versionName "0.10.166"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +16,26 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // 固定签名：仓库内置 keystore，保证每次构建签名一致，APK 可覆盖升级。
+    // 之前用 Gradle 默认 debug.keystore，CI 每次临时生成一把新的 →
+    // 每版签名都不同，安卓必然拒绝覆盖安装。
+    signingConfigs {
+        release {
+            storeFile file("cuckoo-release.keystore")
+            storePassword "cuckoo-remote-2026"
+            keyAlias "cuckoo"
+            keyPassword "cuckoo-remote-2026"
+        }
+    }
     buildTypes {
+        debug {
+            // debug 包也走固定签名，这样 CI 产出的 APK 跨版本可覆盖安装
+            signingConfig signingConfigs.release
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
     }
 }

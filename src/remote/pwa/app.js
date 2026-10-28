@@ -203,7 +203,9 @@
     }
     // 原生壳显示扫码按钮
     if (scanBtn) {
-      scanBtn.style.display = 'block';
+      // 清空内联 display，回落到 CSS 的 flex 布局（写死 'block' 会压过
+      // style.css 的 #btn-scan{display:flex}，导致图标与文字上下错位）
+      scanBtn.style.display = '';
       scanBtn.addEventListener('click', async () => {
         try {
           const cap = window.Capacitor || {};
