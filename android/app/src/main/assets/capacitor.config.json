@@ -1,0 +1,5 @@
+{
+	"appId": "com.cuckoo.cuckoocode",
+	"appName": "CuckooCode",
+	"webDir": "src/remote/pwa"
+}
