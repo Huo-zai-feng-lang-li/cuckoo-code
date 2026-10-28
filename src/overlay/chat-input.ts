@@ -19,7 +19,8 @@ function getCurrentProvider(): any {
 }
 
 /**
- * 生成随机等待时间（ms），范围由 state 配置（默认 4-12 秒拟人化节奏）
+ * 生成随机等待时间（ms），范围由 state 配置（state 默认 6-16 秒拟人化节奏；
+ * 此处 1000/10000 仅为 state 未就绪时的兜底，正常路径不会用到）。
  */
 function randomDelay(): number {
   const min = typeof state.sendDelayMin === 'number' ? state.sendDelayMin : 1000;
