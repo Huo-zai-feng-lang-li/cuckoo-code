@@ -7,7 +7,7 @@
  * 依赖注入：createWindow / profileManager 由 entry.ts 注入，避免循环依赖。
  */
 import * as windowState from './window.js';
-import { acquireAgentSlot, makeAgentReleaser } from './agent-semaphore.js';
+import { acquireAgentSlot, makeAgentReleaser, tryAcquireAgentSlot, cancelQueuedByParent } from './agent-semaphore.js';
 
 type CreateWindowFn = (profile: any) => number;
 
@@ -107,7 +107,9 @@ export { listRunning, updateRunning };
  * 供停止按钮经 IPC 调用。返回取消的数量。
  */
 export function cancelSubagentsByParent(parentWindowId: number): number {
-  let n = 0;
+  // 先取消该窗口下**排队中**的请求：它们还没创建窗口、不在 runningSubagents 里，
+  // 若不取消，前 3 个跑完后排队的照样会启动，用户的"停止"意图落空。
+  let n = cancelQueuedByParent(parentWindowId);
   for (const [windowId, info] of Array.from(runningSubagents.entries())) {
     if (info.parentWindowId !== parentWindowId) continue;
     try {
@@ -202,7 +204,7 @@ export async function runAgent(opts: {
   // 并发闸门：子代理复用父 partition（同一登录态 / 浏览器指纹），
   // 同账号多路并发是明显的机器人特征。超出 MAX_CONCURRENT_AGENTS 时排队，
   // 排队超时直接抛错（不静默降级）。
-  await acquireAgentSlot();
+  await acquireAgentSlot({ parentWindowId: opts.parentWindowId });
   const releaseSlot = makeAgentReleaser();
   let windowId = -1;
   let counted = false;
@@ -288,9 +290,9 @@ export async function runAgent(opts: {
 /** 网关流式回调表：windowId → 回调（收到该窗口流式进度时调用） */
 const gatewayStreams = new Map<number, (chunk: any) => void>();
 
-/** 当前并发中的网关窗口数（防请求洪水把内存吃光） */
-let gatewayActive = 0;
-const GATEWAY_MAX_CONCURRENT = 3;
+// 网关与子代理**共用** agent-semaphore 的 3 个名额。
+// 早期实现用独立的 gatewayActive 计数，两条路径各 3 个 → 实际可同时跑 6 个隐藏窗口，
+// 同账号多路并发的风控目标被绕过。现在统一到同一个池子。
 
 /** 取某窗口的网关流式回调（IPC 层用） */
 export function getGatewayStream(windowId: number): ((chunk: any) => void) | undefined {
@@ -308,14 +310,17 @@ export async function runGatewayQuery(opts: {
   timeoutMs?: number;
 }): Promise<{ ok: boolean; text?: string; error?: string }> {
   if (!_createWindow || !_profileManager) return { ok: false, error: '子代理依赖未注入' };
-  if (gatewayActive >= GATEWAY_MAX_CONCURRENT) {
-    return { ok: false, error: '网关繁忙（并发已达上限 ' + GATEWAY_MAX_CONCURRENT + '），请稍后重试' };
-  }
   const parentCtx = windowState.getWindowContext(opts.parentWindowId);
   if (!parentCtx) return { ok: false, error: '父窗口不存在' };
   const parent = _profileManager.getProfileById(parentCtx.profileId);
   if (!parent) return { ok: false, error: '父 profile 不存在' };
   const projectDir = parentCtx.sessionStore ? parentCtx.sessionStore.state.selectedProjectDir : null;
+
+  // 与子代理共用同一个 3 名额池。网关是插件调用，应快速失败而不是排队挂住调用方。
+  if (!tryAcquireAgentSlot()) {
+    return { ok: false, error: '并发已达上限（子代理 + 网关共 3 个），请稍后重试' };
+  }
+  const releaseGatewaySlot = makeAgentReleaser();
 
   const subProfile = _profileManager.createSubagentProfile(parent, 'gateway');
   subProfile.subagentConfig = {
@@ -327,8 +332,14 @@ export async function runGatewayQuery(opts: {
     projectDir: projectDir || null,
     isGateway: true, // 纯用户消息（不加"任务"框架），让 AI 自由用工具
   };
-  gatewayActive++;
-  const windowId = _createWindow(subProfile);
+  let windowId = -1;
+  try {
+    windowId = _createWindow(subProfile);
+  } catch (err: any) {
+    // 创建窗口失败：必须立刻归还名额，否则池子被永久占住
+    releaseGatewaySlot();
+    return { ok: false, error: (err && err.message) ? err.message : String(err) };
+  }
   if (opts.onChunk) gatewayStreams.set(windowId, opts.onChunk);
   const timeoutMs = opts.timeoutMs || 300000;
   let hardTimer: any = null;
@@ -349,7 +360,6 @@ export async function runGatewayQuery(opts: {
     return { ok: false, error: (err && err.message) ? err.message : String(err) };
   } finally {
     if (hardTimer) { try { clearTimeout(hardTimer); } catch (_) {} }
-    gatewayActive = Math.max(0, gatewayActive - 1);
     gatewayStreams.delete(windowId);
     // 强制销毁：close() 在隐藏窗口上可能不生效（实测窗口堆积、最终资源耗尽）
     try {
@@ -359,5 +369,7 @@ export async function runGatewayQuery(opts: {
         catch (e1) { try { ctx.win.close(); } catch (e2) { /* ignore */ } }
       }
     } catch (_) { /* ignore */ }
+    // 名额归还放最后：即使销毁窗口抛错也不会漏放
+    releaseGatewaySlot();
   }
 }

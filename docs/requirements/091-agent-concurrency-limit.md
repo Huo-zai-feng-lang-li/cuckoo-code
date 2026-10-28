@@ -13,8 +13,16 @@
 
 ## 3. 详细设计
 
+> **重要修订**：初版只在子代理路径接了闸门，网关仍用文件内独立的 `gatewayActive`（上限 3），
+> 两条路径各 3 个 → 实际可同时跑 6 个隐藏窗口，闸门形同虚设。现统一到同一个池子，
+> 并给排队加上"用户停止即取消"能力。
+
+- `src/app/agent-semaphore.ts`：
+  - 信号量 `MAX_CONCURRENT_AGENTS = 3`，子代理与网关**共用**。
+  - `acquireAgentSlot({ timeoutMs, parentWindowId })`：排队版，超时或取消时抛错。
+  - `tryAcquireAgentSlot()`：非阻塞版，满额立即返回 false（网关用）。
+  - `cancelQueuedByParent(parentWindowId)`：取消某父窗口下排队中的请求。
 - `src/app/subagent.ts`：
-  - 新增信号量 `MAX_CONCURRENT_AGENTS = 3`（与网关一致）。
   - `acquireAgentSlot(timeoutMs?)`：有空位立即占用；无空位则排队，排队超时（默认 300 秒）抛错并移出队列。
   - `releaseAgentSlot()`：直接把槽位交接给下一个等待者（不增减计数），无等待者才 `--`。
   - `makeAgentReleaser()`：返回幂等释放函数，防重复调用把计数减成负数。

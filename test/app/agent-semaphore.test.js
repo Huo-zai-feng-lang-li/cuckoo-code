@@ -4,8 +4,10 @@ import assert from 'node:assert';
 import {
   MAX_CONCURRENT_AGENTS,
   acquireAgentSlot,
+  tryAcquireAgentSlot,
   releaseAgentSlot,
   makeAgentReleaser,
+  cancelQueuedByParent,
   getActiveCount,
   getQueueLength,
   _resetForTest,
@@ -65,7 +67,7 @@ test('排队超时抛错且不泄漏槽位', async () => {
   for (let i = 0; i < MAX_CONCURRENT_AGENTS; i++) await acquireAgentSlot();
 
   await assert.rejects(
-    () => acquireAgentSlot(50),
+    () => acquireAgentSlot({ timeoutMs: 50 }),
     /排队超时/
   );
   assert.strictEqual(getQueueLength(), 0, '超时后必须从队列摘除');
@@ -115,4 +117,86 @@ test('释放时把名额直接交接给队首，active 不变（无插队窗口�
 
 test('上限常量符合预期（3）', () => {
   assert.strictEqual(MAX_CONCURRENT_AGENTS, 3);
+});
+
+// ===== 统一池：网关用 tryAcquire，与子代理共享名额 =====
+
+test('tryAcquireAgentSlot：有空位返回 true，满额立即返回 false 不排队', async () => {
+  for (let i = 0; i < MAX_CONCURRENT_AGENTS; i++) {
+    assert.strictEqual(tryAcquireAgentSlot(), true, '第 ' + (i + 1) + ' 个应成功');
+  }
+  assert.strictEqual(tryAcquireAgentSlot(), false, '满额应立即失败');
+  assert.strictEqual(getQueueLength(), 0, 'tryAcquire 不排队');
+  assert.strictEqual(getActiveCount(), MAX_CONCURRENT_AGENTS);
+});
+
+test('子代理占满后网关拿不到名额（两条路径共用同一个池）', async () => {
+  // 3 个名额全被子代理（排队版）占走
+  for (let i = 0; i < MAX_CONCURRENT_AGENTS; i++) await acquireAgentSlot();
+  assert.strictEqual(tryAcquireAgentSlot(), false, '网关不应有独立名额');
+
+  // 释放一个后网关立刻能拿到
+  releaseAgentSlot();
+  assert.strictEqual(tryAcquireAgentSlot(), true, '释放的名额网关可用');
+  assert.strictEqual(getActiveCount(), MAX_CONCURRENT_AGENTS);
+});
+
+test('网关占满后子代理要排队（反向）', async () => {
+  for (let i = 0; i < MAX_CONCURRENT_AGENTS; i++) assert.strictEqual(tryAcquireAgentSlot(), true);
+
+  let entered = false;
+  const queued = acquireAgentSlot({ timeoutMs: 2000 }).then(() => { entered = true; });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.strictEqual(entered, false, '满额时子代理应排队');
+  assert.strictEqual(getQueueLength(), 1);
+
+  releaseAgentSlot();
+  await queued;
+  assert.strictEqual(entered, true);
+});
+
+// ===== 排队取消：用户点停止时，排队中的请求也要被取消 =====
+
+test('cancelQueuedByParent：只取消指定父窗口的排队者，不误伤其他窗口', async () => {
+  for (let i = 0; i < MAX_CONCURRENT_AGENTS; i++) await acquireAgentSlot();
+
+  const pA = acquireAgentSlot({ parentWindowId: 1 });
+  const pB = acquireAgentSlot({ parentWindowId: 2 });
+  const pA2 = acquireAgentSlot({ parentWindowId: 1 });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.strictEqual(getQueueLength(), 3);
+
+  const cancelled = cancelQueuedByParent(1);
+  assert.strictEqual(cancelled, 2, '窗口 1 的两个排队者都应被取消');
+  assert.strictEqual(getQueueLength(), 1, '窗口 2 的排队者应保留');
+
+  await assert.rejects(() => pA, /已被用户取消/);
+  await assert.rejects(() => pA2, /已被用户取消/);
+
+  // 保留的那个仍能正常进入
+  releaseAgentSlot();
+  await pB;
+  assert.strictEqual(getActiveCount(), MAX_CONCURRENT_AGENTS);
+});
+
+test('cancelQueuedByParent：取消后槽位计数不受影响（没漏没多）', async () => {
+  for (let i = 0; i < MAX_CONCURRENT_AGENTS; i++) await acquireAgentSlot();
+  const p = acquireAgentSlot({ parentWindowId: 7 });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.strictEqual(getActiveCount(), MAX_CONCURRENT_AGENTS);
+  assert.strictEqual(getQueueLength(), 1);
+
+  cancelQueuedByParent(7);
+  await assert.rejects(() => p, /已被用户取消/);
+  assert.strictEqual(getActiveCount(), MAX_CONCURRENT_AGENTS, '排队者未占名额，计数不变');
+  assert.strictEqual(getQueueLength(), 0);
+});
+
+test('cancelQueuedByParent：不存在的父窗口返回 0', async () => {
+  for (let i = 0; i < MAX_CONCURRENT_AGENTS; i++) await acquireAgentSlot();
+  acquireAgentSlot({ parentWindowId: 1 });
+  await new Promise((r) => setTimeout(r, 20));
+
+  assert.strictEqual(cancelQueuedByParent(999), 0);
+  assert.strictEqual(getQueueLength(), 1, '其他窗口的排队者不受影响');
 });

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.10.157] - 2026-10-28
+
+### Fixed
+- **网关与子代理各自独立计数，并发上限形同虚设**：`runGatewayQuery` 用文件内的 `gatewayActive`（上限 3），子代理走 `agent-semaphore`（上限 3），两条路径互不相干 → 实际可同时跑 **6 个**隐藏窗口，同账号多路并发的风控目标被绕过。现两条路径共用同一个 3 名额池：子代理走排队版 `acquireAgentSlot`，网关走非阻塞版 `tryAcquireAgentSlot`（插件调用应快速失败，不该挂住调用方）。
+- **用户点停止无法取消排队中的子代理**：`cancelSubagentsByParent` 只遍历已创建窗口的 `runningSubagents`，排队中的请求不在其中 → 前 3 个跑完后排队的照样启动，"停止"意图落空。新增 `cancelQueuedByParent`，停止时一并取消该父窗口下排队中的请求，并在 `acquireAgentSlot` 增加 `parentWindowId` 参数用于登记。
+
 ## [0.10.156] - 2026-10-28
 
 ### Added
