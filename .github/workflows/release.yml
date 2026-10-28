@@ -91,10 +91,17 @@ jobs:
         if: always()
         run: |
           cd android
-          echo "====== LAST 300 LINES ======"
-          tail -n 300 gradle-build.log || true
+          echo "====== LAST 200 LINES ======"
+          tail -n 200 gradle-build.log || true
           echo "====== ERROR LINES ======"
-          grep -i -E "error|fail|exception|What went wrong|Caused by" gradle-build.log | head -n 150 || true
+          grep -i -E "error|fail|exception|What went wrong|Caused by" gradle-build.log | head -n 100 || true
+          {
+            echo "### Gradle Build Log (last 200 lines)"
+            echo ""
+            echo '```'
+            tail -n 200 gradle-build.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload APK
         if: success()

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.128] - 2026-10-28
+
+### Fixed
+- 修复 Android Gradle 构建的 Kotlin stdlib 版本冲突：强制统一 `kotlin-stdlib` / `kotlin-stdlib-jdk7` / `kotlin-stdlib-jdk8` 为 1.8.22，消除 `Duplicate class` 报错。
+
 ## [0.10.127] - 2026-10-28
 
 ### Fixed
