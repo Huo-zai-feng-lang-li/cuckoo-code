@@ -311,12 +311,14 @@ svg { flex-shrink: 0; }
 #server-input {
   flex: 1;
   min-width: 0;
-  border: none;
-  background: transparent;
+  border: none !important;
+  background: transparent !important;
   color: var(--fg);
-  font-size: 14px;
-  padding: 11px 0;
-  outline: none;
+  font-size: 14.5px !important;
+  padding: 12px 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-appearance: none;
 }
 #server-input::placeholder {
   color: var(--fg-muted);

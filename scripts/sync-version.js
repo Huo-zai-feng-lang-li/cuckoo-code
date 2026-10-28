@@ -49,8 +49,8 @@ if (fs.existsSync(gradlePath)) {
   const patch = parts[2] || 0;
   const versionCode = major * 1000000 + minor * 1000 + patch;
 
-  gradle = gradle.replace(/versionCode\s+\d+/, `versionCode ${versionCode}`);
-  gradle = gradle.replace(/versionName\s+"[^"]+"/, `versionName "${version}"`);
+  gradle = gradle.replace(/versionCode\s+\d+/g, `versionCode ${versionCode}`);
+  gradle = gradle.replace(/versionName\s+"[^"]+"/g, `versionName "${version}"`);
   
   fs.writeFileSync(gradlePath, gradle, 'utf8');
   console.log('[sync-version] android/app/build.gradle -> versionCode ' + versionCode + ', versionName ' + version);
