@@ -53,7 +53,9 @@ captures/
 .idea/navEditor.xml
 
 # Keystore files
-# Uncomment the following lines if you do not want to check your keystore files in.
+# 注意：本项目的 cuckoo-release.keystore 是**有意入库**的固定签名文件，
+# 用于让 CI 每次产出的 APK 签名一致、可覆盖升级（详见需求 094）。
+# 因此下面两行必须保持注释状态，切勿取消注释，否则会导致 CI 构建缺签名文件。
 #*.jks
 #*.keystore
 
