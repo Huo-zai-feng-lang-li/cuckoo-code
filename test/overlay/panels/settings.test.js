@@ -195,3 +195,31 @@ test('getSettingsData 默认值符合反风控安全配置', () => {
   assert.strictEqual(data.sendDelayMax, 16, '发送延迟最大默认应为 16s');
 });
 
+test('resetSettingsData 必须清空全部设置键（含子代理 3 个，回归 v0.10.162）', () => {
+  // 铺满全部 key：13 个旧字段 + 3 个子代理字段 + ssrfGuard
+  const ALL_KEYS = [
+    'cuckoo-retry-enabled', 'cuckoo-retry-delay-min', 'cuckoo-retry-delay-max',
+    'cuckoo-retry-count', 'cuckoo-retry-429-delay', 'cuckoo-retry-429-count',
+    'cuckoo-retry-prompt', 'cuckoo-xhr-idle-timeout', 'cuckoo-watchdog-prompt',
+    'cuckoo-watchdog-count', 'cuckoo-send-delay-min', 'cuckoo-send-delay-max',
+    'cuckoo-attach-delay-min', 'cuckoo-attach-delay-max',
+    'cuckoo-goal-max-iterations', 'cuckoo-ssrf-guard',
+    'cuckoo-max-concurrent-agents', 'cuckoo-agent-start-interval-min', 'cuckoo-agent-start-interval-max',
+  ];
+  for (const k of ALL_KEYS) localStorage.setItem(k, '9999');
+
+  const data = settings.resetSettingsData();
+
+  // 子代理 3 个 key：v0.10.162 曾漏清，此处锁死契约
+  assert.strictEqual(localStorage.getItem('cuckoo-max-concurrent-agents'), null, '并发上限应被清');
+  assert.strictEqual(localStorage.getItem('cuckoo-agent-start-interval-min'), null, '间隔 min 应被清');
+  assert.strictEqual(localStorage.getItem('cuckoo-agent-start-interval-max'), null, '间隔 max 应被清');
+  // 普通 key 抽查
+  assert.strictEqual(localStorage.getItem('cuckoo-retry-delay-min'), null, 'retry-delay-min 应被清');
+  assert.strictEqual(localStorage.getItem('cuckoo-send-delay-min'), null, 'send-delay-min 应被清');
+  assert.strictEqual(localStorage.getItem('cuckoo-ssrf-guard'), null, 'ssrf-guard 应被清');
+  // state 重置到默认
+  assert.strictEqual(data.sendDelayMin, 6, 'state.sendDelayMin 应重置为 6');
+  assert.strictEqual(data.sendDelayMax, 16, 'state.sendDelayMax 应重置为 16');
+});
+
