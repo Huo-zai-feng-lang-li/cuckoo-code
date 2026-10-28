@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.136] - 2026-10-28
+
+### Fixed
+- 修复 Android 打包版本号未递增的致命缺陷：现在 CI 会自动将 Git tag 转换为 Android 的 `versionCode`（如 `0.10.135` -> `10135`）和 `versionName`。
+
 ## [0.10.135] - 2026-10-28
 
 ### Added
