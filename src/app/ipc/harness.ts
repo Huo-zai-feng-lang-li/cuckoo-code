@@ -312,7 +312,9 @@ async function stopGeneration(ctx: any): Promise<any> {
       // 因此这里统一用「页面内合成 Pointer 事件」点击，不使用 CDP debugger。
       const clickInPage = async (x: number, y: number): Promise<boolean> => {
         const js = '(function(){' +
-          'var el=document.elementFromPoint(' + x + ',' + y + ');' +
+          // 优先按标记找，解决纯净模式下页面不可见 elementFromPoint 返回 null 的问题
+          'var el=document.querySelector("[data-cuckoo-stop-target]");' +
+          'if(!el){el=document.elementFromPoint(' + x + ',' + y + ');}' +
           'if(!el)return false;' +
           'var opts={bubbles:true,cancelable:true,view:window,clientX:' + x + ',clientY:' + y + ',button:0};' +
           'try{el.dispatchEvent(new PointerEvent("pointerdown",opts));}catch(e){}' +
@@ -798,6 +800,11 @@ function attachStopFn(doc: any, win: any) {
     var vh = win.innerHeight || 800;
     var vw = win.innerWidth || 1200;
     var kw = /(停止|停止生成|stop|cancel|abort|结束|中断)/i;
+    // 清理旧的标记
+    var olds = doc.querySelectorAll('[data-cuckoo-stop-target]');
+    for (var oi = 0; oi < olds.length; oi++) {
+      try { olds[oi].removeAttribute('data-cuckoo-stop-target'); } catch (e) {}
+    }
     var cands = doc.querySelectorAll('button, [role="button"], [class*="stop"], [class*="abort"]');
     var scored = [];
     for (var i = 0; i < cands.length; i++) {
@@ -862,23 +869,11 @@ function attachStopFn(doc: any, win: any) {
     if (pick) {
       var cx = Math.round(pick.rect.left + pick.rect.width / 2);
       var cy = Math.round(pick.rect.top + pick.rect.height / 2);
-      // 页面内派发完整事件序列 + 原生 click（命中正确元素后通常有效）
-      var clickedInPage = false;
-      try {
-        var t = pick.el;
-        var opts = { bubbles: true, cancelable: true, view: win, clientX: cx, clientY: cy, button: 0 };
-        try { t.dispatchEvent(new win.PointerEvent('pointerdown', opts)); } catch (e) {}
-        t.dispatchEvent(new win.MouseEvent('mousedown', opts));
-        try { t.dispatchEvent(new win.PointerEvent('pointerup', opts)); } catch (e) {}
-        t.dispatchEvent(new win.MouseEvent('mouseup', opts));
-        t.dispatchEvent(new win.MouseEvent('click', opts));
-        try { if (typeof t.click === 'function') t.click(); } catch (e) {}
-        clickedInPage = true;
-      } catch (e) { /* ignore */ }
+      // 纯定位：只打标记，点击统一交给主进程的 clickInPage（避免重复点击）
+      try { pick.el.setAttribute('data-cuckoo-stop-target', '1'); } catch (e) { /* ignore */ }
       var onTop = null;
       try { var oe = doc.elementFromPoint(cx, cy); onTop = oe ? ((oe.tagName || '') + '.' + String(oe.className || '').slice(0, 50)) : null; } catch (e) { /* ignore */ }
-      console.log('[zhipu?][stopDiag] onTop=' + onTop + ' tag=' + ((pick.el.tagName || '') + '.' + String(pick.el.className || '').slice(0, 40)));
-      return { found: true, x: cx, y: cy, onTop: onTop, clickedInPage: clickedInPage, tag: (pick.el.tagName || '') + '.' + String(pick.el.className || '').slice(0, 40), candidates: diag };
+      return { found: true, x: cx, y: cy, onTop: onTop, clickedInPage: false, tag: (pick.el.tagName || '') + '.' + String(pick.el.className || '').slice(0, 40), candidates: diag };
     }
     return { found: false, candidates: diag };
   } catch (e: any) {

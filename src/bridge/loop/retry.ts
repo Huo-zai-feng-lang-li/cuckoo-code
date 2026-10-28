@@ -105,6 +105,8 @@ let onSuccess = function onSuccess(): void {
 };
 
 let cancelPending = function cancelPending(): void {
+  // 如果没有待重试，说明只是普通停止/切换，不应该弹提示
+  if (!pending) return;
   clearPending();
   emitRetryState('cancelled');
   showToast('已取消自动重试', 2000);

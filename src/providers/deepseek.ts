@@ -124,6 +124,11 @@ const deepseek = {
       try {
         var vh = win.innerHeight || 800;
         var vw = win.innerWidth || 1200;
+        // 清理旧的标记，防止多次调用产生重影
+        var olds = doc.querySelectorAll('[data-cuckoo-stop-target]');
+        for (var oi = 0; oi < olds.length; oi++) {
+          try { olds[oi].removeAttribute('data-cuckoo-stop-target'); } catch (e) {}
+        }
         var cands = doc.querySelectorAll('.ds-button--primary, button[class*="ds-button--primary"]');
         for (var i = 0; i < cands.length; i++) {
           var el = cands[i];
@@ -138,9 +143,10 @@ const deepseek = {
           var isArrow = d.indexOf('M8.3125') !== -1;
           if (!isSquare && !isArrow) continue;
           if (isArrow) {
-            // 空闲态：这是发送按钮，绝不能点
-            return { found: false, generating: false, reason: 'idle-arrow' };
+            // 空闲态：这是发送按钮，绝不能点。跳过继续遍历（可能有多个主按钮）
+            continue;
           }
+          try { el.setAttribute('data-cuckoo-stop-target', '1'); } catch (e) {}
           var cx = Math.round(rect.left + rect.width / 2);
           var cy = Math.round(rect.top + rect.height / 2);
           return { found: true, generating: true, x: cx, y: cy, tag: 'DIV.ds-button--primary(square)' };

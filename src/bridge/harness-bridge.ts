@@ -24,6 +24,7 @@ import {
   requestAbort, clearAbort,
 } from './intercept/observer.js';
 import { sendToChat, cancelPendingSend, onMessageDelivered } from '../overlay/chat-input.js';
+import { hideToolMask } from '../overlay/panel.js';
 import { cancelPendingForSwitch, resumeRetry } from './loop/retry.js';
 
 const require = createRequire(import.meta.url);
@@ -170,6 +171,7 @@ export function initHarnessBridge(): void {
     try { cancelPendingSend(); } catch (_) { /* ignore */ }
     try { requestAbort(); } catch (_) { /* ignore */ }
     try { cancelPendingForSwitch(); } catch (_) { /* ignore */ }
+    try { hideToolMask(); } catch (_) { /* ignore */ }
     setAiGenerating(false);
     console.log('[Cuckoo Harness] 收到停止信号：已取消待发送 + 中止工具回传 + 取消重试倒计时');
   });

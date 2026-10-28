@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.10.152] - 2026-10-28
+
+### Fixed
+- 修复纯净模式（Harness）与手机远程端点击「停止」后，AI 网页任务实际未停止、工具执行遮罩（「工具调用执行中」）残留的问题。根因：纯净模式下 AI 网页被 `setVisible(false)` 隐藏，`document.elementFromPoint` 在隐藏页面恒返回 `null`，导致"定位停止按钮 → 派发点击"整条链路失效。
+- 停止按钮定位改为 DOM 标记法：`getStopFn` / `attachStopFn` 找到按钮时打上 `data-cuckoo-stop-target` 标记，点击时优先用 `querySelector` 命中元素，不再依赖元素可见性（`elementFromPoint` 保留为回退）。
+- `attachStopFn` 移除内部点击逻辑，改为纯定位（此前与 `clickInPage` 重复点击，可能误触发送按钮）。
+- DeepSeek `getStopFn` 遇到「发送箭头」时改为跳过继续遍历，不再直接返回空闲（多主按钮场景下可能误判）。
+- 收到停止信号时强制调用 `hideToolMask()`，避免工具执行遮罩残留。
+- 修复停止正常任务时误弹「已取消自动重试」提示的问题：`cancelPending` 增加 `pending` 守卫，仅在确实处于重试倒计时时提示。
+
 ## [0.10.151] - 2026-10-28
 
 ### Fixed
