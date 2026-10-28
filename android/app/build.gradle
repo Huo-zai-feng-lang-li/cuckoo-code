@@ -7,7 +7,7 @@ android {
         applicationId "com.cuckoo.cuckoocode"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10140
+        versionCode 101420140
         versionName "0.10.140"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
