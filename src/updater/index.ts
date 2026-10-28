@@ -96,8 +96,10 @@ function isUpdatePending(): boolean {
     const reachedTarget = !!target && current === target;
     // 数据不完整（既无 from 又无 target）：无法判断 → 放行，避免锁死
     const incomplete = !from && !target;
-    // 如果标记还在，且版本没变，但已经过了 2 分钟（说明安装失败或被 UAC 拒绝），直接判定为失败放行
-    const installFailed = !!from && current === from && (Date.now() - at > 120000);
+    // 如果标记还在，且版本没变，但已经过了 3 分钟：
+    // 正常静默安装只需十几秒，超过 3 分钟通常是因为用户拒绝了 UAC 授权。
+    // 此时不应将用户锁死 10 分钟，直接判定为安装失败并放行。
+    const installFailed = !!from && current === from && (Date.now() - at > 180000);
     if (expired || versionChanged || reachedTarget || incomplete || installFailed) {
       try { fs.unlinkSync(p); } catch (_) { /* ignore */ }
       return false;
