@@ -348,6 +348,24 @@ if (rmRestart) rmRestart.addEventListener('click', async () => {
   } catch (_) { /* ignore */ }
 });
 
+const rmShowQrcode = document.getElementById('rm-show-qrcode') as HTMLButtonElement | null;
+const rmQrcodeWrap = document.getElementById('rm-qrcode-wrap');
+const rmQrcodeImg = document.getElementById('rm-qrcode-img') as HTMLImageElement | null;
+
+if (rmShowQrcode) {
+  rmShowQrcode.addEventListener('click', async () => {
+    const directEl = document.getElementById('rm-direct-url') as HTMLInputElement | null;
+    if (!directEl || !directEl.value) return;
+    try {
+      if (rmQrcodeWrap) rmQrcodeWrap.style.display = 'block';
+      const dataUrl = await QRCode.toDataURL(directEl.value, { width: 400, margin: 1 });
+      if (rmQrcodeImg) rmQrcodeImg.src = dataUrl;
+    } catch (e) {
+      console.error('生成二维码失败', e);
+    }
+  });
+}
+
 const rmCopyDirect = document.getElementById('rm-copy-direct-url') as HTMLButtonElement | null;
 if (rmCopyDirect) rmCopyDirect.addEventListener('click', async () => {
   const directEl = document.getElementById('rm-direct-url') as HTMLInputElement | null;

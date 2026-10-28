@@ -2707,8 +2707,13 @@ paths:            # 可选；省略 = 始终生效
                   <span class="ck-set-key">直达链接</span>
                   <input type="text" class="ck-set-input" id="rm-direct-url" readonly placeholder="服务启动后生成直达链接" />
                 </div>
-                <div class="ck-actions" style="margin-top: 10px;">
+                <div class="ck-actions" style="margin-top: 10px; display: flex; gap: 10px;">
                   <button class="ck-btn ck-btn-primary" id="rm-copy-direct-url">复制手机直达链接</button>
+                  <button class="ck-btn ck-btn-secondary" id="rm-show-qrcode">生成扫码连接</button>
+                </div>
+                <div id="rm-qrcode-wrap" style="display: none; text-align: center; margin-top: 16px; padding: 16px; background: #fff; border-radius: 8px; width: fit-content; margin-left: auto; margin-right: auto;">
+                  <img id="rm-qrcode-img" style="width: 200px; height: 200px; display: block;" alt="扫码连接" />
+                  <p style="color: #666; font-size: 13px; margin-top: 10px;">使用 Cuckoo App 扫描此二维码</p>
                 </div>
                 <div class="ck-set-field" style="margin-top: 14px;">
                   <span class="ck-set-key">固定外网域名</span>
@@ -6270,6 +6275,22 @@ paths:            # 可选；省略 = 始终生效
     } catch (_) {
     }
   });
+  var rmShowQrcode = document.getElementById("rm-show-qrcode");
+  var rmQrcodeWrap = document.getElementById("rm-qrcode-wrap");
+  var rmQrcodeImg = document.getElementById("rm-qrcode-img");
+  if (rmShowQrcode) {
+    rmShowQrcode.addEventListener("click", async () => {
+      const directEl = document.getElementById("rm-direct-url");
+      if (!directEl || !directEl.value) return;
+      try {
+        if (rmQrcodeWrap) rmQrcodeWrap.style.display = "block";
+        const dataUrl = await QRCode.toDataURL(directEl.value, { width: 400, margin: 1 });
+        if (rmQrcodeImg) rmQrcodeImg.src = dataUrl;
+      } catch (e) {
+        console.error("\u751F\u6210\u4E8C\u7EF4\u7801\u5931\u8D25", e);
+      }
+    });
+  }
   var rmCopyDirect = document.getElementById("rm-copy-direct-url");
   if (rmCopyDirect) rmCopyDirect.addEventListener("click", async () => {
     const directEl = document.getElementById("rm-direct-url");

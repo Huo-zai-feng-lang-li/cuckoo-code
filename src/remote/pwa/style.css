@@ -308,6 +308,46 @@ svg { flex-shrink: 0; }
   margin-right: 8px;
 }
 
+#server-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font-size: 14px;
+  padding: 11px 0;
+  outline: none;
+}
+#server-input::placeholder {
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+#btn-scan {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  background: var(--bg-card);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 14px;
+}
+#btn-scan:active {
+  background: var(--bg-soft);
+  transform: scale(0.98);
+}
+#btn-scan svg {
+  color: var(--accent);
+}
+
 #token-input {
   flex: 1;
   min-width: 0;
