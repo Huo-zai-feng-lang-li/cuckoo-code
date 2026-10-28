@@ -33,7 +33,12 @@
   /** 是否运行在 Capacitor 原生壳里（APK） */
   function isNativeShell() {
     const c = window.Capacitor;
-    return !!(c && (c.isNativePlatform ? c.isNativePlatform() : c.isNative));
+    if (c) {
+      if (typeof c.isNativePlatform === 'function') return c.isNativePlatform();
+      if (c.isNative) return true;
+    }
+    // 兜底：Capacitor 的默认 scheme 是 capacitor: 或 https://localhost
+    return location.protocol === 'capacitor:' || location.hostname === 'localhost';
   }
   const DRAFT_KEY = 'cuckoo-draft';
   // 为当前浏览器标签页生成唯一 ID，用于服务端去重
@@ -56,6 +61,7 @@
 
   // 当前展示窗口（多窗口隔离：只渲染该 profileId 的消息）
   let currentProfileId = '';
+  let profilesReady = false; // 是否已收到服务端的 profile 列表
   // 滚动与回到底部状态（提前声明，避免 renderHistory 时因 TDZ 死区报错）
   let stickToBottom = true;
   let hasNewWhileScrolled = false;
@@ -564,7 +570,6 @@
       return s ? JSON.parse(s) : null;
     } catch { return null; }
   }
-  let profilesReady = false; // 标记是否已收到服务端的 profile 列表
   // 确保 currentProfileId 初始化时同步 last-profile，防止判断失准
   if (!currentProfileId) {
     currentProfileId = localStorage.getItem('cuckoo-last-profile') || '';
