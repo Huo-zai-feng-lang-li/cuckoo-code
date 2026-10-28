@@ -1,9 +1,10 @@
 # 会话接续状态
 
 ## 当前版本
-- package.json / CHANGELOG 顶部：**v0.10.152**（2026-10-28）
+- package.json / CHANGELOG 顶部：**v0.10.153**（2026-10-28）
 
 ## 最近完成的工作
+- **v0.10.153**：手机 APK 新增任务完成本地通知（`@capacitor/local-notifications`，仅后台时触发）；修复停止后看门狗「催活」与普通模式看门狗永久挂起；修复窗口组切换退回后看门狗未恢复。
 - **v0.10.152**：修复纯净模式/手机端「停止」失效（隐藏页面下 `elementFromPoint` 返回 null → 改 DOM 标记定位）、工具遮罩残留、停止时误弹「已取消自动重试」。
 - **v0.10.151**：修复手机 APK 扫码连不上远程的问题。根因是 `src/remote/server.ts` 无任何 CORS 支持——APK（Capacitor）页面 origin 为 `https://localhost`，跨域访问远程域名且带 `Authorization` 头 → 触发 `OPTIONS` 预检 → 服务端在 token 鉴权处直接 401 → 浏览器阻断真实请求 → 手机端提示「无法连接电脑」。修复：`handleRequest` 首行统一设置 CORS 头，并在鉴权前对 `OPTIONS` 直接返回 204；新增 3 条真实 HTTP 集成测试（预检 204、跨域 GET 200、**401 也带 CORS 头**防回归）。
 - **v0.10.85**：恢复自动更新静默安装（不再弹窗）。

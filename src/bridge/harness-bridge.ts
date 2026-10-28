@@ -26,6 +26,7 @@ import {
 import { sendToChat, cancelPendingSend, onMessageDelivered } from '../overlay/chat-input.js';
 import { hideToolMask } from '../overlay/panel.js';
 import { cancelPendingForSwitch, resumeRetry } from './loop/retry.js';
+import { setSuspended as setWatchdogSuspended } from './loop/watchdog.js';
 
 const require = createRequire(import.meta.url);
 const { ipcRenderer } = require('electron');
@@ -73,6 +74,11 @@ export function initHarnessBridge(): void {
   function setAiGenerating(next: boolean): void {
     if (aiGenerating === next) return;
     aiGenerating = next;
+    // AI 从"未工作"变为"正在工作" = 新一轮任务开始，恢复看门狗
+    // （否则普通模式/框架续跑等不经 harness-user-message 的路径会让看门狗永久挂起）
+    if (next === true) {
+      try { setWatchdogSuspended(false); } catch (_) { /* ignore */ }
+    }
     report({ type: 'ai-state', generating: next });
   }
   try {
@@ -155,6 +161,7 @@ export function initHarnessBridge(): void {
     const text = payload && payload.text;
     if (!text) return;
     clearAbort(); // 新消息：清除中止标志
+    try { setWatchdogSuspended(false); } catch (_) { /* ignore */ } // 新任务：恢复看门狗
     sendToChat(text, 'harness', undefined).then((ok) => {
       if (!ok) {
         report({ type: 'status', text: '网页未找到输入框（可能在分享页或页面加载中）', busy: false });
@@ -172,13 +179,16 @@ export function initHarnessBridge(): void {
     try { requestAbort(); } catch (_) { /* ignore */ }
     try { cancelPendingForSwitch(); } catch (_) { /* ignore */ }
     try { hideToolMask(); } catch (_) { /* ignore */ }
+    // 暂停看门狗：否则旧任务的 SSE 静默会触发"请继续"，把已停止的任务催活
+    try { setWatchdogSuspended(true); } catch (_) { /* ignore */ }
     setAiGenerating(false);
-    console.log('[Cuckoo Harness] 收到停止信号：已取消待发送 + 中止工具回传 + 取消重试倒计时');
+    console.log('[Cuckoo Harness] 收到停止信号：已取消待发送 + 中止工具回传 + 取消重试倒计时 + 暂停看门狗');
   });
 
   // 恢复重试（窗口组切换失败退回时）
   ipcRenderer.on('harness-resume-retry', () => {
     try { resumeRetry(); } catch (_) { /* ignore */ }
+    try { setWatchdogSuspended(false); } catch (_) { /* ignore */ }
     console.log('[Cuckoo Harness] 收到恢复重试信号');
   });
 }

@@ -1,6 +1,6 @@
 {
   "name": "cuckoo-code",
-  "version": "0.10.152",
+  "version": "0.10.153",
   "description": "DeepSeek 桌面应用——内嵌浏览器，自动识别 AI 回复中的命令和工具调用并执行",
   "type": "module",
   "main": "out/src/app/entry.js",
@@ -190,6 +190,7 @@
     "@capacitor/android": "^8.5.3",
     "@capacitor/cli": "^8.5.3",
     "@capacitor/core": "^8.5.3",
+    "@capacitor/local-notifications": "^8.3.1",
     "@joplin/turndown-plugin-gfm": "^1.0.67",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@vscode/ripgrep": "^1.18.0",

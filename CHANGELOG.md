@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.10.153] - 2026-10-28
+
+### Added
+- 手机 App（APK）新增本地通知：当 AI 回复完成且 App 处于后台/息屏时，弹出系统通知提醒（标题「Cuckoo 回复完成」+ 正文摘要）。集成 `@capacitor/local-notifications` 插件，仅 APK 生效，Web 端零影响。
+
+### Fixed
+- 修复看门狗在停止后把已停止任务「催活」的问题：`onResponseReceived` 收到 `stopped` 状态也重置计数（原来只认 `finished`）。
+- 修复普通模式停止后看门狗永久挂起的功能退化：恢复时机从「纯净模式用户发消息」改为「AI 重新开始生成」（`setAiGenerating(true)`），覆盖普通模式、目标/计划自动续跑、框架投递等所有不经过 harness-user-message 的路径。
+- 修复窗口组切换失败退回后看门狗未恢复的问题（`harness-resume-retry` 同步恢复）。
+
 ## [0.10.152] - 2026-10-28
 
 ### Fixed

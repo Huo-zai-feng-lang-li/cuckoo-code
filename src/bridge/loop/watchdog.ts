@@ -74,9 +74,9 @@ function onStreamIdle(detail: any): void {
   }
 }
 
-/** 收到任意终态回复：成功则重置计数 */
+/** 收到任意终态回复：成功或用户停止都重置计数 */
 function onResponseReceived(status: string): void {
-  if (status === 'finished') idleCount = 0;
+  if (status === 'finished' || status === 'stopped') idleCount = 0;
 }
 
 /** 手动重置（压缩等流程可调用） */

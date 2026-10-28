@@ -537,6 +537,10 @@
         cache.push({ t: 'assistant', text: msg.text || '' });
         if (cache.length > 50) cache.shift();
         saveHistoryCache(cache);
+        // 如果页面在后台，弹本地通知
+        if (document.visibilityState === 'hidden') {
+          notifyReply(msg.text || '');
+        }
         break;
       }
       case 'ai-stop':
@@ -1256,6 +1260,59 @@
   // ===== 工具函数 =====
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   function escapeAttr(s) { return escapeHtml(s); }
+
+  // ===== 本地通知（仅 APK 生效）=====
+  let notifyChannelReady = false;
+  async function notifyReply(text) {
+    try {
+      if (!isNativeShell()) return;
+      const cap = window.Capacitor || {};
+      let plugin = cap.Plugins && cap.Plugins.LocalNotifications;
+      if (!plugin && typeof cap.registerPlugin === 'function') {
+        try { plugin = cap.registerPlugin('LocalNotifications'); } catch {}
+      }
+      if (!plugin) return;
+      
+      const perm = await plugin.checkPermissions();
+      if (perm.display !== 'granted') {
+        const req = await plugin.requestPermissions();
+        if (req.display !== 'granted') return;
+      }
+      // Android 8+ 必须显式创建通知渠道，否则通知无声/不弹；同 id 幂等，但仍省一次跨桥调用
+      if (!notifyChannelReady) {
+        try {
+          await plugin.createChannel({
+            id: 'cuckoo_notify',
+            name: 'Cuckoo 任务通知',
+            description: 'AI 任务完成时提醒',
+            importance: 5,
+            visibility: 1,
+            sound: 'default',
+            vibration: true,
+          });
+          notifyChannelReady = true;
+        } catch { /* 建渠道失败不阻断通知 */ }
+      }
+      
+      
+      const title = 'Cuckoo 回复完成';
+      // 按 Unicode 码点截断，避免切坏 emoji 代理对；正文是纯文本/markdown，不做 HTML 剥离
+      const body = text ? (Array.from(String(text)).slice(0, 100).join('') || '任务已结束') : '任务已结束';
+      
+      // 不传 schedule = 立即显示。避免 Android 12+ 因缺少 SCHEDULE_EXACT_ALARM 导致精确闹钟调度失败。
+      await plugin.schedule({
+        notifications: [{
+          id: Date.now() % 2147483647,
+          title,
+          body,
+          smallIcon: 'ic_stat_icon_config_sample',
+          channelId: 'cuckoo_notify',
+        }]
+      });
+    } catch (e) {
+      console.warn('[Notify] 弹出失败', e);
+    }
+  }
 
   // ===== 原生保活（仅 APK 生效）=====
   function startNativeKeepAlive() {
