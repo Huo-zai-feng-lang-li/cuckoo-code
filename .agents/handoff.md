@@ -18,6 +18,11 @@
 6. **壳页面布局跨窗口同步**：`layout-sync.ts`（新）+ `sidebar.ts` / `activitybar-visibility.ts` / `ui-prefs.ts` / `shell-preload.ts`。
 7. **手机端**：任务完成通知（task-done 与 ai-reply 区分）、电量优化单次引导、停止收尾。
 
+## 未闭环项（真机验证，一项都没跑）
+
+> 代码层面已闭环并发版，但按「必须端到端真实运行验证」规则，以下均未验证：
+> 尤其第 1 项是本轮修复的严重 bug 的唯一直接验收点。
+
 ## 验证结果
 
 - `npm run typecheck` → 通过
@@ -39,4 +44,4 @@
 - 工作目录: `d:\Desktop\Super-File\cuckoo-code`
 - 版本: `0.10.155`（跳过含 4 的 0.10.154）
 - 快照: `snap-1793193757560-hnuqay`（审计修复前）
-- 垃圾文件清单（未删，需确认）：`wyp/`(11.9M) `coverage/`(6.1M) `.codegraph/`(19.8M) `.archify/`(0.8M) `temp_audit_diff.patch` `wyp-t.log`；可重建：`dist/`(782M) `out/`(58M)
+- 垃圾清理：已删除 `dist/` `out/` `wyp/` `coverage/` `.codegraph/` `.archify/` `temp_audit_diff.patch` `wyp-t.log`（共约 879 MB）。`out/` 已由 `npm run compile` 重建。
