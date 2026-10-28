@@ -2,6 +2,7 @@
  * 远程控制页：配置、启动/停止、固定隧道托管、免密直达链接与令牌管理。
  */
 import { api, ckAlert } from '../shared.js';
+import QRCode from 'qrcode';
 
 function renderRemoteStatus(running: boolean, clients?: number, clientList?: any[]): void {
   const dot = document.getElementById('rm-dot');
@@ -359,10 +360,10 @@ if (rmShowQrcode) {
     try {
       if (rmQrcodeWrap) rmQrcodeWrap.style.display = 'block';
       if (rmQrcodeContainer) {
-        rmQrcodeContainer.innerHTML = '';
-        const canvas = document.createElement('canvas');
-        await QRCode.toCanvas(canvas, directEl.value, { width: 200, margin: 1 });
-        rmQrcodeContainer.appendChild(canvas);
+        // 生成 SVG 并转为 Data URL 赋给 img 标签，最稳定
+        const svgStr = await QRCode.toString(directEl.value, { type: 'svg', margin: 1 });
+        const base64 = btoa(unescape(encodeURIComponent(svgStr)));
+        rmQrcodeContainer.innerHTML = `<img src="data:image/svg+xml;base64,${base64}" style="width: 200px; height: 200px; display: block;" alt="QR" />`;
       }
     } catch (e) {
       console.error('生成二维码失败', e);
