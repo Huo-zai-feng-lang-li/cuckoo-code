@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.108] - 2026-10-28
+
+### Fixed
+- 修复 GitHub Actions 安卓打包：对齐 Capacitor 8 要求的 API 35，并移除不稳定的第三方 setup-android 插件，直接在 Runner 原生环境构建。
+
 ## [0.10.107] - 2026-10-28
 
 ### Fixed

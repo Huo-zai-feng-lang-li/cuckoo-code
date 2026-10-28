@@ -87,11 +87,10 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          cmdline-tools-version: 10.0
-          packages: 'platforms;android-34 build-tools;34.0.0'
+      # 利用 Runner 自带的最新 Android SDK，接受许可
+      - name: Accept Android Licenses
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Sync Capacitor
         run: npx cap sync android
