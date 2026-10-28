@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.139] - 2026-10-28
+
+### Fixed
+- 修复 CI 打包时未正确将版本号同步到 Android 的 `versionCode` 和 `versionName` 的问题。
+
 ## [0.10.138] - 2026-10-28
 
 ### Fixed
