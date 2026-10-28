@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.10.130] - 2026-10-28
+
+### Added
+- PWA 登录页新增「电脑端地址」输入框，解决 APK 内 `location.host` 为 localhost 导致无法连接的问题。
+- APK 启动时自动调用 `KeepAlive.start()` 启动前台服务，并请求电池优化白名单，真正实现后台保活。
+
+### Fixed
+- 修复 APK 内 WebSocket 与 `/api/ping` 都指向 localhost 的问题，改为使用用户填写的服务器地址。
+
 ## [0.10.129] - 2026-10-28
 
 ### Fixed
