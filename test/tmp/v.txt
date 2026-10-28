@@ -1,0 +1,22 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.1 [39m[90mD:/Desktop/Super-File/cuckoo-code[39m
+
+ [32m✓[39m test/overlay/panels/settings.test.js[2m > [22mopenSettings 从 localStorage 加载到输入框[32m 225[2mms[22m[39m
+ [32m✓[39m test/overlay/panels/settings.test.js[2m > [22mopenSettings 毫秒转秒[32m 3[2mms[22m[39m
+ [32m✓[39m test/overlay/panels/settings.test.js[2m > [22mopenSettings 无 localStorage 用默认值[32m 3[2mms[22m[39m
+ [32m✓[39m test/overlay/panels/settings.test.js[2m > [22mcloseSettings 加 hidden 类[32m 3[2mms[22m[39m
+ [32m✓[39m test/overlay/panels/settings.test.js[2m > [22msaveSettings 校验：最小间隔非法被拒绝[32m 4[2mms[22m[39m
+ [32m✓[39m test/overlay/panels/settings.test.js[2m > [22msaveSettings 校验：最大间隔小于最小被拒绝[32m 3[2mms[22m[39m
+ [32m✓[39m test/overlay/panels/settings.test.js[2m > [22msaveSettings 校验：重试次数非整数被拒绝[32m 4[2mms[22m[39m
+ [32m✓[39m test/overlay/panels/settings.test.js[2m > [22msaveSettings 校验：提示词为空被拒绝[32m 3[2mms[22m[39m
+ [32m✓[39m test/overlay/panels/settings.test.js[2m > [22msaveSettings 校验：发送延迟最大超 10 秒被拒绝[32m 3[2mms[22m[39m
+ [32m✓[39m test/overlay/panels/settings.test.js[2m > [22msaveSettings 校验：附件间隔最大超 60 秒被拒绝[32m 3[2mms[22m[39m
+ [32m✓[39m test/overlay/panels/settings.test.js[2m > [22msaveSettings 全部合法写入 localStorage[32m 3[2mms[22m[39m
+ [32m✓[39m test/overlay/panels/settings.test.js[2m > [22mresetSettings 清空 localStorage 键并回到默认[32m 3[2mms[22m[39m
+ [32m✓[39m test/overlay/panels/settings.test.js[2m > [22mgetSettingsData 默认值符合反风控安全配置[32m 4[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m13 passed[39m[22m[90m (13)[39m
+[2m   Start at [22m 00:34:06
+[2m   Duration [22m 542ms[2m (tests 82%, transform 9%, import 7%, worker 2%)[22m
+

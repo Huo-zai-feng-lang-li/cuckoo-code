@@ -290,6 +290,12 @@ function resetSettingsData(): SettingsData {
     'cuckoo-watchdog-count', 'cuckoo-send-delay-min', 'cuckoo-send-delay-max',
     'cuckoo-attach-delay-min', 'cuckoo-attach-delay-max',
     'cuckoo-goal-max-iterations', 'cuckoo-ssrf-guard',
+    // 子代理字段：漏清会让「恢复默认」后 localStorage 残留旧值。
+    // 主进程 reset 会广播默认值，但若页面此刻未收到广播（加载中/已销毁），
+    // hook/loop 下次同步读到的就是残留旧值 —— 表现为「恢复默认没生效」。
+    'cuckoo-max-concurrent-agents',
+    'cuckoo-agent-start-interval-min',
+    'cuckoo-agent-start-interval-max',
   ];
   try { for (const k of KEYS) localStorage.removeItem(k); } catch (_) {}
   state.sendDelayMin = 6000;

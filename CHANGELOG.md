@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.162] - 2026-10-29
+
+### Fixed
+- **「恢复默认」漏清子代理 3 个设置键**：`resetSettingsData` 的 `KEYS` 数组未包含 v0.10.159 新增的 `cuckoo-max-concurrent-agents` / `cuckoo-agent-start-interval-min` / `cuckoo-agent-start-interval-max`。点「恢复默认」后这 3 个键仍残留在 AI 页面 localStorage，若此时主进程的默认值广播未送达（页面加载中 / 已销毁），hook/loop 下次同步读到的就是旧值，表现为「恢复默认没生效」。现已补入 `KEYS`（`src/overlay/panels/settings.ts`）。
+
 ## [0.10.161] - 2026-10-29
 
 ### Fixed
