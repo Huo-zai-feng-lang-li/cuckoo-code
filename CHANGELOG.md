@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.10.159] - 2026-10-29
+
+### Added
+- **子代理并发与启动间隔可在设置页配置**：设置页新增「子代理」分组，可调「并发上限（1~10）」与「启动间隔区间（秒，0 = 不等待）」。配置存全局文件 `agent-settings.json`，所有窗口实时同步；改配置不打断已在跑的子代理，只影响后续启动（`src/app/global-settings.ts`、`src/ui/shell/partials/pages/settings.html`、`src/ui/shell/scripts/pages/settings.ts`、`src/overlay/panels/settings.ts`）。
+- **配置注入机制**：`agent-semaphore.ts` 新增 `injectSemaphoreConfig()`，由 `entry.ts` 从全局设置读取并发上限与启动间隔，每次 acquire 时实时读取。默认并发 3、间隔 0，保持原有行为零回归。
+
+### Changed
+- **并发池改为按账号（profileId）隔离**：原实现是全进程单例计数——账号 A 跑满 3 个子代理时，账号 B 的第 1 个会被误判「并发已达上限」而拒绝。现改为 `Map<profileId, Pool>`，每个账号独立计数、独立排队、独立间隔计时；配置值仍全账号共用（`src/app/agent-semaphore.ts`）。
+- **启动间隔只作用于子代理**：`acquireAgentSlot`（子代理路径）拿到名额后按 `[min, max]` 随机等待；`tryAcquireAgentSlot`（网关路径）不等待，保持「快速失败」语义。
+- 网关占用失败的错误文案改为「该账号的子代理 + 网关已占满」，不再写死「共 3 个」（并发上限已可配）。
+
+### Fixed
+- **并发上限配 0 被误判为默认值 3**：`readConfig` 原用 `Number(x) || 默认值`，0 会被 `||` 判为假值而回退成 3 而非钳到下限 1。改用 `Number.isFinite` 显式钳制到 `[1, 10]`（`src/app/agent-semaphore.ts`）。
+
 ## [0.10.158] - 2026-10-28
 
 ### Fixed
