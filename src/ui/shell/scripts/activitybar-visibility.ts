@@ -9,6 +9,7 @@
  * settings 不可隐藏（否则用户无法再打开设置恢复，形成死锁）。
  */
 import { refreshActivitybarOverflow } from './activitybar-overflow.js';
+import { pushLayout } from './layout-sync.js';
 
 const STORAGE_KEY = 'cuckoo-activitybar-hidden';
 const USER_HIDDEN_CLS = 'ck-ab-user-hidden';
@@ -27,7 +28,10 @@ export function getHiddenTabs(): string[] {
 }
 
 function setHiddenTabs(list: string[]): void {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); } catch (_) { /* ignore */ }
+  const raw = JSON.stringify(list);
+  try { localStorage.setItem(STORAGE_KEY, raw); } catch (_) { /* ignore */ }
+  // 跨窗口同步：图标显隐（apply 阶段不会回环）
+  try { pushLayout(STORAGE_KEY, raw); } catch (_) { /* ignore */ }
 }
 
 /** 把隐藏列表应用到 DOM（幂等），并重算溢出。 */

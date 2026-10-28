@@ -3,13 +3,13 @@
  * 订阅 intercept-observer 的 cuckoo-ai-error 事件，按配置退避后发送提示词，
  * 触发 AI 重新回答。成功回复会重置计数。
  *
- * 配置来源：localStorage（每窗口独立）
+ * 配置来源：主进程全局文件（~/.cuckoo/agent-settings.json）→ 同步写入本页 localStorage 作运行时缓存
  *  - cuckoo-retry-enabled        '1' | '0'  默认 '1'
- *  - cuckoo-retry-delay-min      毫秒，默认 4000
- *  - cuckoo-retry-delay-max      毫秒，默认 10000
- *  - cuckoo-retry-count          普通失败次数，默认 10；负数=无限
+ *  - cuckoo-retry-delay-min      毫秒，默认 15000
+ *  - cuckoo-retry-delay-max      毫秒，默认 30000
+ *  - cuckoo-retry-count          普通失败次数，默认 3；负数=无限
  *  - cuckoo-retry-429-delay      毫秒，默认 120000（2 分钟）
- *  - cuckoo-retry-429-count      429 次数，默认 40；负数=无限
+ *  - cuckoo-retry-429-count      429 次数，默认 1；负数=无限
  *  - cuckoo-retry-prompt         提示词文案
  */
 import { sendToChat, findInputArea, getInputText } from '../../overlay/chat-input.js';
@@ -25,11 +25,11 @@ const { ipcRenderer } = require('electron');
 const DEFAULT_PROMPT = '刚才的回复似乎中断了，请重新完整回答上一个问题。';
 const DEFAULTS = {
   enabled: true,
-  delayMin: 4000,
-  delayMax: 10000,
-  count: 10,
+  delayMin: 15000,
+  delayMax: 30000,
+  count: 3,
   delay429: 120000,
-  count429: 40,
+  count429: 1,
   prompt: DEFAULT_PROMPT,
 };
 

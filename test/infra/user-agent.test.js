@@ -7,7 +7,7 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { buildChromeUserAgent, chromeMajor } from '../../src/infra/user-agent.js';
+import { buildChromeUserAgent, chromeMajor, buildUserAgentDataFix } from '../../src/infra/user-agent.js';
 
 test('chromeMajor 取主版本号', () => {
   const prev = process.versions.chrome;
@@ -51,3 +51,29 @@ test('buildChromeUserAgent 随内核版本变化（防写死回归）', () => {
     Object.defineProperty(process.versions, 'chrome', { value: prev, configurable: true });
   }
 });
+
+test('buildUserAgentDataFix 修正 webdriver 原型链且补齐 window.chrome', () => {
+  const script = buildUserAgentDataFix();
+  assert.ok(typeof script === 'string' && script.length > 0);
+
+  // 模拟沙箱环境运行脚本
+  class FakeNavigator {}
+  const fakeNav = new FakeNavigator();
+  fakeNav.webdriver = true; // 模拟原本被植入自动化标志
+  const fakeWin = {
+    Navigator: FakeNavigator,
+    navigator: fakeNav,
+  };
+
+  const fn = new Function('window', 'navigator', 'Navigator', script);
+  fn(fakeWin, fakeNav, FakeNavigator);
+
+  assert.strictEqual(fakeNav.webdriver, false);
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(fakeNav, 'webdriver'), false, 'navigator 实例自身不应含有 webdriver 属性');
+  assert.strictEqual('webdriver' in fakeNav, true);
+  assert.strictEqual(FakeNavigator.prototype.webdriver, false, '原型链上应提供 webdriver getter 返回 false');
+  const desc = Object.getOwnPropertyDescriptor(FakeNavigator.prototype, 'webdriver');
+  assert.strictEqual(desc.get.toString(), 'function get webdriver() { [native code] }');
+  assert.ok(fakeWin.chrome && fakeWin.chrome.runtime, '应补齐 window.chrome.runtime');
+});
+

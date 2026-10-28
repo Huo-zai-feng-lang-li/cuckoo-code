@@ -197,6 +197,8 @@ export interface ShellAPI {
   resetSettings?: () => Promise<any>;
   getUiPrefs?: () => Promise<any>;
   setUiPrefs?: (data: any) => Promise<any>;
+  /** 布局变更广播（跨窗口同步侧栏宽度 / 活动栏顺序与显隐） */
+  onShellLayoutChanged?: (cb: (layout: any) => void) => void;
   // 关于
   getAppInfo?: () => Promise<any>;
   checkUpdate?: () => Promise<any>;

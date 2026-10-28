@@ -75,7 +75,7 @@ test('openSettings 无 localStorage 用默认值', () => {
   const id = 'cuckoo-retry-count';
   els[id] = makeEl(id);
   settings.openSettings();
-  assert.strictEqual(els[id].value, '10');
+  assert.strictEqual(els[id].value, '3');
 });
 
 test('closeSettings 加 hidden 类', () => {
@@ -183,3 +183,15 @@ test('resetSettings 清空 localStorage 键并回到默认', () => {
   assert.strictEqual(localStorage.getItem('cuckoo-retry-count'), null);
   assert.strictEqual(localStorage.getItem('cuckoo-send-delay-min'), null);
 });
+
+test('getSettingsData 默认值符合反风控安全配置', () => {
+  const data = settings.getSettingsData();
+  assert.strictEqual(data.watchdogCount, 1, '超时看门狗默认应为 1');
+  assert.strictEqual(data.retry429Count, 1, '429 限流重试默认应为 1');
+  assert.strictEqual(data.retryCount, 3, '普通失败重试默认应为 3 次（防封）');
+  assert.strictEqual(data.retryDelayMin, 15, '普通失败间隔最小默认应为 15s（防封）');
+  assert.strictEqual(data.retryDelayMax, 30, '普通失败间隔最大默认应为 30s（防封）');
+  assert.strictEqual(data.sendDelayMin, 6, '发送延迟最小默认应为 6s');
+  assert.strictEqual(data.sendDelayMax, 16, '发送延迟最大默认应为 16s');
+});
+

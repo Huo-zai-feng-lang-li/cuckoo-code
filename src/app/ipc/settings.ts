@@ -1,16 +1,18 @@
 /**
- * IPC：设置读写（壳页面设置页 ↔ AI 页面 localStorage）
+ * IPC：设置读写（壳页面设置页 ↔ 全局文件 ↔ 各窗口 AI 页面 localStorage）
  *
- * 背景：设置以 AI 页面 localStorage 为唯一数据源（loop / hook 需同步读）。
- * 壳页面与 AI 页面是不同 origin 的 webContents，无法直接互访，
- * 因此由主进程做"请求-响应"转发：
- *   壳页面 ──invoke──▶ 主进程 ──send──▶ AI 页面（读写 localStorage）
- *        ◀──回执(带reqId)──         ◀──send('cuckoo-settings-result')──
+ * 数据流（统一同步机制）：
+ *  - 主进程 global-settings.ts 是**唯一真相源**（~/.cuckoo/agent-settings.json）。
+ *  - AI 页面 localStorage 降级为**运行时缓存**（hook / loop 同步读，零改动）。
+ *  - 保存：发起窗口 AI 页面校验并写 localStorage → 成功则落盘 → 广播其他窗口。
+ *  - 打开设置页：直接读全局文件；文件不存在时从发起窗口 localStorage 迁移（保留用户已有配置）。
+ *  - 新窗口：entry.ts 在 did-finish-load 时主动下发一次。
  */
 import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { readPrefs, writePrefs } from '../ui-prefs.js';
 import { applyHarnessZoom } from '../harness-zoom.js';
+import * as globalSettings from '../global-settings.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -56,30 +58,122 @@ function requestFromAiPage(shellEvent: any, channel: string, data?: any): Promis
   });
 }
 
+/**
+ * 广播设置到所有窗口的 AI 页面（仅 ctx.view；harnessView 是独立 origin，不参与全局设置同步）。
+ * @param skip 跳过的 webContents（发起方已自行写入时避免重复）
+ */
+function broadcastSettings(data: any, skip?: any): void {
+  const ctxs = windowState.getAllContexts();
+  for (const ctx of ctxs) {
+    // 只发 AI 页面：harness 视图是独立 origin，且没有 cuckoo-sync-settings 监听；
+    // 它的 goalMaxIterations 属自身 localStorage，不参与全局设置同步。
+    const v = ctx.view;
+    if (!v || !v.webContents || v.webContents.isDestroyed()) continue;
+    if (skip && v.webContents === skip) continue;
+    try { v.webContents.send('cuckoo-sync-settings', { data }); } catch (err: any) {
+      console.warn('[Cuckoo Code] 设置广播失败:', err && err.message);
+    }
+  }
+}
+
+/**
+ * 广播壳页面布局到所有窗口（含发起方，幂等应用）。
+ * @param layout 白名单内的键值（cuckoo-sidebar-width 等）
+ */
+function broadcastShellLayout(layout: any): void {
+  const ctxs = windowState.getAllContexts();
+  for (const ctx of ctxs) {
+    const wc = ctx.win && ctx.win.webContents;
+    if (!wc || wc.isDestroyed()) continue;
+    try { wc.send('shell-layout-changed', { layout: layout || {} }); } catch (err: any) {
+      console.warn('[Cuckoo Code] 布局广播失败:', err && err.message);
+    }
+  }
+}
+
+/** 取发起窗口的 AI 页面 webContents（用于广播时跳过） */
+function getAiWebContents(sender: any): any {
+  const ctx = windowState.getContextByWebContents(sender);
+  return ctx && ctx.view ? ctx.view.webContents : null;
+}
+
+/**
+ * 确保全局设置已建立（首次升级迁移的唯一入口）。
+ *
+ * 背景：老用户配置存在 AI 页面 localStorage。升级后必须迁移一次到全局文件，
+ * 否则防封新默认对老用户完全无效（他们从不打开设置页也会继续用旧默认）。
+ *
+ * 关键约束（子代理审查 High 1/2/3）：
+ *  - AI 页面不可达时**绝不落盘**（否则文件被建成纯默认，迁移永久失效、用户配置丢失）
+ *  - 迁移完成后必须**回写发起窗口**（否则该窗口 UI 显示新值、运行时仍用旧 localStorage）
+ */
+async function migrateIfNeeded(vc: any): Promise<any> {
+  if (globalSettings.hasAgentSettingsFile()) return globalSettings.readAgentSettings();
+  if (!vc || vc.isDestroyed()) return null;
+
+  const reqId = 'mig-' + (++reqSeq) + '-' + Date.now();
+  const payload: any = await new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      if (pending.has(reqId)) { pending.delete(reqId); resolve({ ok: false, error: 'AI 页面响应超时' }); }
+    }, 5000);
+    pending.set(reqId, { resolve, timer });
+    try { vc.send('cuckoo-get-settings', { reqId }); } catch (err: any) {
+      pending.delete(reqId); clearTimeout(timer); resolve({ ok: false, error: err.message });
+    }
+  });
+  // 不可达 → 不落盘，留给下次（页面重载/打开设置页）重试
+  if (!payload.ok || !payload.data) return null;
+
+  const merged = globalSettings.writeAgentSettings(globalSettings.migrateLegacy(payload.data));
+  // 回写发起窗口（不跳过自己）+ 广播其他窗口
+  try { vc.send('cuckoo-sync-settings', { data: merged }); } catch (_) { /* ignore */ }
+  broadcastSettings(merged, vc);
+  return merged;
+}
+
 function registerSettingsIpc(): void {
   // AI 页面回执入口
   ipcMain.on('cuckoo-settings-result', onResult);
   ipcMain.on('cuckoo-autocompact-result', onResult);
 
-  // 读设置
+  // 读设置：全局文件优先；文件不存在时走统一迁移（AI 页面不可达则不落盘、返回失败）
   ipcMain.handle('get-settings', async (event: any) => {
-    const r = await requestFromAiPage(event, 'cuckoo-get-settings');
-    return r.ok ? { success: true, data: r.data } : { success: false, error: r.error };
+    if (globalSettings.hasAgentSettingsFile()) {
+      return { success: true, data: globalSettings.readAgentSettings() };
+    }
+    const migrated = await migrateIfNeeded(getAiWebContents(event.sender));
+    if (migrated) return { success: true, data: migrated };
+    return { success: false, error: 'AI 页面未就绪，无法初始化设置，请稍后重试' };
   });
 
-  // 保存设置
+  // 保存设置：壳页面提交的是**增量**（只含本次变更字段）。
+  // 流程：最新文件值 + 增量 = 完整设置 → 交 AI 页面校验并写 localStorage → 落盘 → 广播。
+  // 关键：落盘必须用「最新文件值 + 增量」而不是 AI 页面回执的全量快照，
+  // 否则两个窗口并发保存不同字段时，后保存的一方会用自己窗口的旧值覆盖对方的改动。
   ipcMain.handle('save-settings', async (event: any, { data }: any) => {
-    const r = await requestFromAiPage(event, 'cuckoo-save-settings', data);
-    return r.ok ? { success: true, data: r.data } : { success: false, error: r.error };
+    const delta = (data && typeof data === 'object') ? data : {};
+    const merged = globalSettings.applyDelta(globalSettings.readAgentSettings(), delta);
+    const r = await requestFromAiPage(event, 'cuckoo-save-settings', merged);
+    if (!r.ok) return { success: false, error: r.error || '保存失败' };
+    // await 期间其他窗口可能已写入新值 → 再读一次最新值做基底，只叠加本次增量
+    const latest = globalSettings.readAgentSettings();
+    const next = globalSettings.writeAgentSettings(globalSettings.applyDelta(latest, delta));
+    // 不跳过发起方：并发保存时，发起方自己的 AI 页面可能已被另一窗口的广播覆盖成
+    // 「缺本次增量」的陈旧数据；若跳过它，它与最终落盘文件会永久不一致（hook/loop 读 localStorage）。
+    // 发起方重复收到同一份数据是幂等应用，成本可忽略。
+    broadcastSettings(next);
+    return { success: true, data: next };
   });
 
-  // 恢复默认
+  // 恢复默认：发起窗口清 localStorage → 落盘默认 → 广播所有窗口
   ipcMain.handle('reset-settings', async (event: any) => {
-    const r = await requestFromAiPage(event, 'cuckoo-reset-settings');
-    return r.ok ? { success: true, data: r.data } : { success: false, error: r.error };
+    await requestFromAiPage(event, 'cuckoo-reset-settings');
+    const def = globalSettings.writeAgentSettings({});
+    broadcastSettings(def);
+    return { success: true, data: def };
   });
 
-  // 自动压缩配置：读
+  // 自动压缩配置：读（仍按窗口隔离，属纯净模式自身设置，暂不纳入全局）
   ipcMain.handle('get-autocompact', async (event: any) => {
     const r = await requestFromAiPage(event, 'cuckoo-get-autocompact');
     return r.ok ? { success: true, data: r.data } : { success: false, error: r.error };
@@ -91,8 +185,6 @@ function registerSettingsIpc(): void {
   });
   // 手动触发压缩
   ipcMain.handle('trigger-compact', async (event: any) => {
-    // 从主进程 sessionStore 拿当前目录：overlay 侧的 state.currentProjectDir
-    // 在刷新/导航后常为 null，导致压缩段3 initProject 拿到空目录、注入失败。
     const ctx = windowState.getContextByWebContents(event.sender);
     const currentDir = (ctx && ctx.sessionStore && ctx.sessionStore.state)
       ? (ctx.sessionStore.state.selectedProjectDir || null) : null;
@@ -100,13 +192,12 @@ function registerSettingsIpc(): void {
     return r.ok ? { success: true } : { success: false, error: r.error };
   });
 
-  // ===== UI 偏好（主进程直存，供纯净模式字号等）=====
+  // ===== UI 偏好（主进程直存，全窗口共享）=====
   ipcMain.handle('get-ui-prefs', async () => {
     return { success: true, data: readPrefs() };
   });
   ipcMain.handle('set-ui-prefs', async (event: any, { data }: any) => {
     const next = writePrefs(data || {});
-    // 立即应用到当前窗口的 harness 视图（若已创建）。用 CSS zoom，避免视图缩放模糊。
     try {
       const ctx: any = windowState.getContextByWebContents(event.sender);
       const hv = ctx && ctx.harnessView;
@@ -114,8 +205,13 @@ function registerSettingsIpc(): void {
         applyHarnessZoom(hv.webContents, next.harnessZoom);
       }
     } catch (_) { /* ignore */ }
+    // 布局变化（侧栏宽度 / 活动栏顺序 / 显隐）→ 广播给所有壳页面（含本窗口，幂等）。
+    // 原因：壳页面 localStorage 按 partition 隔离，跨 profile 窗口互不相通，只能由主进程中转。
+    if (data && data.shellLayout !== undefined) {
+      broadcastShellLayout(next.shellLayout);
+    }
     return { success: true, data: next };
   });
 }
 
-export { registerSettingsIpc };
+export { registerSettingsIpc, broadcastSettings, migrateIfNeeded, broadcastShellLayout };

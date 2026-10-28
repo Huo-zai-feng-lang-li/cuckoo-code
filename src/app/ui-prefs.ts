@@ -36,10 +36,27 @@ export interface PromptEnhancerConfig {
 export interface UiPrefs {
   harnessZoom: number;
   promptEnhancer: PromptEnhancerConfig;
+  /**
+   * 壳页面布局（全窗口共享）：localStorage 键 → 值（均以字符串存）。
+   * 键必须在 LAYOUT_KEYS 白名单内，防止被用来写任意 localStorage。
+   */
+  shellLayout: Record<string, string>;
 }
+
+/**
+ * 允许跨窗口同步的壳页面布局键白名单。
+ * 只放"布局/位置"类设置——它们由壳页面自己写 localStorage 后上报，
+ * 其它窗口收到后写回各自 localStorage 并重新应用。
+ */
+export const LAYOUT_KEYS = [
+  'cuckoo-sidebar-width',
+  'cuckoo-activitybar-order',
+  'cuckoo-activitybar-hidden',
+];
 
 const DEFAULTS: UiPrefs = {
   harnessZoom: 1.0,
+  shellLayout: {},
   promptEnhancer: {
     enabled: true,
     apiUrl: 'https://apihub.agnes-ai.com/v1',
@@ -95,13 +112,24 @@ function normEnhancer(raw: any): PromptEnhancerConfig {
   };
 }
 
+/** 规整 shellLayout：只保留白名单键 + 字符串值 */
+function normLayout(raw: any): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const k of LAYOUT_KEYS) {
+    if (typeof raw[k] === 'string') out[k] = raw[k];
+  }
+  return out;
+}
+
 function readPrefs(): UiPrefs {
   // C-003：损坏回退 .bak
   const o = readJsonRobustSync<Record<string, any> | null>(getPrefsFile(), null);
-  if (!o) return { harnessZoom: DEFAULTS.harnessZoom, promptEnhancer: { ...DEFAULTS.promptEnhancer } };
+  if (!o) return { harnessZoom: DEFAULTS.harnessZoom, promptEnhancer: { ...DEFAULTS.promptEnhancer }, shellLayout: {} };
   return {
     harnessZoom: clampZoom(o && o.harnessZoom),
     promptEnhancer: normEnhancer(o && o.promptEnhancer),
+    shellLayout: normLayout(o && o.shellLayout),
   };
 }
 
@@ -110,6 +138,8 @@ function writePrefs(patch: Partial<UiPrefs>): UiPrefs {
   const next: UiPrefs = { ...cur };
   if (patch.harnessZoom !== undefined) next.harnessZoom = clampZoom(patch.harnessZoom);
   if (patch.promptEnhancer !== undefined) next.promptEnhancer = normEnhancer({ ...cur.promptEnhancer, ...patch.promptEnhancer });
+  // shellLayout 为增量合并：只覆盖本次提交的键，其余保持
+  if (patch.shellLayout !== undefined) next.shellLayout = { ...cur.shellLayout, ...normLayout(patch.shellLayout) };
   writeJsonAtomicSync(getPrefsFile(), next, { keepBackup: true });
   return next;
 }

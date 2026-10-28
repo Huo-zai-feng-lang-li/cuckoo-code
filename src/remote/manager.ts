@@ -122,23 +122,24 @@ function onPhoneStop(): void {
   const pid = ctx.profileId || '';
   stopGeneration(ctx)
     .then((r: any) => {
-      // 只有确实停住才算成功；否则不误报"已停止"（避免手机显示停了、电脑还在跑）
-      if (r && r.success) {
+      // 无论何种停止路径（指针点击、Escape 兜底、当前未在生成），均视为完成停止
+      if (r && (r.success || r.reason === 'not-generating' || r.method === 'escape')) {
         onAiStop(pid);
         return;
       }
-      // 当前没有在生成：不是失败，只是无可停止的任务（也不该保持忙态）
-      if (r && r.reason === 'not-generating') {
-        clearBusy(pid);
-        remoteServer.broadcast({ type: 'sys', profileId: pid, text: '当前没有正在生成的任务' });
+      // 反复点击后网页仍顽固在生成
+      if (r && r.reason === 'still-generating') {
+        onAiStop(pid);
+        remoteServer.broadcast({ type: 'sys', profileId: pid, keepBusy: false, text: '已发送停止指令（若网页仍未响应，请在电脑端确认）' });
         return;
       }
-      // 其余失败：保持执行态（keepBusy），让用户能再试，不误报"已停止"
-      remoteServer.broadcast({ type: 'sys', profileId: pid, keepBusy: true, text: '停止未生效（仍在生成），请在电脑上操作' });
+      // 其余兜底：解除忙态，避免手机端卡死
+      onAiStop(pid);
     })
     .catch((err: any) => {
       console.error('[Remote] 停止生成失败:', err.message);
-      remoteServer.broadcast({ type: 'sys', profileId: pid, keepBusy: true, text: '停止失败：' + (err.message || '未知错误') });
+      onAiStop(pid);
+      remoteServer.broadcast({ type: 'sys', profileId: pid, keepBusy: false, text: '停止失败：' + (err.message || '未知错误') });
     });
 }
 
@@ -374,6 +375,17 @@ function onAiError(profileId: string, error?: string): void {
   remoteServer.broadcast({ type: 'ai-error', profileId: pid, error: error || '生成失败' });
 }
 
+/**
+ * 任务整体结束（工具循环退出）→ 广播 task-done。
+ * 与 onAiReply 的区别：onAiReply 每轮工具调用后都会触发（用于渲染气泡），
+ * onTaskDone 只在 AI 给出最终普通文本、不再调工具时触发一次（用于手机通知）。
+ * 这里不改流式状态（可能还有收尾帧要 flush），只做通知用途的广播。
+ */
+function onTaskDone(profileId: string, text: string): void {
+  if (!remoteServer.isRunning()) return;
+  remoteServer.broadcast({ type: 'task-done', profileId: profileId || '', text: text || '' });
+}
+
 /** 工具状态 */
 function onTool(phase: string, name: string, profileId: string): void {
   if (!remoteServer.isRunning()) return;
@@ -470,4 +482,4 @@ async function stopRemote(): Promise<void> {
   broadcastRemoteMode(false);
 }
 
-export { initRemote, stopRemote, onAiStream, onAiReply, onAiStop, onAiError, onTool, getTunnelStatus, broadcastRemoteMode };
+export { initRemote, stopRemote, onAiStream, onAiReply, onAiStop, onAiError, onTool, onTaskDone, getTunnelStatus, broadcastRemoteMode };

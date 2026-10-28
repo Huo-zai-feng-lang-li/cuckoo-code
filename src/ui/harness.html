@@ -2942,7 +2942,10 @@
   //       故不能单用，必须叠加"事件静默期"——旧任务真在吐内容时事件不断，静默期就不满足。
   var aiPageGenerating = false;
   var AI_STOP_POLL_MS = 100;      // 轮询间隔
-  var AI_STOP_QUIET_MS = 300;     // 静默期阈值：这段时间无事件即视为旧任务尾部已过
+  // 静默期阈值：从 300 → 500ms。stop() 走 IPC 到主进程再回传，旧任务的工具结果回传
+  // （sendCombinedJsResultsToChat 有随机延时）可能晚于 300ms 才被取消/丢弃，
+  // 拉长静默期可防止其混入新任务（任务结果回显）。
+  var AI_STOP_QUIET_MS = 500;
   var AI_STOP_WAIT_MAX_MS = 3000; // 超时兜底：网页异常不停时，最多等这么久后照常发
 
   // 中止抑制：锁在"任务代次"上而非墙上时间 —— 中止后迟到的旧任务事件被忽略，
@@ -3000,6 +3003,7 @@
   var FRAMEWORK_DRIVE_MS = 120000;
   var frameworkDriveUntil = 0;
   function onFrameworkSend(tag) {
+    if (aborted()) return; // 用户已主动中止：丢弃迟到的框架指令，防止被旧工具结果重新激活或回显
     var label = FW_LABELS[tag] || tag || '框架指令';
     // 压缩流程启动：标记 pending，待新会话（空历史）到达时显示"已压缩续接"提示
     if (tag === '压缩-摘要') compactPending = Date.now();
@@ -3183,6 +3187,7 @@
 
   // 流式更新：think/text 均为全量快照
   function onStream(think, text, finished) {
+    if (aborted()) return; // 任务已中止：丢弃迟到的流式帧，防止任务结果残留在界面或回显
     if (!think && !text) {
       if (!finished) return;   // 空心跳，忽略
       if (!cur) return;        // 纯工具回合（正文被 stripToolBlocks 清空）：无活跃气泡 → 不创建空气泡，
@@ -3544,25 +3549,13 @@
   function doSendQueueItem(it) {
     manualSendInFlight = true;
     clearAbortSuppression();
-    var savedInput = input.value;
-    var savedFiles = pendingFiles.slice();
-    var savedHints = pendingHints.slice();
     try {
-      pendingFiles = (it.files || []).slice();
-      pendingHints = (it.hints || []).slice();
-      input.value = it.text || '';
-      renderAttach();
-      renderHints();
-      send();
+      // 直接原子化发送队列项，无需将内容写入输入框再清空
+      send(it.text, it.files, it.hints);
     } finally {
-      // 无论成功/异常都恢复现场 + 标志，避免永久卡死队列
-      input.value = savedInput;
-      pendingFiles = savedFiles;
-      pendingHints = savedHints;
-      renderAttach();
-      renderHints();
-      flushingSuppressed = false; // 本项已发出，恢复队列自动排空（剩余项照常按序自动发）
       manualSendInFlight = false;
+      // 延后微小时间恢复队列排空，确保 send() 内部异步状态及 IPC 投递已稳定占位，避免连带排空抢发
+      setTimeout(function () { flushingSuppressed = false; }, 300);
     }
   }
 
@@ -3583,7 +3576,11 @@
     var stopAt = Date.now();
     var myToken = ++manualSendToken; // 认领本次等待；切会话/新对话会自增使本次作废
     function tick() {
-      if (myToken !== manualSendToken) return; // 已切会话/新对话：放弃发送（该消息不应进入新会话）
+      if (myToken !== manualSendToken) {
+        flushingSuppressed = false;
+        manualSendInFlight = false;
+        return; // 已切会话/新对话：放弃发送（该消息不应进入新会话）
+      }
       var quiet = Date.now() - Math.max(stopAt, lastActivityAt);
       if ((!aiPageGenerating && quiet >= AI_STOP_QUIET_MS) || Date.now() - stopAt >= AI_STOP_WAIT_MAX_MS) {
         clearAbortSuppression();
@@ -3595,8 +3592,9 @@
     setTimeout(tick, 0);
   }
 
-  /** 立即发送队列中的某一项：移出队列并立刻发出；若当前正忙则中止当前任务后发出。
-   *  手动插队后暂停"任务结束自动排空"，避免剩余队列被连带发出去（用户明确只发这一条）。 */
+  /** 立即发送队列中的某一项：移出队列并立刻发出。
+   *  严格遵守顺序：先停止任务 -> 清空输入框 -> 等待停止稳定 -> 回显队列文字 -> 发送。
+   *  手动插队后暂停"任务结束自动排空"，避免剩余队列被连带发出去。 */
   function sendQueueItemNow(it) {
     var at = sendQueue.indexOf(it);
     if (at < 0) return;
@@ -3609,21 +3607,23 @@
     sendQueue.splice(at, 1);
     flushingSuppressed = true; // 操作期间临时抑制自动排空（避免 stop() 后队列被连带发出）
     renderSendQueue();
-    clearAbortSuppression();
-    // isBusy() 会因 stop() 同步复位而变 false；先置 manualSendInFlight 挡住"停→发"之间的连点
-    if (isBusy()) {
-      manualSendInFlight = true;
-      try {
-        stop();
-        waitForAiIdleThenSend(it);
-      } catch (e) {
-        // stop() 异常兜底：复位标志，避免队列被永久冻结（消息仍尝试发出，不静默丢失）
-        manualSendInFlight = false;
-        flushingSuppressed = false;
-        doSendQueueItem(it);
-      }
+    var wasBusy = isBusy();
+    manualSendInFlight = true;
+    // 1. 确保队列发送先停止任务
+    try { stop(); } catch (e) { /* ignore */ }
+    // 2. 彻底清空输入框（移除旧草稿/残留任务结果）
+    input.value = '';
+    pendingFiles = [];
+    pendingHints = [];
+    renderAttach();
+    renderHints();
+    // 3. 等待停止稳定后再回显队列文字发送
+    if (wasBusy) {
+      waitForAiIdleThenSend(it);
     } else {
-      doSendQueueItem(it);
+      setTimeout(function () {
+        doSendQueueItem(it);
+      }, 50);
     }
   }
   function renderSendQueue() {
@@ -3735,18 +3735,15 @@
     var savedInput = input.value;
     var savedFiles = pendingFiles.slice();
     var savedHints = pendingHints.slice();
-    pendingFiles = item.files.slice();
-    pendingHints = item.hints.slice();
-    input.value = item.text;
-    renderAttach();
-    renderHints();
-    send();
-    // 恢复用户输入（send 已同步取走 item 内容）
+    // 直接传入 item 字段发送，彻底避免触碰用户正在打字的 input.value 与附件
+    send(item.text, item.files, item.hints);
+    // 恢复用户输入（send 内部亦未污染 input.value，双重保障不丢输入）
     input.value = savedInput;
     pendingFiles = savedFiles;
     pendingHints = savedHints;
     renderAttach();
     renderHints();
+    autoGrowInput();
     return true;
   }
 
@@ -3921,19 +3918,22 @@
     for (var j = 0; j < dots.length; j++) dots[j].classList.toggle('active', j === best);
   }
 
-  function send() {
-    var text = input.value.trim();
-    var files = pendingFiles.slice();
-    var hints = pendingHints.slice();
+  function send(overrideText, overrideFiles, overrideHints) {
+    var hasOverride = (overrideText !== undefined);
+    var text = hasOverride ? (overrideText || '').trim() : input.value.trim();
+    var files = hasOverride ? (overrideFiles || []).slice() : pendingFiles.slice();
+    var hints = hasOverride ? (overrideHints || []).slice() : pendingHints.slice();
     console.log('[harness] send() 调用, text 长度=' + text.length + ', files=' + files.length + ', hints=' + hints.length);
     if (!text && files.length === 0 && hints.length === 0) return;
     clearAbortSuppression(); // 新任务：解除中止后的抑制窗口
     resetPlanDrive(); // 新任务：重置计划驱动轮数
     resetStreamRender(); // 新任务：复位上一轮可能残留的流式标记（防前缀巧合吞字）
     hideSlashMenu();
-    input.value = '';
-    inputMinH = 84;            // 复位手动拖拽高度
-    input.style.height = 'auto';
+    if (!hasOverride) {
+      input.value = '';
+      inputMinH = 84;            // 复位手动拖拽高度
+      input.style.height = 'auto';
+    }
     // 目标："/goal xxx" 或带"目标"chip（与"计划"同款）
     var displayText = text, sendText = text;
     var goalText = null;
@@ -3997,10 +3997,12 @@
     if (chipLabels.length) userHistItem.hints = chipLabels;
     pushHist(userHistItem);
     addUser(attachNote + bubbleText, userHistItem);
-    pendingFiles = [];
-    pendingHints = [];
-    renderAttach();
-    renderHints();
+    if (!hasOverride) {
+      pendingFiles = [];
+      pendingHints = [];
+      renderAttach();
+      renderHints();
+    }
     setStatus('生成中…', 'busy');
     if (!cur) {
       cur = createAssistant();
@@ -4118,8 +4120,17 @@
   function stop() {
     // 立即重置本地状态（不等主进程），给用户即时反馈
     markAborted(); // 先清工具计数：否则 setStatus 后按钮仍会因"工具在跑"保持停止态
-    setStatus('就绪', 'ready');
+    setStatus('已停止', 'ready');
+    setTimeout(function () {
+      if (!isBusy()) setStatus('就绪', 'ready');
+    }, 1500);
     cancelGoalNudge();
+    // 彻底清空输入框与暂存附件：防止任务结果/旧草稿回显或被误发
+    input.value = '';
+    pendingFiles = [];
+    pendingHints = [];
+    renderAttach();
+    renderHints();
     // 显式复位流式渲染标记：中止后可能不再收到 onAssistantDone（无 final 收尾），
     // 若不复位，下一轮新建气泡会带着旧标记，前缀巧合下吞字
     resetStreamRender();
@@ -4150,9 +4161,20 @@
       }
     } catch (_) { /* ignore */ }
     appendSystem('已停止生成');
-    pushHist({ t: 'system', text: '已停止生成' });
-    // 后台请求停止 AI 页面（失败也无妨）
-    if (api.stop) { try { api.stop().catch(function () { /* ignore */ }); } catch (e) { /* ignore */ } }
+    // 后台请求停止 AI 页面（若失败向用户显式反馈）
+    if (api.stop) {
+      try {
+        api.stop().then(function (res) {
+          if (res && res.success === false && res.error) {
+            appendSystem('停止指令异常：' + res.error);
+            pushHist({ t: 'system', text: '停止指令异常：' + res.error });
+          }
+        }).catch(function (err) {
+          appendSystem('停止指令发送失败：' + ((err && err.message) || '未知错误'));
+          pushHist({ t: 'system', text: '停止指令发送失败' });
+        });
+      } catch (e) { /* ignore */ }
+    }
   }
 
   sendBtn.addEventListener('click', function () {

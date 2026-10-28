@@ -1179,6 +1179,13 @@ svg { flex-shrink: 0; }
   pointer-events: auto;
 }
 
+.exec-status.stopped .exec-waves { display: none; }
+.exec-status.stopped .exec-pill {
+  border-color: rgba(229, 72, 77, 0.4);
+  box-shadow: 0 8px 22px -8px rgba(229, 72, 77, 0.3);
+  color: var(--danger, #ff6369);
+}
+
 .exec-waves {
   display: flex;
   align-items: flex-end;

@@ -49,7 +49,7 @@
   let wsGen = 0;
   let reconnectDelay = 1000;
   let reconnectTimer = null;
-  let disconnectTimer = null; // 断线降级防抖
+  let disconnectTimer = null; // 遗留清理句柄（连接状态已改为即时切换，不再用它做延迟降级）
   let failStreak = 0;
   let lastPong = Date.now(); // 心跳：最近一次 pong 时间
   let foregroundProbeTimer = null; // 切前台探活定时器
@@ -298,11 +298,9 @@
       clearTimeout(foregroundProbeTimer);
       foregroundProbeTimer = null;
     }
-    // 只要页面有消息，或者本地有缓存，就绝对不显示“重连中”，静默直连
-    const hasMessages = !!messages.querySelector('.msg') || (loadHistoryCache() || []).length > 0;
-    if (!hasMessages) {
-      setConn('connecting');
-    }
+    // 重连一律显示"重连中"：这是真实状态，不该为了"不闪烁"而隐藏。
+    // （此前有消息就跳过，导致断线重连期间一直显示"已在线"）
+    setConn('connecting');
     const gen = ++wsGen;
     if (ws) {
       const oldWs = ws;
@@ -342,12 +340,10 @@
     sock.onclose = () => {
       if (gen !== wsGen) return;
       connected = false;
-      // 状态指示延迟降级，避免网络瞬断快速重连导致 UI 闪烁
-      if (disconnectTimer) clearTimeout(disconnectTimer);
-      disconnectTimer = setTimeout(() => {
-        disconnectTimer = null;
-        setConn('off');
-      }, 5000);
+      // 立即降级为"已离线"：5 秒防抖会让断网后长时间显示"已在线"，属于假状态。
+      // 重连成功时 onopen 会立刻切回"已在线"，闪烁成本可接受且更诚实。
+      if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null; }
+      setConn('off');
       hideExec();
       setExecuting(false);
       // 清理未完成的探活定时器，避免它在断连后再次触发重连
@@ -537,7 +533,13 @@
         cache.push({ t: 'assistant', text: msg.text || '' });
         if (cache.length > 50) cache.shift();
         saveHistoryCache(cache);
-        // 如果页面在后台，弹本地通知
+        // 注意：这里**不**弹通知——ai-reply 每轮工具调用后都会到达，
+        // 弹通知会变成"刷屏"。通知统一由 task-done（整个任务结束）触发。
+        break;
+      }
+      case 'task-done': {
+        if (!isMyProfile(msg.profileId)) break;
+        // 整个任务结束（工具循环退出）才提醒一次
         if (document.visibilityState === 'hidden') {
           notifyReply(msg.text || '');
         }
@@ -546,8 +548,9 @@
       case 'ai-stop':
         if (!isMyProfile(msg.profileId)) break;
         finishStreaming(streamingText);
-        hideExec();
+        showExecBrief('已停止生成', 1500);
         setExecuting(false);
+        showStopNotice();
         break;
       case 'history':
         if (!isMyProfile(msg.profileId)) break;
@@ -1092,15 +1095,35 @@
 
   // ===== 执行状态条 / 发送停止按钮 =====
   let execVisible = false;
-  function showExec(text) {
+  let execBriefTimer = null;
+  function showExec(text, isStopped = false) {
     if (!execStatus) return;
+    if (execBriefTimer) { clearTimeout(execBriefTimer); execBriefTimer = null; }
     execText.textContent = text || '正在执行…';
+    execStatus.classList.toggle('stopped', !!isStopped);
     if (!execVisible) { execStatus.classList.remove('hidden'); execVisible = true; }
   }
   function hideExec() {
+    if (execBriefTimer) { clearTimeout(execBriefTimer); execBriefTimer = null; }
     if (!execStatus || !execVisible) return;
     execStatus.classList.add('hidden');
+    execStatus.classList.remove('stopped');
     execVisible = false;
+  }
+  function showExecBrief(text, duration) {
+    showExec(text, true);
+    execBriefTimer = setTimeout(() => {
+      execBriefTimer = null;
+      hideExec();
+    }, duration || 1500);
+  }
+
+  let lastStopNoticeTime = 0;
+  function showStopNotice() {
+    const now = Date.now();
+    if (now - lastStopNoticeTime < 2500) return;
+    lastStopNoticeTime = now;
+    addSystem('已停止生成');
   }
 
   function setExecuting(on) {
@@ -1207,8 +1230,11 @@
     if (!sendRaw({ type: 'stop' })) {
       // 发送失败（连接半开/断开）：不能静默——用户以为停了，实际没停
       addSystem('连接已断开，停止指令未送达，正在重连…');
+    } else {
+      showStopNotice();
     }
-    hideExec();
+    finishStreaming(streamingText);
+    showExecBrief('已停止生成', 1500);
     setExecuting(false);
   });
   input.addEventListener('keydown', (e) => {
@@ -1315,6 +1341,8 @@
   }
 
   // ===== 原生保活（仅 APK 生效）=====
+  /** 电池优化白名单"已请求过"标记（localStorage），保证只弹一次系统页 */
+  const BATTERY_REQ_KEY = 'cuckoo-battery-opt-req';
   function startNativeKeepAlive() {
     try {
       if (!isNativeShell()) return;
@@ -1334,10 +1362,20 @@
         .catch((e) => console.warn('[KeepAlive] start 失败:', e));
       plugin.checkBatteryOptimization()
         .then((res) => {
-          if (res && res.ignoring === false) {
-            console.log('[KeepAlive] 电池优化未放行，请求白名单…');
-            plugin.requestIgnoreBatteryOptimization().catch(() => {});
+          console.log('[KeepAlive] 电池优化状态:', JSON.stringify(res));
+          const isIgnoring = Boolean(res && (res.ignoring === true || res.isIgnoring === true));
+          // 已加白名单：清掉"已请求"标记，便于用户日后移除白名单时能再次提示
+          if (isIgnoring) {
+            try { localStorage.removeItem(BATTERY_REQ_KEY); } catch {}
+            return;
           }
+          // 未加白名单（false / null / undefined 等任何非 true 状态）：只主动请求一次，避免每次进 App 都跳系统电量详情页
+          let asked = false;
+          try { asked = localStorage.getItem(BATTERY_REQ_KEY) === '1'; } catch {}
+          if (asked) return;
+          try { localStorage.setItem(BATTERY_REQ_KEY, '1'); } catch {}
+          console.log('[KeepAlive] 电池优化未放行，请求白名单（仅首次）…');
+          plugin.requestIgnoreBatteryOptimization().catch(() => {});
         })
         .catch(() => {});
     } catch (e) {
@@ -1370,15 +1408,15 @@
     // 启动时先不展示同步动画
     setSyncing(false);
     
-    // 极速渲染本地缓存
+    // 极速渲染本地缓存（只影响消息列表，**不**决定连接状态）
     const cached = loadHistoryCache();
     const hasCache = cached && cached.length;
     if (hasCache) {
-      setConn('on'); // 有缓存时直接显示在线，后台静默握手
       renderHistory(cached, true);
-    } else {
-      setConn('connecting');
     }
+    // 连接状态一律从"连接中"起步，由 WebSocket 生命周期（onopen/onclose）驱动。
+    // 之前"有缓存就显示已在线"会让未联网时也长期显示在线，误导用户。
+    setConn('connecting');
     
     // 原生壳：启动前台服务保活
     startNativeKeepAlive();

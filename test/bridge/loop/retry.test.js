@@ -81,11 +81,11 @@ test('readConfig 返回默认值', async () => {
   await boot();
   const cfg = retry.readConfig();
   assert.strictEqual(cfg.enabled, true);
-  assert.strictEqual(cfg.delayMin, 4000);
-  assert.strictEqual(cfg.delayMax, 10000);
-  assert.strictEqual(cfg.count, 10);
+  assert.strictEqual(cfg.delayMin, 15000);
+  assert.strictEqual(cfg.delayMax, 30000);
+  assert.strictEqual(cfg.count, 3);
   assert.strictEqual(cfg.delay429, 120000);
-  assert.strictEqual(cfg.count429, 40);
+  assert.strictEqual(cfg.count429, 1);
   assert.ok(cfg.prompt);
 });
 

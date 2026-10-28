@@ -4,6 +4,7 @@
  */
 import { api } from './shared.js';
 import { hidePreview, restorePreview } from './preview.js';
+import { pushLayout } from './layout-sync.js';
 
 const sidebar = document.getElementById('ck-sidebar') as any;
 // 默认展开宽度：460px（插件市场/详情要放得下卡片网格）
@@ -46,6 +47,24 @@ function applySidebarWidth(w: number): void {
   saveWidth(expandedWidth);
   if (!sidebar.classList.contains('ck-collapsed')) {
     sidebar.style.width = expandedWidth + 'px';
+  }
+}
+
+/**
+ * 应用来自跨窗口同步的侧栏宽度。
+ * 与 applySidebarWidth 的区别：此处不是拖拽中，必须同时重排 AI 视图
+ * （api.toggleSidebar），否则会出现"侧栏变宽但 AI 页面没让位"。
+ */
+export function applySyncedSidebarWidth(raw: string): void {
+  // 本窗口正在拖拽：忽略远端值，否则拖到一半被别的窗口打断
+  if (draggingSidebar) return;
+  const w = Number(raw);
+  if (!Number.isFinite(w)) return;
+  expandedWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(w)));
+  saveWidth(expandedWidth);
+  if (sidebar && !sidebar.classList.contains('ck-collapsed')) {
+    sidebar.style.width = expandedWidth + 'px';
+    if (api.toggleSidebar) { try { api.toggleSidebar(expandedWidth); } catch (_) { /* ignore */ } }
   }
 }
 
@@ -100,6 +119,7 @@ if (sidebar && !sidebar.classList.contains('ck-collapsed')) {
 }
 
 // ===== 拖拽调宽 =====
+let draggingSidebar = false;
 if (sidebar) {
   const resizer = document.createElement('div');
   resizer.className = 'ck-sidebar-resizer';
@@ -108,12 +128,20 @@ if (sidebar) {
   resizer.addEventListener('mousedown', (e: any) => {
     if (sidebar.classList.contains('ck-collapsed')) return; // 收起状态下不拖
     e.preventDefault();
+    draggingSidebar = true;
     if (api.startSidebarDrag) api.startSidebarDrag();
   });
   // 拖拽中：主进程推来实时宽度
   if (api.onSidebarDrag) api.onSidebarDrag((w: number) => applySidebarWidth(w));
   // 松开鼠标 → 结束拖拽（拖拽期间 AI 视图已移出，故鼠标必在壳页面）
+  // 松开鼠标 → 结束拖拽（拖拽期间 AI 视图已移出，故鼠标必在壳页面）
+  // 必须用 draggingSidebar 守卫：此监听挂在 document 上，否则页面任意一次点击
+  // 都会广播宽度并触发所有窗口 toggleSidebar 重排 AI 视图（严重性能问题）。
   document.addEventListener('mouseup', () => {
+    if (!draggingSidebar) return;
+    draggingSidebar = false;
     if (api.endSidebarDrag) api.endSidebarDrag();
+    // 跨窗口同步：本窗口拖完宽度后广播给其他窗口（apply 阶段不会回环）
+    try { pushLayout(WIDTH_KEY, String(expandedWidth)); } catch (_) { /* ignore */ }
   });
 }

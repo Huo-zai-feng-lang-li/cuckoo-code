@@ -7,17 +7,17 @@
  * 检测方式：hook（主世界）在流静默超过阈值时派发 'cuckoo-stream-idle' 事件，
  * 本模块（隔离世界）订阅后按次数发提示词。
  *
- * 配置（localStorage，每窗口独立）：
+ * 配置（主进程全局文件 → 同步写入本页 localStorage 作运行时缓存）：
  *  - cuckoo-xhr-idle-timeout   静默阈值（毫秒，默认 300000，<=0 禁用；hook 侧读取）
  *  - cuckoo-watchdog-prompt    超时提示词（默认"请继续"）
- *  - cuckoo-watchdog-count     最大催次数（默认 3，负数=无限）
+ *  - cuckoo-watchdog-count     最大催次数（默认 1，负数=无限）
  */
 import { showToast } from '../../overlay/panel.js';
 import { getProviderByUrl } from '../../providers/registry.js';
 import { sendToChat } from '../../overlay/chat-input.js';
 
 const DEFAULT_PROMPT = '请继续';
-const DEFAULT_COUNT = 3;
+const DEFAULT_COUNT = 1;
 
 let idleCount = 0;
 // 暂停开关：压缩等流程进行中时置 true，完全停摆

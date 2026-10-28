@@ -305,6 +305,12 @@ const shellAPI = {
   resetSettings: () => ipcRenderer.invoke('reset-settings'),
   getUiPrefs: () => ipcRenderer.invoke('get-ui-prefs'),
   setUiPrefs: (data: any) => ipcRenderer.invoke('set-ui-prefs', { data }),
+  /** 壳页面布局变更广播（侧栏宽度 / 活动栏顺序 / 显隐），其他窗口改动时触发 */
+  onShellLayoutChanged: (cb: (layout: any) => void) => {
+    ipcRenderer.on('shell-layout-changed', (_e: any, payload: any) => {
+      try { cb(payload && payload.layout); } catch (_) { /* ignore */ }
+    });
+  },
   // ========== 安全 / 执行策略（X-001 第三层 + 工作区信任列表）==========
   getExecutionPolicy: () => ipcRenderer.invoke('get-execution-policy'),
   setExecutionPolicy: (mode: string) => ipcRenderer.invoke('set-execution-policy', { mode }),

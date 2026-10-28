@@ -180,6 +180,15 @@ function init(): void {
         ipcRenderer.send('cuckoo-settings-result', { reqId, ok: false, error: err.message });
       }
     });
+    // 统一设置同步：主进程权威源 → 本页面 localStorage（hook / loop 运行时同步读取）
+    ipcRenderer.on('cuckoo-sync-settings', (_e: any, payload: any) => {
+      try {
+        const data = payload && payload.data;
+        if (data) settingsPanel.applySettingsData(data);
+      } catch (err: any) {
+        console.error('[Cuckoo Code] 同步全局设置失败:', err && err.message);
+      }
+    });
     ipcRenderer.on('cuckoo-save-settings', (_e: any, { reqId, data }: any) => {
       try {
         const res = settingsPanel.applySettingsData(data);

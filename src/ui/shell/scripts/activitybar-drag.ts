@@ -1,4 +1,5 @@
 import { refreshActivitybarOverflow } from './activitybar-overflow.js';
+import { pushLayout } from './layout-sync.js';
 
 /**
  * 活动栏图标拖拽排序：拖动图标调整顺序，顺序持久化到 localStorage。
@@ -58,7 +59,10 @@ function saveOrder(): void {
     const k = keyOf(el);
     if (k) keys.push(k);
   });
-  try { localStorage.setItem(ORDER_KEY, JSON.stringify(keys)); } catch (_) { /* ignore */ }
+  const raw = JSON.stringify(keys);
+  try { localStorage.setItem(ORDER_KEY, raw); } catch (_) { /* ignore */ }
+  // 跨窗口同步：图标顺序（apply 阶段不会回环）
+  try { pushLayout(ORDER_KEY, raw); } catch (_) { /* ignore */ }
 }
 
 /** 应用持久化的顺序（observer 回调 / 启动时调用） */

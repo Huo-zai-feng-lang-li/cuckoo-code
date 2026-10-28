@@ -52,15 +52,112 @@ function buildClientHintsHeaders(): Record<string, string> {
 function buildUserAgentDataFix(): string {
   const m = chromeMajor();
   const full = chromeFullVersion();
-  return '(function(){try{' +
-    'var brands=[{brand:"Google Chrome",version:"' + m + '"},{brand:"Chromium",version:"' + m + '"},{brand:"Not_A Brand",version:"24"}];' +
-    'var fullList=[{brand:"Google Chrome",version:"' + full + '"},{brand:"Chromium",version:"' + full + '"},{brand:"Not_A Brand",version:"24.0.0.0"}];' +
-    'var uad={brands:brands,mobile:false,platform:"Windows",' +
-    'getHighEntropyValues:function(){return Promise.resolve({architecture:"x86",bitness:"64",brands:brands,fullVersionList:fullList,mobile:false,model:"",platform:"Windows",platformVersion:"10.0.0",uaFullVersion:"' + full + '",wow64:false});},' +
-    'toJSON:function(){return{brands:brands,mobile:false,platform:"Windows"};}};' +
-    'try{Object.defineProperty(navigator,"userAgentData",{get:function(){return uad;},configurable:true});}catch(e){}' +
-    'try{Object.defineProperty(navigator,"webdriver",{get:function(){return false;},configurable:true});}catch(e){}' +
-    '}catch(e){}})();';
+  return `(function(){
+  try {
+    var brands = [
+      { brand: "Google Chrome", version: "${m}" },
+      { brand: "Chromium", version: "${m}" },
+      { brand: "Not_A Brand", version: "24" }
+    ];
+    var fullList = [
+      { brand: "Google Chrome", version: "${full}" },
+      { brand: "Chromium", version: "${full}" },
+      { brand: "Not_A Brand", version: "24.0.0.0" }
+    ];
+    var uad = {
+      brands: brands,
+      mobile: false,
+      platform: "Windows",
+      getHighEntropyValues: function() {
+        return Promise.resolve({
+          architecture: "x86",
+          bitness: "64",
+          brands: brands,
+          fullVersionList: fullList,
+          mobile: false,
+          model: "",
+          platform: "Windows",
+          platformVersion: "10.0.0",
+          uaFullVersion: "${full}",
+          wow64: false
+        });
+      },
+      toJSON: function() {
+        return { brands: brands, mobile: false, platform: "Windows" };
+      }
+    };
+    var nav = typeof navigator !== "undefined" ? navigator : null;
+    if (nav) {
+      try {
+        if (Object.prototype.hasOwnProperty.call(nav, "webdriver")) {
+          delete nav.webdriver;
+        }
+      } catch (e) {}
+      var navProto = Object.getPrototypeOf(nav) || (typeof Navigator !== "undefined" ? Navigator.prototype : null);
+      if (navProto) {
+        try {
+          if (nav.webdriver !== false) {
+            var getWd = function() { return false; };
+            try {
+              Object.defineProperty(getWd, "name", { value: "get webdriver" });
+              getWd.toString = function() { return "function get webdriver() { [native code] }"; };
+            } catch (e) {}
+            Object.defineProperty(navProto, "webdriver", {
+              get: getWd,
+              enumerable: true,
+              configurable: true
+            });
+          }
+        } catch (e) {}
+        try {
+          Object.defineProperty(navProto, "userAgentData", {
+            get: function() { return uad; },
+            enumerable: true,
+            configurable: true
+          });
+        } catch (e) {
+          try {
+            Object.defineProperty(nav, "userAgentData", {
+              get: function() { return uad; },
+              configurable: true
+            });
+          } catch (e2) {}
+        }
+      } else {
+        try {
+          Object.defineProperty(nav, "userAgentData", {
+            get: function() { return uad; },
+            configurable: true
+          });
+        } catch (e) {}
+      }
+    }
+    if (typeof window !== "undefined") {
+      try {
+        if (!window.chrome) { window.chrome = {}; }
+        if (!window.chrome.runtime) {
+          window.chrome.runtime = {
+            OnInstalledReason: { CHROME_UPDATE: "chrome_update", INSTALL: "install", SHARED_MODULE_UPDATE: "shared_module_update", UPDATE: "update" },
+            OnRestartRequiredReason: { APP_UPDATE: "app_update", OS_UPDATE: "os_update", PERIODIC: "periodic" },
+            PlatformArch: { ARM: "arm", ARM64: "arm64", MIPS: "mips", MIPS64: "mips64", X86_32: "x86-32", X86_64: "x86-64" },
+            PlatformNaclArch: { ARM: "arm", MIPS: "mips", MIPS64: "mips64", X86_32: "x86-32", X86_64: "x86-64" },
+            PlatformOs: { ANDROID: "android", CROS: "cros", LINUX: "linux", MAC: "mac", OPENBSD: "openbsd", WIN: "win" },
+            RequestUpdateCheckStatus: { NO_UPDATE: "no_update", THROTTLED: "throttled", UPDATE_AVAILABLE: "update_available" }
+          };
+        }
+        if (!window.chrome.loadTimes) { window.chrome.loadTimes = function() {}; }
+        if (!window.chrome.csi) { window.chrome.csi = function() {}; }
+        if (!window.chrome.app) {
+          window.chrome.app = {
+            isInstalled: false,
+            InstallState: { DISABLED: "disabled", INSTALLED: "installed", NOT_INSTALLED: "not_installed" },
+            RunningState: { CANNOT_RUN: "cannot_run", READY_TO_RUN: "ready_to_run", RUNNING: "running" }
+          };
+        }
+      } catch (e) {}
+    }
+  } catch (e) {}
+})();`;
 }
 
 /**

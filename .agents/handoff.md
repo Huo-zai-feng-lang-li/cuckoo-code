@@ -1,24 +1,42 @@
-# 会话接续状态
+# 最新接续状态 (2026-10-28 22:30)
 
-## 当前版本
-- package.json / CHANGELOG 顶部：**v0.10.153**（2026-10-28）
+## 核心进展
 
-## 最近完成的工作
-- **v0.10.153**：手机 APK 新增任务完成本地通知（`@capacitor/local-notifications`，仅后台时触发）；修复停止后看门狗「催活」与普通模式看门狗永久挂起；修复窗口组切换退回后看门狗未恢复。
-- **v0.10.152**：修复纯净模式/手机端「停止」失效（隐藏页面下 `elementFromPoint` 返回 null → 改 DOM 标记定位）、工具遮罩残留、停止时误弹「已取消自动重试」。
-- **v0.10.151**：修复手机 APK 扫码连不上远程的问题。根因是 `src/remote/server.ts` 无任何 CORS 支持——APK（Capacitor）页面 origin 为 `https://localhost`，跨域访问远程域名且带 `Authorization` 头 → 触发 `OPTIONS` 预检 → 服务端在 token 鉴权处直接 401 → 浏览器阻断真实请求 → 手机端提示「无法连接电脑」。修复：`handleRequest` 首行统一设置 CORS 头，并在鉴权前对 `OPTIONS` 直接返回 204；新增 3 条真实 HTTP 集成测试（预检 204、跨域 GET 200、**401 也带 CORS 头**防回归）。
-- **v0.10.85**：恢复自动更新静默安装（不再弹窗）。
-- **文档校准（本轮）**：
-  - `.cuckoo/CUCKOO.md`：修正「加 IPC」链路（壳页面走 `src/app/shell-preload.ts`，`bridge/api.ts` 只给 AI 网页）；compile 由"三步"更正为 8 步；生成物禁改清单补 `bootstrap.generated.ts` 与 `src/ui/shell.html`。
-  - `docs/arch/03-build.md`：compile 步骤改为完整 8 步，小节编号对齐；生成物清单补 `src/ui/shell.html`。
-  - `.agents/rules/overlay.md` / `bridge.md`：为既有的 `session/compaction.js` 依赖加"已知例外"说明（不拆代码）。
+- **v0.10.155 发版**：设置全局化 + 防封默认收紧 + 队列/停止加固，对抗性审计闭环。
+- **审计（audit-staged）发现并修复 2 处真缺陷**：
+  1. **🔴 防封迁移对老用户完全失效**：`global-settings.ts` 的 `LEGACY_DEFAULTS.sendDelay` 误写成需求文档目标值 4/12（旧代码真值是 1000/10000ms = **1/10 秒**）。老用户 localStorage 存 1/10 秒 → `migrateLegacy` 比对不命中 → 保留 1/10 秒，防封节奏优化（6/16）对其 100% 失效。已改为 1/10，并新增回归测试「旧真值 sendDelay 1/10 秒必须命中迁移」锁死语义。
+  2. **🟡 多窗口并发保存时发起方 localStorage 持陈旧数据**：`save-settings` 广播跳过发起方。若两窗口在 await 窗口（~50ms）内并发保存**不同字段**，后完成方自己的 AI 页会永久缺对方刚写的字段（与落盘文件不一致，hook/loop 读的是 localStorage）。已改为广播不跳过发起方（幂等应用）。
+- **注释/文档对齐**：`settings.ts:62` JSDoc（声称含 harnessView，实际只发 ctx.view）、`global-settings.ts` 头注释（sendDelay 旧值写错）、`docs/requirements/089`（4-12 秒 → 实际 6-16 秒）。
 
-## 已知问题 / 待办
-- **远程 PWA 体验**：手机切后台/锁屏约 90–120s 会被服务端心跳判死并重连；重连后 `renderHistory` 会 `innerHTML=''` 整块重画并强制滚底，视觉上像"刷新"。属设计副作用，**本轮按要求未改**。
-- **用户级全局规则** `~/.agents/rules/rule.md` 写死本机路径（`D:\Desktop` 等），换机器会失效，需人工调整。
-- **GitHub Release 标记**：如仍有 Tag 竞态遗留，需网页端手动把最新版本设为 Latest。
+## 本轮改动主体（相对 v0.10.153）
 
-## 关键文件
-- 提示词组装：`src/session/prompt-builder.ts`（项目专属内容全从项目目录读，无硬编码）
-- 规则扫描：`src/rules/scanner.ts`、`src/rules/prompt.ts`
-- 远程：`src/remote/server.ts`（心跳/WS）、`src/remote/manager.ts`（历史重推）、`src/remote/pwa/app.js`（重连与渲染）
+1. **设置全局化**：`src/app/global-settings.ts`（新）为唯一真相源 `~/.cuckoo/agent-settings.json`；AI 页面 localStorage 降级为运行时缓存；`ipc/settings.ts` 重写为「增量 + 最新基底合并 + 广播」；`entry.ts` 在 did-finish-load 下发或触发迁移。
+2. **防封默认收紧**：retryCount 10→3、retryDelay 4~10s→15~30s、retry429Count 40→1、watchdogCount 3→1、sendDelay 1~10s→6~16s。
+3. **浏览器指纹加固**：`user-agent.ts` 重写 `buildUserAgentDataFix()`（webdriver 走 Navigator.prototype、补 window.chrome 全套）；`entry.ts` 追加 `--disable-blink-features=AutomationControlled`。
+4. **队列先停后发**：`harness.html` 的 `sendQueueItemNow` / `doSendQueueItem` / `maybeFlushQueue` / `send(override...)` / `waitForAiIdleThenSend`（静默期 300→500ms）。
+5. **停止闭环**：`stopGeneration` 的 not-generating / escape 改为成功；`onPhoneStop` 统一 clearBusy；`requestAbort` 级联 `emitUserStop`；`observer.ts` 中止后丢弃残余帧与工具回传。
+6. **壳页面布局跨窗口同步**：`layout-sync.ts`（新）+ `sidebar.ts` / `activitybar-visibility.ts` / `ui-prefs.ts` / `shell-preload.ts`。
+7. **手机端**：任务完成通知（task-done 与 ai-reply 区分）、电量优化单次引导、停止收尾。
+
+## 验证结果
+
+- `npm run typecheck` → 通过
+- `npm test` → **130 套件 / 1267 用例全绿**
+- `npm run lint` → 0 errors（65 warnings 均为历史存量 unused-vars）
+- `npm run compile` → 通过（shell.html 522080 字节）
+- 审计报告：`.agents/settings-sync-and-safe-defaults-审计.md`
+
+## 待办事项 (Next Steps)
+
+- [ ] 真机验证（开发版 CDP 9444）：纯净模式点停止 → 顶栏「已停止」→ 1.5s 后「就绪」；工具卡片转「已停止」。
+- [ ] 真机验证：老用户升级路径。构造 `~/.cuckoo/agent-settings.json` 不存在 + AI 页 localStorage 存 `cuckoo-send-delay-min=1000`/`max=10000` → 启动后应为 6000/16000。
+- [ ] 真机验证：手机端长任务中途点停止 → 流式气泡收敛、忙态解除。
+- [ ] 实际 Android 手机安装 APK，验证冷启动电量优化仅首次弹窗。
+- [ ] 多窗口并发保存设置（两窗口同时改不同项）→ 两边 localStorage 与文件一致。
+
+## 关键上下文
+
+- 工作目录: `d:\Desktop\Super-File\cuckoo-code`
+- 版本: `0.10.155`（跳过含 4 的 0.10.154）
+- 快照: `snap-1793193757560-hnuqay`（审计修复前）
+- 垃圾文件清单（未删，需确认）：`wyp/`(11.9M) `coverage/`(6.1M) `.codegraph/`(19.8M) `.archify/`(0.8M) `temp_audit_diff.patch` `wyp-t.log`；可重建：`dist/`(782M) `out/`(58M)

@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+## [0.10.155] - 2026-10-28
+
+### Added
+- **设置全局化**：主进程新增 `~/.cuckoo/agent-settings.json` 作为唯一真相源，AI 页面 localStorage 降级为运行时缓存。多窗口（不同 profile、子代理窗口）的设置变更实时同步，解决「A 窗口改设置、B 窗口不生效」的老问题（`src/app/global-settings.ts`、`src/app/ipc/settings.ts`）。
+- **壳页面布局跨窗口同步**：侧栏宽度、活动栏图标顺序、图标显隐经主进程（`ui-prefs.json`）广播到所有窗口，各窗口写回自己的 localStorage 并重新应用。含防回环守卫（`src/ui/shell/scripts/layout-sync.ts`）。
+- **手机远程任务完成通知**：AI 给出普通文本（工具循环退出）时广播 `task-done`，与每轮都触发的 `ai-reply` 区分，避免每个工具轮都弹一次通知（`src/bridge/remote-bridge.ts`、`src/remote/manager.ts`）。
+- **Android 电量优化单次引导**：引入 `localStorage['cuckoo-battery-opt-req']` 持久化标记，冷启动首次提示后不再重复弹窗（`android/app/src/main/assets/public/app.js`、`src/remote/pwa/app.js`）。
+
+### Changed
+- **自动化节奏默认值整体收紧（防封）**：
+  - 重试次数 10 → 3；重试间隔 4~10s → 15~30s
+  - HTTP 429 重试次数 40 → 1
+  - 看门狗催促次数 3 → 1
+  - 发送间隔 1~10s → **6~16s**
+- **老用户配置迁移**：首次升级时从 AI 页面 localStorage 迁移到全局文件；恰好等于旧默认值的字段替换为新默认，用户真实自定义过的值原样保留（`migrateLegacy`）。
+- **多窗口并发保存**：壳页面提交「增量」而非全量快照，主进程用「最新文件值 + delta」合并，避免后保存方覆盖对方刚写的字段（`applyDelta`）。
+- **浏览器指纹伪装加固**：`navigator.webdriver` 改在 `Navigator.prototype` 原型链上定义（`hasOwnProperty('webdriver')` 返回 false）；补 `window.chrome` 全套（`runtime`/`loadTimes`/`csi`/`app`）；主进程追加 `--disable-blink-features=AutomationControlled`。
+- **用户手动发送 0ms 秒发**：纯净模式（`harness-bridge.ts`）与手机端（`remote-bridge.ts`）真人交互发送显式指定 `fixedDelay = 0`；4~12s 防风控延时仍保留给工具结果回传等自动化路径。
+
+### Fixed
+- **🔴 防封迁移对老用户完全失效**：`migrateLegacy` 的 `LEGACY_DEFAULTS.sendDelay` 误写成需求文档目标值 4/12（旧代码真值是 1000/10000ms = 1/10 秒），导致老用户 `sendDelay` 不命中迁移、防封节奏优化对其 100% 失效。已改为 1/10 并补回归测试锁死。
+- **🟡 多窗口并发保存时发起方 localStorage 持陈旧数据**：`save-settings` 广播跳过发起方，若两窗口在 await 窗口内并发保存不同字段，发起方 AI 页面会永久缺另一窗口刚写的字段（与落盘文件不一致，hook/loop 读的是 localStorage）。已改为不跳过发起方。
+- **手机端/纯净模式停止后状态假死**：`stopGeneration` 中「当前没在生成」与「Escape 兜底」原来返回 `success:false`，导致手机端误报「停止未生效」并保持忙态。改为返回成功，并由 `onPhoneStop` 统一收尾 `clearBusy`。
+- **停止后旧任务结果混入新任务**：`observer.ts` 在工具结果回传重试循环中检查 `abortRequested`，用户已停止则放弃回传；`processInterceptedResponse` 与 `cuckoo-ai-stream` 均检查并丢弃残余帧。
+- **队列「立即发送」串台**：`sendQueueItemNow` 严格 stop → 清空输入框/暂存附件 → 等静默期（500ms）→ 发送；`doSendQueueItem` 发送后延后 300ms 恢复 `flushingSuppressed`，阻断连带排空抢发。
+- **自动排空打断用户输入**：`maybeFlushQueue` 改为直接传参 `send(item.text, item.files, item.hints)`，完全不触碰用户正在输入的 `input.value` 与附件，发送后恢复现场并 `autoGrowInput()`。
+- **停止后 UI 无反馈**：纯净模式顶栏立即显示「已停止」（1.5s 后切回「就绪」），对话流输出系统消息，所有运行中工具卡片转为「已停止 (用户手动中止)」；`api.stop()` 异常显式反馈给用户。
+- **停止信号未级联到手机广播**：`requestAbort()` 内部级联调用 `emitUserStop()`，确保纯净模式与后台中止信号 100% 同步唤醒远端手机广播 `ai-stop`。
+
 ## [0.10.153] - 2026-10-28
 
 ### Added

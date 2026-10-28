@@ -302,7 +302,7 @@ async function stopGeneration(ctx: any): Promise<any> {
 
     // 守卫：定位函数明确表示「当前没有在生成」→ 不点击（避免误点发送按钮）
     if (r && r.found === false && r.generating === false) {
-      return { success: false, reason: 'not-generating', detail: r.reason || '' };
+      return { success: true, reason: 'not-generating', detail: r.reason || '' };
     }
 
     if (r && r.found && typeof r.x === 'number') {
@@ -360,7 +360,7 @@ async function stopGeneration(ctx: any): Promise<any> {
     // 定位失败：尝试 Escape 兜底（部分站点可用）
     wc.sendInputEvent({ type: 'keyDown', keyCode: 'Escape', key: 'Escape' });
     wc.sendInputEvent({ type: 'keyUp', keyCode: 'Escape', key: 'Escape' });
-    return { success: false, method: 'escape' };
+    return { success: true, method: 'escape' };
   } catch (err: any) {
     console.log('[Cuckoo Harness] stopGeneration 异常: ' + err.message);
     return { success: false, error: err.message };

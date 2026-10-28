@@ -508,11 +508,11 @@ function bindEvents() {
     // 注意：不能用 "parseInt() || 默认值"——0 是有效值，会被 || 误判为假值丢弃
     if (savedMin !== null) { const v = parseInt(savedMin, 10); if (Number.isFinite(v) && v >= 0) state.sendDelayMin = v; }
     if (savedMax !== null) { const v = parseInt(savedMax, 10); if (Number.isFinite(v) && v >= 0) state.sendDelayMax = v; }
-    // 同步到输入框
+    // 同步到输入框（单位：秒）
     const minInput = document.getElementById('cuckoo-delay-min');
     const maxInput = document.getElementById('cuckoo-delay-max');
-    if (minInput) (minInput as any).value = state.sendDelayMin;
-    if (maxInput) (maxInput as any).value = state.sendDelayMax;
+    if (minInput) (minInput as any).value = state.sendDelayMin / 1000;
+    if (maxInput) (maxInput as any).value = state.sendDelayMax / 1000;
   } catch (e) {}
 
   const minimizeBtn = document.getElementById('cuckoo-btn-minimize');

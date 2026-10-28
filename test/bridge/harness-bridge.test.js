@@ -57,6 +57,7 @@ vi.mock('../../src/bridge/intercept/observer.js', () => ({
 vi.mock('../../src/overlay/chat-input.js', () => ({
   sendToChat: () => Promise.resolve(true),
   cancelPendingSend: () => {},
+  clearInputArea: () => Promise.resolve(true),
   onMessageDelivered: (cb) => { CB.delivered = cb; return () => {}; },
 }));
 

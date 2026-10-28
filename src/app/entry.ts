@@ -20,6 +20,13 @@ import { showSystemNotification } from './notification-window.js';
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, nativeTheme, ipcMain: ipcMainForProfile, Notification } = require('electron');
 
+// 抹除 Blink 引擎自动化控制特征（关键：使 navigator.webdriver 原生返回 false，消除登录拦截与反爬标记）
+try {
+  app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
+} catch (err: any) {
+  console.warn('[Cuckoo Code] 禁用 AutomationControlled 失败:', err && err.message);
+}
+
 // ========== 持久化会话配置 ==========
 const SESSION_DIR = process.env.CUCKOO_SESSION_DIR || 'cuckoo-ai-pro-session';
 const USER_DATA_DIR = path.join(app.getPath('appData'), SESSION_DIR);
@@ -50,6 +57,7 @@ if (RENDERER_LOG_DIR) {
 }
 
 import { registerIpcHandlers } from './ipc/index.js';
+import * as globalSettings from './global-settings.js';
 import * as taskManager from '../infra/task-manager.js';
 import { buildChromeUserAgent, ensureClientHints } from '../infra/user-agent.js';
 import { initRemote, stopRemote } from '../remote/manager.js';
@@ -64,6 +72,7 @@ import { addMemory, removeMemory, listMemories } from '../infra/memories.js';
 import { createSnapshot, listSnapshots, restoreSnapshot } from './snapshots.js';
 import { pushUrlState } from './ipc/shell.js';
 import { pushHarnessState, stopGeneration } from './ipc/harness.js';
+import { migrateIfNeeded } from './ipc/settings.js';
 import { injectWindowGroupDeps, requestShareFromWindow, requestHarnessExport, stageHarnessImport } from './ipc/window-groups.js';
 import { seedDefaultRules } from '../rules/index.js';
 import { initProject } from '../session/project-context.js';
@@ -598,6 +607,16 @@ function createWindow(profile: any) {
 
   view.webContents.on('did-finish-load', () => {
     if (view.webContents && !view.webContents.isDestroyed()) {
+      // 统一设置：主进程权威源 → 本窗口 AI 页面 localStorage（运行时缓存）。
+      // 文件已存在：直接下发。文件不存在（首次升级）：主动触发迁移（读本页 localStorage
+      // → 写全局文件 → 回写本页），确保老用户即使从不打开设置页也能应用防封新默认。
+      try {
+        if (globalSettings.hasAgentSettingsFile()) {
+          view.webContents.send('cuckoo-sync-settings', { data: globalSettings.readAgentSettings() });
+        } else {
+          migrateIfNeeded(view.webContents).catch(() => { /* ignore */ });
+        }
+      } catch (_) { /* ignore */ }
       view.webContents.send('page-loaded');
       sessionStore.tryRestoreSessionFromUrl(view);
       pushUrlState(view);

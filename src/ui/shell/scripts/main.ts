@@ -3,7 +3,7 @@
  * 导入各模块（副作用：绑定事件），注册 tab 加载器，做预加载。
  */
 import { api, ckPrompt, ckConfirm, ckAlert } from './shared.js';
-import { registerTab } from './sidebar.js';
+import { registerTab, applySyncedSidebarWidth } from './sidebar.js';
 import './toolbar.js';
 import './preview.js';
 import './platform.js';
@@ -36,6 +36,8 @@ import { initActivitybarVisibility } from './activitybar-visibility.js';
 import { initUpdateProgress } from './update-progress.js';
 import { initWindowSwitchToast } from './window-switch.js';
 import { initNewConvLoading } from './newconv-loading.js';
+import { registerLayoutKey, initLayoutSync } from './layout-sync.js';
+import { applyActivitybarVisibility } from './activitybar-visibility.js';
 
 // 全局统一自定义 Tooltip（接管所有 title，告别系统原生提示）
 try { initGlobalTooltip(); } catch (_) { /* ignore */ }
@@ -57,6 +59,16 @@ try { initActivitybarOverflow(); } catch (_) { /* ignore */ }
 
 // 自动更新进度（状态栏进度条）
 try { initUpdateProgress(); } catch (_) { /* ignore */ }
+
+// ===== 布局跨窗口同步（侧栏宽度 / 图标顺序 / 图标显隐）=====
+// 先注册各键的应用函数，再拉取全局布局覆盖本窗口 localStorage。
+// 应用函数读的都是 localStorage，故"值"参数仅用于触发重新应用，不直接消费。
+try {
+  registerLayoutKey('cuckoo-sidebar-width', (v) => applySyncedSidebarWidth(v));
+  registerLayoutKey('cuckoo-activitybar-order', () => applyActivitybarOrder());
+  registerLayoutKey('cuckoo-activitybar-hidden', () => applyActivitybarVisibility());
+  initLayoutSync();
+} catch (_) { /* ignore */ }
 
 // 把自定义弹框挂到 window，供插件脚本调用（Electron 禁用原生 prompt，插件需用这套）
 (window as any).ckPrompt = ckPrompt;

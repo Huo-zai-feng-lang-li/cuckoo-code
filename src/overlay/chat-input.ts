@@ -19,7 +19,7 @@ function getCurrentProvider(): any {
 }
 
 /**
- * 生成随机等待时间（ms），范围由 state 配置（默认 1-10 秒）
+ * 生成随机等待时间（ms），范围由 state 配置（默认 4-12 秒拟人化节奏）
  */
 function randomDelay(): number {
   const min = typeof state.sendDelayMin === 'number' ? state.sendDelayMin : 1000;
@@ -95,7 +95,7 @@ async function setInputContent(input: any, msg: string): Promise<boolean> {
  * @returns 是否成功
  */
 // 当前待发送的消息（可被 cancelPendingSend 取消）
-interface PendingSend { timer: any; input: any; cancelled: boolean; resolve?: (v: boolean) => void; }
+interface PendingSend { timer: any; input: any; cancelled: boolean; tag?: string; resolve?: (v: boolean) => void; }
 let pendingSend: PendingSend | null = null;
 
 // 发送串行链：确保同一时刻只有一条消息处于"填充→等待→发送"流程，
@@ -155,7 +155,7 @@ async function doSendToChat(msg: string, tag?: string, fixedDelay?: number, afte
     console.log('[Cuckoo Code] 找不到输入框，无法发送消息');
     return false;
   }
-  const token: PendingSend = { timer: null, input: input, cancelled: false };
+  const token: PendingSend = { timer: null, input: input, cancelled: false, tag: tag };
   pendingSend = token;
   if (!(await setInputContent(input, msg))) {
     if (pendingSend === token) pendingSend = null;
@@ -191,20 +191,31 @@ async function doSendToChat(msg: string, tag?: string, fixedDelay?: number, afte
 }
 
 /**
- * 取消当前待发送的消息（清计时器；输入框内容保留，用户可自行处理）
+ * 取消当前待发送的消息（清计时器；若为系统内部消息则清空输入框防止残留）
+ * @param clearSystemTagOnly 是否清空系统内部消息填入的输入框内容
  * @returns 是否确实取消了待发送
  */
-function cancelPendingSend(): boolean {
+function cancelPendingSend(clearSystemTagOnly = true): boolean {
   if (!pendingSend) return false;
   const t = pendingSend;
   t.cancelled = true;
   if (t.timer) clearTimeout(t.timer);
   // 释放串行链：取消后必须 resolve，否则 sendChain 永久挂起、后续消息全部卡死
   if (t.resolve) { try { t.resolve(false); } catch (_) {} }
+  // 系统内部消息（工具结果/看门狗/重试）：取消时必须清空输入框，防止工具结果残留/回显
+  if (clearSystemTagOnly && isSystemTag(t.tag)) {
+    setInputContent(t.input, '').catch(() => {});
+  }
   pendingSend = null;
-  // 不清空输入框：保留待发内容，用户可自行决定发送或删除
-  console.log('[Cuckoo Code] 已取消待发送的消息（输入框内容保留）');
+  console.log('[Cuckoo Code] 已取消待发送的消息' + (isSystemTag(t.tag) ? '（已清空系统内部内容）' : ''));
   return true;
+}
+
+/** 清空底层网页输入框（供停止信号或队列发送调用，防任务结果回显） */
+async function clearInputArea(): Promise<boolean> {
+  const input = findInputArea();
+  if (!input) return false;
+  return setInputContent(input, '');
 }
 /**
  * 将消息填入 DeepSeek 聊天输入框并触发发送（工具结果回传的公共实现）
@@ -556,6 +567,7 @@ export {
   applyResultTransform,
   sendCombinedJsResultsToChat,
   cancelPendingSend,
+  clearInputArea,
   findInputArea,
   getInputText,
   isInputVisible,

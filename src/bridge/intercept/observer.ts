@@ -63,7 +63,10 @@ let lastProcessedText = '';
 let lastInterceptedText = '';
 // 用户请求中止：停止工具循环的回传（停止按钮触发）
 let abortRequested = false;
-function requestAbort(): void { abortRequested = true; }
+function requestAbort(): void {
+  abortRequested = true;
+  emitUserStop();
+}
 function clearAbort(): void { abortRequested = false; }
 
 /**
@@ -153,6 +156,11 @@ async function sendToolResultWithRetry(results: any, onSent?: () => void): Promi
   const MAX_ATTEMPTS = 3;     // 常规发送最多 3 次
   const RETRY_DELAY_MS = 600; // 重试间隔
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    // 每次重试前检查中止：用户已点停止 → 不再回传（防止旧任务结果混入新任务）
+    if (abortRequested) {
+      console.log('[Cuckoo Code][拦截] 重试期间已请求中止，放弃工具结果回传');
+      return false;
+    }
     const sent = await sendCombinedJsResultsToChat(results, onSent).catch(() => false);
     if (sent) return true;
     console.warn('[Cuckoo Code][拦截] 工具结果回传失败（第 ' + attempt + '/' + MAX_ATTEMPTS + ' 次）');
@@ -196,7 +204,11 @@ async function executeJsBlocksWithRetry(blocks: string[]): Promise<any[]> {
  * @param force 为 true 时跳过去重（手动解析重新执行同一条时使用）
  */
 async function processInterceptedResponse(text: string, force?: boolean): Promise<void> {
-  if (abortRequested) { abortRequested = false; console.log('[Cuckoo Code][拦截] 已请求中止，跳过本次处理'); return; }
+  if (abortRequested) {
+    abortRequested = false;
+    console.log('[Cuckoo Code][拦截] 已请求中止，跳过本次处理并复位中止状态');
+    return;
+  }
   const raw = (text || '').trim();
   if (!raw) return;
   if (!force && raw === lastProcessedText) return;
@@ -418,6 +430,7 @@ function startInterceptObserver(): void {
       // 用户主动停止：不处理，也不通知监听器（等待方按超时处理）
       if (detail.status === 'stopped') {
         console.log('[Cuckoo Code][拦截] 检测到用户停止生成，忽略该回复');
+        abortRequested = false;
         try { watchdog.onResponseReceived('stopped'); } catch (_) { /* ignore */ }
         try { emitUserStop(); } catch (_) { /* ignore */ }
         return;
@@ -438,6 +451,7 @@ function startInterceptObserver(): void {
   });
   window.addEventListener('cuckoo-ai-stream', (ev: any) => {
     try {
+      if (abortRequested) return; // 用户请求中止后，丢弃残余流帧
       const detail = ev && ev.detail;
       if (!detail) return;
       emitStream({

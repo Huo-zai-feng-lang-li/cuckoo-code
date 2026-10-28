@@ -10,7 +10,7 @@
  * 注意：手机用户消息回显由手机端乐观 UI 负责，此处不订阅 onUserMessageSent。
  */
 import { createRequire } from 'node:module';
-import { onInterceptedResponse, onToolCall, onStream, onUserStop, onAiError } from './intercept/observer.js';
+import { onInterceptedResponse, onToolCall, onStream, onUserStop, onAiError, onTaskIdle, clearAbort } from './intercept/observer.js';
 import { looksLikeToolScript } from './parser/js-detector.js';
 import { sendToChat } from '../overlay/chat-input.js';
 
@@ -86,12 +86,25 @@ export function initRemoteBridge(): void {
   });
 
   // 2. AI 回复完成 → 上报（剥离工具代码块）
+  // 注意：这是"每一轮"回复（工具循环里每跑完一批工具 AI 都会再回一段），
+  // 手机端据此渲染气泡，但**不**用它弹通知（否则每个工具轮都弹一次）。
+  // 通知统一由下面的 task-done 触发。
+  let lastReplyText = '';
   onInterceptedResponse((text: string) => {
     stopStreamThrottle(false); // 有全量帧，不 flush（防重复）
     if (!enabled || !text) return;
     const clean = stripBlocks(text);
     if (!clean) return;
+    lastReplyText = clean;
     report({ type: 'ai-reply', text: clean });
+  });
+
+  // 2.1 任务整体结束（AI 给出普通文本、不再调工具 = 工具循环退出）→ 通知手机
+  // 与 ai-reply 的区别：ai-reply 每轮都有，task-done 整个任务只有一次。
+  onTaskIdle(() => {
+    if (!enabled) return;
+    report({ type: 'task-done', text: lastReplyText });
+    lastReplyText = '';
   });
 
   // 3. 用户停止生成（网页点停止或收到停止信号）→ 上报收尾
@@ -143,11 +156,13 @@ export function initRemoteBridge(): void {
   ipcRenderer.on('remote-user-message', (_e: any, payload: any) => {
     const text = payload && payload.text;
     if (!text) return;
+    clearAbort(); // 手机新消息：清除中止抑制
     // 上报给 harness 显示用户气泡（否则纯净模式可见历史与实际上下文分叉）
     try { ipcRenderer.invoke('harness-event-report', { type: 'user', text }).catch(() => {}); } catch (_) { /* ignore */ }
     // 必须检查返回值：sendToChat 可能返回 false（找不到输入框 / 被停止信号 cancelPendingSend 取消）。
     // 手机端已乐观显示用户气泡，若这里静默失败，手机会误以为已发送、AI 却收不到。
-    sendToChat(text, '远程', undefined).then((ok) => {
+    // 手机用户手动发送：无需 4-12s 自动化防风控延时，直接 0ms 秒发
+    sendToChat(text, '远程', 0).then((ok) => {
       if (!ok) {
         report({ type: 'sys', text: '消息未发出（输入框未就绪或被停止取消），请重试' });
       }

@@ -23,7 +23,7 @@ import {
   onInterceptedResponse, onToolCall, onStream, onTaskIdle, onAiError, onUserStop,
   requestAbort, clearAbort,
 } from './intercept/observer.js';
-import { sendToChat, cancelPendingSend, onMessageDelivered } from '../overlay/chat-input.js';
+import { sendToChat, cancelPendingSend, clearInputArea, onMessageDelivered } from '../overlay/chat-input.js';
 import { hideToolMask } from '../overlay/panel.js';
 import { cancelPendingForSwitch, resumeRetry } from './loop/retry.js';
 import { setSuspended as setWatchdogSuspended } from './loop/watchdog.js';
@@ -162,7 +162,8 @@ export function initHarnessBridge(): void {
     if (!text) return;
     clearAbort(); // 新消息：清除中止标志
     try { setWatchdogSuspended(false); } catch (_) { /* ignore */ } // 新任务：恢复看门狗
-    sendToChat(text, 'harness', undefined).then((ok) => {
+    // 用户手动在纯净模式发送：无需 4-12s 自动化防风控延时，直接 0ms 秒发
+    sendToChat(text, 'harness', 0).then((ok) => {
       if (!ok) {
         report({ type: 'status', text: '网页未找到输入框（可能在分享页或页面加载中）', busy: false });
         report({ type: 'task-idle' });
@@ -173,16 +174,19 @@ export function initHarnessBridge(): void {
     });
   });
 
-  // 停止：取消延时发送 + 中止工具回传
+  // 停止：取消延时发送 + 清空输入框 + 中止工具回传
   ipcRenderer.on('harness-stop-signal', () => {
     try { cancelPendingSend(); } catch (_) { /* ignore */ }
+    clearInputArea().catch((err: any) => {
+      console.warn('[Cuckoo Harness] 清空输入框失败:', err?.message);
+    });
     try { requestAbort(); } catch (_) { /* ignore */ }
     try { cancelPendingForSwitch(); } catch (_) { /* ignore */ }
     try { hideToolMask(); } catch (_) { /* ignore */ }
     // 暂停看门狗：否则旧任务的 SSE 静默会触发"请继续"，把已停止的任务催活
     try { setWatchdogSuspended(true); } catch (_) { /* ignore */ }
     setAiGenerating(false);
-    console.log('[Cuckoo Harness] 收到停止信号：已取消待发送 + 中止工具回传 + 取消重试倒计时 + 暂停看门狗');
+    console.log('[Cuckoo Harness] 收到停止信号：已取消待发送 + 清空输入框 + 中止工具回传 + 取消重试倒计时 + 暂停看门狗');
   });
 
   // 恢复重试（窗口组切换失败退回时）

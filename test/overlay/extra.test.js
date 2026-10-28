@@ -1,11 +1,11 @@
 import { test } from 'vitest';
 import assert from 'node:assert';
 
-test('randomDelay 返回 1000-9999ms', async () => {
+test('randomDelay 返回默认发送延迟区间（6-16 秒，防封节奏）', async () => {
   const { randomDelay } = await import('../../src/overlay/chat-input.js');
   for (let i = 0; i < 10; i++) {
     const d = randomDelay();
-    assert.ok(d >= 1000 && d <= 9999);
+    assert.ok(d >= 6000 && d <= 16000, '实际返回 ' + d + ' 超出 6000-16000');
   }
 });
 

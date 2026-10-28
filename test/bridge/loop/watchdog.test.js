@@ -58,7 +58,7 @@ afterEach(() => {
 test('_readConfig 返回默认值', () => {
   const cfg = wd._readConfig();
   assert.strictEqual(cfg.prompt, '请继续');
-  assert.strictEqual(cfg.count, 3);
+  assert.strictEqual(cfg.count, 1);
 });
 
 test('_readConfig 从 localStorage 覆盖', () => {
@@ -72,7 +72,7 @@ test('_readConfig 从 localStorage 覆盖', () => {
 test('_readConfig 非法值回退默认', () => {
   localStorage.setItem('cuckoo-watchdog-count', 'xyz');
   const cfg = wd._readConfig();
-  assert.strictEqual(cfg.count, 3);
+  assert.strictEqual(cfg.count, 1);
 });
 
 test('未启动时派发静默事件不计数', () => {
@@ -81,6 +81,7 @@ test('未启动时派发静默事件不计数', () => {
 });
 
 test('启动后派发静默事件计数 +1', () => {
+  localStorage.setItem('cuckoo-watchdog-count', '5');
   wd.startWatchdog();
   emitIdle('abc123');
   assert.strictEqual(wd._getIdleCount(), 1);
@@ -124,6 +125,7 @@ test('次数为负数表示无限', () => {
 });
 
 test('onResponseReceived(finished) 重置计数', () => {
+  localStorage.setItem('cuckoo-watchdog-count', '5');
   wd.startWatchdog();
   emitIdle('abc123');
   emitIdle('abc123');

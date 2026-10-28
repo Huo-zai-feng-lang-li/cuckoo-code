@@ -49,6 +49,13 @@ export async function loadSettings(): Promise<void> {
   } catch (_) { /* ignore */ }
 }
 
+/**
+ * 已变更但尚未成功保存的字段（key 与 collectSettings 返回的对象键一致）。
+ * 保存时只提交这些字段 —— 设置已全局化（主进程 agent-settings.json 为唯一真相源），
+ * 若每次提交全量，两个窗口同时改不同字段会互相覆盖（后保存的把对方刚写的冲掉）。
+ */
+const dirty = new Set<string>();
+
 function collectSettings(): any {
   const num = (id: string) => { const n = parseFloat(getVal(id)); return Number.isFinite(n) ? n : 0; };
   const enEl = document.getElementById('st-retry-enabled') as any;
@@ -85,8 +92,17 @@ async function saveNow(): Promise<void> {
   // 循环到 pending 清空为止：每轮 await 让出事件循环，期间新增的 change 会置 savePending
   for (;;) {
     savePending = false;
+    // 只提交本轮待保存的字段（增量）。dirty 为空 → 无变更可提交，直接退出。
+    // 绝不能回退成全量提交：设置已全局化，全量提交会覆盖其他窗口刚改的字段。
+    const keys = Array.from(dirty);
+    if (keys.length === 0) break;
+    const all = collectSettings();
+    const payload: any = {};
+    for (const k of keys) payload[k] = all[k];
     try {
-      const r = await api.saveSettings(collectSettings());
+      const r = await api.saveSettings(payload);
+      // 成功才清 dirty：失败会 loadSettings 回滚，dirty 由后续 change 重新填充
+      if (r && r.success) { for (const k of keys) dirty.delete(k); }
       if (!(r && r.success)) {
         // 校验失败（如区间 min>max）：提示并回滚到已保存值，丢弃期间的 pending
         await ckAlert((r && r.error) || '保存失败');
@@ -102,13 +118,13 @@ async function saveNow(): Promise<void> {
   }
   saving = false;
 }
-// 数字/文本字段：change（失焦或回车）时保存
-for (const [id] of SET_FIELDS) {
-  document.getElementById('st-' + id)?.addEventListener('change', () => { saveNow(); });
+// 数字/文本字段：change（失焦或回车）时保存（只提交该字段）
+for (const [id, key] of SET_FIELDS) {
+  document.getElementById('st-' + id)?.addEventListener('change', () => { dirty.add(key); saveNow(); });
 }
-// 开关项：切换即保存
-document.getElementById('st-retry-enabled')?.addEventListener('change', () => { saveNow(); });
-document.getElementById('st-ssrf-guard')?.addEventListener('change', () => { saveNow(); });
+// 开关项：切换即保存（只提交该字段）
+document.getElementById('st-retry-enabled')?.addEventListener('change', () => { dirty.add('retryEnabled'); saveNow(); });
+document.getElementById('st-ssrf-guard')?.addEventListener('change', () => { dirty.add('ssrfGuard'); saveNow(); });
 // 刷新：重新读取全部设置（失败重试 + 纯净模式字号 + 主题）
 // 注意：只调用"取值"函数，不调用 initThemeListener，避免重复注册监听器。
 document.getElementById('st-refresh')?.addEventListener('click', () => {
@@ -125,6 +141,8 @@ document.getElementById('st-reset')?.addEventListener('click', async () => {
   resetting = true;
   saving = false;
   savePending = false;
+  // 清空待保存字段：否则 reset 后首次改单个字段时，会把 reset 前的陈旧字段值一并提交
+  dirty.clear();
   try {
     // 1) 表单组（重试/延迟/超时/SSRF）
     if (api.resetSettings) {

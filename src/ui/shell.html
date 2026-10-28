@@ -6006,6 +6006,71 @@ paths:            # 可选；省略 = 始终生效
   // src/ui/shell/scripts/sidebar.ts
   init_shared();
   init_preview();
+
+  // src/ui/shell/scripts/layout-sync.ts
+  init_shared();
+  var appliers = {};
+  function registerLayoutKey(key, apply) {
+    appliers[key] = apply;
+  }
+  var applying = false;
+  function pushLayout(key, value) {
+    if (applying) return;
+    if (!api.setUiPrefs) return;
+    const patch = {};
+    patch[key] = value;
+    try {
+      api.setUiPrefs({ shellLayout: patch }).catch(() => {
+      });
+    } catch (_) {
+    }
+  }
+  function applyLayout(layout) {
+    if (!layout || typeof layout !== "object") return;
+    applying = true;
+    try {
+      for (const key of Object.keys(layout)) {
+        const apply = appliers[key];
+        const value = layout[key];
+        if (!apply || typeof value !== "string") continue;
+        let same = false;
+        try {
+          same = localStorage.getItem(key) === value;
+        } catch (_) {
+        }
+        try {
+          localStorage.setItem(key, value);
+        } catch (_) {
+        }
+        if (same) continue;
+        try {
+          apply(value);
+        } catch (_) {
+        }
+      }
+    } finally {
+      applying = false;
+    }
+  }
+  function initLayoutSync() {
+    if (api.getUiPrefs) {
+      try {
+        api.getUiPrefs().then((r) => {
+          if (r && r.success && r.data) applyLayout(r.data.shellLayout);
+        }).catch(() => {
+        });
+      } catch (_) {
+      }
+    }
+    if (api.onShellLayoutChanged) {
+      try {
+        api.onShellLayoutChanged((layout) => applyLayout(layout));
+      } catch (_) {
+      }
+    }
+  }
+
+  // src/ui/shell/scripts/sidebar.ts
   var sidebar = document.getElementById("ck-sidebar");
   var SIDEBAR_EXPANDED = 460;
   var SIDEBAR_COLLAPSED = 46;
@@ -6039,6 +6104,22 @@ paths:            # 可选；省略 = 始终生效
     saveWidth(expandedWidth);
     if (!sidebar.classList.contains("ck-collapsed")) {
       sidebar.style.width = expandedWidth + "px";
+    }
+  }
+  function applySyncedSidebarWidth(raw) {
+    if (draggingSidebar) return;
+    const w = Number(raw);
+    if (!Number.isFinite(w)) return;
+    expandedWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(w)));
+    saveWidth(expandedWidth);
+    if (sidebar && !sidebar.classList.contains("ck-collapsed")) {
+      sidebar.style.width = expandedWidth + "px";
+      if (api.toggleSidebar) {
+        try {
+          api.toggleSidebar(expandedWidth);
+        } catch (_) {
+        }
+      }
     }
   }
   function setCollapsed(collapsed) {
@@ -6108,6 +6189,7 @@ paths:            # 可选；省略 = 始终生效
       }
     }
   }
+  var draggingSidebar = false;
   if (sidebar) {
     const resizer = document.createElement("div");
     resizer.className = "ck-sidebar-resizer";
@@ -6116,11 +6198,18 @@ paths:            # 可选；省略 = 始终生效
     resizer.addEventListener("mousedown", (e) => {
       if (sidebar.classList.contains("ck-collapsed")) return;
       e.preventDefault();
+      draggingSidebar = true;
       if (api.startSidebarDrag) api.startSidebarDrag();
     });
     if (api.onSidebarDrag) api.onSidebarDrag((w) => applySidebarWidth(w));
     document.addEventListener("mouseup", () => {
+      if (!draggingSidebar) return;
+      draggingSidebar = false;
       if (api.endSidebarDrag) api.endSidebarDrag();
+      try {
+        pushLayout(WIDTH_KEY, String(expandedWidth));
+      } catch (_) {
+      }
     });
   }
 
@@ -8868,8 +8957,13 @@ paths:            # 可选；省略 = 始终生效
     }
   }
   function setHiddenTabs(list) {
+    const raw = JSON.stringify(list);
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      localStorage.setItem(STORAGE_KEY, raw);
+    } catch (_) {
+    }
+    try {
+      pushLayout(STORAGE_KEY, raw);
     } catch (_) {
     }
   }
@@ -8952,6 +9046,7 @@ paths:            # 可选；省略 = 始终生效
     } catch (_) {
     }
   }
+  var dirty2 = /* @__PURE__ */ new Set();
   function collectSettings() {
     const num = (id) => {
       const n = parseFloat(getVal(id));
@@ -8989,8 +9084,16 @@ paths:            # 可选；省略 = 始终生效
     saving2 = true;
     for (; ; ) {
       savePending = false;
+      const keys = Array.from(dirty2);
+      if (keys.length === 0) break;
+      const all = collectSettings();
+      const payload = {};
+      for (const k of keys) payload[k] = all[k];
       try {
-        const r = await api.saveSettings(collectSettings());
+        const r = await api.saveSettings(payload);
+        if (r && r.success) {
+          for (const k of keys) dirty2.delete(k);
+        }
         if (!(r && r.success)) {
           await ckAlert(r && r.error || "\u4FDD\u5B58\u5931\u8D25");
           await loadSettings();
@@ -9005,15 +9108,18 @@ paths:            # 可选；省略 = 始终生效
     }
     saving2 = false;
   }
-  for (const [id] of SET_FIELDS) {
+  for (const [id, key] of SET_FIELDS) {
     document.getElementById("st-" + id)?.addEventListener("change", () => {
+      dirty2.add(key);
       saveNow();
     });
   }
   document.getElementById("st-retry-enabled")?.addEventListener("change", () => {
+    dirty2.add("retryEnabled");
     saveNow();
   });
   document.getElementById("st-ssrf-guard")?.addEventListener("change", () => {
+    dirty2.add("ssrfGuard");
     saveNow();
   });
   document.getElementById("st-refresh")?.addEventListener("click", () => {
@@ -9028,6 +9134,7 @@ paths:            # 可选；省略 = 始终生效
     resetting = true;
     saving2 = false;
     savePending = false;
+    dirty2.clear();
     try {
       if (api.resetSettings) {
         try {
@@ -11883,8 +11990,13 @@ paths:            # 可选；省略 = 始终生效
       const k = keyOf(el2);
       if (k) keys.push(k);
     });
+    const raw = JSON.stringify(keys);
     try {
-      localStorage.setItem(ORDER_KEY, JSON.stringify(keys));
+      localStorage.setItem(ORDER_KEY, raw);
+    } catch (_) {
+    }
+    try {
+      pushLayout(ORDER_KEY, raw);
     } catch (_) {
     }
   }
@@ -12169,6 +12281,13 @@ paths:            # 可选；省略 = 始终生效
   }
   try {
     initUpdateProgress();
+  } catch (_) {
+  }
+  try {
+    registerLayoutKey("cuckoo-sidebar-width", (v) => applySyncedSidebarWidth(v));
+    registerLayoutKey("cuckoo-activitybar-order", () => applyActivitybarOrder());
+    registerLayoutKey("cuckoo-activitybar-hidden", () => applyActivitybarVisibility());
+    initLayoutSync();
   } catch (_) {
   }
   window.ckPrompt = ckPrompt;

@@ -20,15 +20,15 @@ function openSettings() {
     const en = localStorage.getItem('cuckoo-retry-enabled');
     const enEl = document.getElementById('cuckoo-retry-enabled');
     if (enEl) (enEl as any).checked = en === null ? true : en === '1';
-    setVal('cuckoo-retry-delay-min', msToSec(localStorage.getItem('cuckoo-retry-delay-min') || '4000', 4));
-    setVal('cuckoo-retry-delay-max', msToSec(localStorage.getItem('cuckoo-retry-delay-max') || '10000', 10));
-    setVal('cuckoo-retry-count', localStorage.getItem('cuckoo-retry-count') || '10');
+    setVal('cuckoo-retry-delay-min', msToSec(localStorage.getItem('cuckoo-retry-delay-min') || '15000', 15));
+    setVal('cuckoo-retry-delay-max', msToSec(localStorage.getItem('cuckoo-retry-delay-max') || '30000', 30));
+    setVal('cuckoo-retry-count', localStorage.getItem('cuckoo-retry-count') || '3');
     setVal('cuckoo-retry-429-delay', msToSec(localStorage.getItem('cuckoo-retry-429-delay') || '120000', 120));
-    setVal('cuckoo-retry-429-count', localStorage.getItem('cuckoo-retry-429-count') || '40');
+    setVal('cuckoo-retry-429-count', localStorage.getItem('cuckoo-retry-429-count') || '1');
     setVal('cuckoo-retry-prompt', localStorage.getItem('cuckoo-retry-prompt') || '刚才的回复似乎中断了，请重新完整回答上一个问题。');
     setVal('cuckoo-xhr-idle-timeout', msToSec(localStorage.getItem('cuckoo-xhr-idle-timeout') || '300000', 300));
     setVal('cuckoo-watchdog-prompt', localStorage.getItem('cuckoo-watchdog-prompt') || '请继续');
-    setVal('cuckoo-watchdog-count', localStorage.getItem('cuckoo-watchdog-count') || '3');
+    setVal('cuckoo-watchdog-count', localStorage.getItem('cuckoo-watchdog-count') || '1');
     setVal('cuckoo-attach-delay-min', msToSec(localStorage.getItem('cuckoo-attach-delay-min') || '1000', 1));
     setVal('cuckoo-attach-delay-max', msToSec(localStorage.getItem('cuckoo-attach-delay-max') || '10000', 10));
   } catch (_) {}
@@ -56,8 +56,8 @@ function resetSettings() {
   try {
     for (const k of KEYS) localStorage.removeItem(k);
   } catch (_) {}
-  state.sendDelayMin = 1000;
-  state.sendDelayMax = 10000;
+  state.sendDelayMin = 6000;
+  state.sendDelayMax = 16000;
   showToast('已恢复默认设置', 2500);
   openSettings(); // 重新加载默认值到输入框
 }
@@ -161,17 +161,17 @@ function getSettingsData(): SettingsData {
   const enRaw = lsGet('cuckoo-retry-enabled');
   return {
     retryEnabled: enRaw === null ? true : enRaw === '1',
-    retryDelayMin: sec(lsGet('cuckoo-retry-delay-min'), 4),
-    retryDelayMax: sec(lsGet('cuckoo-retry-delay-max'), 10),
-    retryCount: int(lsGet('cuckoo-retry-count'), 10),
+    retryDelayMin: sec(lsGet('cuckoo-retry-delay-min'), 15),
+    retryDelayMax: sec(lsGet('cuckoo-retry-delay-max'), 30),
+    retryCount: int(lsGet('cuckoo-retry-count'), 3),
     retry429Delay: sec(lsGet('cuckoo-retry-429-delay'), 120),
-    retry429Count: int(lsGet('cuckoo-retry-429-count'), 40),
+    retry429Count: int(lsGet('cuckoo-retry-429-count'), 1),
     retryPrompt: lsGet('cuckoo-retry-prompt') || '刚才的回复似乎中断了，请重新完整回答上一个问题。',
     xhrIdleTimeout: sec(lsGet('cuckoo-xhr-idle-timeout'), 300),
     watchdogPrompt: lsGet('cuckoo-watchdog-prompt') || '请继续',
-    watchdogCount: int(lsGet('cuckoo-watchdog-count'), 3),
-    sendDelayMin: sec(lsGet('cuckoo-send-delay-min'), 1),
-    sendDelayMax: sec(lsGet('cuckoo-send-delay-max'), 10),
+    watchdogCount: int(lsGet('cuckoo-watchdog-count'), 1),
+    sendDelayMin: sec(lsGet('cuckoo-send-delay-min'), 6),
+    sendDelayMax: sec(lsGet('cuckoo-send-delay-max'), 16),
     attachDelayMin: sec(lsGet('cuckoo-attach-delay-min'), 1),
     attachDelayMax: sec(lsGet('cuckoo-attach-delay-max'), 10),
     goalMaxIterations: int(lsGet('cuckoo-goal-max-iterations'), 50),
@@ -257,8 +257,8 @@ function resetSettingsData(): SettingsData {
     'cuckoo-goal-max-iterations', 'cuckoo-ssrf-guard',
   ];
   try { for (const k of KEYS) localStorage.removeItem(k); } catch (_) {}
-  state.sendDelayMin = 1000;
-  state.sendDelayMax = 10000;
+  state.sendDelayMin = 6000;
+  state.sendDelayMax = 16000;
   return getSettingsData();
 }
 
