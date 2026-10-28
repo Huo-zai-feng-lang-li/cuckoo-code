@@ -348,6 +348,8 @@ svg { flex-shrink: 0; }
 }
 #btn-scan svg {
   color: var(--accent);
+  display: block;
+  flex-shrink: 0;
 }
 
 #token-input {
