@@ -56,6 +56,49 @@ test('removeWindow 后 getWindowContext 返回 null', () => {
   assert.strictEqual(windowState.getWindowContext(2), null);
 });
 
+test('子代理窗口不抢主窗口地位（getMainContext 跳过子代理）', () => {
+  const mainWin = { id: 10, on: () => {}, isDestroyed: () => false };
+  const subWin = { id: 11, on: () => {}, isDestroyed: () => false };
+  windowState.addWindow(mainWin, 'p1', 'deepseek', {});
+  // 子代理复用同一 profileId
+  windowState.addWindow(subWin, 'p1', 'deepseek', {}, undefined, true);
+  assert.strictEqual(windowState.getMainContext().win, mainWin, '子代理创建后主窗口不应被顶替');
+});
+
+test('只有子代理时 getMainContext 返回 null（不回落到子代理）', () => {
+  const subWin = { id: 20, on: () => {}, isDestroyed: () => false };
+  windowState.addWindow(subWin, 'p1', 'deepseek', {}, undefined, true);
+  assert.strictEqual(windowState.getMainContext(), null);
+});
+
+test('主窗口移除后回退选举跳过子代理', () => {
+  const mainWin = { id: 30, on: () => {}, isDestroyed: () => false };
+  const subWin = { id: 31, on: () => {}, isDestroyed: () => false };
+  windowState.addWindow(mainWin, 'p1', 'deepseek', {});
+  windowState.addWindow(subWin, 'p1', 'deepseek', {}, undefined, true);
+  windowState.removeWindow(30);
+  assert.strictEqual(windowState.getMainContext(), null, '回退不应选中子代理');
+});
+
+test('多主窗口移除当前活跃者后回退到另一个主窗口', () => {
+  const winA = { id: 50, on: () => {}, isDestroyed: () => false };
+  const winB = { id: 51, on: () => {}, isDestroyed: () => false };
+  windowState.addWindow(winA, 'pA', 'deepseek', {});
+  windowState.addWindow(winB, 'pB', 'claude', {});
+  assert.strictEqual(windowState.getMainContext().win, winB, '最近创建的是活跃主窗口');
+  windowState.removeWindow(51);
+  assert.strictEqual(windowState.getMainContext().win, winA, '应回退到剩下的主窗口');
+});
+
+test('setMainWindow 拒绝把子代理窗口设为主窗口', () => {
+  const mainWin = { id: 40, on: () => {}, isDestroyed: () => false };
+  const subWin = { id: 41, on: () => {}, isDestroyed: () => false };
+  windowState.addWindow(mainWin, 'p1', 'deepseek', {});
+  windowState.addWindow(subWin, 'p1', 'deepseek', {}, undefined, true);
+  windowState.setMainWindow(subWin);
+  assert.strictEqual(windowState.getMainWindow(), mainWin, '子代理不应被设为主窗口');
+});
+
 test('getAllWindows 返回窗口数组', () => {
   const winA = { id: 'a', on: () => {}, isDestroyed: () => false };
   const winB = { id: 'b', on: () => {}, isDestroyed: () => false };

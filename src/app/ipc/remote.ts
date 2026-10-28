@@ -140,6 +140,9 @@ function registerRemoteIpc(): void {
   ipcMain.handle('remote-report', async (event: any, payload: any) => {
     if (!isRunning()) return { success: false };
     const ctx = windowState.getContextByWebContents(event.sender);
+    // 子代理窗口复用父 profileId，它的事件（尤其收工时的 ai-stop）若被转播，
+    // 手机会在父对话仍在生成时误显示「已停止生成」。子代理属内部过程，一律不上报。
+    if (ctx && (ctx as any).isSubagent) return { success: true };
     const profileId = (ctx && ctx.profileId) || '';
     const type = payload && payload.type;
     try {

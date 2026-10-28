@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.10.168] - 2026-10-29
+
+### Fixed
+- **手机远程端在主对话执行任务期间误报「已停止生成」**：子代理窗口也初始化了 remote bridge（`src/bridge/entry.ts` 的 `initRemoteBridge()` 未做门控），而子代理复用父窗口的 profileId（`src/app/profile.ts` `createSubagentProfile`）。子代理跑满轮次上限收工时会调 `requestAbort()` → `emitUserStop()` → 上报 `ai-stop`，主进程按父 profileId 广播，手机端便在主对话仍在生成时弹出「已停止生成」。同一路径还会把子代理的流式文本、工具事件、错误混进主对话。现子代理窗口跳过 remote bridge 初始化，主进程 `remote-report` 处理器再加一道 `ctx.isSubagent` 拦截兜底。
+- **子代理窗口抢占「主窗口」指针**：`addWindow` 无条件执行 `lastActiveWindowId = win.id`，子代理创建期间 `getMainContext()` 会返回子代理。该函数有 12 处调用方（手机远程停止、会话导出、project-context、插件 IPC 等），导致手机未选窗口时远程「停止」可能定位到子代理窗口。现新增 `pickMainWindowId()` 统一选举（排除子代理），`addWindow`/`removeWindow`/窗口 closed 回退/`getMainContext`/`getMainWindow`/`setMainWindow` 全部走同一套规则。正常单窗口与多窗口场景行为不变。
+
+### Added
+- 需求档案 `docs/requirements/095-subagent-remote-leak.md`。
+- `test/main/window.test.js` 新增 5 个回归用例：子代理不抢主窗口地位、仅子代理时主上下文为 null、移除后回退跳过子代理、多主窗口回退到另一主窗口、`setMainWindow` 拒绝子代理。
+
 ## [0.10.167] - 2026-10-29
 
 ### Fixed

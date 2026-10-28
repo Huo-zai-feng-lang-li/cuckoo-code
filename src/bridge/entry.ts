@@ -301,7 +301,10 @@ function init(): void {
     initHarnessBridge();
 
     // 远程控制：上报 AI 回复/流式/工具状态给手机
-    initRemoteBridge();
+    // 子代理窗口**必须**跳过：子代理复用父 profileId（profile.ts createSubagentProfile），
+    // 它收工时的 requestAbort → emitUserStop 会上报 ai-stop，主进程按父 profileId 广播，
+    // 手机就会在父对话仍在跑时莫名弹「已停止生成」；流式/工具事件同样会串进主对话气泡。
+    if (!subCfg) initRemoteBridge();
 
     // Cuckoo 插件系统：加载 dsh/*.js 风格插件（异步，不阻塞）
     // 子代理窗口不加载 UI 插件——否则每个子代理都会注入一份面板（如 MCP 桥）浮到主窗口上。

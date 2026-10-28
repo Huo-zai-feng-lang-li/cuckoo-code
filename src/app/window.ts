@@ -61,16 +61,32 @@ function isGeneratingAny(profileId: any): boolean {
   return generatingProfiles.has(key) || generatingSubagents.has(key);
 }
 
+/** 选出「主窗口」：最近活跃的非子代理窗口（排除子代理，防止内部临时窗口顶替主对话） */
+function pickMainWindowId(): number | null {
+  if (lastActiveWindowId !== null) {
+    const cur = windows.get(lastActiveWindowId);
+    if (cur && !cur.isSubagent) return lastActiveWindowId;
+  }
+  // 回退语义是「最后创建的主窗口」而非「次近活跃」（本模块不记录活跃历史），
+  // 作为兜底足够；不要误以为这里是 LRU。
+  let fallback: number | null = null;
+  for (const [id, ctx] of windows) {
+    if (!ctx.isSubagent) fallback = id;
+  }
+  return fallback;
+}
+
 function addWindow(win: any, profileId: any, providerId: any, sessionStore: any, view: any, isSubagent?: boolean): void {
   windows.set(win.id, { win, view, profileId, providerId, sessionStore, isSubagent: !!isSubagent });
-  lastActiveWindowId = win.id;
+  // 子代理窗口不参与「主窗口」选举：否则子代理创建期间 getMainContext() 会返回子代理，
+  // 使手机远程 stop / 会话导出等以"最近活跃窗口"为目标的逻辑误命中子代理。
+  if (!isSubagent) lastActiveWindowId = win.id;
   win.on('closed', () => {
     windows.delete(win.id);
     generatingProfiles.delete(String(profileId));
     generatingSubagents.delete(String(profileId));
     if (lastActiveWindowId === win.id) {
-      const remaining = Array.from(windows.keys());
-      lastActiveWindowId = remaining.length > 0 ? remaining[remaining.length - 1] : null;
+      lastActiveWindowId = pickMainWindowId();
     }
     emitWindowsChanged();
   });
@@ -80,8 +96,7 @@ function addWindow(win: any, profileId: any, providerId: any, sessionStore: any,
 function removeWindow(windowId: number): void {
   windows.delete(windowId);
   if (lastActiveWindowId === windowId) {
-    const remaining = Array.from(windows.keys());
-    lastActiveWindowId = remaining.length > 0 ? remaining[remaining.length - 1] : null;
+    lastActiveWindowId = pickMainWindowId();
   }
   emitWindowsChanged();
 }
@@ -112,22 +127,29 @@ function getViewByWebContents(webContents: any): any {
 }
 
 function getMainWindow(): any {
-  if (!lastActiveWindowId) return null;
-  const ctx = windows.get(lastActiveWindowId);
+  const ctx = getMainContext();
   return ctx ? ctx.win : null;
 }
 
 function getMainContext(): WindowContext | null {
-  if (!lastActiveWindowId) return null;
-  return windows.get(lastActiveWindowId) || null;
+  // lastActiveWindowId 不应指向子代理（addWindow/removeWindow/setMainWindow 均已排除），
+  // 这里再兜一层，避免任何遗漏路径把子代理当成主窗口。
+  if (lastActiveWindowId !== null) {
+    const ctx = windows.get(lastActiveWindowId);
+    if (ctx && !ctx.isSubagent) return ctx;
+  }
+  const fallback = pickMainWindowId();
+  return fallback !== null ? windows.get(fallback) || null : null;
 }
 
 function setMainWindow(win: any): void {
-  if (win) {
-    lastActiveWindowId = win.id;
-  } else {
-    lastActiveWindowId = null;
-  }
+  if (!win) { lastActiveWindowId = null; return; }
+  // 子代理窗口不得被设为主窗口（它是内部临时窗口，不该代表主对话）。
+  // 依赖调用方先 addWindow 再 setMainWindow（entry.ts:462 → 533），
+  // ctx 查不到时放行，避免将来调用顺序变化反而阻断主窗口设置。
+  const ctx = windows.get(win.id);
+  if (ctx && ctx.isSubagent) return;
+  lastActiveWindowId = win.id;
 }
 
 function getAllWindows(): any[] {

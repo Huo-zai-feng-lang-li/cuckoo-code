@@ -1,47 +1,54 @@
-# 最新接续状态 (2026-10-29 第二场 · 已发版)
+# 最新接续状态 (2026-10-29 第三场 · 已发版)
 
 ## 核心进展
-- **需求 094 已合入 master 并随 v0.10.167 发布**：远程扫码按钮布局修复 + APK 固定签名支持覆盖升级。
-- **当前版本**：v0.10.167。
+- **需求 095 已合入 master 并随 v0.10.168 发布**：修复子代理窗口泄漏远程事件导致手机误报「已停止生成」。
+- **上一版 v0.10.167**：修复远程扫码按钮布局 + APK 固定签名（需求 094）。
+- **当前版本**：v0.10.168。
 
-## 两个问题与根因
+## 095 问题与根因
 
-### 1. 扫码按钮图标/文字错位
-- 根因：`src/remote/pwa/app.js` 原生壳分支写 `scanBtn.style.display = 'block'`（**内联样式**），压过 `style.css` 的 `#btn-scan{display:flex}`，flex 失效 → 图标独占一行、文字掉第二行居中。
-- 历史坑：上一个提交 `cbe042d` 只改了 HTML 的 `<span>` 和 CSS 的 `svg{display:block}`，**没碰那行 JS**，所以没修好。
-- 修复：改为 `scanBtn.style.display = ''`，回落 CSS flex。
+### 症状
+手机远程端在主对话执行任务期间会莫名弹「已停止生成」，电脑端主对话其实还在跑。
 
-### 2. APK 每版签名不同，无法覆盖安装
-- 根因：CI 跑 `./gradlew assembleDebug`，而 `build.gradle` 无 `signingConfigs` → 用 AGP 默认调试签名。GitHub runner 全新环境，每版自动生成一把新 `debug.keystore` → 签名每次不同 → Android 拒绝覆盖。
-- 修复：仓库内置固定 keystore `android/app/cuckoo-release.keystore`（PKCS12，alias `cuckoo`，密码 `cuckoo-remote-2026`，CN=Cuckoo Remote，有效至 2056，SHA256 `C1:F9:DF:3F:…:1C:6E:C6`），`build.gradle` 的 **debug 与 release 两个变体都指向它**。
-- `versionCode/versionName` 从 10153/0.10.153 对齐到当前版本（CI 仍由 sync-version.js 按 tag 覆盖）。
+### 根因（已取证）
+1. `src/bridge/entry.ts` 的 `initRemoteBridge()` **无条件执行**——子代理窗口也初始化了一份（同文件 `initPlugins` 已有 `if (!subCfg)` 门控，remote 漏了）。
+2. 子代理复用父窗口 profileId（`src/app/profile.ts:153` `id: parent.id`，为了共用账本/token/设置）。
+3. 子代理跑满 maxTurns 时调 `requestAbort()`（`src/bridge/subagent.ts:126`）→ `emitUserStop()` → 子代理窗口的 remote-bridge 上报 `ai-stop` → 主进程按父 profileId 广播 → 手机弹「已停止生成」。
+4. 同一路径还会把子代理的 `ai-stream`/`ai-reply`/`tool`/`ai-error` 混进主对话。
 
-## 关键取证
-- **反向验证**：把产物临时改回 `'block'`，Playwright 实测 `computedStyle.display === 'block'`、布局错位；改回 `''` 后为 `flex`，图标与文字中心线偏差 **0px**、gap **8px**（390×844 视口）。
-- **浏览器场景不回归**：独立 page（无 `window.Capacitor`）实测扫码按钮与地址行均 `display:none`。
-- **keystore 可被 Java 读取**：临时下 JDK21 JRE，`keytool -list -v` 读出 `PrivateKeyEntry`、`SHA256withRSA`、指纹与 openssl 一致。验证后已删除临时 JRE。
-- **cap sync 不会重写** `android/app/build.gradle`（只写 `capacitor.build.gradle`），签名配置安全。
+### 相邻泄漏路径（审查发现，一并修）
+`addWindow` 无条件 `lastActiveWindowId = win.id`，子代理创建时抢占「主窗口」指针 → `getMainContext()`（12 处调用方）在子代理运行期间返回子代理 → 手机未选窗口时远程「停止」会定位到子代理窗口。
 
-## 验证结果（发版前全绿）
+### 修复
+- `src/bridge/entry.ts`：`if (!subCfg) initRemoteBridge();`
+- `src/app/ipc/remote.ts`：`remote-report` 里 `if (ctx && ctx.isSubagent) return { success: true };` 兜底
+- `src/app/window.ts`：新增 `pickMainWindowId()`（排除子代理），`addWindow`/`removeWindow`/closed 回退/`getMainContext`/`getMainWindow`/`setMainWindow` 统一走同一规则
+- `test/main/window.test.js`：5 个回归用例
+
+## 验证
 - `npm run typecheck` ✅
-- `npm test` ✅ 131 文件 / 1299 用例
+- `npm test` ✅ 131 文件 / 1304 用例
 - `npm run lint` ✅ 0 error（65 个既有 warning）
 - `npm run compile` ✅
-- 布局：Playwright 实测 ✅（原生壳 + 浏览器两场景）
-- keystore：keytool 实读 ✅
+- 子代理 code-reviewer 两轮独立审查，第二轮指出 5 条低/中建议，已全部收口（真值判断改显式 null、getMainContext 补兜底、setMainWindow 补注释、补多主窗口回退用例）
+- **未做真机验证**：需 `npm start` 跑一次 `runAgent` 观察手机端不再误报
 
-## 安全声明（务必保留）
-`cuckoo-release.keystore` 与密码**明文随仓库公开**，等同公开私钥：仅用于内部覆盖升级，**不可用于商店分发**。任何拿到仓库的人都能签出可覆盖本 App 的 APK。若未来需私密签名，改走 CI Secrets 并轮换密钥（届时老用户需再卸载重装一次）。
+## 真机验证清单（待做）
+- A. 主对话跑 `runAgent`，子代理收工期间手机端**不**出现「已停止生成」
+- B. 子代理的流式文本不混进主对话气泡
+- C. 手机端主动点停止仍正常显示「已停止生成」
+- D. 多窗口场景下 `getMainContext` 返回正确的主窗口（不受子代理影响）
 
-## 迁移成本
-旧版 APK 各自用不同临时 debug 签名，**首次升级必须卸载重装一次**；v0.10.167 起后续版本签名恒定，可正常覆盖。
+## 调查中发现的其它问题（未修，待用户确认是否立项）
+1. **watchdog 兜底收尾复用 `ai-stop`**（`src/remote/manager.ts:334`）：网页停止生成且静默超 8 秒后主动调 `onAiStop`，手机显示「已停止生成」，实际可能只是 finished 帧丢失。语义上应区分「用户停止」与「本轮已结束」，需新增独立事件类型。
+2. **ChatGPT 平台把断流判为 stopped**（`src/providers/hooks/chatgpt.ts:117`，`aborted = AbortError || XHR status===0`）：弱网/切后台会误判为用户主动停止。DeepSeek hook 只认拦截到的 `stop_stream` 请求，无此问题。
+3. **`onPhoneStop` 双次 ai-stop**（pre-existing）：`manager.ts:127` 直接 `onAiStop`，主窗口 hook 的 `onUserStop` 也会再报一次。手机侧幂等，非本次引入。
 
-## 待办
-- **CI 实跑后核对 APK 签名指纹恒定**（`keytool -printcert -jarfile xxx.apk`，应与 `C1:F9:DF:3F:…:1C:6E:C6` 一致）。
-- 真机安装验证覆盖升级。
-- 本章节上方的 092 章节（子代理并发池）仍有真机验证清单 A~H 未做，遗留至今。
-- **v0.10.164 tag 违规**（含数字 4）已推 origin，是否删除仍待用户决定。
+## 遗留
+- 上面 3 条待用户确认。
+- 092 子代理并发池的真机验证清单 A~H 仍未做（历史遗留）。
+- `v0.10.164` tag 违规（含数字 4）仍在 origin，是否删除待用户决定。
 
-## 教训（延续）
-- 改 UI 布局类 bug，光看 CSS/HTML 不够——**必须 grep 是否有 JS 在写内联 `style.display`**，内联样式优先级高于样式表。上一个提交就栽在这里。
-- 涉及签名/证书，别只信 openssl 自检，**用目标 JDK 的 keytool 实读一次**才算闭环。
+## 教训
+- **「共用 profileId」是隐形炸弹**：任何以 profileId 为键的广播/状态，都必须显式区分主窗口与子代理。`ai-state` 早就做了分离（`window.ts` 注释写明），但 `remote-report` 和 `lastActiveWindowId` 两处都漏了。以后新增以 profileId 为键的逻辑，先问一句「子代理会不会污染」。
+- 同一根因往往有多条泄漏路径，修完主路径要顺着 grep 一遍 `profileId` 的消费点。
