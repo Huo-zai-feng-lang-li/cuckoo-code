@@ -220,9 +220,10 @@ async function clearInputArea(): Promise<boolean> {
 }
 /**
  * 将消息填入 DeepSeek 聊天输入框并触发发送（工具结果回传的公共实现）
+ * @param fixedDelay 固定延迟（ms）；缺省走拟人化随机延迟。格式纠正等系统提示应传 0 立即发出。
  */
-function sendMessageToChat(msg: string, tag?: string, afterSent?: () => void): Promise<boolean> {
-  return sendToChat(msg, tag, undefined, afterSent);
+function sendMessageToChat(msg: string, tag?: string, afterSent?: () => void, fixedDelay?: number): Promise<boolean> {
+  return sendToChat(msg, tag, fixedDelay, afterSent);
 }
 /**
  * 应用 provider 的工具结果格式转换（若提供）。

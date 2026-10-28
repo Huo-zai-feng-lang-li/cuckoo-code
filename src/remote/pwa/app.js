@@ -49,7 +49,8 @@
   let wsGen = 0;
   let reconnectDelay = 1000;
   let reconnectTimer = null;
-  let disconnectTimer = null; // 遗留清理句柄（连接状态已改为即时切换，不再用它做延迟降级）
+  let disconnectTimer = null; // 断线降级防抖（3 秒内重连成功则不闪"已离线"）
+  let startupWatchdog = null; // 启动乐观显示"已在线"的看门狗（8 秒未连上则降级为已离线）
   let failStreak = 0;
   let lastPong = Date.now(); // 心跳：最近一次 pong 时间
   let foregroundProbeTimer = null; // 切前台探活定时器
@@ -298,9 +299,10 @@
       clearTimeout(foregroundProbeTimer);
       foregroundProbeTimer = null;
     }
-    // 重连一律显示"重连中"：这是真实状态，不该为了"不闪烁"而隐藏。
-    // （此前有消息就跳过，导致断线重连期间一直显示"已在线"）
-    setConn('connecting');
+    // 已有消息或本地缓存时静默重连：不切"重连中"，避免切前后台/网络瞬断时状态栏闪烁。
+    // 页面无任何内容（首次连接）才显示"重连中"。
+    const hasContent = !!messages.querySelector('.msg') || (loadHistoryCache() || []).length > 0;
+    if (!hasContent) setConn('connecting');
     const gen = ++wsGen;
     if (ws) {
       const oldWs = ws;
@@ -326,6 +328,7 @@
       lastPong = Date.now();
       reconnectDelay = 1000;
       if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null; }
+      if (startupWatchdog) { clearTimeout(startupWatchdog); startupWatchdog = null; }
       setConn('on');
       hideOffline();
       if (token) { localStorage.setItem('cuckoo-token', token); showApp(); }
@@ -340,12 +343,18 @@
     sock.onclose = () => {
       if (gen !== wsGen) return;
       connected = false;
-      // 立即降级为"已离线"：5 秒防抖会让断网后长时间显示"已在线"，属于假状态。
-      // 重连成功时 onopen 会立刻切回"已在线"，闪烁成本可接受且更诚实。
-      if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null; }
-      setConn('off');
-      hideExec();
-      setExecuting(false);
+      // 延迟 3 秒降级：给瞬时断网/快速重连留缓冲，避免状态栏闪"已离线"。
+      // 3 秒内没连回来才显示"已离线"（最多滞后 3 秒，不长期假在线）。
+      // 执行态清理也放同一时机：否则"状态栏仍显示在线、执行中却被抹掉"会短暂不一致
+      // （若 3 秒内重连成功，执行态应保持，等后续 tool 事件自然收尾）。
+      if (disconnectTimer) clearTimeout(disconnectTimer);
+      disconnectTimer = setTimeout(() => {
+        disconnectTimer = null;
+        if (connected) return; // 已重连成功：保持执行态，不闪
+        setConn('off');
+        hideExec();
+        setExecuting(false);
+      }, 3000);
       // 清理未完成的探活定时器，避免它在断连后再次触发重连
       if (foregroundProbeTimer) {
         clearTimeout(foregroundProbeTimer);
@@ -394,37 +403,45 @@
 
   // 切回前台：不只看"是否已断开"，还要识别"已连接但半开"（锁屏/切网后 TCP 已死，
   // ws.readyState 仍是 1，消息会静默丢失）。
-  const FOREGROUND_PING_TIMEOUT = 1000;
+  // 判据不能只看"lastPong 距今多久"：手机切后台时浏览器冻结定时器，pong 本来就会停，
+  // 用时间阈值直接掐连接会把健康连接误杀（见下方 STALE_MS 注释的设计约束）。
+  // 正确做法：回前台先主动发一个 ping，1.5s 内没等到 pong 才判定半开 → 立即重连。
+  const FOREGROUND_PING_TIMEOUT = 1500;
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible' || !token) return;
-    
-    // 1. 已断开：直接发起重连
-    if (!connected || !ws || ws.readyState !== 1) {
-      if (foregroundProbeTimer) {
-        clearTimeout(foregroundProbeTimer);
-        foregroundProbeTimer = null;
-      }
+    if (!connected) {
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       reconnectDelay = 1000;
-      connect(true);
+      connect();
       return;
     }
-    
-    // 2. 显示上还连着：先发个 ping 探活（避免健康连接被频繁重连导致页面刷屏）
-    if (foregroundProbeTimer) clearTimeout(foregroundProbeTimer);
-    try { ws.send(JSON.stringify({ type: 'ping' })); } catch {}
-    
+    if (!ws || ws.readyState !== 1) {
+      // 底层 socket 已不可用：立即重连（不依赖 onclose 是否已回调）
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      reconnectDelay = 1000;
+      connect();
+      return;
+    }
+    if (foregroundProbeTimer) return; // 已有探活在跑，避免重复
+    const probeAt = Date.now();
+    sendRaw({ type: 'ping' });
     foregroundProbeTimer = setTimeout(() => {
       foregroundProbeTimer = null;
-      console.warn('[Remote] 前台探活超时，判定连接半开，强制重连');
-      connect(true);
+      // 探活期间可能已收到 pong（lastPong 被刷新）→ 连接健康，不动它。
+      // 用 >= 而非 >：probeAt 与 pong 的 Date.now() 可能落在同一毫秒，严格大于会误判半开。
+      if (lastPong >= probeAt) return;
+      console.warn('[Remote] 回到前台探活超时，判定连接半开，立即重连');
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      reconnectDelay = 1000;
+      try { ws.close(); } catch {}
+      connect();
     }, FOREGROUND_PING_TIMEOUT);
   });
 
   // 心跳保活
   setInterval(() => {
     if (!connected) return;
-    // 前台探活正在进行：让它先判定（1s 内必有结论），避免心跳与探活双双重连
+    // 前台探活正在进行：让它先判定（1.5s 内必有结论），避免心跳与探活双双重连
     if (foregroundProbeTimer) return;
     if (Date.now() - lastPong > 60000) {
       console.warn('[Remote] 心跳超时，主动重连');
@@ -1408,15 +1425,22 @@
     // 启动时先不展示同步动画
     setSyncing(false);
     
-    // 极速渲染本地缓存（只影响消息列表，**不**决定连接状态）
+    // 极速渲染本地缓存
     const cached = loadHistoryCache();
     const hasCache = cached && cached.length;
-    if (hasCache) {
-      renderHistory(cached, true);
+    if (hasCache) renderHistory(cached, true);
+    // 乐观显示"已在线"仅限原生壳（APK 有前台保活托底，切回/冷启动无感），配 8 秒看门狗：
+    // 8 秒内仍未真正连上则降级"已离线"，既无感又不长期假在线。
+    // 浏览器场景诚实从"连接中"起步——无保活兜底，乐观显示会假在线。
+    if (hasCache && isNativeShell()) {
+      setConn('on');
+      startupWatchdog = setTimeout(() => {
+        startupWatchdog = null;
+        if (!connected) setConn('off');
+      }, 8000);
+    } else {
+      setConn('connecting');
     }
-    // 连接状态一律从"连接中"起步，由 WebSocket 生命周期（onopen/onclose）驱动。
-    // 之前"有缓存就显示已在线"会让未联网时也长期显示在线，误导用户。
-    setConn('connecting');
     
     // 原生壳：启动前台服务保活
     startNativeKeepAlive();

@@ -1,55 +1,46 @@
-# 最新接续状态 (2026-10-28 23:40)
+# 最新接续状态 (2026-10-28 深夜)
 
 ## 核心进展
 
-- **v0.10.155 发版**：设置全局化 + 防封默认收紧 + 队列/停止加固，对抗性审计闭环。
-- **审计（audit-staged）发现并修复 2 处真缺陷**：
-  1. **🔴 防封迁移对老用户完全失效**：`global-settings.ts` 的 `LEGACY_DEFAULTS.sendDelay` 误写成需求文档目标值 4/12（旧代码真值是 1000/10000ms = **1/10 秒**）。老用户 localStorage 存 1/10 秒 → `migrateLegacy` 比对不命中 → 保留 1/10 秒，防封节奏优化（6/16）对其 100% 失效。已改为 1/10，并新增回归测试「旧真值 sendDelay 1/10 秒必须命中迁移」锁死语义。
-  2. **🟡 多窗口并发保存时发起方 localStorage 持陈旧数据**：`save-settings` 广播跳过发起方。若两窗口在 await 窗口（~50ms）内并发保存**不同字段**，后完成方自己的 AI 页会永久缺对方刚写的字段（与落盘文件不一致，hook/loop 读的是 localStorage）。已改为广播不跳过发起方（幂等应用）。
-- **注释/文档对齐**：`settings.ts:62` JSDoc（声称含 harnessView，实际只发 ctx.view）、`global-settings.ts` 头注释（sendDelay 旧值写错）、`docs/requirements/089`（4-12 秒 → 实际 6-16 秒）。
+- **v0.10.158 发版**：手机端切前后台无感重连回归 + 格式纠正 0 延迟（修队列误 flush）。
+- **根因定位（逐版本 diff 取证）**：用户反馈 APK 切前后台「卡、显示重连中、消息不及时」。逐行对比 v0.10.54 与 v0.10.157 的 `app.js` 发现：
+  - v0.10.155（commit 71412c5）为修「离线仍显示在线」的假状态，把切前台探活的 **`if (lastPong >= probeAt) return;` 防误杀保护删了**，超时还从 1500ms 缩到 1000ms → 健康 socket 被误判半开 → 强制重连 → 1~3 秒真空期消息丢失。
+  - 同提交把 `connect()` 开头改成无条件 `setConn('connecting')`、`onclose` 改成立即 `setConn('off')` → 每次重连都闪「重连中」。
+- **保活本身没坏**：Android 前台服务链路完整（KeepAlivePlugin → ForegroundService + START_STICKY + Android 13+ 通知权限），切后台 socket 通常不断。卡是 UI 状态机退化 + 探活误杀。
 
-## 本轮改动主体（相对 v0.10.153）
+## 本轮改动（6 处，3 个文件）
 
-1. **设置全局化**：`src/app/global-settings.ts`（新）为唯一真相源 `~/.cuckoo/agent-settings.json`；AI 页面 localStorage 降级为运行时缓存；`ipc/settings.ts` 重写为「增量 + 最新基底合并 + 广播」；`entry.ts` 在 did-finish-load 下发或触发迁移。
-2. **防封默认收紧**：retryCount 10→3、retryDelay 4~10s→15~30s、retry429Count 40→1、watchdogCount 3→1、sendDelay 1~10s→6~16s。
-3. **浏览器指纹加固**：`user-agent.ts` 重写 `buildUserAgentDataFix()`（webdriver 走 Navigator.prototype、补 window.chrome 全套）；`entry.ts` 追加 `--disable-blink-features=AutomationControlled`。
-4. **队列先停后发**：`harness.html` 的 `sendQueueItemNow` / `doSendQueueItem` / `maybeFlushQueue` / `send(override...)` / `waitForAiIdleThenSend`（静默期 300→500ms）。
-5. **停止闭环**：`stopGeneration` 的 not-generating / escape 改为成功；`onPhoneStop` 统一 clearBusy；`requestAbort` 级联 `emitUserStop`；`observer.ts` 中止后丢弃残余帧与工具回传。
-6. **壳页面布局跨窗口同步**：`layout-sync.ts`（新）+ `sidebar.ts` / `activitybar-visibility.ts` / `ui-prefs.ts` / `shell-preload.ts`。
-7. **手机端**：任务完成通知（task-done 与 ai-reply 区分）、电量优化单次引导、停止收尾。
+1. **`src/remote/pwa/app.js`**
+   - 探活超时 1000→1500ms，加回 `probeAt` + `if (lastPong >= probeAt) return;`（v0.10.54 原样）。
+   - `connect()` 开头：有消息/有缓存时静默重连，不切「重连中」。
+   - `onclose`：立即 `off` → 3 秒防抖；执行态清理（hideExec/setExecuting）也挪进 3 秒回调，重连成功则保持执行态。
+   - 启动：有缓存 + **仅原生壳**乐观 `setConn('on')` + 8 秒看门狗降级；浏览器诚实从 connecting 起步。
+   - `onopen` 清 `startupWatchdog`。
+2. **`src/overlay/chat-input.ts`**：`sendMessageToChat(msg, tag?, afterSent?, fixedDelay?)` 新增第 4 参透传。
+3. **`src/bridge/intercept/observer.ts`**：JSON / XML 格式纠正改 `fixedDelay=0` 立即发出。根因：原走 randomDelay 6~16s，延迟窗口内 harness 看不到「框架在驱动」，6 秒静默期满 → `maybeFlushQueue()` 提前发队列（本轮任务其实没完）。
 
-## v0.10.156 追加：子代理并发闸门
+## 审查结论
 
-- 新增 `src/app/agent-semaphore.ts`：计数信号量，`MAX_CONCURRENT_AGENTS = 3`，超出排队，排队超时（默认 5 分钟）抛错。
-- 名额「直接交接」给队首（不先减再加），避免插队；`makeAgentReleaser()` 幂等释放。
-- `runAgent` 接入闸门（`await acquireAgentSlot()` + `try/finally` 释放），并修复既有计数泄漏：`incRunning` 从 `_createWindow` 之前挪到之后，用 `counted` 标记保证配对。
-- 测试 `test/app/agent-semaphore.test.js`：8 个用例（满额立即进入 / 排队 FIFO / 超时抛错不泄漏 / 空池释放不为负 / 幂等释放 / 交接期间计数不变）。
-- 全量验证：typecheck ✅ / test 131 套件 1275 用例 ✅ / lint 0 errors ✅ / compile ✅。
+- **code-reviewer**：无高危/中危缺陷。3 条 [轻微]：①参数顺序与内层相反（非 bug，不改）②onclose 执行态与状态降级时机不一致（**已修**）③浏览器乐观显示假在线（**已修**，仅限原生壳）。
+- **arch-guard**：架构合规（依赖方向 / overlay 纯 UI / bridge 不 import session-app / 生成物禁手改 / 圈复杂度 <9 全部通过）。
 
-## 未闭环项（真机验证，一项都没跑）
-
-> 代码层面已闭环并发版，但按「必须端到端真实运行验证」规则，以下均未验证：
-> 尤其第 1 项是本轮修复的严重 bug 的唯一直接验收点。
-
-## 验证结果
+## 验证结果（全绿）
 
 - `npm run typecheck` → 通过
-- `npm test` → **130 套件 / 1267 用例全绿**
-- `npm run lint` → 0 errors（65 warnings 均为历史存量 unused-vars）
+- `npm test` → **131 套件 / 1281 用例全绿**
+- `npm run lint` → 0 errors（65 warnings 均为历史存量）
 - `npm run compile` → 通过（shell.html 522080 字节）
-- 审计报告：`.agents/settings-sync-and-safe-defaults-审计.md`
 
-## 待办事项 (Next Steps)
+## 未闭环项（真机验证，本机无法代劳）
 
-- [ ] 真机验证（开发版 CDP 9444）：纯净模式点停止 → 顶栏「已停止」→ 1.5s 后「就绪」；工具卡片转「已停止」。
-- [ ] 真机验证：老用户升级路径。构造 `~/.cuckoo/agent-settings.json` 不存在 + AI 页 localStorage 存 `cuckoo-send-delay-min=1000`/`max=10000` → 启动后应为 6000/16000。
-- [ ] 真机验证：手机端长任务中途点停止 → 流式气泡收敛、忙态解除。
-- [ ] 实际 Android 手机安装 APK，验证冷启动电量优化仅首次弹窗。
-- [ ] 多窗口并发保存设置（两窗口同时改不同项）→ 两边 localStorage 与文件一致。
+- [ ] **APK 需重新打包**才含新 `app.js`（手机上的旧 APK 不会自动更新）。
+- [ ] APK 切后台 1 分钟 → 切回 → 顶栏保持「已在线」不闪，2 秒内收到电脑推送。
+- [ ] APK 冷启动有缓存 → 秒出历史、不闪「连接中」；锁屏 5 分钟再开 → 快速恢复。
+- [ ] 纯净模式队列点「立即发送」→ 旧任务停、输入框清空、旧工具结果不回填。
+- [ ] AI 返回错误格式 → 提示**立即**出现（不再等 6~16 秒），且期间队列**不**自动 flush。
 
 ## 关键上下文
 
 - 工作目录: `d:\Desktop\Super-File\cuckoo-code`
-- 版本: `0.10.155`（跳过含 4 的 0.10.154）
-- 快照: `snap-1793193757560-hnuqay`（审计修复前）
-- 垃圾清理：已删除 `dist/` `out/` `wyp/` `coverage/` `.codegraph/` `.archify/` `temp_audit_diff.patch` `wyp-t.log`（共约 879 MB）。`out/` 已由 `npm run compile` 重建。
+- 版本: `0.10.158`（不含数字 4，合规）
+- 上一版: v0.10.157（网关/子代理共用并发池）

@@ -279,9 +279,14 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
     }
     formatHintCount++;
     console.log('[Cuckoo Code][拦截] 检测到 JSON 格式工具调用（第 ' + formatHintCount + ' 次提示）');
+    // 格式纠正属系统即时指令：传 fixedDelay=0 立即发出。
+    // 若走拟人化随机延迟（6-16s），延迟窗口内 harness 看不到"框架在驱动"，
+    // 会把静默误判为任务结束 → 提前 flush 待发队列（本轮任务其实未完）。
     sendMessageToChat(
       '请使用' + BT + BT + BT + 'cuckoo' + BT + BT + BT + ' 代码块进行工具调用，不要输出 JSON 格式。',
-      'JSON工具调用提示'
+      'JSON工具调用提示',
+      undefined,
+      0
     );
     return;
   }
@@ -300,7 +305,8 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
     // 拼进提示既读不通（属性不是「想执行的操作」），也属二次污染。
     const hint = '你刚才使用了错误格式的工具调用，被系统拒绝。' +
       '请改用 ' + BT + BT + BT + 'cuckoo' + BT + BT + BT + ' 代码块重新执行该操作。禁止使用任何 XML / 标签 / 特殊指令语法。';
-    sendMessageToChat(hint, 'XML工具调用纠正');
+    // 同上：格式纠正立即发出，避免延迟窗口内队列被误 flush
+    sendMessageToChat(hint, 'XML工具调用纠正', undefined, 0);
     return;
   }
 
