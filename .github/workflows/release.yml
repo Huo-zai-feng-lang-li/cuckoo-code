@@ -37,7 +37,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # 缓存自带运行时（uv/node），版本没变则跳过下载
       - name: Cache runtime binaries
         uses: actions/cache@v4
         with:
@@ -47,7 +46,6 @@ jobs:
       - name: Fetch runtime binaries
         run: node scripts/fetch-runtime.mjs
 
-      # 只构建，不发布（发布统一由下方 publish job 负责，避免多 job 各建一个 release）
       - name: Build
         run: npm run ${{ matrix.command }}
 
@@ -63,9 +61,61 @@ jobs:
             dist/latest*.yml
           retention-days: 30
 
-  # 统一发布：等所有平台构建完，下载全部产物，创建/更新唯一的 Release
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Sync version from tag
+        run: node scripts/sync-version.js
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 10.0
+          packages: 'platforms;android-34 build-tools;34.0.0'
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Build Android APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/debug/app-debug.apk dist/cuckoo-remote-android.apk
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-android
+          path: dist/cuckoo-remote-android.apk
+          retention-days: 30
+
   publish:
-    needs: build
+    needs: [build, build-android]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -77,7 +127,6 @@ jobs:
       - name: List files
         run: ls -la dist/
 
-      # 正式版（tag 不含 -beta）：创建正式 Release
       - name: Publish Release
         if: ${{ !contains(github.ref_name, '-beta') }}
         uses: softprops/action-gh-release@v2
@@ -85,7 +134,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           draft: false
-          make_latest: true    # 自动设为 Latest（更新检查走 /releases/latest，必须为最新）
+          make_latest: true
           generate_release_notes: true
           files: |
             dist/*.exe
@@ -93,3 +142,4 @@ jobs:
             dist/*.zip
             dist/*.dmg
             dist/latest*.yml
+            dist/*.apk
