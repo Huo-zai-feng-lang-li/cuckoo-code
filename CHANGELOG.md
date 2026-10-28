@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.10.133] - 2026-10-28
+
+### Added
+- 恢复 APK 原生扫码功能（安装 `@capacitor-mlkit/barcode-scanning`），并加入自动解析二维码、免密连接电脑端的闭环逻辑。
+
+### Changed
+- APK 产物自动重命名为 `cuckoo-remote-android-v{版本}.apk`。
+
 ## [0.10.132] - 2026-10-28
 
 ### Changed

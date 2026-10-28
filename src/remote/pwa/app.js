@@ -191,12 +191,53 @@
   // 回填已保存的服务器地址；APK 内必须填，浏览器内可留空
   (function initServerField() {
     const el = $('server-input');
+    const scanBtn = $('btn-scan');
     if (!el) return;
     const group = $('server-group');
     if (!isNativeShell()) {
       // 浏览器场景：用 location.origin 自动连，不需要用户填地址 → 隐藏整行
       if (group) group.style.display = 'none';
+      if (scanBtn) scanBtn.style.display = 'none';
       return;
+    }
+    // 原生壳显示扫码按钮
+    if (scanBtn) {
+      scanBtn.style.display = 'block';
+      scanBtn.addEventListener('click', async () => {
+        try {
+          const cap = window.Capacitor || {};
+          const BarcodeScanner = (cap.Plugins && cap.Plugins.BarcodeScanner) || (typeof cap.registerPlugin === 'function' ? cap.registerPlugin('BarcodeScanner') : null);
+          if (!BarcodeScanner) {
+            $('login-err').textContent = '扫码插件不可用，请手动输入地址';
+            return;
+          }
+          const { camera } = await BarcodeScanner.requestPermissions();
+          if (camera !== 'granted' && camera !== 'limited') {
+            $('login-err').textContent = '未获得相机权限，请去系统设置开启';
+            return;
+          }
+          const { barcodes } = await BarcodeScanner.scan();
+          if (barcodes && barcodes.length > 0) {
+            const raw = barcodes[0].rawValue;
+            // 期望格式：http://ip:port/?token=xxx 或 JSON
+            let parsedUrl = null;
+            try { parsedUrl = new URL(raw); } catch {}
+            if (parsedUrl && parsedUrl.searchParams.get('token')) {
+              const tk = parsedUrl.searchParams.get('token');
+              const sb = parsedUrl.origin;
+              el.value = sb;
+              $('token-input').value = tk;
+              // 自动触发连接
+              $('token-btn').click();
+            } else {
+              $('login-err').textContent = '二维码格式不正确';
+            }
+          }
+        } catch (e) {
+          console.warn('扫码失败', e);
+          $('login-err').textContent = '扫码失败或已取消';
+        }
+      });
     }
     if (serverBase) el.value = serverBase;
     if (!serverBase) {

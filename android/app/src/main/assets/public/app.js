@@ -16,6 +16,27 @@
   const pasteBtn = $('token-paste-btn');
 
   let token = localStorage.getItem('cuckoo-token') || '';
+  // 服务器地址（APK 内 location.host 是 localhost，必须手动指定电脑地址）
+  let serverBase = localStorage.getItem('cuckoo-server') || '';
+  /** 规范化地址：补协议、去尾斜杠、去掉误粘的 /#/ws 等后缀 */
+  function normalizeBase(raw) {
+    let s = (raw || '').trim();
+    if (!s) return '';
+    if (!/^https?:\/\//i.test(s)) s = 'http://' + s;
+    // 去掉路径、查询、hash，只保留 origin
+    try { const u = new URL(s); return u.protocol + '//' + u.host; } catch { return ''; }
+  }
+  /** 计算请求基址：有 serverBase 用它，否则用当前页面 origin（浏览器场景） */
+  function base() {
+    return serverBase || (location.protocol + '//' + location.host);
+  }
+  /** 是否运行在 Capacitor 原生壳里（APK）。只信 window.Capacitor，避免误伤浏览器本地开发 */
+  function isNativeShell() {
+    const c = window.Capacitor;
+    if (!c) return false;
+    if (typeof c.isNativePlatform === 'function') return c.isNativePlatform();
+    return !!c.isNative;
+  }
   const DRAFT_KEY = 'cuckoo-draft';
   // 为当前浏览器标签页生成唯一 ID，用于服务端去重
   let clientId = localStorage.getItem('cuckoo-client-id');
@@ -37,6 +58,7 @@
 
   // 当前展示窗口（多窗口隔离：只渲染该 profileId 的消息）
   let currentProfileId = '';
+  let profilesReady = false; // 是否已收到服务端的 profile 列表
   // 滚动与回到底部状态（提前声明，避免 renderHistory 时因 TDZ 死区报错）
   let stickToBottom = true;
   let hasNewWhileScrolled = false;
@@ -143,11 +165,85 @@
   $('token-btn').addEventListener('click', () => {
     const t = $('token-input').value.trim();
     if (!t) return;
+    const serverEl = $('server-input');
+    if (serverEl) {
+      const raw = serverEl.value.trim();
+      // APK 场景必须填地址；浏览器场景留空即用当前 origin
+      if (raw) {
+        const nb = normalizeBase(raw);
+        if (!nb) { $('login-err').textContent = '服务器地址格式不正确'; return; }
+        serverBase = nb;
+        localStorage.setItem('cuckoo-server', nb);
+      } else if (isNativeShell()) {
+        $('login-err').textContent = '请填写电脑端地址（如 http://192.168.1.5:7788）';
+        return;
+      } else {
+        serverBase = '';
+        localStorage.removeItem('cuckoo-server');
+      }
+    }
     verifyAndConnect(t);
   });
   $('token-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') $('token-btn').click();
   });
+
+  // 回填已保存的服务器地址；APK 内必须填，浏览器内可留空
+  (function initServerField() {
+    const el = $('server-input');
+    const scanBtn = $('btn-scan');
+    if (!el) return;
+    const group = $('server-group');
+    if (!isNativeShell()) {
+      // 浏览器场景：用 location.origin 自动连，不需要用户填地址 → 隐藏整行
+      if (group) group.style.display = 'none';
+      if (scanBtn) scanBtn.style.display = 'none';
+      return;
+    }
+    // 原生壳显示扫码按钮
+    if (scanBtn) {
+      scanBtn.style.display = 'block';
+      scanBtn.addEventListener('click', async () => {
+        try {
+          const cap = window.Capacitor || {};
+          const BarcodeScanner = (cap.Plugins && cap.Plugins.BarcodeScanner) || (typeof cap.registerPlugin === 'function' ? cap.registerPlugin('BarcodeScanner') : null);
+          if (!BarcodeScanner) {
+            $('login-err').textContent = '扫码插件不可用，请手动输入地址';
+            return;
+          }
+          const { camera } = await BarcodeScanner.requestPermissions();
+          if (camera !== 'granted' && camera !== 'limited') {
+            $('login-err').textContent = '未获得相机权限，请去系统设置开启';
+            return;
+          }
+          const { barcodes } = await BarcodeScanner.scan();
+          if (barcodes && barcodes.length > 0) {
+            const raw = barcodes[0].rawValue;
+            // 期望格式：http://ip:port/?token=xxx 或 JSON
+            let parsedUrl = null;
+            try { parsedUrl = new URL(raw); } catch {}
+            if (parsedUrl && parsedUrl.searchParams.get('token')) {
+              const tk = parsedUrl.searchParams.get('token');
+              const sb = parsedUrl.origin;
+              el.value = sb;
+              $('token-input').value = tk;
+              // 自动触发连接
+              $('token-btn').click();
+            } else {
+              $('login-err').textContent = '二维码格式不正确';
+            }
+          }
+        } catch (e) {
+          console.warn('扫码失败', e);
+          $('login-err').textContent = '扫码失败或已取消';
+        }
+      });
+    }
+    if (serverBase) el.value = serverBase;
+    if (!serverBase) {
+      el.placeholder = '必填：电脑端地址（如 http://192.168.1.5:7788）';
+    }
+  })();
 
   if (pasteBtn) {
     pasteBtn.addEventListener('click', async () => {
@@ -168,7 +264,7 @@
     $('login-err').textContent = '验证中…';
     try {
       // D-005：token 走 Authorization 头，不进 URL（访问/代理日志）。
-      const resp = await fetch('/api/ping', {
+      const resp = await fetch(base() + '/api/ping', {
         cache: 'no-store',
         headers: { Authorization: 'Bearer ' + t },
       });
@@ -182,13 +278,17 @@
     localStorage.setItem('cuckoo-token', t);
     $('login-err').textContent = '';
     failStreak = 0;
+    // APK 首次登录也要启动前台保活（否则首个会话后台易被系统回收）
+    startNativeKeepAlive();
     connect();
   }
 
   // ===== WebSocket =====
   function wsUrl() {
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return proto + '//' + location.host + '/ws';
+    const b = base();
+    const proto = b.startsWith('https:') ? 'wss:' : 'ws:';
+    const host = b.replace(/^https?:\/\//i, '');
+    return proto + '//' + host + '/ws';
   }
 
   function connect(force = false) {
@@ -268,7 +368,7 @@
       }
       // 失败 3 次以上时，在后台静默探测是否是令牌被电脑端重置（401）
       if (++failStreak >= 3 && failStreak % 3 === 0) {
-        fetch('/api/ping', {
+        fetch(base() + '/api/ping', {
           cache: 'no-store',
           headers: { Authorization: 'Bearer ' + token },
         })
@@ -515,7 +615,6 @@
       return s ? JSON.parse(s) : null;
     } catch { return null; }
   }
-  let profilesReady = false; // 标记是否已收到服务端的 profile 列表
   // 确保 currentProfileId 初始化时同步 last-profile，防止判断失准
   if (!currentProfileId) {
     currentProfileId = localStorage.getItem('cuckoo-last-profile') || '';
@@ -1158,6 +1257,37 @@
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   function escapeAttr(s) { return escapeHtml(s); }
 
+  // ===== 原生保活（仅 APK 生效）=====
+  function startNativeKeepAlive() {
+    try {
+      if (!isNativeShell()) return;
+      const cap = window.Capacitor || {};
+      // Capacitor 8：手动注册的原生插件需要用 registerPlugin 动态获取代理
+      let plugin = null;
+      if (cap.Plugins && cap.Plugins.KeepAlive) plugin = cap.Plugins.KeepAlive;
+      if (!plugin && typeof cap.registerPlugin === 'function') {
+        try { plugin = cap.registerPlugin('KeepAlive'); } catch {}
+      }
+      if (!plugin) {
+        console.warn('[KeepAlive] 插件不可用，保活功能降级');
+        return;
+      }
+      plugin.start()
+        .then(() => console.log('[KeepAlive] 前台服务已启动'))
+        .catch((e) => console.warn('[KeepAlive] start 失败:', e));
+      plugin.checkBatteryOptimization()
+        .then((res) => {
+          if (res && res.ignoring === false) {
+            console.log('[KeepAlive] 电池优化未放行，请求白名单…');
+            plugin.requestIgnoreBatteryOptimization().catch(() => {});
+          }
+        })
+        .catch(() => {});
+    } catch (e) {
+      console.warn('[KeepAlive] 调用异常:', e);
+    }
+  }
+
   // ===== 启动 =====
   // 恢复草稿（手机切后台被系统杀进程 reload 时，避免用户打字丢失）
   try {
@@ -1176,7 +1306,9 @@
     try { history.replaceState(null, '', location.pathname); } catch {}
   }
 
-  if (token) {
+  // 原生壳（APK）里必须有 serverBase 才能自动连接；否则回登录页让用户填地址
+  const canAutoConnect = !!token && (!!serverBase || !isNativeShell());
+  if (canAutoConnect) {
     showApp();
     // 启动时先不展示同步动画
     setSyncing(false);
@@ -1191,6 +1323,9 @@
       setConn('connecting');
     }
     
+    // 原生壳：启动前台服务保活
+    startNativeKeepAlive();
+
     // 后台发起真正连接
     connect();
     
@@ -1202,5 +1337,14 @@
     }, 500);
   } else {
     showLogin();
+    if (token && isNativeShell() && !serverBase) {
+      const err = $('login-err');
+      if (err) err.textContent = '请先填写电脑端地址再连接';
+    }
+    // 回填 token，避免用户重复输入
+    if (token) {
+      const ti = $('token-input');
+      if (ti) ti.value = token;
+    }
   }
 })();
