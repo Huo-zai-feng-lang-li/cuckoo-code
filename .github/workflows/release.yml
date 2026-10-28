@@ -9,16 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      max-parallel: 1
-      matrix:
-        include:
-          - os: windows-latest
-            command: build:win:local
-          - os: macos-latest
-            command: build:mac:local
-    runs-on: ${{ matrix.os }}
+  build-win:
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,15 +28,13 @@ jobs:
       - name: Fetch runtime binaries
         run: node scripts/fetch-runtime.mjs
       - name: Build
-        run: npm run ${{ matrix.command }}
+        run: npm run build:win:local
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ matrix.os }}
+          name: dist-win
           path: |
             dist/*.exe
-            dist/*.zip
-            dist/*.dmg
             dist/latest*.yml
           retention-days: 30
 
@@ -81,12 +71,7 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
-          if [ ${PIPESTATUS[0]} -ne 0 ]; then
-            echo "=== GRADLE BUILD FAILED ==="
-            tail -n 50 build.log
-            exit 1
-          fi
+          ./gradlew assembleDebug --no-daemon
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
@@ -95,7 +80,7 @@ jobs:
           if-no-files-found: warn
 
   publish:
-    needs: [build, build-android]
+    needs: [build-win, build-android]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -114,7 +99,5 @@ jobs:
           generate_release_notes: true
           files: |
             dist/*.exe
-            dist/*.zip
-            dist/*.dmg
             dist/latest*.yml
             dist/*.apk

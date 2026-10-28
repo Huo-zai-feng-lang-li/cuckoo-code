@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.120] - 2026-10-28
+
+### Changed
+- CI 流水线暂时移除 Mac 构建以提升打包速度，保留 Windows 与 Android。将 Android 编译目标调回 API 35。
+
 ## [0.10.119] - 2026-10-28
 
 ### Fixed
