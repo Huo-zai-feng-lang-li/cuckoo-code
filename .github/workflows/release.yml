@@ -85,7 +85,7 @@ jobs:
           cd android
           chmod +x gradlew
           set -o pipefail
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle-build.log || true
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle-build.log
 
       - name: Show Gradle Log
         if: always()
