@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.129] - 2026-10-28
+
+### Fixed
+- 彻底解决 Kotlin stdlib 冲突：改用 `exclude` 移除旧版 `kotlin-stdlib-jdk7/jdk8`（1.8+ 已合并进 kotlin-stdlib），并引入 kotlin-bom 统一版本。
+
 ## [0.10.128] - 2026-10-28
 
 ### Fixed
