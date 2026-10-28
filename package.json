@@ -1,6 +1,6 @@
 {
   "name": "cuckoo-code",
-  "version": "0.10.142",
+  "version": "0.10.143",
   "description": "DeepSeek 桌面应用——内嵌浏览器，自动识别 AI 回复中的命令和工具调用并执行",
   "type": "module",
   "main": "out/src/app/entry.js",
@@ -55,7 +55,7 @@
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.13.6",
     "@types/picomatch": "^4.0.3",
-    "@types/qrcode-generator": "^0.0.16",
+    "@types/qrcode": "^1.5.6",
     "@vitest/coverage-v8": "^5.0.1",
     "electron": "^44.4.3",
     "electron-builder": "^26.15.3",
@@ -199,7 +199,7 @@
     "monaco-editor": "^0.57.0",
     "mysql2": "^3.24.2",
     "picomatch": "^4.0.7",
-    "qrcode-generator": "^2.0.4",
+    "qrcode": "^1.5.4",
     "tar": "^7.5.22",
     "turndown": "^7.2.4",
     "ws": "^8.22.0"

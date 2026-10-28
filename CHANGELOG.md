@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.10.143] - 2026-10-28
+
+### Fixed
+- 彻底修复生成二维码白屏问题：换用 `QRCode.toString({ type: 'svg' })`，完全摆脱 Canvas 兼容性和 esbuild CommonJS 导出问题。
+- 修复二维码容器因 flex 居中导致子元素高度塌陷的问题。
+
 ## [0.10.142] - 2026-10-28
 
 ### Changed
