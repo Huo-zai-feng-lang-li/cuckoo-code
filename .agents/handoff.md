@@ -1,8 +1,8 @@
-# 最新接续状态 (2026-10-29 第二场)
+# 最新接续状态 (2026-10-29 第二场 · 已发版)
 
 ## 核心进展
-- **需求 094 已实现并验证**（未推送）：远程扫码按钮布局修复 + APK 固定签名支持覆盖升级。
-- **当前版本**：v0.10.166（已 push master + tag）。094 改动在分支 `fix/094-remote-scan-and-apk-signing`，尚未合入 master、未发版。
+- **需求 094 已合入 master 并随 v0.10.167 发布**：远程扫码按钮布局修复 + APK 固定签名支持覆盖升级。
+- **当前版本**：v0.10.167。
 
 ## 两个问题与根因
 
@@ -13,35 +13,33 @@
 
 ### 2. APK 每版签名不同，无法覆盖安装
 - 根因：CI 跑 `./gradlew assembleDebug`，而 `build.gradle` 无 `signingConfigs` → 用 AGP 默认调试签名。GitHub runner 全新环境，每版自动生成一把新 `debug.keystore` → 签名每次不同 → Android 拒绝覆盖。
-- 修复：仓库内置固定 keystore `android/app/cuckoo-release.keystore`（PKCS12，alias `cuckoo`，密码 `cuckoo-remote-2026`，CN=Cuckoo Remote，有效至 2056），`build.gradle` 的 **debug 与 release 两个变体都指向它**。
-- 同时把 `versionCode/versionName` 从 10153/0.10.153 对齐到 10166/0.10.166（CI 仍由 sync-version.js 按 tag 覆盖）。
+- 修复：仓库内置固定 keystore `android/app/cuckoo-release.keystore`（PKCS12，alias `cuckoo`，密码 `cuckoo-remote-2026`，CN=Cuckoo Remote，有效至 2056，SHA256 `C1:F9:DF:3F:…:1C:6E:C6`），`build.gradle` 的 **debug 与 release 两个变体都指向它**。
+- `versionCode/versionName` 从 10153/0.10.153 对齐到当前版本（CI 仍由 sync-version.js 按 tag 覆盖）。
 
 ## 关键取证
-- **反向验证**：把产物临时改回 `'block'`，Playwright 实测 `computedStyle.display === 'block'`、布局错位；改回 `''` 后为 `flex`，图标与文字中心线偏差 **0px**、gap **8px**（390×844 视口，截图见 `D:\cuckoo-code\mcp-cwd\.agents\tmp\scan-fixed.png`）。
+- **反向验证**：把产物临时改回 `'block'`，Playwright 实测 `computedStyle.display === 'block'`、布局错位；改回 `''` 后为 `flex`，图标与文字中心线偏差 **0px**、gap **8px**（390×844 视口）。
 - **浏览器场景不回归**：独立 page（无 `window.Capacitor`）实测扫码按钮与地址行均 `display:none`。
-- **keystore 可被 Java 读取**：临时下载 JDK21 JRE，用其 `keytool -list -v` 成功读出 `PrivateKeyEntry`，`SHA256: C1:F9:DF:3F:…:1C:6E:C6`，签名算法 `SHA256withRSA`（与 openssl 输出一致）。验证后已删除临时 JRE。
+- **keystore 可被 Java 读取**：临时下 JDK21 JRE，`keytool -list -v` 读出 `PrivateKeyEntry`、`SHA256withRSA`、指纹与 openssl 一致。验证后已删除临时 JRE。
 - **cap sync 不会重写** `android/app/build.gradle`（只写 `capacitor.build.gradle`），签名配置安全。
 
-## 验证结果
+## 验证结果（发版前全绿）
 - `npm run typecheck` ✅
-- `npm test` ✅ 131 文件 / 1299 用例全过
+- `npm test` ✅ 131 文件 / 1299 用例
 - `npm run lint` ✅ 0 error（65 个既有 warning）
 - `npm run compile` ✅
 - 布局：Playwright 实测 ✅（原生壳 + 浏览器两场景）
 - keystore：keytool 实读 ✅
-- **未做**：CI 实跑（需推 tag）、真机安装覆盖升级
 
 ## 安全声明（务必保留）
 `cuckoo-release.keystore` 与密码**明文随仓库公开**，等同公开私钥：仅用于内部覆盖升级，**不可用于商店分发**。任何拿到仓库的人都能签出可覆盖本 App 的 APK。若未来需私密签名，改走 CI Secrets 并轮换密钥（届时老用户需再卸载重装一次）。
 
 ## 迁移成本
-旧版 APK 各自用不同临时 debug 签名，**首次升级必须卸载重装一次**；本版起后续版本签名恒定，可正常覆盖。
+旧版 APK 各自用不同临时 debug 签名，**首次升级必须卸载重装一次**；v0.10.167 起后续版本签名恒定，可正常覆盖。
 
 ## 待办
-- 推送分支、合入 master、递增版本号 + 更新 CHANGELOG + 打 tag 触发 CI（用户确认后再做）。
-- CI 实跑后核对 APK 签名指纹是否恒定（`keytool -printcert -jarfile xxx.apk`）。
+- **CI 实跑后核对 APK 签名指纹恒定**（`keytool -printcert -jarfile xxx.apk`，应与 `C1:F9:DF:3F:…:1C:6E:C6` 一致）。
 - 真机安装验证覆盖升级。
-- 本文件上方的 092 章节（子代理并发池）仍有真机验证清单 A~H 未做，遗留至今。
+- 本章节上方的 092 章节（子代理并发池）仍有真机验证清单 A~H 未做，遗留至今。
 - **v0.10.164 tag 违规**（含数字 4）已推 origin，是否删除仍待用户决定。
 
 ## 教训（延续）

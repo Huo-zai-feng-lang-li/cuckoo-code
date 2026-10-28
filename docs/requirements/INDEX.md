@@ -86,6 +86,6 @@
 | 085 | fix | [右侧对话导航滚轮失效（hover 强制正文滚底 + 导航自身压扁不可滚）](./085-conv-nav-scroll.md) | done | feat/086-remote-fixes-and-nav | 2026-10-19 |
 | 086 | perf | [远程两项关键修复（同步渲染批量提速 + 静态资源 URL 版本化）](./086-remote-two-fixes.md) | done | feat/086-remote-fixes-and-nav | 2026-10-19 |
 | 088 | fix | [修复格式误报（XML/JSON 工具调用误判正常讨论文本）](./088-format-false-positive.md) | done | fix/088-format-false-positive | 2026-10-23 |
-| 094 | fix | [远程扫码按钮布局修复 + APK 固定签名（支持覆盖升级）](./094-remote-scan-layout-and-apk-signing.md) | review | fix/094-remote-scan-and-apk-signing | 2026-10-29 |
+| 094 | fix | [远程扫码按钮布局修复 + APK 固定签名（支持覆盖升级）](./094-remote-scan-layout-and-apk-signing.md) | done | fix/094-remote-scan-and-apk-signing | 2026-10-29 |
 
 共 82 个需求。

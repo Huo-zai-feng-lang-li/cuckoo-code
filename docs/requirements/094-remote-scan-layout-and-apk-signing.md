@@ -2,7 +2,7 @@
 id: 094
 type: fix
 title: 远程扫码按钮布局修复 + APK 固定签名（支持覆盖升级）
-status: review
+status: done
 branch: fix/094-remote-scan-and-apk-signing
 created: 2026-10-29
 updated: 2026-10-29
@@ -40,7 +40,7 @@ updated: 2026-10-29
 - 新增仓库内置签名文件 `android/app/cuckoo-release.keystore`（PKCS12，别名 `cuckoo`，CN=Cuckoo Remote，有效期至 2056，SHA256 指纹 `C1:F9:DF:3F:…:1C:6E:C6`）。
 - `android/app/build.gradle` 新增 `signingConfigs.release` 指向该文件，**debug 与 release 两个变体都用它签名**。
   - debug 也走固定签名，因为 CI 当前构建的是 `assembleDebug`；两变体同签名后，未来无论产出哪种包都能互相覆盖。
-- `versionCode / versionName` 对齐当前版本 `10166 / 0.10.166`（CI 仍由 `sync-version.js` 按 tag 覆盖）。
+- `versionCode / versionName` 对齐当前版本（随发版由 `sync-version.js` 按 tag 覆盖）。
 
 ### 3.3 迁移说明
 旧版本 APK 用的是各自临时生成的 debug 签名，与新固定签名不同，**首次升级需要卸载旧版重装一次**；从本版起后续版本签名恒定，可正常覆盖升级。

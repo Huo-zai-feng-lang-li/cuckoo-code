@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [0.10.167] - 2026-10-29
+
+### Fixed
+- **手机端「扫码连接电脑」按钮图标与文字上下错位**：`src/remote/pwa/app.js` 在原生壳分支写死 `scanBtn.style.display = 'block'`（内联样式），优先级压过样式表的 `#btn-scan{display:flex}`，导致 flex 布局失效——图标独占一行、文字掉到第二行并居中。现改为清空内联样式回落 CSS flex，图标与文字恢复同一行垂直居中（实测中心线偏差 0px、间距 8px）。上一个提交 `cbe042d` 只补了 HTML 的 `<span>` 与 CSS 的 `svg{display:block}`，未触及这行 JS，故此前未修好。
+- **Android APK 每个版本签名不同，无法覆盖安装**：CI 执行 `./gradlew assembleDebug`，而 `android/app/build.gradle` 没有任何 `signingConfigs`，debug 变体使用 AGP 默认调试签名——GitHub Actions runner 是全新环境，每次都会自动生成一把新的 `debug.keystore`，于是每版 APK 签名都不一样，安卓必然拒绝覆盖安装（提示「签名不一致」）。现仓库内置固定签名 `android/app/cuckoo-release.keystore`（PKCS12，别名 `cuckoo`，SHA256 指纹 `C1:F9:DF:3F:…:1C:6E:C6`，有效期至 2056），`build.gradle` 的 debug 与 release 两个变体都指向它，此后各版本签名恒定、可正常覆盖升级。
+- **Android 版本号与实际版本脱节**：`build.gradle` 的 `versionCode/versionName` 长期停在 `10153 / 0.10.153`（仅在 CI 里由 `scripts/sync-version.js` 按 tag 临时改写）。现已对齐当前版本 `10167 / 0.10.167`，本地构建不再出现版本错位。
+
+### Added
+- 需求档案 `docs/requirements/094-remote-scan-layout-and-apk-signing.md`。
+- `android/.gitignore` 增加注释，说明 `cuckoo-release.keystore` 为**有意入库**的固定签名文件，防止后人误取消 `#*.keystore` 注释导致 CI 缺签名文件构建失败。
+
+### Changed
+- CI 保持 `assembleDebug` 未改为 `assembleRelease`：debug 变体已改用固定签名，产物仅多出 `android:debuggable="true"`，对本 App（本机 PWA 客户端，无敏感本地数据）无实质影响；改动面最小。后续若需 release 包，把 workflow 的 `assembleDebug` 换成 `assembleRelease` 并同步产物路径即可，签名配置已就绪。
+
+### ⚠️ 升级须知
+- **旧版用户首次升级必须卸载重装一次**：历史版本各自使用临时生成的 debug 签名，与本次固定签名不同，无法直接覆盖。从 0.10.167 起后续版本签名恒定，可正常覆盖升级。
+- **签名私钥公开声明**：`cuckoo-release.keystore` 及其密码明文随仓库公开，等同于公开签名私钥，**仅适用于内部/个人覆盖升级，不可用于应用商店分发或任何需要防伪的场景**。若未来需要私密签名，应改为 CI Secrets 注入并轮换密钥（届时老用户需再卸载重装一次）。
+
 ## [0.10.166] - 2026-10-29
 
 ### Fixed
