@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.161] - 2026-10-29
+
+### Fixed
+- **子代理设置校验失败时 localStorage 被局部污染**：`applySettingsData` 把子代理字段（并发上限 / 启动间隔）的校验写在 `try` 内、`localStorage.setItem` 之后——校验失败返回时，前面的 retry / sendDelay / attachDelay 等字段已写入 localStorage，但主进程收到 `ok:false` 不落盘 → localStorage 与 `agent-settings.json` 不一致（下次打开设置页显示回滚值，但运行时 hook 读的是被污染的 localStorage）。现把三个子代理字段的校验全部提到 `try` 之前，与其它字段一致（`src/overlay/panels/settings.ts`）。
+
 ## [0.10.160] - 2026-10-29
 
 ### Fixed

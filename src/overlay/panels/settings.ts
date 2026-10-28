@@ -228,6 +228,28 @@ function applySettingsData(data: any): { success: boolean; error?: string } {
     goalMax = parseInt(data.goalMaxIterations, 10);
     if (Number.isNaN(goalMax) || goalMax <= 0) return { success: false, error: '目标最大迭代次数必须是正整数' };
   }
+  // 子代理字段：校验必须在写 localStorage **之前**（与上面各字段一致）。
+  // 曾经把校验写在 try 内、setItem 之后 —— 校验失败时前面的字段已写入 localStorage，
+  // 但主进程收到 ok:false 不落盘，造成 localStorage 与 agent-settings.json 不一致。
+  let subMaxConcurrent: number | null = null;
+  if (data && data.maxConcurrentAgents !== undefined && data.maxConcurrentAgents !== null && data.maxConcurrentAgents !== '') {
+    const m = parseInt(data.maxConcurrentAgents, 10);
+    if (!Number.isFinite(m) || m < 1) return { success: false, error: '子代理并发上限必须是 1~10 的整数' };
+    if (m > 10) return { success: false, error: '子代理并发上限不能超过 10' };
+    subMaxConcurrent = m;
+  }
+  let subIntervalMinMs: number | null = null;
+  if (data && data.agentStartIntervalMin !== undefined && data.agentStartIntervalMin !== null && data.agentStartIntervalMin !== '') {
+    const v = secToMs(data.agentStartIntervalMin);
+    if (!Number.isFinite(v) || v < 0) return { success: false, error: '子代理启动间隔必须是非负数字（秒）' };
+    subIntervalMinMs = v;
+  }
+  let subIntervalMaxMs: number | null = null;
+  if (data && data.agentStartIntervalMax !== undefined && data.agentStartIntervalMax !== null && data.agentStartIntervalMax !== '') {
+    const v = secToMs(data.agentStartIntervalMax);
+    if (!Number.isFinite(v) || v < 0) return { success: false, error: '子代理启动间隔必须是非负数字（秒）' };
+    subIntervalMaxMs = v;
+  }
 
   try {
     localStorage.setItem('cuckoo-retry-enabled', (data && data.retryEnabled) ? '1' : '0');
@@ -247,23 +269,10 @@ function applySettingsData(data: any): { success: boolean; error?: string } {
     if (goalMax !== null) localStorage.setItem('cuckoo-goal-max-iterations', String(goalMax));
     // ssrfGuard 仅当显式提供时才写（避免未传该字段的调用方把它清成 0）
     if (data && data.ssrfGuard !== undefined) localStorage.setItem('cuckoo-ssrf-guard', data.ssrfGuard ? '1' : '0');
-    // 子代理字段：仅当显式提供时才写（同 ssrfGuard 模式，避免误清）
-    if (data && data.maxConcurrentAgents !== undefined && data.maxConcurrentAgents !== null && data.maxConcurrentAgents !== '') {
-      const m = parseInt(data.maxConcurrentAgents, 10);
-      if (!Number.isFinite(m) || m < 1) return { success: false, error: '子代理并发上限必须是 1~10 的整数' };
-      if (m > 10) return { success: false, error: '子代理并发上限不能超过 10' };
-      localStorage.setItem('cuckoo-max-concurrent-agents', String(m));
-    }
-    if (data && data.agentStartIntervalMin !== undefined && data.agentStartIntervalMin !== null && data.agentStartIntervalMin !== '') {
-      const v = secToMs(data.agentStartIntervalMin);
-      if (!Number.isFinite(v) || v < 0) return { success: false, error: '子代理启动间隔必须是非负数字（秒）' };
-      localStorage.setItem('cuckoo-agent-start-interval-min', String(v));
-    }
-    if (data && data.agentStartIntervalMax !== undefined && data.agentStartIntervalMax !== null && data.agentStartIntervalMax !== '') {
-      const v = secToMs(data.agentStartIntervalMax);
-      if (!Number.isFinite(v) || v < 0) return { success: false, error: '子代理启动间隔必须是非负数字（秒）' };
-      localStorage.setItem('cuckoo-agent-start-interval-max', String(v));
-    }
+    // 子代理字段：校验已在 try 之前完成，这里只写已校验过的值（同 ssrfGuard 模式，仅显式提供才写）
+    if (subMaxConcurrent !== null) localStorage.setItem('cuckoo-max-concurrent-agents', String(subMaxConcurrent));
+    if (subIntervalMinMs !== null) localStorage.setItem('cuckoo-agent-start-interval-min', String(subIntervalMinMs));
+    if (subIntervalMaxMs !== null) localStorage.setItem('cuckoo-agent-start-interval-max', String(subIntervalMaxMs));
   } catch (err: any) {
     return { success: false, error: '写入失败: ' + err.message };
   }
