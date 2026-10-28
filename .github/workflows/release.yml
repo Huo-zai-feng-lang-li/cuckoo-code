@@ -9,8 +9,16 @@ permissions:
   contents: write
 
 jobs:
-  build-win:
-    runs-on: windows-latest
+  build:
+    strategy:
+      max-parallel: 1
+      matrix:
+        include:
+          - os: windows-latest
+            command: build:win:local
+          - os: macos-latest
+            command: build:mac:local
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,59 +36,20 @@ jobs:
       - name: Fetch runtime binaries
         run: node scripts/fetch-runtime.mjs
       - name: Build
-        run: npm run build:win:local
+        run: npm run ${{ matrix.command }}
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist-win
+          name: dist-${{ matrix.os }}
           path: |
             dist/*.exe
+            dist/*.zip
+            dist/*.dmg
             dist/latest*.yml
           retention-days: 30
 
-  build-android:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-      - name: Sync version from tag
-        run: node scripts/sync-version.js
-        env:
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-      - name: Install dependencies
-        run: npm ci
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          cmdline-tools-version: 10.0
-          packages: 'platforms;android-35 build-tools;35.0.0'
-          accept-android-sdk-licenses: true
-      - name: Sync Capacitor
-        run: npx cap sync android
-      - name: Build Android APK
-        run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist-android
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: warn
-
   publish:
-    needs: [build-win, build-android]
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -99,5 +68,6 @@ jobs:
           generate_release_notes: true
           files: |
             dist/*.exe
+            dist/*.zip
+            dist/*.dmg
             dist/latest*.yml
-            dist/*.apk
