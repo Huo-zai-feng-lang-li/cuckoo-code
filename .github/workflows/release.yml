@@ -103,12 +103,18 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Rename APK
+        if: success()
+        run: |
+          cd android/app/build/outputs/apk/debug
+          mv app-debug.apk cuckoo-remote-android-${{ github.ref_name }}.apk
+
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: dist-android
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/cuckoo-remote-android-*.apk
           if-no-files-found: warn
 
       # 无论成功失败，都把 Gradle 完整日志传上来

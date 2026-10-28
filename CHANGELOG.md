@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.10.132] - 2026-10-28
+
+### Changed
+- APK 产物重命名为 `cuckoo-remote-android-v{版本}.apk`，不再使用 Gradle 默认的 `app-debug.apk`。
+
 ## [0.10.131] - 2026-10-28
 
 ### Fixed
