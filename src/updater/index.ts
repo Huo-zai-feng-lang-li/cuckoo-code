@@ -96,7 +96,9 @@ function isUpdatePending(): boolean {
     const reachedTarget = !!target && current === target;
     // 数据不完整（既无 from 又无 target）：无法判断 → 放行，避免锁死
     const incomplete = !from && !target;
-    if (expired || versionChanged || reachedTarget || incomplete) {
+    // 如果标记还在，且版本没变，但已经过了 2 分钟（说明安装失败或被 UAC 拒绝），直接判定为失败放行
+    const installFailed = !!from && current === from && (Date.now() - at > 120000);
+    if (expired || versionChanged || reachedTarget || incomplete || installFailed) {
       try { fs.unlinkSync(p); } catch (_) { /* ignore */ }
       return false;
     }
@@ -322,6 +324,7 @@ autoUpdater.on('update-available', async (info: any) => {
   }
   // 先上锁，避免弹窗等待期间触发二次检查或二次下载
   isDownloading = true;
+  lastProgressTime = Date.now();
   // 原生模态对话框（屏幕中央）。下载进度由壳页面状态栏展示，不在此弹窗内。
   const idx = await showNativeDialog({
     type: 'info',

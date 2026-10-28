@@ -513,6 +513,10 @@
       return s ? JSON.parse(s) : null;
     } catch { return null; }
   }
+  // 确保 currentProfileId 初始化时同步 last-profile，防止判断失准
+  if (!currentProfileId) {
+    currentProfileId = localStorage.getItem('cuckoo-last-profile') || '';
+  }
 
   function renderHistory(entries, isCache = false) {
     setSyncing(false);
