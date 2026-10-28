@@ -12,6 +12,9 @@ import {
   getQueueLength,
   injectSemaphoreConfig,
   _resetForTest,
+  _readConfigForTest,
+  _getLastStartAtForTest,
+  _getIntervalWaiterCountForTest,
 } from '../../src/app/agent-semaphore.js';
 
 beforeEach(() => {
@@ -300,6 +303,85 @@ test('间隔 > 0 时第二次 acquire 会被延迟', async () => {
   await acquireAgentSlot({ profileId: 'I1' });
   const dt = Date.now() - t0;
   assert.ok(dt >= 150, '第二次应至少等待约 200ms，实测 ' + dt + 'ms');
+});
+
+// ===== 回归 1：并发场景下间隔必须真正拉开（原实现会同时启动）=====
+
+test('并发 3 个 acquire 在 150ms 间隔下应串行拉开（0/150/300ms）', async () => {
+  injectSemaphoreConfig(() => ({ maxConcurrent: 3, startIntervalMinMs: 150, startIntervalMaxMs: 150 }));
+  const t0 = Date.now();
+  const starts = [];
+  await Promise.all([
+    acquireAgentSlot({ profileId: 'CC' }).then(() => starts.push(Date.now() - t0)),
+    acquireAgentSlot({ profileId: 'CC' }).then(() => starts.push(Date.now() - t0)),
+    acquireAgentSlot({ profileId: 'CC' }).then(() => starts.push(Date.now() - t0)),
+  ]);
+  starts.sort((a, b) => a - b);
+  assert.ok(starts[0] < 100, '第 1 个应立即，实测 ' + starts[0]);
+  assert.ok(starts[1] >= 120, '第 2 个应等约 150ms，实测 ' + starts[1]);
+  assert.ok(starts[2] >= 260, '第 3 个应等约 300ms（串行化），实测 ' + starts[2]);
+});
+
+// ===== 回归 2：间隔上限钳制 =====
+
+test('启动间隔超上限被钳到 300000ms', () => {
+  injectSemaphoreConfig(() => ({ maxConcurrent: 3, startIntervalMinMs: 9_999_000, startIntervalMaxMs: 9_999_000 }));
+  const cfg = _readConfigForTest();
+  assert.strictEqual(cfg.startIntervalMinMs, 300_000, 'min 应被钳到 300 秒');
+  assert.strictEqual(cfg.startIntervalMaxMs, 300_000, 'max 应被钳到 300 秒');
+});
+
+test('启动间隔负数归零', () => {
+  injectSemaphoreConfig(() => ({ maxConcurrent: 3, startIntervalMinMs: -5000, startIntervalMaxMs: -1 }));
+  const cfg = _readConfigForTest();
+  assert.strictEqual(cfg.startIntervalMinMs, 0);
+  assert.strictEqual(cfg.startIntervalMaxMs, 0);
+});
+
+// ===== 回归 3：等间隔期间可被取消，且名额归还 =====
+
+test('等间隔期间点停止：取消 + 归还名额（不泄漏）', async () => {
+  injectSemaphoreConfig(() => ({ maxConcurrent: 3, startIntervalMinMs: 5000, startIntervalMaxMs: 5000 }));
+  await acquireAgentSlot({ profileId: 'W', parentWindowId: 11 });
+  assert.strictEqual(getActiveCount('W'), 1);
+
+  // 第二个：拿到名额后进入 5 秒间隔等待
+  const p = acquireAgentSlot({ profileId: 'W', parentWindowId: 11 });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.strictEqual(getActiveCount('W'), 2, '名额已占，正在等间隔');
+  assert.strictEqual(_getIntervalWaiterCountForTest('W'), 1, '应登记在 intervalWaiters');
+
+  const cancelled = cancelQueuedByParent(11);
+  assert.strictEqual(cancelled, 1, '应取消 1 个（等间隔中的）');
+  await assert.rejects(() => p, /已被用户取消/);
+  assert.strictEqual(getActiveCount('W'), 1, '取消后名额必须归还（只剩第一个）');
+  assert.strictEqual(_getIntervalWaiterCountForTest('W'), 0, '登记项应移除');
+});
+
+test('等间隔期间取消只影响指定父窗口', async () => {
+  injectSemaphoreConfig(() => ({ maxConcurrent: 3, startIntervalMinMs: 300, startIntervalMaxMs: 300 }));
+  await acquireAgentSlot({ profileId: 'W2', parentWindowId: 1 });
+  const p1 = acquireAgentSlot({ profileId: 'W2', parentWindowId: 1 });
+  const p2 = acquireAgentSlot({ profileId: 'W2', parentWindowId: 2 });
+  await new Promise((r) => setTimeout(r, 50));
+
+  assert.strictEqual(cancelQueuedByParent(1), 1);
+  await assert.rejects(() => p1, /已被用户取消/);
+  await p2; // 窗口 2 不受影响，正常完成
+  assert.strictEqual(getActiveCount('W2'), 2, '窗口 1 取消后剩：首个 + 窗口 2 = 2');
+});
+
+// ===== 回归 4：网关不重置子代理的间隔计时 =====
+
+test('网关 tryAcquire 不更新 lastStartAt', async () => {
+  injectSemaphoreConfig(() => ({ maxConcurrent: 3, startIntervalMinMs: 0, startIntervalMaxMs: 0 }));
+  await acquireAgentSlot({ profileId: 'G' });
+  const t1 = _getLastStartAtForTest('G');
+  assert.ok(t1 > 0, '子代理启动应记录 lastStartAt');
+
+  await new Promise((r) => setTimeout(r, 30));
+  assert.strictEqual(tryAcquireAgentSlot('G'), true);
+  assert.strictEqual(_getLastStartAtForTest('G'), t1, '网关占用不得重置 lastStartAt');
 });
 
 test('间隔只作用于子代理（acquireAgentSlot），网关 tryAcquire 不等待', async () => {

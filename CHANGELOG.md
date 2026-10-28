@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.10.160] - 2026-10-29
+
+### Fixed
+- **🔴 并发场景下子代理启动间隔完全失效**：`acquireAgentSlot` 的间隔计算未串行化——并发调用读到同一个 `lastStartAt`，算出相同等待时间、同时 `sleep`、同时结束，间隔形同虚设（并发 3、间隔 10 秒时 3 个窗口会同时启动，正是最需要防的连发模式）。现为每个池引入 `intervalChain` Promise 链，保证「一次只有一个调用在计算并占用间隔」（`src/app/agent-semaphore.ts`）。
+- **🟡 等启动间隔期间点「停止」取消不掉**：子代理拿到名额后进入 sleep，此时它已占名额、不在 `waiters` 队列里，`cancelQueuedByParent` 扫不到它 → sleep 结束后照样启动新窗口，且该名额永不归还（池子越用越少）。现新增 `intervalWaiters` 登记，取消时唤醒并抛「已被用户取消」，同时归还名额（`src/app/agent-semaphore.ts`）。
+- **🟡 网关调用会重置子代理的间隔计时器**：`tryAcquireAgentSlot` 也更新 `lastStartAt`，网关调用频繁时子代理间隔永远等不到（配了等于没配）。现网关不再更新 `lastStartAt`（`src/app/agent-semaphore.ts`）。
+- **🟡 子代理设置校验失败时 localStorage 被局部污染**：`applySettingsData` 的子代理字段校验写在 `localStorage.setItem` 之后，校验失败返回时前面的字段已写入，但主进程收到 `ok:false` 不落盘 → localStorage 与 `agent-settings.json` 不一致。已把校验全部提到写入之前（`src/overlay/panels/settings.ts`）。
+
+### Changed
+- **启动间隔增加上限钳制 300 秒（5 分钟）**：此前无上限，用户可填 999999 秒，表现为「子代理点了没反应 / 莫名排队超时」，难以排查。
+
+### Added
+- 回归测试 4 组：并发 3 个 acquire 在 150ms 间隔下应分别于 ~0 / ~150 / ~300ms 启动；间隔超上限钳到 300000ms、负数归零；等间隔期间取消 + 名额归还 + 只影响指定父窗口；网关 `tryAcquire` 不重置 `lastStartAt`。另新增 3 个测试专用导出（`_readConfigForTest` / `_getLastStartAtForTest` / `_getIntervalWaiterCountForTest`）用于确定性断言。
+
 ## [0.10.159] - 2026-10-29
 
 ### Added

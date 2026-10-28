@@ -23,6 +23,8 @@
 export const MAX_CONCURRENT_AGENTS = 3;
 /** 并发上限硬上界（配置超限时压到此处，防用户把自己弄成裸奔） */
 const MAX_CONCURRENT_HARD_LIMIT = 10;
+/** 启动间隔硬上界：300 秒（5 分钟）。防用户误填 999999 秒把子代理永久挂住 */
+const MAX_START_INTERVAL_MS = 300_000;
 
 /** 排队最长等待时间：默认 5 分钟（单个子代理任务正常在 10 分钟内完成） */
 const DEFAULT_QUEUE_TIMEOUT_MS = 300_000;
@@ -40,6 +42,20 @@ interface Pool {
   waiters: Waiter[];
   /** 上一次「真正启动」的时间戳（ms）；用于启动间隔计算 */
   lastStartAt: number;
+  /**
+   * 间隔计算的串行链。并发 acquire 若各自读 lastStartAt，会算出相同等待时间、
+   * 同时结束 → 间隔形同虚设。用 Promise 链保证一次只有一个在计算。
+   */
+  intervalChain: Promise<void>;
+  /** 已拿到名额、正在等启动间隔的请求（用户点停止时要能取消它们） */
+  intervalWaiters: IntervalWaiter[];
+}
+
+/** 正在等启动间隔的请求登记项 */
+interface IntervalWaiter {
+  parentWindowId: number | null;
+  cancelled: boolean;
+  wake: () => void;
 }
 
 /** 默认池 key（未指定 profileId 时使用，兼容旧调用与测试） */
@@ -51,7 +67,7 @@ function getPool(profileId?: string): Pool {
   const key = typeof profileId === 'string' ? profileId : DEFAULT_POOL_KEY;
   let p = pools.get(key);
   if (!p) {
-    p = { active: 0, waiters: [], lastStartAt: 0 };
+    p = { active: 0, waiters: [], lastStartAt: 0, intervalChain: Promise.resolve(), intervalWaiters: [] };
     pools.set(key, p);
   }
   return p;
@@ -100,8 +116,14 @@ function readConfig(): SemaphoreConfig {
   const max = Number.isFinite(rawMax)
     ? Math.min(MAX_CONCURRENT_HARD_LIMIT, Math.max(1, rawMax))
     : MAX_CONCURRENT_AGENTS;
-  let minMs = Math.max(0, Number(c.startIntervalMinMs) || 0);
-  let maxMs = Math.max(0, Number(c.startIntervalMaxMs) || 0);
+  // 间隔钳制：非负 + 上限 300 秒。无上限时用户填 999999 秒会表现为「莫名排队超时」。
+  const clampMs = (v: any): number => {
+    const n = Math.floor(Number(v));
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.min(MAX_START_INTERVAL_MS, n);
+  };
+  let minMs = clampMs(c.startIntervalMinMs);
+  let maxMs = clampMs(c.startIntervalMaxMs);
   if (maxMs < minMs) maxMs = minMs;
   return { maxConcurrent: max, startIntervalMinMs: minMs, startIntervalMaxMs: maxMs };
 }
@@ -162,7 +184,8 @@ export function tryAcquireAgentSlot(profileId?: string): boolean {
   const cfg = readConfig();
   if (pool.active >= cfg.maxConcurrent) return false;
   pool.active++;
-  pool.lastStartAt = Date.now();
+  // 不更新 lastStartAt：间隔语义是「两次子代理启动之间」，
+  // 网关频繁调用若重置计时器，子代理的间隔会永远等不到（配了等于没配）。
   return true;
 }
 
@@ -210,12 +233,45 @@ export async function acquireAgentSlot(opts: AcquireOptions = {}): Promise<void>
 
   // ---- 第二步：启动间隔（默认 0 → 直接返回） ----
   const interval = randomInterval(cfg);
-  if (interval > 0) {
+  if (interval <= 0) {
+    pool.lastStartAt = Date.now();
+    return;
+  }
+  // 串行化：并发调用必须排队计算间隔，否则它们读到同一个 lastStartAt、
+  // 算出相同等待时间、同时结束 —— 间隔形同虚设（3 并发会同时启动）。
+  const prev = pool.intervalChain;
+  let releaseChain!: () => void;
+  pool.intervalChain = new Promise<void>((r) => { releaseChain = r; });
+  try {
+    await prev.catch(() => { /* 前一个失败不阻塞后续 */ });
     const elapsed = Date.now() - pool.lastStartAt;
     const wait = interval - elapsed;
-    if (wait > 0) await sleep(wait);
+    if (wait > 0) {
+      const token: IntervalWaiter = {
+        parentWindowId: typeof opts.parentWindowId === 'number' ? opts.parentWindowId : null,
+        cancelled: false,
+        wake: () => { /* 下面替换为真正唤醒 */ },
+      };
+      pool.intervalWaiters.push(token);
+      try {
+        await new Promise<void>((resolve) => {
+          token.wake = () => resolve();
+          setTimeout(resolve, wait);
+        });
+      } finally {
+        const i = pool.intervalWaiters.indexOf(token);
+        if (i >= 0) pool.intervalWaiters.splice(i, 1);
+      }
+      if (token.cancelled) {
+        // 名额已占但任务未启动：必须归还，否则池子泄漏
+        releaseAgentSlot(profileKey);
+        throw new Error('子代理已被用户取消');
+      }
+    }
+    pool.lastStartAt = Date.now();
+  } finally {
+    releaseChain();
   }
-  pool.lastStartAt = Date.now();
 }
 
 /**
@@ -227,10 +283,19 @@ export function cancelQueuedByParent(parentWindowId: number): number {
   if (typeof parentWindowId !== 'number') return 0;
   let total = 0;
   for (const pool of allPools()) {
+    // (a) 排队中（还没拿到名额）
     const victims = pool.waiters.filter((w) => w.parentWindowId === parentWindowId);
     for (const w of victims) {
       if (!detach(pool, w)) continue;
       w.reject(new Error('子代理已被用户取消'));
+      total++;
+    }
+    // (b) 已拿到名额、正在等启动间隔的。不取消的话 sleep 结束后仍会照常启动，
+    //     "停止"意图落空；取消方由 acquireAgentSlot 负责归还名额。
+    for (const t of pool.intervalWaiters) {
+      if (t.parentWindowId !== parentWindowId || t.cancelled) continue;
+      t.cancelled = true;
+      t.wake();
       total++;
     }
   }
@@ -270,7 +335,24 @@ export function makeAgentReleaser(profileId?: string): () => void {
 export function _resetForTest(): void {
   for (const pool of allPools()) {
     for (const w of pool.waiters) { if (w.timer) { try { clearTimeout(w.timer); } catch (_) { /* ignore */ } } }
+    // 唤醒等间隔中的请求，避免测试进程挂住
+    for (const t of pool.intervalWaiters) { try { t.wake(); } catch (_) { /* ignore */ } }
   }
   pools.clear();
   _configProvider = null;
+}
+
+/** 测试专用：读取当前生效配置（验证钳制结果） */
+export function _readConfigForTest(): SemaphoreConfig {
+  return readConfig();
+}
+
+/** 测试专用：读取某池的 lastStartAt（验证网关不重置计时器） */
+export function _getLastStartAtForTest(profileId?: string): number {
+  return getPool(profileId).lastStartAt;
+}
+
+/** 测试专用：某池等间隔中的请求数 */
+export function _getIntervalWaiterCountForTest(profileId?: string): number {
+  return getPool(profileId).intervalWaiters.length;
 }
