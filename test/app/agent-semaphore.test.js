@@ -242,11 +242,18 @@ test('releaseAgentSlot 只影响指定账号', async () => {
   assert.strictEqual(getActiveCount('B'), 1, 'B 的计数不受影响');
 });
 
-test('不传 profileId 走默认池（兼容旧调用）', async () => {
+test('不传 profileId 走默认池；无参统计=所有池总和（契约）', async () => {
   await acquireAgentSlot();
   await acquireAgentSlot({ profileId: 'X' });
-  assert.strictEqual(getActiveCount(), 1, '无参默认池只统计默认池');
+  // 契约：getActiveCount() 无参 = 所有池总和（兼容旧测试的"全局视角"）
+  assert.strictEqual(getActiveCount(), 2, '无参返回所有池总和');
+  assert.strictEqual(getQueueLength(), 0);
+  // 传 profileId 时只看该池
   assert.strictEqual(getActiveCount('X'), 1);
+  // 默认池被释放后总和降为 1
+  releaseAgentSlot();
+  assert.strictEqual(getActiveCount(), 1);
+  assert.strictEqual(getActiveCount('X'), 1, 'X 不受默认池释放影响');
 });
 
 // ===== 可配并发上限 =====

@@ -94,10 +94,12 @@ function readConfig(): SemaphoreConfig {
   } catch (_) {
     c = DEFAULT_CONFIG;
   }
-  const max = Math.min(
-    MAX_CONCURRENT_HARD_LIMIT,
-    Math.max(1, Math.floor(Number(c.maxConcurrent) || MAX_CONCURRENT_AGENTS))
-  );
+  // 注意：不能用 `Number(x) || 默认值` —— 0 会被 \|\| 误判为假值而回退成默认 3。
+  // 合法范围是 [1, MAX_CONCURRENT_HARD_LIMIT]，越界夹到边界（0 → 1，99 → 10）。
+  const rawMax = Math.floor(Number(c.maxConcurrent));
+  const max = Number.isFinite(rawMax)
+    ? Math.min(MAX_CONCURRENT_HARD_LIMIT, Math.max(1, rawMax))
+    : MAX_CONCURRENT_AGENTS;
   let minMs = Math.max(0, Number(c.startIntervalMinMs) || 0);
   let maxMs = Math.max(0, Number(c.startIntervalMaxMs) || 0);
   if (maxMs < minMs) maxMs = minMs;
