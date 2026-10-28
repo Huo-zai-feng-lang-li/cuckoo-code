@@ -1,127 +1,80 @@
-name: Build and Release
+<path>.github/workflows/release.yml</path>
+<type>file</type>
+<content>
+1: name: Build and Release
+2: 
+3: on:
+4:   push:
+5:     tags:
+6:       - 'v*'
+7: 
+8: permissions:
+9:   contents: write
+10: 
+11: jobs:
+12:   build:
+13:     strategy:
+14:       max-parallel: 1
+15:       matrix:
+16:         include:
+17:           - os: windows-latest
+18:             command: build:win:local
+19:           - os: macos-latest
+20:             command: build:mac:local
+21:     runs-on: ${{ matrix.os }}
+22:     steps:
+23:       - name: Checkout
+24:         uses: actions/checkout@v4
+25:       - name: Setup Node
+26:         uses: actions/setup-node@v4
+27:         with:
+28:           node-version: '22'
+29:           cache: 'npm'
+30:       - name: Sync version from tag
+31:         run: node scripts/sync-version.js
+32:         env:
+33:           GITHUB_REF_NAME: ${{ github.ref_name }}
+34:       - name: Install dependencies
+35:         run: npm ci
+36:       - name: Fetch runtime binaries
+37:         run: node scripts/fetch-runtime.mjs
+38:       - name: Build
+39:         run: npm run ${{ matrix.command }}
+40:       - name: Upload artifacts
+41:         uses: actions/upload-artifact@v4
+42:         with:
+43:           name: dist-${{ matrix.os }}
+44:           path: |
+45:             dist/*.exe
+46:             dist/*.zip
+47:             dist/*.dmg
+48:             dist/latest*.yml
+49:           retention-days: 30
+50: 
+51:   publish:
+52:     needs: build
+53:     runs-on: ubuntu-latest
+54:     steps:
+55:       - name: Download all artifacts
+56:         uses: actions/download-artifact@v4
+57:         with:
+58:           path: dist
+59:           merge-multiple: true
+60:       - name: Publish Release
+61:         if: ${{ !contains(github.ref_name, '-beta') }}
+62:         uses: softprops/action-gh-release@v2
+63:         with:
+64:           tag_name: ${{ github.ref_name }}
+65:           name: ${{ github.ref_name }}
+66:           draft: false
+67:           make_latest: true
+68:           generate_release_notes: true
+69:           files: |
+70:             dist/*.exe
+71:             dist/*.zip
+72:             dist/*.dmg
+73:             dist/latest*.yml
+74: 
 
-on:
-  push:
-    tags:
-      - 'v*'
-
-permissions:
-  contents: write
-
-jobs:
-  build:
-    strategy:
-      max-parallel: 1
-      matrix:
-        include:
-          - os: windows-latest
-            command: build:win:local
-          - os: macos-latest
-            command: build:mac:local
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Sync version from tag
-        run: node scripts/sync-version.js
-        env:
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run ${{ matrix.command }}
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist-${{ matrix.os }}
-          path: |
-            dist/*.exe
-            dist/*.zip
-            dist/*.dmg
-            dist/latest*.yml
-          retention-days: 30
-
-  build-android:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Sync version from tag
-        run: node scripts/sync-version.js
-        env:
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          cmdline-tools-version: 10.0
-          packages: 'platforms;android-35 build-tools;35.0.0'
-          accept-android-sdk-licenses: true
-
-      - name: Sync Capacitor
-        run: npx cap sync android
-
-      - name: Build Android APK
-        run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist-android
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: warn
-
-  publish:
-    needs: [build, build-android]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-
-      - name: Publish Release
-        if: ${{ !contains(github.ref_name, '-beta') }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          draft: false
-          make_latest: true
-          generate_release_notes: true
-          files: |
-            dist/*.exe
-            dist/*.zip
-            dist/*.dmg
-            dist/latest*.yml
-            dist/*.apk
+(End of file - total 74 lines)
+</content>
