@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.10.182] - 2026-10-29
+
+### 修复
+- **PWA 顶栏布局挤压 & 图标面板不显示（彻底修复）**：
+  1. 顶栏按钮：强制 `flex: 0 0 32px` 防止挤压；去掉多余的背景和 outline。
+  2. 面板弹窗：原实现使用 `inset: 0` + `display: none` + `transition`，在部分 Android WebView 中因 `inset` 不兼容且 transition 不触发，导致仅背景模糊、面板不显示。
+  - 改为：`position: fixed; top:0; left:0; width:100%; height:100%;` + `position: absolute; bottom:0;`。
+  - 动画改为 `@keyframes slideUp`，确保在 WebView 中必定触发。
+
 ## [0.10.181] - 2026-10-29
 
 ### 修复
