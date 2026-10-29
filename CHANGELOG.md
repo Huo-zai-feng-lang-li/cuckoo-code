@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.10.170] - 2026-10-29
+
+### 修复
+- 手机端远程 App 任务完成通知的小图标由 Capacitor 模板占位图（白色对勾）改为 Cuckoo 品牌鸟形图标（纯白单色 vector，24dp），符合 Android 通知小图标规范。
+
+### 说明
+- 通知权限已由原生 MainActivity 在每次冷启动时请求（Android 13+ POST_NOTIFICATIONS），本次不改权限逻辑。
+- 若 App 切后台时仍收不到任务完成通知，属 WebView 后台 JS 节流问题，另行处理。
+
 ## [0.10.169] - 2026-10-29
 
 ### Fixed

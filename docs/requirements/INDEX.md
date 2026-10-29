@@ -89,5 +89,6 @@
 | 094 | fix | [远程扫码按钮布局修复 + APK 固定签名（支持覆盖升级）](./094-remote-scan-layout-and-apk-signing.md) | done | fix/094-remote-scan-and-apk-signing | 2026-10-29 |
 | 095 | fix | [子代理窗口泄漏远程事件导致手机误报「已停止生成」](./095-subagent-remote-leak.md) | done | fix/095-subagent-remote-leak | 2026-10-29 |
 | 096 | fix | [手机端「已停止生成」气泡在正常任务结束时误报](./096-remote-stop-bubble.md) | done | fix/096-remote-stop-bubble | 2026-10-29 |
+| 097 | fix | [手机 APK 通知小图标改用 Cuckoo 品牌图标](./097-remote-notify.md) | done | fix/097-remote-notify | 2026-10-29 |
 
-共 84 个需求。
+共 85 个需求。
