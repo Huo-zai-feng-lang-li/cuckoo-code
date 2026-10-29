@@ -1356,7 +1356,7 @@
           id: Date.now() % 2147483647,
           title,
           body,
-          smallIcon: 'ic_stat_icon_config_sample',
+          smallIcon: 'ic_stat_cuckoo',
           channelId: 'cuckoo_notify',
         }]
       });
