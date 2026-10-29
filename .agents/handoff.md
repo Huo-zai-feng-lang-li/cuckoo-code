@@ -1,47 +1,33 @@
-# 最新接续状态 (2026-10-29 · v0.10.172 已发版)
+# 最新接续状态 (2026-10-29 · v0.10.173 已发版)
 
 ## 核心进展
-- **v0.10.172 发布**：工具执行反馈闭环（遮罩超时兜底 + 秒数连续 + 纯净模式秒数）。
-- 近期版本：094/095/096/097（远程与通知）→ 171（计划面板修复 + 遮罩秒数）→ 172（执行反馈闭环）。
+- **v0.10.173 发布**：工具遮罩文案区分执行/回传阶段。
+- 近期版本：171（计划面板修复 + 遮罩秒数）→ 172（执行反馈闭环：5min 超时 + 秒数连续 + 纯净模式秒数）→ 173（回传阶段文案）。
 
-## v0.10.172 改动（需求 098）
+## v0.10.173 改动
+- `src/overlay/panel.ts`：新增 `maskLabel` + `renderMaskText()` 统一渲染；`startMaskTick(reuse?, label?)`；`showToolMask(onCancel?, reuseTick?, label?)`。
+- `src/bridge/intercept/observer.ts`：发送阶段传 `'正在回传结果'`，复用计时不归零。
 
-### 1. 遮罩超时兜底（src/overlay/panel.ts）
-- `MASK_TIMEOUT_MS = 5 * 60 * 1000`；`stopMaskTick()` 同时清 interval 和 timeout。
-- 超时 → `hideToolMask()` + `showToast('工具执行超过 5 分钟，已解除遮罩…')`。
-- **只解 UI 不杀进程**：进程层已有 JsRunner 60s 无活动兜底、bash/pwsh 自身 timeout。
+**原因**：工具执行完 → 结果填进输入框 → 等 6~16 秒拟人化延迟才发出。这段时间文案原为「工具调用执行中」，语义不准（工具已跑完）。
 
-### 2. 发送阶段计时复用（panel.ts + observer.ts）
-- `showToolMask(onCancel?, reuseTick?)` / `startMaskTick(reuse?)`。
-- observer.ts 发送阶段传 `true`，秒数连续不归零。
-
-### 3. 纯净模式秒数（src/ui/harness.html）
-- `toolTickTimer / toolStartAt / startToolTick() / stopToolTick()`。
-- `tool-start` 启动、`tool-end` 归零时停。
-- **关键防 bug**：tick 内只写 `statusText.textContent`，**绝不调 setStatus**（会把 generating 置 true，导致工具结束后卡「生成中…」）。
-- `markAborted()` 内加 `stopToolTick()`，防跨中止秒数错显。
+**延迟来源**：`randomDelay()` 读 `state.sendDelayMin/Max`（设置里的「发送延迟」），兜底 1000~10000ms。
 
 ## 验证
 - typecheck / lint（0 error）/ test（131 文件 1304 用例）/ compile 全绿。
-- 内联脚本 SYNTAX_OK。
-- 子代理 code-reviewer 审查：确认 setStatus 副作用已绕开、无定时器泄漏、超时清理正确；指出 markAborted 未停表（已修）、statusText 未 guard（已加）。
+- 子代理 code-reviewer + 主代理独立复核：maskLabel 正确重置、reuse 时空 label 不清文案、签名向后兼容、5min 超时未受影响。
 
-## 已知取舍（未改，可接受）
-1. 超时解除后，若工具随后完成进入发送阶段，遮罩会再短暂出现（发送阶段确有遮盖需求）。
-2. 5 分钟是「执行+发送」累计总寿命，非分阶段独立。
-3. tick 每秒覆盖 statusText，会吞掉同期「框架：…」文案（工具期只显示时长，设计取舍）。
+## 已知取舍（未改）
+1. 超时解除后发送阶段遮罩会短暂再出现（确有遮盖需求）。
+2. 5 分钟是执行+发送累计总寿命，非分阶段独立。
+3. 纯净模式 tick 每秒覆盖 statusText，会吞掉同期「框架：…」文案。
 
-## 真机验证清单（098）
-- [ ] 原版网页工具执行，秒数连续递增，进入回传不归零
-- [ ] 等待/模拟 5 分钟 → 遮罩自动解除 + toast
-- [ ] 纯净模式工具执行，状态条显示「工具运行中 Ns…」递增
-- [ ] 工具结束状态正确恢复（不卡「生成中…」）
-- [ ] 中止任务后，下一个工具秒数从 0 起算
+## 真机验证清单（172 + 173 一并）
+- [ ] 网页模式工具执行：秒数递增，进入回传文案变「正在回传结果」，秒数不归零
+- [ ] 5 分钟超时 → 遮罩解除 + toast
+- [ ] 纯净模式：状态条「工具运行中 Ns…」递增
+- [ ] 工具结束后状态恢复，不卡「生成中…」
+- [ ] 中止后下一个工具秒数从 0 起算
 
 ## 历史遗留
 - 092 子代理并发池真机验证 A~H 未做。
 - `v0.10.164` tag 违规（含数字 4）仍在 origin。
-
-## 教训
-- **「工具运行」≠「模型生成」**：改状态条文字时若走 `setStatus`，会连带把 `generating` 置真，工具结束后状态卡死。只改文字就只改 `textContent`。
-- 子代理提的「markAborted 未停表」是真实边界：中止与下一工具 start 间隔 <1s 时会沿用旧起点，秒数错显。一行 `stopToolTick()` 解决。
