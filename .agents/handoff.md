@@ -1,6 +1,29 @@
 # 最新接续状态 (2026-10-30)
 
 ## 核心进展
+- 发布 v0.10.191：子代理运行卡片左侧标识条改为主题色 0.5px 细线，状态徽章改为可收缩，清理死代码。
+- v0.10.190：移除子代理宠物绕圈与流光特效，恢复静态边框；修复卡片间距与名称不显示。
+- v0.10.189：工具回传阶段计时语义拆分。
+
+## 本轮改动（v0.10.191）
+
+### 变更
+- 子代理卡片左侧标识条：`3px solid #ef4444` → `0.5px solid var(--ck-primary)`（壳页面，`base.css` 已定义浅/深色两套）
+- 纯净模式同款：`3px solid #ef4444` → `0.5px solid var(--accent)`（`harness.html` 的 `--accent` 已封装明暗切换）
+- 状态徽章 `flex-shrink: 0` → `flex: 0 1 auto; min-width: 0` + 省略号，防止长文案挤掉代理名称
+
+### 关键经验（重要）
+- **DPI 缩放会影响 border 实际宽度**：开发机 `devicePixelRatio = 2.5`，CSS `1px` 会被计算为 `0.8px`、`0.5px` 会算成 `0.4px`。想要"细线"用 0.5px 更稳；如果用户报"有的粗有的细"，先查 DPR 而不是盲目调数值。
+- **`harness.html` 没有 `--ck-primary` 定义**，它的主题色是 `--accent`（内部 `var(--ck-primary, fallback)`，但 `--ck-primary` 在该文件作用域内不存在，永远走 fallback）。纯净模式写颜色必须用 `--accent`。
+- **不要用字符串 slice 拼接做大范围删除**：本轮曾两次因此误删 `harness.html` 5140 行、`components.css` 335 行，均靠 `git checkout HEAD` 恢复。正确做法是逐段 `edit` 精确文本替换。
+
+### 验证状态
+- typecheck / lint（0 error）/ test（131 文件 1304 用例）/ compile 全绿
+- 真机 CDP 验证（DPR 2.5）：`borderLeftWidth: 0.4px`、颜色 `rgb(123,143,255)`（深色主题色）、名称宽 93px 正常、徽章宽 116px 不换行
+
+## 上一版（v0.10.190）
+
+## 核心进展
 - 发布 v0.10.190：移除子代理宠物绕圈特性、移除子代理卡片流光，恢复静态红边框；修复卡片间距过大与代理名称不显示的问题。
 - 上一版 v0.10.189：工具回传阶段计时语义拆分（工具耗时 / 拟人化延迟分开显示）。
 
@@ -72,4 +95,5 @@
 ## 下一步建议
 - 若觉得 16px/15px 偏大，改 `overlay.css` 的 `.cuckoo-tool-mask-text b` 与 `harness.html` 的 `.status b` 的 font-size 即可，其余逻辑不受影响。
 - 快照 `snap-1793289429968-bp5j1v` 可用于回滚本轮全部改动。
+
 

@@ -528,7 +528,7 @@
     max-height: 160px; opacity: 1; margin-top: 0;
     transition-delay: .3s;
   }
-  /* ===== 运行中子代理卡片（静态红边框） ===== */
+  /* ===== 运行中子代理卡片 ===== */
   .ck-agent-running {
     position: relative;
     display: flex; flex-direction: column; gap: 8px;
@@ -536,7 +536,7 @@
     padding: 12px 14px 12px 16px;
     border-radius: 10px;
     border: 1px solid var(--ck-border) !important;
-    border-left: 3px solid #ef4444 !important;
+    border-left: 0.5px solid var(--ck-primary, #4d6bfe) !important;
     background: var(--ck-surface) !important;
     overflow: hidden;
   }
@@ -548,17 +548,13 @@
   .ck-agent-running-status {
     margin-left: auto; font-size: 10.5px;
     color: #fca5a5;
-    flex-shrink: 0; font-variant-numeric: tabular-nums;
+    flex: 0 1 auto; min-width: 0; font-variant-numeric: tabular-nums;
     display: inline-flex; align-items: center; gap: 4px;
     padding: 2px 7px; border-radius: 20px;
     background: rgba(239, 68, 68, 0.15);
     font-weight: 600;
     border: 1px solid rgba(239, 68, 68, 0.3);
-    white-space: nowrap;
-  }
-  @keyframes ck-badge-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.2); }
-    50% { box-shadow: 0 0 8px 0 rgba(239, 68, 68, 0.5); }
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .ck-agent-running-preview {
     position: relative;

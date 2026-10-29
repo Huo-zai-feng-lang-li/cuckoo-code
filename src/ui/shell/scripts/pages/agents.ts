@@ -4,8 +4,6 @@
 import { api, ckAlert, ckConfirm, escapeHtml, escapeAttr } from '../shared.js';
 import { addRecent } from '../recent.js';
 
-
-
 /** 全部子代理缓存（供搜索/筛选/详情） */
 let allAgents: any[] = [];
 /** 当前筛选：all | project | user */

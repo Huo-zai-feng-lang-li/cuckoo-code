@@ -9,9 +9,6 @@
  * 依赖：仅 window.js（窗口上下文）。与官方 IPC 解耦，独立注册。
  */
 import { createRequire } from 'node:module';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import * as windowState from '../window.js';
 import { scanSkills } from '../../skills/index.js';
 import { getPluginScanRoots } from '../../plugins/roots.js';
