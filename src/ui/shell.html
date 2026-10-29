@@ -528,95 +528,141 @@
     max-height: 160px; opacity: 1; margin-top: 0;
     transition-delay: .3s;
   }
-  /* ===== 运行中子代理卡片（特殊展示区）===== */
+  /* ===== 运行中子代理卡片（霓虹红线流光 + 宠物绕圈）===== */
+  @property --ck-angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+  }
   .ck-agent-running {
     position: relative;
     display: flex; flex-direction: column; gap: 8px;
-    margin: 8px 10px;
+    margin: 32px 32px; /* 加大左右 margin，防止大尺寸宠物冲出父容器被截断 */
     padding: 12px 14px 12px 16px;
-    border: 1px solid rgba(76, 141, 255, .28);
-    border-left: 3px solid var(--ck-accent, #4c8dff);
-    border-radius: 10px;
-    background: linear-gradient(135deg,
-      color-mix(in srgb, var(--ck-accent, #4c8dff) 7%, transparent),
-      transparent 60%);
-    overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid transparent !important;
+    background: 
+      linear-gradient(var(--ck-bg), var(--ck-bg)) padding-box,
+      conic-gradient(from var(--ck-angle), rgba(239, 68, 68, 0.1), rgba(220, 38, 38, 0.8), #ff4d4d, rgba(220, 38, 38, 0.8), rgba(239, 68, 68, 0.1)) border-box !important;
+    animation: ck-border-spin 2s linear infinite, ck-pulse-glow 1.5s ease-in-out infinite alternate;
+    overflow: visible !important;
   }
-  /* 顶部扫光条：表示"正在干活" */
-  .ck-agent-running::before {
-    content: '';
-    position: absolute; top: 0; left: 0; right: 0; height: 2px;
-    background: linear-gradient(90deg,
-      transparent, var(--ck-accent, #4c8dff), transparent);
-    background-size: 200% 100%;
-    animation: ck-agent-scan 2s linear infinite;
+  @keyframes ck-border-spin {
+    to { --ck-angle: 360deg; }
   }
-  @keyframes ck-agent-scan {
-    0% { background-position: 100% 0; }
-    100% { background-position: -100% 0; }
+  @keyframes ck-pulse-glow {
+    0% { box-shadow: 0 0 4px rgba(239,68,68,0.1); }
+    100% { box-shadow: 0 0 16px rgba(239,68,68,0.3); }
+  }
+  
+  .ck-agent-running .ck-pet-orb {
+    position: absolute;
+    top: 0; left: 0;
+    width: var(--pet-size, 56px); height: var(--pet-size, 56px); 
+    offset-path: border-box;
+    offset-anchor: center;
+    offset-rotate: 0deg;
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-position: center;
+    /* 如果没有背景图，则不显示背景色和阴影 */
+    background-color: var(--pet-bg, transparent);
+    border-radius: 50%;
+    box-shadow: var(--pet-shadow, none);
+    z-index: 50; 
+    pointer-events: auto;
+    cursor: pointer;
+    background-image: var(--pet-img, none);
+    animation: ck-pet-orbit 16s linear infinite;
+    display: var(--pet-display, none);
+  }
+  /* 鼠标悬停在圈上时暂停 */
+  .ck-agent-running .ck-pet-orb:hover {
+    animation-play-state: paused;
+  }
+  
+  @keyframes ck-pet-orbit {
+    0% { offset-distance: 0%; }
+    100% { offset-distance: 100%; }
+  }
+  
+  /* 动态注入 */
+  
+  .ck-agent-running > * {
+    position: relative;
+    z-index: 3;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ck-agent-running { animation: none; }
+    .ck-agent-running::after { animation: none; display: none; }
   }
   .ck-agent-running .ck-skill-top { gap: 10px; }
   .ck-agent-running .ck-skill-desc {
     display: block; max-height: 160px; opacity: 1; margin-top: 0;
-    font-size: 12px; color: var(--ck-text-dim); line-height: 1.55;
+    font-size: 12px; color: var(--ck-text-2); line-height: 1.55;
   }
   .ck-agent-running-status {
-    margin-left: auto; font-size: 11px; color: var(--ck-text-dim);
+    margin-left: auto; font-size: 11px;
+    color: #fca5a5;
     flex-shrink: 0; font-variant-numeric: tabular-nums;
     display: inline-flex; align-items: center; gap: 6px;
     padding: 2px 8px; border-radius: 20px;
-    background: rgba(76, 141, 255, .12);
-    color: var(--ck-accent, #4c8dff);
-    font-weight: 500;
+    background: rgba(239, 68, 68, 0.15);
+    font-weight: 600;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    animation: ck-badge-pulse 2s infinite;
+  }
+  @keyframes ck-badge-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.2); }
+    50% { box-shadow: 0 0 8px 0 rgba(239, 68, 68, 0.5); }
   }
   .ck-agent-running-preview {
     position: relative;
-    margin-top: 2px; padding: 8px 10px 8px 22px;
-    background: rgba(0, 0, 0, .18);
-    border-radius: 7px;
+    margin-top: 4px; padding: 10px 12px 10px 24px;
+    background: color-mix(in srgb, var(--ck-text) 4%, transparent);
+    border: 1px solid color-mix(in srgb, var(--ck-text) 8%, transparent);
+    border-radius: 8px;
     font-family: ui-monospace, Consolas, "SF Mono", monospace;
-    font-size: 11px; line-height: 1.6;
-    color: var(--ck-text-dim);
+    font-size: 11.5px; line-height: 1.6;
+    color: var(--ck-text-2);
     white-space: pre-wrap; word-break: break-all;
     max-height: 84px; overflow: hidden;
   }
-  /* 预览块左上角光标指示 */
   .ck-agent-running-preview::before {
     content: '›';
-    position: absolute; left: 8px; top: 7px;
-    color: var(--ck-accent, #4c8dff); font-weight: 700;
+    position: absolute; left: 10px; top: 8px;
+    color: #f87171; font-weight: 700; font-size: 14px;
   }
-  /* 底部渐隐（暗示还有更多输出） */
   .ck-agent-running-preview::after {
     content: '';
-    position: absolute; left: 0; right: 0; bottom: 0; height: 16px;
-    background: linear-gradient(transparent, rgba(0, 0, 0, .18));
+    position: absolute; left: 0; right: 0; bottom: 0; height: 20px;
+    background: linear-gradient(transparent, color-mix(in srgb, var(--ck-bg) 85%, transparent));
     pointer-events: none;
   }
   .ck-agent-running .ck-skill-name {
-    font-size: 13px; font-weight: 600; letter-spacing: .1px;
+    font-size: 13px; font-weight: 600; letter-spacing: .1px; color: var(--ck-text);
   }
   .ck-agent-running .ck-skill-name::before {
     content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-    background: #34d399; margin-right: 7px; vertical-align: middle;
+    background: #ef4444; margin-right: 8px; vertical-align: middle;
     animation: ck-agent-pulse 1.4s ease-in-out infinite;
   }
-  /* 停止按钮：hover 才显出红色调，平时低调 */
   .ck-agent-running .ck-agent-stop {
     width: 24px; height: 24px; flex-shrink: 0;
-    border-radius: 6px; border: none;
+    border-radius: 6px; border: 1px solid transparent;
     background: transparent; color: var(--ck-text-dim);
     display: inline-flex; align-items: center; justify-content: center;
-    cursor: pointer; transition: background .15s, color .15s;
+    cursor: pointer; transition: all .15s;
     padding: 0;
   }
   .ck-agent-running .ck-agent-stop:hover {
-    background: rgba(239, 68, 68, .16); color: #ef4444;
+    background: rgba(239, 68, 68, .15); color: #ef4444;
+    border-color: rgba(239, 68, 68, .28);
   }
   .ck-agent-running .ck-agent-stop svg { width: 13px; height: 13px; }
   @keyframes ck-agent-pulse {
-    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52,211,153,.5); }
-    50% { opacity: .6; box-shadow: 0 0 0 4px rgba(52,211,153,0); }
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+    50% { opacity: .6; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
   }
   .ck-skill-item {
     display: flex; flex-direction: column; gap: 6px;
@@ -2852,6 +2898,41 @@ paths:            # 可选；省略 = 始终生效
                       <option value="1.5">超大 (150%)</option>
                     </select>
                   </div>
+                </div>
+              </div>
+
+              <!-- 子代理宠物（默认展开） -->
+              <div class="ck-card">
+                <div class="ck-collapse-head" data-collapse="subagent-pet" aria-expanded="true">
+                  <svg class="ck-collapse-caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>
+                  <span class="ck-collapse-title">子代理宠物绕圈</span>
+                  <span class="ck-collapse-summary">开关 · 自定义图片</span>
+                </div>
+                <div class="ck-collapse-body" data-collapse-body="subagent-pet">
+                  <div class="ck-set-field ck-set-toggle">
+                    <span class="ck-set-key">启用宠物绕圈</span>
+                    <label class="ck-switch">
+                      <input type="checkbox" id="st-pet-enabled" />
+                      <span class="ck-switch-track"></span>
+                    </label>
+                  </div>
+                  <div class="ck-set-field">
+                    <span class="ck-set-key">自定义图片路径（留空则使用内置/文件夹）</span>
+                    <input type="text" class="ck-set-input" id="st-pet-path" placeholder="例如 D:/images/cat.png 或 D:/images/pets" />
+                  </div>
+                  <div class="ck-set-field">
+                    <span class="ck-set-key">宠物图片尺寸</span>
+                    <div class="ck-set-inline">
+                      <input type="range" class="ck-set-input" id="st-pet-size" min="32" max="96" step="4" style="flex: 1; padding: 0;" />
+                      <span class="ck-set-sep" id="st-pet-size-val" style="width: 40px; text-align: right;">56px</span>
+                    </div>
+                  </div>
+                  <p class="ck-about-tip">
+                    <strong>尺寸要求：</strong>推荐 <strong>128×128</strong> 或 <strong>256×256</strong> 的正方形图（PNG/JPG/WebP），单张不超过 5MB（越小加载越快）。<br>
+                    <strong>图片处理：</strong>非正方形图片会以<strong>居中等比裁切</strong>的方式填满圆环，<strong>绝对不会被拉伸变形</strong>。<br>
+                    <strong>轮换规则：</strong>如果填的是文件夹，会按文件名顺序自动轮换（3 秒/张）。首次读取大文件时可能需要几秒钟。<br>
+                    也可以把图直接丢进 <code>userData/pets/</code> 目录，系统会自动读取。
+                  </p>
                 </div>
               </div>
 
@@ -7709,6 +7790,68 @@ paths:            # 可选；省略 = 始终生效
 
   // src/ui/shell/scripts/pages/agents.ts
   init_shared();
+  var petImages = [];
+  var currentPetIndex = 0;
+  var petInterval = null;
+  function setPetImage() {
+    if (!petImages.length) return;
+    const img = petImages[currentPetIndex];
+    document.documentElement.style.setProperty("--pet-img", 'url("' + img + '")');
+  }
+  function loadPets() {
+    const apiAny = api;
+    if (typeof apiAny.listPets !== "function") return;
+    apiAny.listPets().then((res) => {
+      const files = res && res.files ? res.files : [];
+      if (files.length > 0) {
+        if (files.length === petImages.length && files.every((f, i) => f === petImages[i])) return;
+        petImages = files;
+        currentPetIndex = 0;
+        setPetImage();
+        document.documentElement.style.setProperty("--pet-display", "block");
+        document.documentElement.style.setProperty("--pet-bg", "var(--ck-surface)");
+        document.documentElement.style.setProperty("--pet-shadow", "0 4px 16px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.2)");
+        if (!petInterval) {
+          petInterval = setInterval(() => {
+            currentPetIndex = (currentPetIndex + 1) % petImages.length;
+            setPetImage();
+          }, 3e3);
+        }
+      } else {
+        petImages = [];
+        document.documentElement.style.setProperty("--pet-display", "none");
+        if (petInterval) {
+          clearInterval(petInterval);
+          petInterval = null;
+        }
+        document.documentElement.style.setProperty("--pet-img", "none");
+        document.documentElement.style.setProperty("--pet-bg", "transparent");
+        document.documentElement.style.setProperty("--pet-shadow", "none");
+      }
+    }).catch(() => {
+    });
+  }
+  function refreshPetsAll() {
+    loadPets();
+    const apiAny = api;
+    if (typeof apiAny.getUiPrefs === "function") {
+      apiAny.getUiPrefs().then((r) => {
+        if (r && r.success && r.data && r.data.subagentPet && r.data.subagentPet.size) {
+          document.documentElement.style.setProperty("--pet-size", r.data.subagentPet.size + "px");
+        }
+      }).catch(() => {
+      });
+    }
+  }
+  try {
+    refreshPetsAll();
+    const apiAny = api;
+    if (typeof apiAny.onPetsChanged === "function") {
+      apiAny.onPetsChanged(refreshPetsAll);
+    }
+    window.addEventListener("focus", refreshPetsAll);
+  } catch (_) {
+  }
   var allAgents = [];
   var scopeFilter = "all";
   var searchTerm = "";
@@ -7726,20 +7869,56 @@ paths:            # 可选；省略 = 始终生效
     try {
       const r = await apiAny.listRunningSubagents();
       const list = r && r.success && r.subagents ? r.subagents : [];
-      if (!list.length) {
-        el2.innerHTML = "";
-        return;
+      const currentIds = new Set(list.map((s) => String(s.windowId)));
+      el2.querySelectorAll(".ck-agent-running").forEach((node) => {
+        if (!currentIds.has(node.getAttribute("data-agent-window"))) {
+          node.remove();
+        }
+      });
+      const groupTitle = el2.querySelector(".ck-mcp-group-title");
+      if (!groupTitle && list.length > 0) {
+        el2.insertAdjacentHTML("afterbegin", '<div class="ck-mcp-group-title">\u8FD0\u884C\u4E2D</div>');
+      } else if (groupTitle && list.length === 0) {
+        groupTitle.remove();
       }
-      el2.innerHTML = '<div class="ck-mcp-group-title">\u8FD0\u884C\u4E2D</div>' + list.map((s) => {
+      list.forEach((s) => {
+        let node = el2.querySelector('.ck-agent-running[data-agent-window="' + s.windowId + '"]');
         const elapsed = Math.max(0, Math.round((Date.now() - (s.startedAt || Date.now())) / 1e3));
         const remain = Math.max(0, Math.round(((s.timeoutMs || 0) - (Date.now() - (s.startedAt || Date.now()))) / 1e3));
         const remainText = s.timeoutMs ? "\u5269\u4F59 " + fmtSec(remain) : "";
         const statusText = s.status === "done" ? "\u5B8C\u6210" : s.status === "error" ? "\u51FA\u9519" : "\u8FD0\u884C\u4E2D";
         const preview = escapeHtml((s.preview || "").slice(-160));
-        const stopBtn = s.status === "starting" || s.status === "running" ? '<button class="ck-snip-icon-btn danger ck-agent-stop" data-stop-agent="' + s.windowId + '" title="\u505C\u6B62\u8BE5\u5B50\u4EE3\u7406"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>' : "";
-        return '<div class="ck-agent-running" data-agent-window="' + s.windowId + '"><div class="ck-skill-top"><span class="ck-skill-name">' + escapeHtml(s.agentName) + '</span><span class="ck-agent-running-status">' + statusText + " \xB7 " + elapsed + "s" + (s.turn ? " \xB7 \u7B2C " + s.turn + " \u8F6E" : "") + (remainText ? " \xB7 " + remainText : "") + "</span>" + stopBtn + '</div><div class="ck-skill-desc">' + escapeHtml(s.task || "") + "</div>" + (preview ? '<div class="ck-agent-running-preview">' + preview + "</div>" : "") + "</div>";
-      }).join("");
+        if (!node) {
+          const stopBtn = s.status === "starting" || s.status === "running" ? '<button class="ck-snip-icon-btn danger ck-agent-stop" data-stop-agent="' + s.windowId + '" title="\u505C\u6B62\u8BE5\u5B50\u4EE3\u7406"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>' : "";
+          const html = '<div class="ck-agent-running" data-agent-window="' + s.windowId + '"><div class="ck-skill-top"><span class="ck-skill-name">' + escapeHtml(s.agentName) + '</span><span class="ck-agent-running-status">' + statusText + " \xB7 " + elapsed + "s" + (s.turn ? " \xB7 \u7B2C " + s.turn + " \u8F6E" : "") + (remainText ? " \xB7 " + remainText : "") + "</span>" + stopBtn + '</div><div class="ck-skill-desc">' + escapeHtml(s.task || "") + '</div><div class="ck-agent-running-preview" style="display:none"></div><div class="ck-pet-orb"></div></div>';
+          el2.insertAdjacentHTML("beforeend", html);
+          node = el2.querySelector('.ck-agent-running[data-agent-window="' + s.windowId + '"]');
+        } else {
+          const statusEl = node.querySelector(".ck-agent-running-status");
+          if (statusEl) {
+            statusEl.textContent = statusText + " \xB7 " + elapsed + "s" + (s.turn ? " \xB7 \u7B2C " + s.turn + " \u8F6E" : "") + (remainText ? " \xB7 " + remainText : "");
+          }
+          const stopBtn = node.querySelector(".ck-agent-stop");
+          if (stopBtn) {
+            if (s.status === "done" || s.status === "error") stopBtn.style.display = "none";
+            else stopBtn.style.display = "";
+          }
+        }
+        if (node) {
+          const previewEl = node.querySelector(".ck-agent-running-preview");
+          if (previewEl) {
+            if (preview) {
+              previewEl.style.display = "";
+              previewEl.textContent = preview;
+            } else {
+              previewEl.style.display = "none";
+            }
+          }
+        }
+      });
       el2.querySelectorAll(".ck-agent-stop").forEach((btn) => {
+        if (btn.dataset.bound === "1") return;
+        btn.dataset.bound = "1";
         btn.addEventListener("click", async (e) => {
           e.stopPropagation();
           const apiAny2 = api;
@@ -9257,9 +9436,10 @@ paths:            # 可选；省略 = 始终生效
       }
       if (typeof anyApi.setUiPrefs === "function") {
         try {
-          await anyApi.setUiPrefs({ harnessZoom: 1 });
+          await anyApi.setUiPrefs({ harnessZoom: 1, subagentPet: { enabled: true, customPath: "", size: 56 } });
         } catch (_) {
         }
+        loadUiPrefs();
       }
       try {
         const bar3 = document.querySelector(".ck-activitybar");
@@ -9408,21 +9588,34 @@ paths:            # 可选；省略 = 始终生效
     });
   });
   var zoomSelect = document.getElementById("st-harness-zoom");
+  var petEnabled = document.getElementById("st-pet-enabled");
+  var petPath = document.getElementById("st-pet-path");
+  var petSize = document.getElementById("st-pet-size");
+  var petSizeVal = document.getElementById("st-pet-size-val");
   function loadUiPrefs() {
-    if (!zoomSelect) return;
     const anyApi = api;
     if (typeof anyApi.getUiPrefs === "function") {
       anyApi.getUiPrefs().then((r) => {
-        if (r && r.success && r.data && typeof r.data.harnessZoom === "number") {
-          zoomSelect.value = String(r.data.harnessZoom);
+        if (r && r.success && r.data) {
+          if (typeof r.data.harnessZoom === "number" && zoomSelect) {
+            zoomSelect.value = String(r.data.harnessZoom);
+          }
+          if (r.data.subagentPet) {
+            if (petEnabled) petEnabled.checked = r.data.subagentPet.enabled !== false;
+            if (petPath) petPath.value = r.data.subagentPet.customPath || "";
+            if (petSize && r.data.subagentPet.size) {
+              petSize.value = String(r.data.subagentPet.size);
+              if (petSizeVal) petSizeVal.textContent = r.data.subagentPet.size + "px";
+            }
+          }
         }
       }).catch(() => {
       });
     }
   }
+  loadUiPrefs();
   if (zoomSelect) {
     const anyApi = api;
-    loadUiPrefs();
     zoomSelect.addEventListener("change", () => {
       const z = parseFloat(zoomSelect.value);
       if (!Number.isFinite(z)) return;
@@ -9431,6 +9624,29 @@ paths:            # 可选；省略 = 始终生效
         });
       }
     });
+  }
+  if (petEnabled || petPath || petSize) {
+    const anyApi = api;
+    const savePet = () => {
+      if (typeof anyApi.setUiPrefs === "function") {
+        anyApi.setUiPrefs({
+          subagentPet: {
+            enabled: petEnabled ? petEnabled.checked : true,
+            customPath: petPath ? petPath.value.trim() : "",
+            size: petSize ? parseInt(petSize.value, 10) : 56
+          }
+        }).catch(() => {
+        });
+      }
+    };
+    if (petEnabled) petEnabled.addEventListener("change", savePet);
+    if (petPath) petPath.addEventListener("change", savePet);
+    if (petSize) {
+      petSize.addEventListener("input", () => {
+        if (petSizeVal) petSizeVal.textContent = petSize.value + "px";
+      });
+      petSize.addEventListener("change", savePet);
+    }
   }
   var EXEC_MODES = ["smart", "workspace", "strict"];
   var currentExecMode = "smart";

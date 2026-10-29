@@ -17,6 +17,9 @@ const harnessAPI = {
   stop: () => ipcRenderer.invoke('harness-stop'),
   /** 列出可用技能与工具 */
   listTools: () => ipcRenderer.invoke('harness-list-tools'),
+  listPets: () => ipcRenderer.invoke('harness-list-pets'),
+  getUiPrefs: () => ipcRenderer.invoke('get-ui-prefs'),
+  onPetsChanged: (cb: () => void) => { ipcRenderer.on('cuckoo-pets-changed', () => cb()); },
   /** 上传附件（{ name, mime, data(base64) }[]） */
   attach: (files: any) => ipcRenderer.invoke('harness-attach', { files }),
   /** 重载 harness 页面（加载最新 HTML） */

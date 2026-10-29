@@ -42,6 +42,7 @@ import { initProject } from '../../session/project-context.js';
 import { onHarnessReady } from './window-groups.js';
 import { readPrefs, writePrefs, type PromptEnhancerConfig } from '../ui-prefs.js';
 import { enhancePrompt } from '../prompt-enhancer.js';
+import { cancelSubagentsByParent } from '../subagent.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -278,6 +279,17 @@ async function stopGeneration(ctx: any): Promise<any> {
   // 强杀该窗口后台正在跑的工具子进程和 JS 沙箱 worker
   abortWindowWork(ctx);
 
+  // 强杀该窗口下所有运行中的子代理（含排队中的），否则「停止」只停主对话，
+  // 侧边/卡片里的子代理仍会继续跑，用户感知为"没停掉"。
+  try {
+    if (ctx.win && !ctx.win.isDestroyed()) {
+      const n = cancelSubagentsByParent(ctx.win.id);
+      if (n > 0) console.log('[Cuckoo Harness] 已取消 ' + n + ' 个子代理');
+    }
+  } catch (err) {
+    console.log('[Cuckoo Harness] 取消子代理异常:', err);
+  }
+
   try {
     try { wc.send('harness-stop-signal'); } catch (_) { /* ignore */ }
     try { wc.focus(); } catch (_) { /* ignore */ }
@@ -445,7 +457,129 @@ function registerHarnessIpc(): void {
     return stopGeneration(ctx);
   });
 
-  // 列出可用技能与工具
+  // ===== 子代理宠物图（缩略图 + 缓存）=====
+
+  /**
+   * 读图 → 等比裁切为正方形 → 缩放到 128×128 → Base64。
+   * 等比裁切（居中）而非直接 resize：避免非正方形原图被拉伸变形。
+   */
+  function fileToBase64(p: string): string | null {
+    try {
+      const { nativeImage } = require('electron');
+      const buf = fs.readFileSync(p);
+      const img = nativeImage.createFromBuffer(buf);
+      if (img.isEmpty()) return null;
+      const { width, height } = img.getSize();
+      if (!width || !height) return null;
+      // 居中裁出最大的正方形区域，保证不拉伸
+      const side = Math.min(width, height);
+      const cropped = (width === height)
+        ? img
+        : img.crop({
+            x: Math.floor((width - side) / 2),
+            y: Math.floor((height - side) / 2),
+            width: side,
+            height: side,
+          });
+      const resized = cropped.resize({ width: 128, height: 128, quality: 'good' });
+      return resized.toDataURL();
+    } catch (err) {
+      console.log('[Cuckoo] 读取宠物图失败:', p, err);
+      return null;
+    }
+  }
+
+  /** 宠物图 Base64 缓存上限（超出按插入顺序淘汰最旧的，防止反复换图内存无界增长） */
+  const PET_CACHE_MAX = 60;
+  /** 缓存宠物图片的 Base64 结果，key 为路径+修改时间 */
+  const petCache = new Map<string, string>();
+
+  function petCacheGet(key: string): string | undefined {
+    const v = petCache.get(key);
+    if (v !== undefined) {
+      // LRU：命中后挪到队尾
+      petCache.delete(key);
+      petCache.set(key, v);
+    }
+    return v;
+  }
+
+  function petCacheSet(key: string, value: string): void {
+    if (petCache.has(key)) petCache.delete(key);
+    petCache.set(key, value);
+    while (petCache.size > PET_CACHE_MAX) {
+      const oldest = petCache.keys().next().value;
+      if (oldest === undefined) break;
+      petCache.delete(oldest);
+    }
+  }
+
+  const PET_IMG_EXT = /\.(png|jpe?g|webp)$/i;
+  const PET_MAX_BYTES = 5 * 1024 * 1024;
+
+  /** 单个文件：校验 → 命中缓存 → 否则读图转 Base64 并写入缓存 */
+  async function loadPetFile(fullPath: string): Promise<string | null> {
+    try {
+      const stat = await fs.promises.stat(fullPath);
+      if (!stat.isFile() || stat.size > PET_MAX_BYTES) return null;
+      const cacheKey = fullPath + '_' + stat.mtimeMs;
+      const hit = petCacheGet(cacheKey);
+      if (hit !== undefined) return hit;
+      const b64 = fileToBase64(fullPath);
+      if (b64) petCacheSet(cacheKey, b64);
+      return b64;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /** 路径（文件或目录）→ Base64 列表；目录按文件名排序。全部异步，避免阻塞主进程。 */
+  async function collectPetFiles(p: string): Promise<string[]> {
+    const out: string[] = [];
+    try {
+      const stat = await fs.promises.stat(p);
+      if (stat.isDirectory()) {
+        const names = (await fs.promises.readdir(p)).filter((f) => PET_IMG_EXT.test(f)).sort();
+        for (const f of names) {
+          const b64 = await loadPetFile(path.join(p, f));
+          if (b64) out.push(b64);
+        }
+      } else if (stat.isFile()) {
+        const b64 = await loadPetFile(p);
+        if (b64) out.push(b64);
+      }
+    } catch (_) { /* 路径不存在或无权限：忽略 */ }
+    return out;
+  }
+
+  ipcMain.handle('harness-list-pets', async () => {
+    try {
+      const prefs = readPrefs();
+      if (!prefs.subagentPet || prefs.subagentPet.enabled === false) {
+        return { success: true, files: [] };
+      }
+
+      let files: string[] = [];
+      if (prefs.subagentPet.customPath) {
+        files = await collectPetFiles(prefs.subagentPet.customPath.trim());
+      }
+
+      const { app } = require('electron');
+      const petsDir = path.join(app.getPath('userData'), 'pets');
+      files = files.concat(await collectPetFiles(petsDir));
+
+      if (files.length === 0) {
+        const { resolveSrc } = await import('../../infra/paths.js');
+        const def = await loadPetFile(resolveSrc('ui/assets/default-pet.png'));
+        if (def) files = [def];
+      }
+
+      return { success: true, files };
+    } catch (err: any) {
+      return { success: false, files: [], error: err.message };
+    }
+  });
+
   ipcMain.handle('harness-list-tools', async (event: any) => {
     try {
       const ctx = findContext(event.sender);

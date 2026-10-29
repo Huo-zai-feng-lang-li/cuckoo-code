@@ -287,7 +287,7 @@
   .think.open .think-body { display: block; }
 
   /* 工具调用卡片 */
-  .tool { margin-bottom: 12px; animation: fade .16s ease; }
+  .tool { margin-bottom: 32px; margin-top: 16px; padding: 0 24px; animation: fade .16s ease; } /* 左右加 24px 给圈留空间，上下间距拉大 */
   .tool-card { border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-elev); overflow: hidden; }
   .tool-head {
     display: flex; align-items: center; gap: 9px;
@@ -316,66 +316,138 @@
   .tool-icon[data-cat="snap"]    { --ic:#06b6d4; --ic-bg:rgba(6,182,212,.13);   --ic-bd:rgba(6,182,212,.28); }
   .tool-icon[data-cat="mcp"]     { --ic:#f43f5e; --ic-bg:rgba(244,63,94,.13);   --ic-bd:rgba(244,63,94,.28); }
   .tool-icon[data-cat="misc"]    { --ic:#94a3b8; --ic-bg:rgba(148,163,184,.12); --ic-bd:rgba(148,163,184,.25); }
-  /* Agent 代理：紫→粉渐变描边 + 呼吸光晕，最炫 */
+  /* Agent 代理：红色描边（与子代理卡片主调一致） */
   .tool-icon[data-cat="agent"] {
-    --ic:#ff4d4d; --ic-bg:rgba(239,68,68,.14); --ic-bd:rgba(239,68,68,.50);
-    animation: ck-agent-glow 2.4s ease-in-out infinite;
+    --ic:#ef4444; --ic-bg:rgba(239,68,68,.13); --ic-bd:rgba(239,68,68,.38);
+    transition: transform .15s, background .15s;
   }
-  /* 图标保持锐利：不加 drop-shadow 模糊线条，仅靠容器光圈发红 */
   .tool-head:hover .tool-icon[data-cat="agent"] { transform: scale(1.12); }
-  @keyframes ck-agent-glow {
-    0%,100% { box-shadow: inset 0 0 0 1px var(--ic-bd), 0 0 4px rgba(239,68,68,.30); }
-    50%     { box-shadow: inset 0 0 0 1px var(--ic-bd), 0 0 9px rgba(255,60,60,.50); }
+  /* 修复流失的全局旋转变量和动画 */
+  @property --ck-angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
   }
-  /* ===== 子代理专用卡片（极简版） ===== */
+  @keyframes ck-border-spin {
+    to { --ck-angle: 360deg; }
+  }
+  @keyframes ck-pulse-glow {
+    0% { box-shadow: 0 0 4px rgba(239,68,68,0.1); }
+    100% { box-shadow: 0 0 16px rgba(239,68,68,0.3); }
+  }
+
+  /* ===== 子代理专用卡片（跑马流光 + 宠物绕圈） ===== */
   .tool-card-subagent {
-    border: 1px solid var(--border-soft) !important;
-    background: var(--bg-elev) !important;
     position: relative;
+    border: 1px solid transparent !important;
+    background: 
+      linear-gradient(var(--bg-elev), var(--bg-elev)) padding-box,
+      conic-gradient(from var(--ck-angle), rgba(239, 68, 68, 0.1), rgba(220, 38, 38, 0.8), #ff4d4d, rgba(220, 38, 38, 0.8), rgba(239, 68, 68, 0.1)) border-box !important;
+    animation: ck-border-spin 2s linear infinite, ck-pulse-glow 1.5s ease-in-out infinite alternate;
+    overflow: visible !important;
+    border-radius: 8px;
+  }
+  .tool-card-subagent .ck-pet-orb {
+    position: absolute;
+    top: 0; left: 0;
+    width: var(--pet-size, 56px); height: var(--pet-size, 56px);
+    offset-path: border-box;
+    offset-anchor: center;
+    offset-rotate: 0deg;
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-color: var(--pet-bg, transparent);
+    border-radius: 50%;
+    box-shadow: var(--pet-shadow, none);
+    z-index: 50;
+    pointer-events: auto;
+    cursor: pointer;
+    background-image: var(--pet-img, none);
+    animation: ck-pet-orbit 16s linear infinite;
+    display: var(--pet-display, none);
+  }
+  .tool-card-subagent .ck-pet-orb:hover {
+    animation-play-state: paused;
+  }
+  
+  @keyframes ck-pet-orbit {
+    0% { offset-distance: 0%; }
+    100% { offset-distance: 100%; }
+  }
+  
+  /* 动态注入 */
+  
+  .tool-card-subagent > * {
+    position: relative;
+    z-index: 3;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tool-card-subagent { animation: none; }
+    .tool-card-subagent::after { animation: none; display: none; }
+  }
+  .tool-card-subagent:hover {
+    filter: brightness(1.06);
   }
   .tool-card-subagent .tool-head {
     gap: 8px;
     cursor: pointer;
     user-select: none;
-    border-left: 3px solid #ef4444; /* 左侧红条标识 */
-    padding-left: 10px;
+    padding-left: 14px;
+    background: color-mix(in srgb, var(--text) 2%, transparent);
   }
   .tool-card-subagent .tool-name { color: var(--text); font-weight: 600; }
   .tool-card-subagent .tool-arg { 
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;
+    color: var(--text-2);
   }
   .tool-card-subagent .tool-caret {
     pointer-events: none;
+    opacity: 0.6;
+    transition: opacity 0.2s, transform 0.2s;
+  }
+  .tool-card-subagent:hover .tool-caret {
+    opacity: 1;
   }
   .tool-agent-remaining {
     font-size: 10.5px; color: var(--text-dim); font-variant-numeric: tabular-nums;
     flex-shrink: 0; font-family: var(--mono); margin-right: 4px;
+    background: color-mix(in srgb, var(--text) 5%, transparent);
+    padding: 1px 6px; border-radius: 4px;
   }
   .tool-stop-btn {
     display: inline-flex; align-items: center; justify-content: center;
     width: 22px; height: 22px; padding: 0;
     border: none; border-radius: 5px; background: transparent;
     color: var(--text-dim); cursor: pointer; flex-shrink: 0;
-    transition: background .15s, color .15s;
+    transition: background .15s, color .15s, transform .1s;
   }
-  .tool-stop-btn:hover { background: rgba(239, 68, 68, .18); color: #ef4444; }
+  .tool-stop-btn:hover { background: rgba(239, 68, 68, .15); color: #ef4444; }
+  .tool-stop-btn:active { transform: scale(0.92); }
   .tool-stop-btn:disabled { opacity: .4; cursor: not-allowed; }
   .tool-stop-btn svg { width: 12px; height: 12px; }
   .tool-card-subagent .tool-body { border-top-color: var(--border-soft) !important; }
-  .tool-agent-live-sec .tool-sec-label { color: var(--text-dim); font-size: 10px; margin-bottom: 4px; }
+  .tool-agent-live-sec .tool-sec-label { color: var(--text-dim); font-size: 10px; margin-bottom: 4px; letter-spacing: 0.5px; font-weight: 600; }
   /* 固定高度，解决抖动 */
   .tool-agent-preview {
     height: 120px !important;
     max-height: 120px !important;
     overflow-y: auto !important;
-    background: rgba(0, 0, 0, .15) !important;
+    background: rgba(0, 0, 0, .12) !important;
     color: var(--text-2) !important;
     font-size: 11.5px !important;
     border-radius: 6px;
-    padding: 8px;
+    padding: 10px 12px;
     box-sizing: border-box;
     scroll-behavior: smooth;
     margin: 0;
+    border: 1px solid var(--border-soft);
+  }
+  /* 子代理卡片特定状态徽章 */
+  .tool-card-subagent .tool-badge.run {
+    background: rgba(239, 68, 68, 0.12);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.26);
   }
 
   .tool-name { font-size: 12px; font-weight: 600; color: var(--text); font-family: var(--mono); flex-shrink: 0; }
@@ -401,7 +473,7 @@
   .tool-pre.err { color: var(--red); }
 
   /* ===== 输入区 ===== */
-  .composer { flex-shrink: 0; padding: 12px 40px 28px; }
+  .composer { flex-shrink: 0; padding: 28px 56px 48px; } /* 大幅增加四周 padding，留足 96px 宠物的绕圈空间 */
   /* 首次对话需选择项目目录（大虚线按钮，替代输入框） */
   .init-project-btn {
     display: block; width: 100%; max-width: 100%; margin: 0 auto;
@@ -706,7 +778,48 @@
     color: var(--text-dim); font-size: 11.5px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .composer-inner { position: relative; }
+  /* 恢复输入框原本样式，仅聚焦时纯蓝色边框，并加入宠物绕圈 */
+  .composer-inner {
+    position: relative;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    transition: border-color .2s, box-shadow .2s;
+    overflow: visible !important;
+  }
+  .composer-inner:focus-within {
+    border: 1px solid #3b82f6 !important;
+    box-shadow: none !important;
+  }
+
+  /* 输入框宠物绕圈 */
+  .composer-inner .ck-pet-orb {
+    position: absolute;
+    top: 0; left: 0;
+    width: var(--pet-size, 56px); height: var(--pet-size, 56px);
+    offset-path: border-box;
+    offset-anchor: center;
+    offset-rotate: 0deg;
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-color: var(--pet-bg, transparent);
+    border-radius: 50%;
+    box-shadow: var(--pet-shadow, none);
+    z-index: 999;
+    pointer-events: auto; /* 允许接收 hover 事件 */
+    background-image: var(--pet-img, none);
+    animation: ck-pet-orbit 16s linear infinite;
+    display: var(--pet-display, none);
+  }
+  /* 鼠标悬停在图片上时暂停转动 */
+  .composer-inner .ck-pet-orb:hover {
+    animation-play-state: paused;
+  }
+  /* 优先级修正，覆盖原样式 */
+  #input-wrap.composer-inner:focus-within {
+    border: 1px solid #3b82f6 !important;
+    box-shadow: none !important;
+  }
 
   /* ===== Goal 目标条 ===== */
   .goalbar {
@@ -1034,6 +1147,7 @@
     </div>
     <button class="init-project-btn" id="init-project-btn" style="display:none">首次对话需选择项目目录</button>
     <div class="composer-inner">
+      <div class="ck-pet-orb"></div>
       <div class="composer-resize" id="composer-resize" title="拖拽调整输入框高度"></div>
       <button class="scroll-bottom" id="scroll-bottom" title="回到底部"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M8 13l-4-4M8 13l4-4"/></svg></button>
       <div class="slash-menu" id="slash-menu"></div>
@@ -1107,6 +1221,79 @@
 <script>
 (function () {
   var api = window.harnessAPI || {};
+
+  var petImages = [];
+  var currentPetIndex = 0;
+  var petInterval = null;
+  
+  function setPetImage() {
+    if (!petImages.length) return;
+    var img = petImages[currentPetIndex];
+    document.documentElement.style.setProperty('--pet-img', 'url("' + img + '")');
+  }
+  
+  function loadPets() {
+    if (typeof api.listPets !== 'function') return;
+    api.listPets().then(function(res) {
+      var files = (res && res.files) ? res.files : [];
+      if (files.length > 0) {
+        // 列表完全没变才跳过（逐项比对：只换第 2 张及以后的图也要刷新）
+        var same = petImages.length === files.length;
+        if (same) {
+          for (var pi = 0; pi < files.length; pi++) {
+            if (files[pi] !== petImages[pi]) { same = false; break; }
+          }
+        }
+        if (same) return;
+        
+        petImages = files;
+        currentPetIndex = 0;
+        setPetImage();
+        
+        document.documentElement.style.setProperty('--pet-display', 'block');
+        document.documentElement.style.setProperty('--pet-bg', 'var(--bg-elev)');
+        document.documentElement.style.setProperty('--pet-shadow', '0 4px 16px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.2)');
+        
+        if (!petInterval) {
+          petInterval = setInterval(function() {
+            currentPetIndex = (currentPetIndex + 1) % petImages.length;
+            setPetImage();
+          }, 3000);
+        }
+      } else {
+        petImages = [];
+        document.documentElement.style.setProperty('--pet-display', 'none');
+        if (petInterval) { clearInterval(petInterval); petInterval = null; }
+        document.documentElement.style.setProperty('--pet-img', 'none');
+        document.documentElement.style.setProperty('--pet-bg', 'transparent');
+        document.documentElement.style.setProperty('--pet-shadow', 'none');
+      }
+    }).catch(function(){});
+  }
+
+  // 全局刷新函数：同时重读图和尺寸配置
+  function refreshPetsAll() {
+    loadPets();
+    if (typeof api.getUiPrefs === 'function') {
+      api.getUiPrefs().then(function(r) {
+        if (r && r.success && r.data && r.data.subagentPet && r.data.subagentPet.size) {
+          document.documentElement.style.setProperty('--pet-size', r.data.subagentPet.size + 'px');
+        }
+      }).catch(function(){});
+    }
+  }
+
+  if (typeof api.listPets === 'function') {
+    refreshPetsAll();
+  } else {
+    document.body.classList.add('hide-pet');
+  }
+  // 监听主进程广播
+  if (typeof api.onPetsChanged === 'function') {
+    api.onPetsChanged(refreshPetsAll);
+  }
+  // 窗口重新获得焦点时刷新
+  window.addEventListener('focus', refreshPetsAll);
   var stream = document.getElementById('stream');
   var empty = document.getElementById('empty');
   var input = document.getElementById('input');
@@ -3425,6 +3612,7 @@
             '<div class="tool-sec"><div class="tool-sec-label">Code</div><pre class="tool-pre">' + esc(code) + '</pre></div>' +
             '<div class="tool-sec out-sec" style="display:none"><div class="tool-sec-label">Result</div><pre class="tool-pre out-pre"></pre></div>' +
           '</div>' +
+          '<div class="ck-pet-orb"></div>' +
         '</div>';
       stream.appendChild(wrap);
       var head = wrap.querySelector('.tool-head');
@@ -3659,6 +3847,7 @@
             '<pre class="tool-pre tool-agent-preview"></pre>' +
           '</div>' +
         '</div>' +
+        '<div class="ck-pet-orb"></div>' +
       '</div>';
     stream.appendChild(wrap);
     var card = wrap.querySelector('.tool-card');
@@ -4487,12 +4676,11 @@
       if (!isBusy()) setStatus('就绪', 'ready');
     }, 1500);
     cancelGoalNudge();
-    // 只清暂存附件/chip（避免停止后误发），**不清输入框**——
-    // 输入框里是用户正在打的草稿，停止任务不该把用户写了一半的字清掉。
-    pendingFiles = [];
-    pendingHints = [];
-    renderAttach();
-    renderHints();
+    // 仅复位流式渲染标记，不清空输入框及暂存附件/提示词（用户可能想停止后修改再发）
+    // pendingFiles = [];
+    // pendingHints = [];
+    // renderAttach();
+    // renderHints();
     // 显式复位流式渲染标记：中止后可能不再收到 onAssistantDone（无 final 收尾），
     // 若不复位，下一轮新建气泡会带着旧标记，前缀巧合下吞字
     resetStreamRender();

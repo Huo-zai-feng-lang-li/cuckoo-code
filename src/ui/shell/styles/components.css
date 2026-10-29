@@ -170,95 +170,141 @@
     max-height: 160px; opacity: 1; margin-top: 0;
     transition-delay: .3s;
   }
-  /* ===== 运行中子代理卡片（特殊展示区）===== */
+  /* ===== 运行中子代理卡片（霓虹红线流光 + 宠物绕圈）===== */
+  @property --ck-angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+  }
   .ck-agent-running {
     position: relative;
     display: flex; flex-direction: column; gap: 8px;
-    margin: 8px 10px;
+    margin: 32px 32px; /* 加大左右 margin，防止大尺寸宠物冲出父容器被截断 */
     padding: 12px 14px 12px 16px;
-    border: 1px solid rgba(76, 141, 255, .28);
-    border-left: 3px solid var(--ck-accent, #4c8dff);
-    border-radius: 10px;
-    background: linear-gradient(135deg,
-      color-mix(in srgb, var(--ck-accent, #4c8dff) 7%, transparent),
-      transparent 60%);
-    overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid transparent !important;
+    background: 
+      linear-gradient(var(--ck-bg), var(--ck-bg)) padding-box,
+      conic-gradient(from var(--ck-angle), rgba(239, 68, 68, 0.1), rgba(220, 38, 38, 0.8), #ff4d4d, rgba(220, 38, 38, 0.8), rgba(239, 68, 68, 0.1)) border-box !important;
+    animation: ck-border-spin 2s linear infinite, ck-pulse-glow 1.5s ease-in-out infinite alternate;
+    overflow: visible !important;
   }
-  /* 顶部扫光条：表示"正在干活" */
-  .ck-agent-running::before {
-    content: '';
-    position: absolute; top: 0; left: 0; right: 0; height: 2px;
-    background: linear-gradient(90deg,
-      transparent, var(--ck-accent, #4c8dff), transparent);
-    background-size: 200% 100%;
-    animation: ck-agent-scan 2s linear infinite;
+  @keyframes ck-border-spin {
+    to { --ck-angle: 360deg; }
   }
-  @keyframes ck-agent-scan {
-    0% { background-position: 100% 0; }
-    100% { background-position: -100% 0; }
+  @keyframes ck-pulse-glow {
+    0% { box-shadow: 0 0 4px rgba(239,68,68,0.1); }
+    100% { box-shadow: 0 0 16px rgba(239,68,68,0.3); }
+  }
+  
+  .ck-agent-running .ck-pet-orb {
+    position: absolute;
+    top: 0; left: 0;
+    width: var(--pet-size, 56px); height: var(--pet-size, 56px); 
+    offset-path: border-box;
+    offset-anchor: center;
+    offset-rotate: 0deg;
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-position: center;
+    /* 如果没有背景图，则不显示背景色和阴影 */
+    background-color: var(--pet-bg, transparent);
+    border-radius: 50%;
+    box-shadow: var(--pet-shadow, none);
+    z-index: 50; 
+    pointer-events: auto;
+    cursor: pointer;
+    background-image: var(--pet-img, none);
+    animation: ck-pet-orbit 16s linear infinite;
+    display: var(--pet-display, none);
+  }
+  /* 鼠标悬停在圈上时暂停 */
+  .ck-agent-running .ck-pet-orb:hover {
+    animation-play-state: paused;
+  }
+  
+  @keyframes ck-pet-orbit {
+    0% { offset-distance: 0%; }
+    100% { offset-distance: 100%; }
+  }
+  
+  /* 动态注入 */
+  
+  .ck-agent-running > * {
+    position: relative;
+    z-index: 3;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ck-agent-running { animation: none; }
+    .ck-agent-running::after { animation: none; display: none; }
   }
   .ck-agent-running .ck-skill-top { gap: 10px; }
   .ck-agent-running .ck-skill-desc {
     display: block; max-height: 160px; opacity: 1; margin-top: 0;
-    font-size: 12px; color: var(--ck-text-dim); line-height: 1.55;
+    font-size: 12px; color: var(--ck-text-2); line-height: 1.55;
   }
   .ck-agent-running-status {
-    margin-left: auto; font-size: 11px; color: var(--ck-text-dim);
+    margin-left: auto; font-size: 11px;
+    color: #fca5a5;
     flex-shrink: 0; font-variant-numeric: tabular-nums;
     display: inline-flex; align-items: center; gap: 6px;
     padding: 2px 8px; border-radius: 20px;
-    background: rgba(76, 141, 255, .12);
-    color: var(--ck-accent, #4c8dff);
-    font-weight: 500;
+    background: rgba(239, 68, 68, 0.15);
+    font-weight: 600;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    animation: ck-badge-pulse 2s infinite;
+  }
+  @keyframes ck-badge-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.2); }
+    50% { box-shadow: 0 0 8px 0 rgba(239, 68, 68, 0.5); }
   }
   .ck-agent-running-preview {
     position: relative;
-    margin-top: 2px; padding: 8px 10px 8px 22px;
-    background: rgba(0, 0, 0, .18);
-    border-radius: 7px;
+    margin-top: 4px; padding: 10px 12px 10px 24px;
+    background: color-mix(in srgb, var(--ck-text) 4%, transparent);
+    border: 1px solid color-mix(in srgb, var(--ck-text) 8%, transparent);
+    border-radius: 8px;
     font-family: ui-monospace, Consolas, "SF Mono", monospace;
-    font-size: 11px; line-height: 1.6;
-    color: var(--ck-text-dim);
+    font-size: 11.5px; line-height: 1.6;
+    color: var(--ck-text-2);
     white-space: pre-wrap; word-break: break-all;
     max-height: 84px; overflow: hidden;
   }
-  /* 预览块左上角光标指示 */
   .ck-agent-running-preview::before {
     content: '›';
-    position: absolute; left: 8px; top: 7px;
-    color: var(--ck-accent, #4c8dff); font-weight: 700;
+    position: absolute; left: 10px; top: 8px;
+    color: #f87171; font-weight: 700; font-size: 14px;
   }
-  /* 底部渐隐（暗示还有更多输出） */
   .ck-agent-running-preview::after {
     content: '';
-    position: absolute; left: 0; right: 0; bottom: 0; height: 16px;
-    background: linear-gradient(transparent, rgba(0, 0, 0, .18));
+    position: absolute; left: 0; right: 0; bottom: 0; height: 20px;
+    background: linear-gradient(transparent, color-mix(in srgb, var(--ck-bg) 85%, transparent));
     pointer-events: none;
   }
   .ck-agent-running .ck-skill-name {
-    font-size: 13px; font-weight: 600; letter-spacing: .1px;
+    font-size: 13px; font-weight: 600; letter-spacing: .1px; color: var(--ck-text);
   }
   .ck-agent-running .ck-skill-name::before {
     content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-    background: #34d399; margin-right: 7px; vertical-align: middle;
+    background: #ef4444; margin-right: 8px; vertical-align: middle;
     animation: ck-agent-pulse 1.4s ease-in-out infinite;
   }
-  /* 停止按钮：hover 才显出红色调，平时低调 */
   .ck-agent-running .ck-agent-stop {
     width: 24px; height: 24px; flex-shrink: 0;
-    border-radius: 6px; border: none;
+    border-radius: 6px; border: 1px solid transparent;
     background: transparent; color: var(--ck-text-dim);
     display: inline-flex; align-items: center; justify-content: center;
-    cursor: pointer; transition: background .15s, color .15s;
+    cursor: pointer; transition: all .15s;
     padding: 0;
   }
   .ck-agent-running .ck-agent-stop:hover {
-    background: rgba(239, 68, 68, .16); color: #ef4444;
+    background: rgba(239, 68, 68, .15); color: #ef4444;
+    border-color: rgba(239, 68, 68, .28);
   }
   .ck-agent-running .ck-agent-stop svg { width: 13px; height: 13px; }
   @keyframes ck-agent-pulse {
-    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52,211,153,.5); }
-    50% { opacity: .6; box-shadow: 0 0 0 4px rgba(52,211,153,0); }
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+    50% { opacity: .6; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
   }
   .ck-skill-item {
     display: flex; flex-direction: column; gap: 6px;

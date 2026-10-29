@@ -215,6 +215,21 @@ function registerSettingsIpc(): void {
     if (data && data.shellLayout !== undefined) {
       broadcastShellLayout(next.shellLayout);
     }
+    // 子代理宠物配置变化 -> 广播给所有页面刷新
+    if (data && data.subagentPet !== undefined) {
+      try {
+        const contexts = windowState.getAllContexts();
+        for (const ctx of contexts) {
+          if (ctx.win && !ctx.win.isDestroyed()) {
+            ctx.win.webContents.send('cuckoo-pets-changed');
+          }
+          const hv = ctx && (ctx as any).harnessView;
+          if (hv && hv.webContents && !hv.webContents.isDestroyed()) {
+            hv.webContents.send('cuckoo-pets-changed');
+          }
+        }
+      } catch (_) { /* ignore */ }
+    }
     return { success: true, data: next };
   });
 }

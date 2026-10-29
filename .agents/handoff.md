@@ -1,63 +1,46 @@
-# 最新接续状态 (2026-10-29 16:49)
+# 最新接续状态 (2026-10-29 20:30)
 
 ## 核心进展
-- **v0.10.185 已发布**（master `4b1cd4b`，tag 已推送）：
-  - PWA 顶栏挤压修复与图标切换面板样式兼容性修复
-  - 子代理卡片 UI 重构（去渐变、固定高度、修复折叠点击兼容性）
-  - 遮罩超时对齐（5min/12min）+ 降级态修复
-  - 多代码块结果匹配修复与子代理时序 Bug 修复
+- 本轮完成「子代理宠物绕圈」特性 + 停止任务强杀子代理 + 侧边栏列表原位更新；随后执行 audit-staged 对抗性审计，修复审计出的 1 个 🔴 与 4 个 🟡，已真机验证并发布 v0.10.187。
 
-## 核心动机与背景 (Motivation & Background)
-本轮迭代包含多个需求与修复：
-1. **Android 应用图标切换**：用户希望像主流 App 一样，能在应用内切换桌面图标（默认/玻璃鸟/像素贴纸/深蓝金鸟）。
-2. **纯净模式子代理卡片展示**：调用 `runAgent` 时只有一个普通工具卡，看不到进度、预览，也无法单独停止。
-3. **遮罩超时降级**：原遮罩 5 分钟强杀，但子代理可跑 10 分钟，且超时后遮罩消失导致无法点停止。
-4. **多代码块结果匹配错位**：一次回复多个工具块时，执行结果填充到错误的卡片（LIFO 错配）。
-5. **纯净模式停止清空草稿**：点停止时把输入框里打的字也清了。
-6. **PWA 图标面板不显示**：点击调色板按钮只模糊不见面板，且顶栏按钮挤压重叠。
+## 审计与修复（本轮重点）
+审计报告：`.agents/子代理宠物绕圈-审计.md`
 
-## 关键设计与实现 (Implementation & Decisions)
+| 级别 | 问题 | 修复 |
+|---|---|---|
+| 🔴 | `components.css` 误删 `.ck-skill-item {` 选择器 → 技能/子代理/规则列表基础布局整体失效 | 补回选择器并重建 `shell.html` |
+| 🟡 | 宠物图 `nativeImage.resize(128,128)` 直接拉伸，与设置页"绝不拉伸"文案不符 | 改为居中等比裁切正方形后再缩放 |
+| 🟡 | 宠物 Base64 缓存 `petCache` 无淘汰，反复换图内存无界增长 | 改 LRU，上限 60 条，命中移队尾，超限淘汰最旧 |
+| 🟡 | 列表变化判定只比长度与首项，只换第 2 张及以后的图不刷新 | 改为逐项比对（壳页面 agents.ts + harness.html 两处） |
+| 🟡 | 目录枚举 + 逐文件 `statSync` 同步阻塞主进程 | 全部改 `fs.promises` 异步；抽 `loadPetFile` / `collectPetFiles` |
 
-### 1. Android 图标切换
-- `activity-alias` + `PackageManager.setComponentEnabledSetting` 方案。
-- 新增 `AppIconPlugin.java`，先 enable 目标 → 落盘 SP → reconcile 其余。支持启动自愈双图标。
-- 新增 `scripts/gen-android-icons.mjs` 处理源图（`--prepare` 支持去白边、按密度裁剪）。
+## 关键设计与实现（承接上轮）
+- **资源加载**：放弃 `file://`（渲染进程拦截），主进程 `fs.readFileSync` + `nativeImage` → 128×128 → Base64 下发。
+- **多图轮换**：前端 `setInterval` 3s 切 CSS 变量 `--pet-img`，避免 `@keyframes` 重绘导致动画重置。
+- **UI 渲染**：真实 DOM 节点 `.ck-pet-orb` 沿 `offset-path: border-box` 绕圈（伪元素会丢 hover 命中区）。
+- **尺寸控制**：CSS 变量 `--pet-size`，设置页滑块 32~96px，保存后广播 `cuckoo-pets-changed` 全局刷新。
+- **停止任务**：`stopGeneration` 调 `cancelSubagentsByParent(ctx.win.id)`（含排队取消）；不再清空输入框附件与草稿。
+- **侧边栏动画**：`loadRunningSubagents` 由全量 `innerHTML` 改为按 `data-agent-window` 原位更新。
 
-### 2. 子代理卡片 UI（壳页面 + 纯净模式）
-- **壳页面**：增加倒计时（基于 timeoutMs）、单杀停止按钮（支持通过 windowId 精确取消）。
-- **纯净模式**：
-  - 拦截 `subagents` 事件流，按 `windowId` 将子代理与卡片绑定。
-  - 动态补卡：支持 `runAgents` 的多子代理并发展示。
-  - 极简视觉：去掉花哨渐变，改为暗底+左侧红条。
-  - 固定 120px 的 Live 预览区，彻底解决流式输出引起的滚动条抖动。
-  - 点击事件弃用 `Element.closest`（老 WebView 对 SVG 兼容差），改用 `while` 循环判定。
+## 修改文件
+- `src/app/ipc/harness.ts`：宠物读取重写（异步 + 等比裁切 + LRU 缓存）、`stopGeneration` 杀子代理。
+- `src/app/ipc/settings.ts`：保存设置时广播 `cuckoo-pets-changed`（壳页面 + harnessView 双端）。
+- `src/app/ui-prefs.ts`：新增 `subagentPet`（enabled / customPath / size）。
+- `src/app/harness-preload.ts`、`src/app/shell-preload.ts`：暴露 `listPets` / `getUiPrefs` / `onPetsChanged`。
+- `src/ui/harness.html`：宠物节点与动画 CSS、去重逻辑修复、停止不再清草稿。
+- `src/ui/shell/scripts/pages/agents.ts`：列表原位更新、宠物轮换与去重修复。
+- `src/ui/shell/scripts/pages/settings.ts` + `partials/pages/settings.html`：宠物设置卡片与滑块。
+- `src/ui/shell/styles/components.css`：子代理卡片红色流光 + 宠物绕圈；补回 `.ck-skill-item {`。
+- `src/ui/assets/default-pet.png`：内置默认小狗图（13KB）。
 
-### 3. 遮罩降级与超时
-- 新增 `src/infra/timeouts.ts`：`SUBAGENT_TIMEOUT_MS = 10min`，`MASK_SUBAGENT_TIMEOUT_MS = 12min`。
-- 超时后进入降级态：半透明遮罩 + 保留停止按钮，文案随阶段（执行中/回传中）动态切换，不被 tick 刷掉。
+## 验证状态
+- `typecheck` / `test`(131 文件 / 1302 用例) / `lint`(0 error, 65 既有 warning) / `compile` 全绿。
+- **开发版真机（CDP 9444）已验证**：
+  - `.ck-skill-item` 计算样式恢复 `display:flex; flex-direction:column; padding:11px 12px; cursor:pointer`（修复前为空）。
+  - 设置页改尺寸 76→40→60：壳页面与 harness 的 `--pet-size` 同步变化。
+  - 开关关闭 → 两端 `--pet-display` 均为 none；重开恢复 block。
+  - `listPets` 返回 8 张图，耗时 10ms（异步化后不阻塞）。
+- 注意：自定义目录中 4 张 >5MB 的图被跳过，属设计上限。
 
-### 4. 多代码块匹配
-- `addToolStart` 将 `code` 存入 `data-tool-code`。
-- `addToolEnd` 接收 `code` 优先按 `data-tool-code` 精确匹配，否则降级为「最后一个 run 卡」。
-
-### 5. PWA 面板显示
-- `.icon-sheet` 弃用 `inset: 0` + `transition`，改用明确的宽高 + `@keyframes slideUp`，确保 WebView 100% 触发。
-- 6 个幽灵 CSS 变量修正为项目实际变量（`--bg-card` / `--fg` 等）。
-
-## 关键踩坑与教训
-1. **绝不使用 `write(file, await read(file))`**：工具返回的内容带有 `<path>` 和行号前缀。本轮踩了 3 次（style.css / overlay.css），导致大面积样式失效和污染。必须用 `readLines`、`edit` 或 `node fs`。
-2. **子代理派发必须自包含**：已创建 `.agents/rules/subagent-dispatch.md`。严禁使用「上一轮你提的」等伪连续措辞，子代理无记忆会导致超时。
-3. **WebView 兼容性**：少用现代 CSS 特性（如 flex gap 在极老版本、inset、backdrop-filter 可能表现不一），事件委托少用 `Element.closest`（处理 SVG 时）。
-
-## 待办事项 (Next Steps)
-- [ ] **真机验证 v0.10.185**：重点确认纯净模式子代理卡片是否顺滑、高度是否恒定不抖动、点折叠是否灵敏、PWA 顶栏图标面板是否正确显示深色底色。
-- [ ] **验证多代码块并发**：让 AI 一次回复中调用 2 个独立的 `runAgent` 代码块，确认结果是否各归各卡（不再发生张冠李戴）。
-
-## 关键上下文
-- 目录: `D:/Desktop/Super-File/cuckoo-code`
-- 主要文件:
-  - `src/ui/harness.html` — 纯净模式 UI，核心在 `addToolStart` / `addToolEnd` / `applySubagents` / `createDynamicAgentCard`
-  - `src/overlay/panel.ts` — 遮罩降级态逻辑（`enterMaskDegraded` / `renderMaskText`）
-  - `src/app/subagent.ts` — 子代理生命周期、进程取消（`cancelSubagentsByParent`）
-  - `src/remote/pwa/style.css` — PWA 样式（图标面板、顶栏）
-  - `.agents/rules/subagent-dispatch.md` — 子代理派发规范
+## 下一步建议
+- 无未完成项。后续若要继续，可从 `docs/backlog.md` 挑选。

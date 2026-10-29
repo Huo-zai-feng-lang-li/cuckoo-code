@@ -4,6 +4,74 @@
 import { api, ckAlert, ckConfirm, escapeHtml, escapeAttr } from '../shared.js';
 import { addRecent } from '../recent.js';
 
+// 动态加载用户自定义宠物图
+let petImages: string[] = [];
+let currentPetIndex = 0;
+let petInterval: any = null;
+
+function setPetImage() {
+  if (!petImages.length) return;
+  const img = petImages[currentPetIndex];
+  document.documentElement.style.setProperty('--pet-img', 'url("' + img + '")');
+}
+
+function loadPets() {
+  const apiAny: any = api as any;
+  if (typeof apiAny.listPets !== 'function') return;
+  apiAny.listPets().then((res: any) => {
+    const files = (res && res.files) ? res.files : [];
+    if (files.length > 0) {
+      // 列表完全没变才跳过（逐项比对：只换第 2 张及以后的图也要刷新）
+      if (files.length === petImages.length && files.every((f: string, i: number) => f === petImages[i])) return;
+      
+      petImages = files;
+      currentPetIndex = 0;
+      setPetImage();
+      
+      document.documentElement.style.setProperty('--pet-display', 'block');
+      document.documentElement.style.setProperty('--pet-bg', 'var(--ck-surface)');
+      document.documentElement.style.setProperty('--pet-shadow', '0 4px 16px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.2)');
+      // 设置尺寸（如果 prefs 里有 size 字段则使用，否则默认 56）
+      // 稍后通过 getUiPrefs 获取 size
+      
+      if (!petInterval) {
+        petInterval = setInterval(() => {
+          currentPetIndex = (currentPetIndex + 1) % petImages.length;
+          setPetImage();
+        }, 3000);
+      }
+    } else {
+      petImages = [];
+      document.documentElement.style.setProperty('--pet-display', 'none');
+      if (petInterval) { clearInterval(petInterval); petInterval = null; }
+      document.documentElement.style.setProperty('--pet-img', 'none');
+      document.documentElement.style.setProperty('--pet-bg', 'transparent');
+      document.documentElement.style.setProperty('--pet-shadow', 'none');
+    }
+  }).catch(() => {});
+}
+// 全局刷新函数：同时重读图和尺寸配置
+function refreshPetsAll() {
+  loadPets();
+  const apiAny: any = api as any;
+  if (typeof apiAny.getUiPrefs === 'function') {
+    apiAny.getUiPrefs().then((r: any) => {
+      if (r && r.success && r.data && r.data.subagentPet && r.data.subagentPet.size) {
+        document.documentElement.style.setProperty('--pet-size', r.data.subagentPet.size + 'px');
+      }
+    }).catch(() => {});
+  }
+}
+
+try {
+  refreshPetsAll();
+  const apiAny: any = api as any;
+  if (typeof apiAny.onPetsChanged === 'function') {
+    apiAny.onPetsChanged(refreshPetsAll);
+  }
+  window.addEventListener('focus', refreshPetsAll);
+} catch (_) { /* ignore */ }
+
 /** 全部子代理缓存（供搜索/筛选/详情） */
 let allAgents: any[] = [];
 /** 当前筛选：all | project | user */
@@ -29,33 +97,82 @@ export async function loadRunningSubagents(): Promise<void> {
   try {
     const r = await apiAny.listRunningSubagents();
     const list = (r && r.success && r.subagents) ? r.subagents : [];
-    if (!list.length) { el.innerHTML = ''; return; }
-    el.innerHTML = '<div class="ck-mcp-group-title">运行中</div>' + list.map((s: any) => {
+    // 先移除不存在的节点（已结束的）
+    const currentIds = new Set(list.map((s: any) => String(s.windowId)));
+    el.querySelectorAll('.ck-agent-running').forEach((node: any) => {
+      if (!currentIds.has(node.getAttribute('data-agent-window'))) {
+        node.remove();
+      }
+    });
+
+    // 更新或插入现有节点
+    const groupTitle = el.querySelector('.ck-mcp-group-title');
+    if (!groupTitle && list.length > 0) {
+      el.insertAdjacentHTML('afterbegin', '<div class="ck-mcp-group-title">运行中</div>');
+    } else if (groupTitle && list.length === 0) {
+      groupTitle.remove();
+    }
+
+    list.forEach((s: any) => {
+      let node = el.querySelector('.ck-agent-running[data-agent-window="' + s.windowId + '"]') as HTMLElement | null;
       const elapsed = Math.max(0, Math.round((Date.now() - (s.startedAt || Date.now())) / 1000));
       const remain = Math.max(0, Math.round(((s.timeoutMs || 0) - (Date.now() - (s.startedAt || Date.now()))) / 1000));
       const remainText = s.timeoutMs ? ('剩余 ' + fmtSec(remain)) : '';
       const statusText = s.status === 'done' ? '完成' : (s.status === 'error' ? '出错' : '运行中');
       const preview = escapeHtml((s.preview || '').slice(-160));
-      const stopBtn = (s.status === 'starting' || s.status === 'running')
-        ? '<button class="ck-snip-icon-btn danger ck-agent-stop" data-stop-agent="' + s.windowId + '" title="停止该子代理">' +
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>' +
-          '</button>'
-        : '';
-      return '<div class="ck-agent-running" data-agent-window="' + s.windowId + '">' +
-        '<div class="ck-skill-top">' +
-          '<span class="ck-skill-name">' + escapeHtml(s.agentName) + '</span>' +
-          '<span class="ck-agent-running-status">' + statusText + ' · ' + elapsed + 's' +
+
+      if (!node) {
+        // 新建
+        const stopBtn = (s.status === 'starting' || s.status === 'running')
+          ? '<button class="ck-snip-icon-btn danger ck-agent-stop" data-stop-agent="' + s.windowId + '" title="停止该子代理"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>'
+          : '';
+        const html = '<div class="ck-agent-running" data-agent-window="' + s.windowId + '">' +
+          '<div class="ck-skill-top">' +
+            '<span class="ck-skill-name">' + escapeHtml(s.agentName) + '</span>' +
+            '<span class="ck-agent-running-status">' + statusText + ' · ' + elapsed + 's' +
+              (s.turn ? ' · 第 ' + s.turn + ' 轮' : '') +
+              (remainText ? ' · ' + remainText : '') +
+            '</span>' +
+            stopBtn +
+          '</div>' +
+          '<div class="ck-skill-desc">' + escapeHtml(s.task || '') + '</div>' +
+          '<div class="ck-agent-running-preview" style="display:none"></div>' +
+          '<div class="ck-pet-orb"></div>' +
+        '</div>';
+        el.insertAdjacentHTML('beforeend', html);
+        node = el.querySelector('.ck-agent-running[data-agent-window="' + s.windowId + '"]');
+      } else {
+        // 更新现有
+        const statusEl = node.querySelector('.ck-agent-running-status');
+        if (statusEl) {
+          statusEl.textContent = statusText + ' · ' + elapsed + 's' +
             (s.turn ? ' · 第 ' + s.turn + ' 轮' : '') +
-            (remainText ? ' · ' + remainText : '') +
-          '</span>' +
-          stopBtn +
-        '</div>' +
-        '<div class="ck-skill-desc">' + escapeHtml(s.task || '') + '</div>' +
-        (preview ? '<div class="ck-agent-running-preview">' + preview + '</div>' : '') +
-      '</div>';
-    }).join('');
+            (remainText ? ' · ' + remainText : '');
+        }
+        const stopBtn = node.querySelector('.ck-agent-stop') as HTMLElement | null;
+        if (stopBtn) {
+          if (s.status === 'done' || s.status === 'error') stopBtn.style.display = 'none';
+          else stopBtn.style.display = '';
+        }
+      }
+
+      // 更新 preview
+      if (node) {
+        const previewEl = node.querySelector('.ck-agent-running-preview') as HTMLElement | null;
+        if (previewEl) {
+          if (preview) {
+            previewEl.style.display = '';
+            previewEl.textContent = preview;
+          } else {
+            previewEl.style.display = 'none';
+          }
+        }
+      }
+    });
     // 停止按钮事件：每次重建后重新绑定（节点随 innerHTML 回收，不会叠加）
     el.querySelectorAll('.ck-agent-stop').forEach((btn: any) => {
+      if (btn.dataset.bound === '1') return;
+      btn.dataset.bound = '1';
       btn.addEventListener('click', async (e: any) => {
         e.stopPropagation();
         const apiAny: any = api as any;

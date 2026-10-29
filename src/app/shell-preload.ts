@@ -199,6 +199,7 @@ const shellAPI = {
   },
   // ========== 子代理 ==========
   listRunningSubagents: (parentWindowId?: number) => ipcRenderer.invoke('subagent-list', { parentWindowId }),
+  listPets: () => ipcRenderer.invoke('harness-list-pets'),
   cancelSubagents: (windowId?: number) => ipcRenderer.invoke('subagent-cancel', { windowId }),
   onSubagentsChanged: (cb: () => void) => {
     ipcRenderer.on('shell-subagents-changed', () => cb());
@@ -306,6 +307,7 @@ const shellAPI = {
   resetSettings: () => ipcRenderer.invoke('reset-settings'),
   getUiPrefs: () => ipcRenderer.invoke('get-ui-prefs'),
   setUiPrefs: (data: any) => ipcRenderer.invoke('set-ui-prefs', { data }),
+  onPetsChanged: (cb: () => void) => { ipcRenderer.on('cuckoo-pets-changed', () => cb()); },
   /** 壳页面布局变更广播（侧栏宽度 / 活动栏顺序 / 显隐），其他窗口改动时触发 */
   onShellLayoutChanged: (cb: (layout: any) => void) => {
     ipcRenderer.on('shell-layout-changed', (_e: any, payload: any) => {
