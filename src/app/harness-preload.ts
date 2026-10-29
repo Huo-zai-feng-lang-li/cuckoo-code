@@ -47,10 +47,12 @@ const harnessAPI = {
   onState: (cb: (payload: any) => void) => {
     ipcRenderer.on('harness-state', (_e: any, payload: any) => cb(payload));
   },
-  /** 订阅对话事件（user/assistant/tool-start/tool-end/status/reset） */
+  /** 订阅对话事件（user/assistant/tool-start/tool-end/status/reset/subagents） */
   onEvent: (cb: (payload: any) => void) => {
     ipcRenderer.on('harness-event', (_e: any, payload: any) => cb(payload));
   },
+  /** 取消指定子代理（纯净模式 runAgent 卡片上的「停止」按钮） */
+  cancelSubagent: (windowId: number) => ipcRenderer.invoke('subagent-cancel', { windowId }),
   /** 追加文本到输入框末尾；autoSend=true 时回显后直接发送——供壳页面"最近"快捷项 */
   onAppendInput: (cb: (text: string, autoSend?: boolean) => void) => {
     ipcRenderer.on('harness-append-input', (_e: any, d: any) => cb((d && d.text) || '', !!(d && d.autoSend)));

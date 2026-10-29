@@ -327,6 +327,52 @@
     0%,100% { box-shadow: inset 0 0 0 1px var(--ic-bd), 0 0 4px rgba(239,68,68,.30); }
     50%     { box-shadow: inset 0 0 0 1px var(--ic-bd), 0 0 9px rgba(255,60,60,.50); }
   }
+  /* ===== 子代理专用卡片 ===== */
+  .tool-card-subagent {
+    border: 1px solid rgba(239, 68, 68, .22) !important;
+    background: linear-gradient(135deg, rgba(239, 68, 68, .06), transparent 55%) !important;
+    position: relative;
+    overflow: hidden;
+  }
+  .tool-card-subagent::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(239, 68, 68, .7), transparent);
+    background-size: 200% 100%;
+    animation: agent-scan 2s linear infinite;
+    pointer-events: none;
+  }
+  @keyframes agent-scan {
+    0%   { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+  }
+  .tool-card-subagent .tool-head { gap: 8px; }
+  .tool-card-subagent .tool-name { color: #fca5a5; }
+  .tool-agent-remaining {
+    font-size: 10.5px; color: var(--text-dim); font-variant-numeric: tabular-nums;
+    flex-shrink: 0; font-family: var(--mono);
+  }
+  .tool-stop-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; padding: 0;
+    border: none; border-radius: 5px; background: transparent;
+    color: var(--text-dim); cursor: pointer; flex-shrink: 0;
+    transition: background .15s, color .15s;
+  }
+  .tool-stop-btn:hover { background: rgba(239, 68, 68, .18); color: #ef4444; }
+  .tool-stop-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .tool-stop-btn svg { width: 12px; height: 12px; }
+  .tool-card-subagent .tool-body { border-top-color: rgba(239, 68, 68, .14) !important; }
+  .tool-agent-live-sec .tool-sec-label { color: #fca5a5; }
+  .tool-agent-preview {
+    max-height: 140px !important; overflow: auto !important;
+    background: rgba(0, 0, 0, .22) !important;
+    color: var(--text-2) !important;
+    font-size: 11.5px !important;
+  }
+  .tool-card-subagent[data-agent-done="1"]::before { display: none; }
+  .tool-card-subagent[data-agent-done="1"] { background: var(--bg-elev) !important; }
+
   .tool-name { font-size: 12px; font-weight: 600; color: var(--text); font-family: var(--mono); flex-shrink: 0; }
   .tool-arg { flex: 1; font-size: 12px; color: var(--text-2); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tool-badge { font-size: 10px; padding: 1.5px 6px; border-radius: 4px; font-weight: 600; flex-shrink: 0; }
@@ -3332,7 +3378,16 @@
       if (am) arg = am[2];
     } catch (e) { /* ignore */ }
     if (arg.length > 60) arg = arg.slice(0, 60) + '…';
-    return { name: name, arg: arg };
+    // 子代理：第一个字符串参数是 agentName
+    var agentName = '';
+    if (name === 'runAgent' || name === 'runAgents') {
+      try {
+        var ar = new RegExp(name + '\\s*\\(\\s*([\'"\`])([^\'"\`]+)\\1');
+        var a = ar.exec(s);
+        if (a) agentName = a[2];
+      } catch (e) { /* ignore */ }
+    }
+    return { name: name, arg: arg, agentName: agentName, isAgent: name === 'runAgent' || name === 'runAgents' };
   }
 
   function addToolStart(code) {
@@ -3341,6 +3396,59 @@
     var tc = parseToolCall(code);
     var wrap = document.createElement('div');
     wrap.className = 'tool';
+
+    if (tc.isAgent) {
+      // 子代理：专用卡片，等待主进程 subagents 事件绑定 windowId
+      wrap.innerHTML =
+        '<div class="tool-card tool-card-subagent open" id="' + id + '" data-agent-pending="1">' +
+          '<div class="tool-head">' +
+            '<span class="tool-icon" data-cat="agent">' + toolIcon(tc.name) + '</span>' +
+            '<span class="tool-name">' + esc(tc.agentName || tc.name) + '</span>' +
+            '<span class="tool-arg tool-agent-task">' + esc(tc.arg) + '</span>' +
+            '<span class="tool-badge run tool-agent-badge">运行中</span>' +
+            '<span class="tool-agent-remaining"></span>' +
+            '<button class="tool-stop-btn" type="button" title="停止该子代理" style="display:none">' +
+              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>' +
+            '</button>' +
+            '<span class="tool-caret"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg></span>' +
+          '</div>' +
+          '<div class="tool-body">' +
+            '<div class="tool-sec tool-agent-live-sec" style="display:none">' +
+              '<div class="tool-sec-label tool-agent-live-label">Live</div>' +
+              '<pre class="tool-pre tool-agent-preview"></pre>' +
+            '</div>' +
+            '<div class="tool-sec"><div class="tool-sec-label">Code</div><pre class="tool-pre">' + esc(code) + '</pre></div>' +
+            '<div class="tool-sec out-sec" style="display:none"><div class="tool-sec-label">Result</div><pre class="tool-pre out-pre"></pre></div>' +
+          '</div>' +
+        '</div>';
+      stream.appendChild(wrap);
+      var head = wrap.querySelector('.tool-head');
+      var stopBtn = wrap.querySelector('.tool-stop-btn');
+      // 点击头部折叠（但点击停止按钮不折叠）
+      head.addEventListener('click', function (e) {
+        if (e && e.target && stopBtn && stopBtn.contains(e.target)) return;
+        wrap.querySelector('.tool-card').classList.toggle('open');
+      });
+      stopBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var card = wrap.querySelector('.tool-card');
+        var wid = parseInt(card.getAttribute('data-subagent-id'), 10);
+        if (!Number.isFinite(wid)) return;
+        try {
+          if (window.harnessAPI && typeof window.harnessAPI.cancelSubagent === 'function') {
+            window.harnessAPI.cancelSubagent(wid).then(function () {
+              stopBtn.disabled = true;
+              stopBtn.style.display = 'none';
+            }).catch(function () { /* ignore */ });
+          }
+        } catch (err) { /* ignore */ }
+      });
+      // 进入待绑定队列（可能出现多个并发）
+      pendingAgentCards.push(wrap.querySelector('.tool-card'));
+      scrollBottom(false);
+      return id;
+    }
+
     wrap.innerHTML =
       '<div class="tool-card open" id="' + id + '">' +
         '<div class="tool-head">' +
@@ -3357,7 +3465,6 @@
       '</div>';
     stream.appendChild(wrap);
     wrap.querySelector('.tool-head').addEventListener('click', function () { wrap.querySelector('.tool-card').classList.toggle('open'); });
-    // 尊重用户当前位置：在底部才跟随，正在翻看历史则不打扰
     scrollBottom(false);
     return id;
   }
@@ -3367,10 +3474,24 @@
     var all = stream.querySelectorAll('.tool-card');
     var target = null;
     for (var i = all.length - 1; i >= 0; i--) {
+      // 跳过动态卡：它们由 applySubagents 的「已消失」分支兜底标记完成，
+      // tool-end 对应的是原始 addToolStart 创建的那张卡
+      if (all[i].hasAttribute('data-agent-dynamic')) continue;
       var b = all[i].querySelector('.tool-badge');
       if (b && b.classList.contains('run')) { target = all[i]; break; }
     }
     if (!target) return;
+    // 子代理卡片：从 pending 队列剔除（避免后续错误绑定）
+    if (target.classList.contains('tool-card-subagent')) {
+      var idx = pendingAgentCards.indexOf(target);
+      if (idx >= 0) pendingAgentCards.splice(idx, 1);
+      var boundWid = target.getAttribute('data-subagent-id');
+      if (boundWid) { try { delete agentCardByWindow[parseInt(boundWid, 10)]; } catch (e) { /* ignore */ } }
+      target.setAttribute('data-agent-done', '1');
+      var rEl = target.querySelector('.tool-agent-remaining'); if (rEl) rEl.textContent = '';
+      var sb = target.querySelector('.tool-stop-btn'); if (sb) sb.style.display = 'none';
+      var ls = target.querySelector('.tool-agent-live-sec'); if (ls) ls.style.display = 'none';
+    }
     var badge = target.querySelector('.tool-badge');
     badge.className = 'tool-badge ' + (success ? 'ok' : 'err');
     badge.textContent = success ? '完成' : '失败';
@@ -3411,11 +3532,196 @@
     setTimeout(once, 60);
   }
 
+  // ===== 子代理卡片 ↔ windowId 绑定 =====
+  // 每张 runAgent 卡片创建时入队；收到 subagents 列表时按出现顺序分配。
+  var pendingAgentCards = [];     // 待绑定 windowId 的卡片
+  var agentCardByWindow = {};     // windowId -> 卡片 DOM
+  var AGENT_TIMEOUT_DEFAULT = 600000;
+
+  function fmtAgentSec(sec) {
+    if (sec < 0) sec = 0;
+    var m = Math.floor(sec / 60);
+    var s = sec % 60;
+    return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  /** 更新单张子代理卡片的可见状态 */
+  function updateAgentCard(card, s) {
+    if (!card || !s) return;
+    var badge = card.querySelector('.tool-agent-badge');
+    var remainEl = card.querySelector('.tool-agent-remaining');
+    var liveSec = card.querySelector('.tool-agent-live-sec');
+    var livePre = card.querySelector('.tool-agent-preview');
+    var liveLabel = card.querySelector('.tool-agent-live-label');
+    var stopBtn = card.querySelector('.tool-stop-btn');
+    var taskEl = card.querySelector('.tool-agent-task');
+    if (taskEl && s.task) taskEl.textContent = String(s.task).slice(0, 80);
+
+    var elapsed = Math.max(0, Math.round((Date.now() - (s.startedAt || Date.now())) / 1000));
+    var tmo = s.timeoutMs || AGENT_TIMEOUT_DEFAULT;
+    var remain = Math.max(0, Math.round((tmo - (Date.now() - (s.startedAt || Date.now()))) / 1000));
+
+    var isRunning = s.status === 'starting' || s.status === 'running';
+    var isDynamic = card.hasAttribute('data-agent-dynamic');
+    if (badge) {
+      if (isRunning) {
+        badge.className = 'tool-badge run tool-agent-badge';
+        badge.textContent = s.turn ? ('第 ' + s.turn + ' 轮') : '启动中';
+      } else if (isDynamic) {
+        // 动态卡（runAgents 拆出的子卡）：没有对应 tool-end，直接标最终态
+        if (s.status === 'error') {
+          badge.className = 'tool-badge err tool-agent-badge';
+          badge.textContent = '失败';
+        } else {
+          badge.className = 'tool-badge ok tool-agent-badge';
+          badge.textContent = '完成';
+        }
+      } else {
+        // 普通 agent 卡：子代理已结束但 tool-end 尚未到 → 保留 run class，
+        // 让 addToolEnd 仍能通过 .tool-badge.run 定位到这张卡并填充 Result。
+        // 文字先显示「收尾中」，tool-end 到达后会覆盖为最终成功/失败。
+        badge.className = 'tool-badge run tool-agent-badge';
+        badge.textContent = '收尾中';
+      }
+    }
+    if (remainEl) {
+      remainEl.textContent = isRunning ? ('剩余 ' + fmtAgentSec(remain)) : (elapsed + 's');
+    }
+    if (stopBtn) {
+      stopBtn.style.display = isRunning ? '' : 'none';
+    }
+    if (liveSec && livePre) {
+      var preview = s.preview || '';
+      if (isRunning && preview) {
+        liveSec.style.display = '';
+        livePre.textContent = preview;
+        if (liveLabel) liveLabel.textContent = 'Live · ' + elapsed + 's' + (s.turn ? ' · 第 ' + s.turn + ' 轮' : '');
+      } else if (!isRunning) {
+        liveSec.style.display = 'none';
+      }
+    }
+    // 卡片不再是 pending
+    if (card.hasAttribute('data-agent-pending') && card.hasAttribute('data-subagent-id')) {
+      card.removeAttribute('data-agent-pending');
+    }
+  }
+
+  /** 为 runAgents 批次里额外的子代理动态创建卡片（前 N 个 pending 卡用尽时） */
+  function createDynamicAgentCard(agent) {
+    var id = 'tool-agent-' + (++toolSeq);
+    var wrap = document.createElement('div');
+    wrap.className = 'tool';
+    wrap.innerHTML =
+      '<div class="tool-card tool-card-subagent open" id="' + id + '" data-agent-dynamic="1">' +
+        '<div class="tool-head">' +
+          '<span class="tool-icon" data-cat="agent">' + toolIcon('runAgent') + '</span>' +
+          '<span class="tool-name">' + esc(agent.agentName || 'runAgent') + '</span>' +
+          '<span class="tool-arg tool-agent-task">' + esc(String(agent.task || '').slice(0, 80)) + '</span>' +
+          '<span class="tool-badge run tool-agent-badge">启动中</span>' +
+          '<span class="tool-agent-remaining"></span>' +
+          '<button class="tool-stop-btn" type="button" title="停止该子代理">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>' +
+          '</button>' +
+          '<span class="tool-caret"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg></span>' +
+        '</div>' +
+        '<div class="tool-body">' +
+          '<div class="tool-sec tool-agent-live-sec" style="display:none">' +
+            '<div class="tool-sec-label tool-agent-live-label">Live</div>' +
+            '<pre class="tool-pre tool-agent-preview"></pre>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    stream.appendChild(wrap);
+    var card = wrap.querySelector('.tool-card');
+    var head = wrap.querySelector('.tool-head');
+    var stopBtn = wrap.querySelector('.tool-stop-btn');
+    head.addEventListener('click', function (e) {
+      if (e && e.target && stopBtn && stopBtn.contains(e.target)) return;
+      card.classList.toggle('open');
+    });
+    stopBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var wid = parseInt(card.getAttribute('data-subagent-id'), 10);
+      if (!Number.isFinite(wid)) return;
+      try {
+        if (window.harnessAPI && typeof window.harnessAPI.cancelSubagent === 'function') {
+          window.harnessAPI.cancelSubagent(wid).then(function () {
+            stopBtn.disabled = true;
+            stopBtn.style.display = 'none';
+          }).catch(function () { /* ignore */ });
+        }
+      } catch (err) { /* ignore */ }
+    });
+    scrollBottom(false);
+    return card;
+  }
+
+  /** 主进程推来全量子代理列表：绑定/更新/标记完成 */
+  function applySubagents(list) {
+    var incoming = {};
+    for (var i = 0; i < list.length; i++) incoming[list[i].windowId] = list[i];
+
+    // 1) 已绑定：更新
+    for (var widStr in agentCardByWindow) {
+      if (!Object.prototype.hasOwnProperty.call(agentCardByWindow, widStr)) continue;
+      var wid = parseInt(widStr, 10);
+      var card = agentCardByWindow[wid];
+      if (!card || !card.parentNode) { delete agentCardByWindow[widStr]; continue; }
+      if (incoming[wid]) {
+        updateAgentCard(card, incoming[wid]);
+      } else {
+        // 已消失 → 从映射表移除（防泄漏），标记视觉完成
+        delete agentCardByWindow[widStr];
+        if (!card.getAttribute('data-agent-done')) {
+          card.setAttribute('data-agent-done', '1');
+          var b = card.querySelector('.tool-agent-badge');
+          var isDyn = card.hasAttribute('data-agent-dynamic');
+          if (b) {
+            if (isDyn) {
+              // 动态卡无 tool-end 兜底，直接标最终态
+              b.className = 'tool-badge ok tool-agent-badge';
+              b.textContent = '完成';
+            } else {
+              // 普通卡保留 run class，等 tool-end 覆盖为最终 ok/err
+              b.className = 'tool-badge run tool-agent-badge';
+              b.textContent = '收尾中';
+            }
+          }
+          var rEl = card.querySelector('.tool-agent-remaining'); if (rEl) rEl.textContent = '';
+          var sb = card.querySelector('.tool-stop-btn'); if (sb) sb.style.display = 'none';
+          var ls = card.querySelector('.tool-agent-live-sec'); if (ls) ls.style.display = 'none';
+        }
+      }
+    }
+
+    // 2) 新出现的：优先从 pendingAgentCards 按顺序分配；用尽则动态创建
+    for (var i2 = 0; i2 < list.length; i2++) {
+      var s = list[i2];
+      if (agentCardByWindow[s.windowId]) continue;
+      var boundCard = null;
+      while (pendingAgentCards.length) {
+        var c = pendingAgentCards.shift();
+        if (!c || !c.parentNode) continue;
+        if (c.hasAttribute('data-subagent-id')) continue;
+        boundCard = c;
+        break;
+      }
+      if (!boundCard) {
+        // runAgents 场景：一个代码块对应 N 个子代理，pending 卡不够 → 动态补卡
+        boundCard = createDynamicAgentCard(s);
+      }
+      boundCard.setAttribute('data-subagent-id', String(s.windowId));
+      agentCardByWindow[s.windowId] = boundCard;
+      updateAgentCard(boundCard, s);
+    }
+  }
+
   if (api.onEvent) {
     api.onEvent(function (payload) {
       if (!payload) return;
       lastActivityAt = Date.now();
       switch (payload.type) {
+        case 'subagents': applySubagents(payload.subagents || []); break;
         case 'user':
           // 远程（手机端）发来的用户消息：必须同时渲染 DOM + 写入历史，
           // 否则手机重连补发历史时看不到自己发过的话（本函数只做 addUser 会丢历史）。

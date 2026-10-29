@@ -89,12 +89,22 @@ function listRunning(parentWindowId?: number): RunningSubagent[] {
   return list.sort((a, b) => a.startedAt - b.startedAt);
 }
 
-/** 通知父窗口壳页面刷新（静默，失败忽略） */
+/** 通知父窗口壳页面 + harness 页面（纯净模式）刷新子代理状态（静默，失败忽略） */
 function notifyParent(parentWindowId: number): void {
   try {
     const ctx = windowState.getWindowContext(parentWindowId);
-    if (ctx && ctx.win && !ctx.win.isDestroyed()) {
+    if (!ctx) return;
+    // 1) 壳页面「子代理」页列表刷新
+    if (ctx.win && !ctx.win.isDestroyed()) {
       ctx.win.webContents.send('shell-subagents-changed');
+    }
+    // 2) 纯净模式（harness）：runAgent 工具卡片实时展示子代理进度
+    const hv: any = (ctx as any).harnessView;
+    if (hv && hv.webContents && !hv.webContents.isDestroyed()) {
+      hv.webContents.send('harness-event', {
+        type: 'subagents',
+        subagents: listRunning(parentWindowId),
+      });
     }
   } catch (_) { /* ignore */ }
 }

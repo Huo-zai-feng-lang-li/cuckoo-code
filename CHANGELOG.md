@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.10.176] - 2026-10-29
+
+### 新增
+- **纯净模式（harness）子代理卡片特殊化**：AI 调用 `runAgent` 时，对话流里的工具卡片不再是一张普通"运行中"卡片，而是专用子代理卡片：
+  - 头部：红色边框渐变 + 顶部扫光动画 + 显示代理名 / 任务摘要 / 实时轮次 / 剩余时间（mm:ss）
+  - 展开后：Live 段实时显示子代理输出（最长 140px 滚动，底部渐隐）
+  - 单独停止按钮：点一下只杀这一个子代理
+  - 完成后：扫光停止、边框恢复、Result 段展示最终文本
+
+### 修复
+- **纯净模式子代理 Result 永不显示的时序 bug**：`applySubagents` 在子代理完成时把徽章的 `run` class 去掉了，随后 `tool-end` 到达时 `addToolEnd` 靠 `.tool-badge.run` 选卡 → 选不中 → Result 输出不展示、真实结果不覆盖、`agentCardByWindow` 泄漏。改为完成后保留 `run` class + 文字改为「收尾中」，等 `tool-end` 覆盖为最终态。
+- **`runAgents` 多子代理只跟 1 个**：一个 `runAgents` 代码块只产生 1 张 pending 卡，第 2+ 个子代理无卡可追踪。改为 pending 卡用尽时动态补卡（标记 `data-agent-dynamic`），由 `applySubagents` 兜底标记完成；`addToolEnd` 跳过动态卡避免误选。
+
 ## [0.10.175] - 2026-10-29
 
 ### 新增
