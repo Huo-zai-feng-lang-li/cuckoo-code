@@ -327,30 +327,26 @@
     0%,100% { box-shadow: inset 0 0 0 1px var(--ic-bd), 0 0 4px rgba(239,68,68,.30); }
     50%     { box-shadow: inset 0 0 0 1px var(--ic-bd), 0 0 9px rgba(255,60,60,.50); }
   }
-  /* ===== 子代理专用卡片 ===== */
+  /* ===== 子代理专用卡片（极简版） ===== */
   .tool-card-subagent {
-    border: 1px solid rgba(239, 68, 68, .22) !important;
-    background: linear-gradient(135deg, rgba(239, 68, 68, .06), transparent 55%) !important;
+    border: 1px solid var(--border-soft) !important;
+    background: var(--bg-elev) !important;
     position: relative;
-    overflow: hidden;
   }
-  .tool-card-subagent::before {
-    content: '';
-    position: absolute; top: 0; left: 0; right: 0; height: 2px;
-    background: linear-gradient(90deg, transparent, rgba(239, 68, 68, .7), transparent);
-    background-size: 200% 100%;
-    animation: agent-scan 2s linear infinite;
-    pointer-events: none;
+  .tool-card-subagent .tool-head {
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    border-left: 3px solid #ef4444; /* 左侧红条标识 */
+    padding-left: 10px;
   }
-  @keyframes agent-scan {
-    0%   { background-position: 100% 0; }
-    100% { background-position: -100% 0; }
+  .tool-card-subagent .tool-name { color: var(--text); font-weight: 600; }
+  .tool-card-subagent .tool-arg { 
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
   }
-  .tool-card-subagent .tool-head { gap: 8px; }
-  .tool-card-subagent .tool-name { color: #fca5a5; }
   .tool-agent-remaining {
     font-size: 10.5px; color: var(--text-dim); font-variant-numeric: tabular-nums;
-    flex-shrink: 0; font-family: var(--mono);
+    flex-shrink: 0; font-family: var(--mono); margin-right: 4px;
   }
   .tool-stop-btn {
     display: inline-flex; align-items: center; justify-content: center;
@@ -362,16 +358,22 @@
   .tool-stop-btn:hover { background: rgba(239, 68, 68, .18); color: #ef4444; }
   .tool-stop-btn:disabled { opacity: .4; cursor: not-allowed; }
   .tool-stop-btn svg { width: 12px; height: 12px; }
-  .tool-card-subagent .tool-body { border-top-color: rgba(239, 68, 68, .14) !important; }
-  .tool-agent-live-sec .tool-sec-label { color: #fca5a5; }
+  .tool-card-subagent .tool-body { border-top-color: var(--border-soft) !important; }
+  .tool-agent-live-sec .tool-sec-label { color: var(--text-dim); font-size: 10px; margin-bottom: 4px; }
+  /* 固定高度，解决抖动 */
   .tool-agent-preview {
-    max-height: 140px !important; overflow: auto !important;
-    background: rgba(0, 0, 0, .22) !important;
+    height: 120px !important;
+    max-height: 120px !important;
+    overflow-y: auto !important;
+    background: rgba(0, 0, 0, .15) !important;
     color: var(--text-2) !important;
     font-size: 11.5px !important;
+    border-radius: 6px;
+    padding: 8px;
+    box-sizing: border-box;
+    scroll-behavior: smooth;
+    margin: 0;
   }
-  .tool-card-subagent[data-agent-done="1"]::before { display: none; }
-  .tool-card-subagent[data-agent-done="1"] { background: var(--bg-elev) !important; }
 
   .tool-name { font-size: 12px; font-weight: 600; color: var(--text); font-family: var(--mono); flex-shrink: 0; }
   .tool-arg { flex: 1; font-size: 12px; color: var(--text-2); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -3606,8 +3608,15 @@
     if (liveSec && livePre) {
       var preview = s.preview || '';
       if (isRunning && preview) {
+        var isScrolledToBottom = livePre.scrollHeight - livePre.scrollTop - livePre.clientHeight < 40;
         liveSec.style.display = '';
-        livePre.textContent = preview;
+        if (livePre.textContent !== preview) {
+          livePre.textContent = preview;
+          // 如果用户看的是底部，就自动跟随滚动；如果翻看历史，就不强制拉回
+          if (isScrolledToBottom) {
+            livePre.scrollTop = livePre.scrollHeight;
+          }
+        }
         if (liveLabel) liveLabel.textContent = 'Live · ' + elapsed + 's' + (s.turn ? ' · 第 ' + s.turn + ' 轮' : '');
       } else if (!isRunning) {
         liveSec.style.display = 'none';
@@ -3629,7 +3638,7 @@
         '<div class="tool-head">' +
           '<span class="tool-icon" data-cat="agent">' + toolIcon('runAgent') + '</span>' +
           '<span class="tool-name">' + esc(agent.agentName || 'runAgent') + '</span>' +
-          '<span class="tool-arg tool-agent-task">' + esc(String(agent.task || '').slice(0, 80)) + '</span>' +
+          '<span class="tool-arg tool-agent-task">' + esc(String(agent.task || '')) + '</span>' +
           '<span class="tool-badge run tool-agent-badge">启动中</span>' +
           '<span class="tool-agent-remaining"></span>' +
           '<button class="tool-stop-btn" type="button" title="停止该子代理">' +
@@ -3648,10 +3657,12 @@
     var card = wrap.querySelector('.tool-card');
     var head = wrap.querySelector('.tool-head');
     var stopBtn = wrap.querySelector('.tool-stop-btn');
-    head.addEventListener('click', function (e) {
-      if (e && e.target && stopBtn && stopBtn.contains(e.target)) return;
-      card.classList.toggle('open');
-    });
+    if (head) {
+      head.addEventListener('click', function (e) {
+        if (e.target.closest && e.target.closest('.tool-stop-btn')) return;
+        card.classList.toggle('open');
+      });
+    }
     stopBtn.addEventListener('click', function (e) {
       e.stopPropagation();
       var wid = parseInt(card.getAttribute('data-subagent-id'), 10);
