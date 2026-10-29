@@ -92,7 +92,7 @@ class RunAgentsTool extends Tool {
     return {
       name: 'tool:runAgents',
       order: 114,
-      text: '使用 runAgents(tasks) 并行委派多个子代理（tasks 是 { name, task } 数组）。适合多个互不依赖的子任务同时推进，比逐个 runAgent 快。全部完成后按顺序返回结果。注意：同一时刻最多 3 个子代理在跑，超出的会排队等待（排队超时则报错），不要一次委派过多。',
+      text: '使用 runAgents(tasks) 并行委派多个子代理（tasks 是 { name, task } 数组）。适合多个互不依赖的子任务同时推进，比逐个 runAgent 快。全部完成后按顺序返回结果。注意：同一时刻最多 3 个子代理在跑，超出的会排队等待（排队超时则报错），不要一次委派过多。**重要：子代理完全无记忆，每个 task 必须自包含（用户目标 + 修复逻辑 + 待检文件绝对路径），否则会因找不到上下文而卡死。**',
     };
   }
 
@@ -152,7 +152,7 @@ class RunAgentTool extends Tool {
     return {
       name: 'tool:runAgent',
       order: 113,
-      text: '使用 runAgent(name, task) 把任务委派给子代理。子代理在独立上下文中完成，只把结果摘要返回。同一时刻最多 3 个子代理在跑，超出会排队。',
+      text: '使用 runAgent(name, task) 把任务委派给子代理。子代理在独立上下文中完成，只把结果摘要返回。同一时刻最多 3 个子代理在跑，超出会排队。**重要：子代理完全无记忆，task 必须自包含（用户目标 + 修复逻辑 + 待检文件绝对路径），否则会因找不到上下文而卡死。**',
     };
   }
 
