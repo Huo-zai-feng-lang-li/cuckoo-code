@@ -65,7 +65,13 @@ function registerToolIpc(): void {
       const result = await jsRunner.run(code, selectedDir, windowId, { attachDelayMin, attachDelayMax, sessionId, ssrfGuard });
       // 复用官方 todoWrite 结果：执行后读取 globalThis.__cuckooTodos（官方规范化的列表），推给 harness
       try {
-        const todos = (globalThis as any).__cuckooTodos;
+        const allTodos = (globalThis as any).__cuckooTodos;
+        let todos = [];
+        if (Array.isArray(allTodos)) {
+          todos = allTodos;
+        } else if (allTodos && typeof allTodos === 'object') {
+          todos = allTodos[selectedDir || '__default__'] || [];
+        }
         if (Array.isArray(todos) && todos.length) {
           const json = JSON.stringify(todos);
           if (json !== lastTodosJson) {
