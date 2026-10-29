@@ -252,11 +252,12 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
       return;
     }
     // 发送阶段：点击「停止」= 取消回传
+    // reuseTick=true：复用执行阶段的计时，秒数连续不归零（否则用户会误判为"卡住重启"）
     showToolMask(() => {
       cancelled = true;
       cancelPendingSend();
       hideToolMask();
-    });
+    }, true);
     if (abortRequested) { abortRequested = false; hideToolMask(); console.log('[Cuckoo Code][拦截] 已请求中止，不回传工具结果'); return; }
     // afterSent 在"结果已发出"时触发隐藏；发送失败（找不到输入框等）则立即隐藏兜底
     const sent = await sendToolResultWithRetry(results, hideToolMask);
