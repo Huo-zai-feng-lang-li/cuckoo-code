@@ -1,3 +1,13 @@
+---
+id: 099
+type: feat
+title: Android 应用图标可切换（activity-alias 方案，4 套可选）
+status: done
+branch: (直接主分支)
+created: 2026-10-29
+updated: 2026-10-29
+---
+
 # 099 · Android 应用图标可切换
 
 - **类型**：feature
