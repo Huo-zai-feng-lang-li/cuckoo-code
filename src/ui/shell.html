@@ -2938,14 +2938,6 @@ paths:            # 可选；省略 = 始终生效
                       <input type="number" class="ck-set-input" id="st-send-delay-max" min="0" step="0.1" />
                     </div>
                   </div>
-                  <div class="ck-set-field">
-                    <span class="ck-set-key">附件上传后检测等待（秒）</span>
-                    <div class="ck-set-inline">
-                      <input type="number" class="ck-set-input" id="st-attach-delay-min" min="0" step="0.1" />
-                      <span class="ck-set-sep">至</span>
-                      <input type="number" class="ck-set-input" id="st-attach-delay-max" min="0" step="0.1" />
-                    </div>
-                  </div>
                 </div>
               </div>
 
@@ -9125,8 +9117,6 @@ paths:            # 可选；省略 = 始终生效
     ["watchdog-count", "watchdogCount"],
     ["send-delay-min", "sendDelayMin"],
     ["send-delay-max", "sendDelayMax"],
-    ["attach-delay-min", "attachDelayMin"],
-    ["attach-delay-max", "attachDelayMax"],
     ["max-concurrent-agents", "maxConcurrentAgents"],
     ["agent-start-interval-min", "agentStartIntervalMin"],
     ["agent-start-interval-max", "agentStartIntervalMax"]
@@ -9183,8 +9173,6 @@ paths:            # 可选；省略 = 始终生效
       watchdogCount: parseInt(getVal("watchdog-count"), 10) || 0,
       sendDelayMin: num("send-delay-min"),
       sendDelayMax: num("send-delay-max"),
-      attachDelayMin: num("attach-delay-min"),
-      attachDelayMax: num("attach-delay-max"),
       maxConcurrentAgents: parseInt(getVal("max-concurrent-agents"), 10) || 0,
       agentStartIntervalMin: num("agent-start-interval-min"),
       agentStartIntervalMax: num("agent-start-interval-max")

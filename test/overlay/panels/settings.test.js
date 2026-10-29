@@ -119,22 +119,12 @@ test('saveSettings 校验：提示词为空被拒绝', () => {
   assert.strictEqual(localStorage.getItem('cuckoo-retry-prompt'), null);
 });
 
-test('saveSettings 校验：发送延迟最大超 10 秒被拒绝', () => {
+test('saveSettings 校验：发送延迟最大值小于最小值被拒绝', () => {
   fillValid();
-  els['cuckoo-delay-min'] = makeEl('x'); els['cuckoo-delay-min'].value = '1';
-  els['cuckoo-delay-max'] = makeEl('y'); els['cuckoo-delay-max'].value = '11';
+  els['cuckoo-delay-min'] = makeEl('x'); els['cuckoo-delay-min'].value = '5';
+  els['cuckoo-delay-max'] = makeEl('y'); els['cuckoo-delay-max'].value = '1';
   settings.saveSettings();
   assert.strictEqual(localStorage.getItem('cuckoo-send-delay-max'), null);
-});
-
-test('saveSettings 校验：附件间隔最大超 60 秒被拒绝', () => {
-  fillValid();
-  els['cuckoo-delay-min'] = makeEl('x'); els['cuckoo-delay-min'].value = '1';
-  els['cuckoo-delay-max'] = makeEl('y'); els['cuckoo-delay-max'].value = '2';
-  els['cuckoo-attach-delay-min'] = makeEl('z'); els['cuckoo-attach-delay-min'].value = '1';
-  els['cuckoo-attach-delay-max'] = makeEl('w'); els['cuckoo-attach-delay-max'].value = '61';
-  settings.saveSettings();
-  assert.strictEqual(localStorage.getItem('cuckoo-attach-delay-max'), null);
 });
 
 function fillValid() {
@@ -159,8 +149,6 @@ test('saveSettings 全部合法写入 localStorage', () => {
   fillValid();
   els['cuckoo-delay-min'] = makeEl('x'); els['cuckoo-delay-min'].value = '2';
   els['cuckoo-delay-max'] = makeEl('y'); els['cuckoo-delay-max'].value = '4';
-  els['cuckoo-attach-delay-min'] = makeEl('z'); els['cuckoo-attach-delay-min'].value = '0.5';
-  els['cuckoo-attach-delay-max'] = makeEl('w'); els['cuckoo-attach-delay-max'].value = '1';
   els['cuckoo-retry-enabled'] = makeEl('en'); els['cuckoo-retry-enabled'].checked = true;
   els['cuckoo-settings'] = makeEl('cuckoo-settings');
 
@@ -202,7 +190,6 @@ test('resetSettingsData 必须清空全部设置键（含子代理 3 个，回�
     'cuckoo-retry-count', 'cuckoo-retry-429-delay', 'cuckoo-retry-429-count',
     'cuckoo-retry-prompt', 'cuckoo-xhr-idle-timeout', 'cuckoo-watchdog-prompt',
     'cuckoo-watchdog-count', 'cuckoo-send-delay-min', 'cuckoo-send-delay-max',
-    'cuckoo-attach-delay-min', 'cuckoo-attach-delay-max',
     'cuckoo-goal-max-iterations', 'cuckoo-ssrf-guard',
     'cuckoo-max-concurrent-agents', 'cuckoo-agent-start-interval-min', 'cuckoo-agent-start-interval-max',
   ];

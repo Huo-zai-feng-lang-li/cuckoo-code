@@ -30,8 +30,6 @@ export interface AgentSettings {
   watchdogCount: number;
   sendDelayMin: number;
   sendDelayMax: number;
-  attachDelayMin: number;
-  attachDelayMax: number;
   goalMaxIterations: number;
   ssrfGuard: boolean;
   /** 子代理并发上限（1~10；默认 3） */
@@ -50,7 +48,7 @@ export interface AgentSettings {
  *  - retryCount: 10 → 3          失败连发从 10 次降到 3 次
  *  - retryDelay: 4~10s → 15~30s  重发间隔更像人
  *  - sendDelay: 1~10s → 6~16s    工具循环节奏降低（旧真值是 1~10s，见 LEGACY_DEFAULTS 注）
- *  - 其余（429/看门狗/附件间隔）保持原值，已合理
+ *  - 其余（429/看门狗）保持原值，已合理
  */
 export const AGENT_SETTINGS_DEFAULTS: AgentSettings = {
   retryEnabled: true,
@@ -65,8 +63,6 @@ export const AGENT_SETTINGS_DEFAULTS: AgentSettings = {
   watchdogCount: 1,
   sendDelayMin: 6,
   sendDelayMax: 16,
-  attachDelayMin: 1,
-  attachDelayMax: 10,
   goalMaxIterations: 50,
   ssrfGuard: false,
   maxConcurrentAgents: 3,
@@ -116,10 +112,6 @@ function normalize(raw: any): AgentSettings {
   let smin = nonNeg(raw.sendDelayMin, d.sendDelayMin);
   let smax = nonNeg(raw.sendDelayMax, d.sendDelayMax);
   if (smax < smin) smax = smin;
-  // 先压上限再修关系：否则 amin=100 会产出 min=100 > max=60 的不合法区间
-  let amin = Math.min(60, nonNeg(raw.attachDelayMin, d.attachDelayMin));
-  let amax = Math.min(60, nonNeg(raw.attachDelayMax, d.attachDelayMax));
-  if (amax < amin) amax = amin;
   // 子代理启动间隔：非负；max < min 时抬到 min
   const intervalMin = nonNeg(raw.agentStartIntervalMin, d.agentStartIntervalMin);
   let intervalMax = nonNeg(raw.agentStartIntervalMax, d.agentStartIntervalMax);
@@ -140,8 +132,6 @@ function normalize(raw: any): AgentSettings {
     watchdogCount: int(raw.watchdogCount, d.watchdogCount),
     sendDelayMin: smin,
     sendDelayMax: smax,
-    attachDelayMin: amin,
-    attachDelayMax: amax,
     goalMaxIterations: (() => {
       const v = int(raw.goalMaxIterations, d.goalMaxIterations);
       return v > 0 ? v : d.goalMaxIterations;

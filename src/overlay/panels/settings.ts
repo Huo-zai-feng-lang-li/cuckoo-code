@@ -29,8 +29,6 @@ function openSettings() {
     setVal('cuckoo-xhr-idle-timeout', msToSec(localStorage.getItem('cuckoo-xhr-idle-timeout') || '300000', 300));
     setVal('cuckoo-watchdog-prompt', localStorage.getItem('cuckoo-watchdog-prompt') || '请继续');
     setVal('cuckoo-watchdog-count', localStorage.getItem('cuckoo-watchdog-count') || '1');
-    setVal('cuckoo-attach-delay-min', msToSec(localStorage.getItem('cuckoo-attach-delay-min') || '1000', 1));
-    setVal('cuckoo-attach-delay-max', msToSec(localStorage.getItem('cuckoo-attach-delay-max') || '10000', 10));
   } catch (_) {}
   setVal('cuckoo-delay-min', state.sendDelayMin / 1000);
   setVal('cuckoo-delay-max', state.sendDelayMax / 1000);
@@ -51,7 +49,6 @@ function resetSettings() {
     'cuckoo-retry-count', 'cuckoo-retry-429-delay', 'cuckoo-retry-429-count',
     'cuckoo-retry-prompt', 'cuckoo-xhr-idle-timeout', 'cuckoo-watchdog-prompt',
     'cuckoo-watchdog-count', 'cuckoo-send-delay-min', 'cuckoo-send-delay-max',
-    'cuckoo-attach-delay-min', 'cuckoo-attach-delay-max',
   ];
   try {
     for (const k of KEYS) localStorage.removeItem(k);
@@ -89,11 +86,6 @@ function saveSettings() {
   const smax = secToMs(val('cuckoo-delay-max'));
   if (Number.isNaN(smin) || smin < 0) { showToast('发送延迟最小值必须是非负数字（秒）', 3000); return; }
   if (Number.isNaN(smax) || smax < smin) { showToast('发送延迟最大值不能小于最小值', 3000); return; }
-  const amin = secToMs(val('cuckoo-attach-delay-min'));
-  const amax = secToMs(val('cuckoo-attach-delay-max'));
-  if (Number.isNaN(amin) || amin < 0) { showToast('附件上传间隔最小值必须是非负数字（秒）', 3000); return; }
-  if (Number.isNaN(amax) || amax < amin) { showToast('附件上传间隔最大值不能小于最小值', 3000); return; }
-  if (amax > 60000) { showToast('附件上传间隔最大值不能超过 60 秒', 3000); return; }
 
   const enEl = document.getElementById('cuckoo-retry-enabled');
   try {
@@ -109,8 +101,6 @@ function saveSettings() {
     localStorage.setItem('cuckoo-watchdog-count', String(watchdogCount));
     localStorage.setItem('cuckoo-send-delay-min', String(smin));
     localStorage.setItem('cuckoo-send-delay-max', String(smax));
-    localStorage.setItem('cuckoo-attach-delay-min', String(amin));
-    localStorage.setItem('cuckoo-attach-delay-max', String(amax));
   } catch (_) {}
   state.sendDelayMin = smin;
   state.sendDelayMax = smax;
@@ -141,8 +131,6 @@ interface SettingsData {
   watchdogCount: number;
   sendDelayMin: number;
   sendDelayMax: number;
-  attachDelayMin: number;
-  attachDelayMax: number;
   goalMaxIterations: number;
   /** 拒绝 webFetch 访问内网/保留地址（默认关闭） */
   ssrfGuard: boolean;
@@ -177,8 +165,6 @@ function getSettingsData(): SettingsData {
     watchdogCount: int(lsGet('cuckoo-watchdog-count'), 1),
     sendDelayMin: sec(lsGet('cuckoo-send-delay-min'), 6),
     sendDelayMax: sec(lsGet('cuckoo-send-delay-max'), 16),
-    attachDelayMin: sec(lsGet('cuckoo-attach-delay-min'), 1),
-    attachDelayMax: sec(lsGet('cuckoo-attach-delay-max'), 10),
     goalMaxIterations: int(lsGet('cuckoo-goal-max-iterations'), 50),
     ssrfGuard: lsGet('cuckoo-ssrf-guard') === '1',
     // 子代理并发/间隔：主进程权威源，AI 页面 localStorage 仅作回显缓存
@@ -216,11 +202,6 @@ function applySettingsData(data: any): { success: boolean; error?: string } {
   const smax = secToMs(data && data.sendDelayMax);
   if (!Number.isFinite(smin) || smin < 0) return { success: false, error: '发送延迟最小值必须是非负数字' };
   if (!Number.isFinite(smax) || smax < smin) return { success: false, error: '发送延迟最大值不能小于最小值' };
-  const amin = secToMs(data && data.attachDelayMin);
-  const amax = secToMs(data && data.attachDelayMax);
-  if (!Number.isFinite(amin) || amin < 0) return { success: false, error: '附件上传间隔最小值必须是非负数字' };
-  if (!Number.isFinite(amax) || amax < amin) return { success: false, error: '附件上传间隔最大值不能小于最小值' };
-  if (amax > 60000) return { success: false, error: '附件上传间隔最大值不能超过 60 秒' };
   // 目标最大迭代次数：属"纯净模式（harness）"自身设置（harness 页有独立入口）。
   // 壳页面设置页不提供此字段 → 仅在显式提供时才校验，缺失时保留原值（不清空、不报错）。
   let goalMax: number | null = null;
@@ -264,8 +245,6 @@ function applySettingsData(data: any): { success: boolean; error?: string } {
     localStorage.setItem('cuckoo-watchdog-count', String(watchdogCount));
     localStorage.setItem('cuckoo-send-delay-min', String(smin));
     localStorage.setItem('cuckoo-send-delay-max', String(smax));
-    localStorage.setItem('cuckoo-attach-delay-min', String(amin));
-    localStorage.setItem('cuckoo-attach-delay-max', String(amax));
     if (goalMax !== null) localStorage.setItem('cuckoo-goal-max-iterations', String(goalMax));
     // ssrfGuard 仅当显式提供时才写（避免未传该字段的调用方把它清成 0）
     if (data && data.ssrfGuard !== undefined) localStorage.setItem('cuckoo-ssrf-guard', data.ssrfGuard ? '1' : '0');
@@ -288,7 +267,6 @@ function resetSettingsData(): SettingsData {
     'cuckoo-retry-count', 'cuckoo-retry-429-delay', 'cuckoo-retry-429-count',
     'cuckoo-retry-prompt', 'cuckoo-xhr-idle-timeout', 'cuckoo-watchdog-prompt',
     'cuckoo-watchdog-count', 'cuckoo-send-delay-min', 'cuckoo-send-delay-max',
-    'cuckoo-attach-delay-min', 'cuckoo-attach-delay-max',
     'cuckoo-goal-max-iterations', 'cuckoo-ssrf-guard',
     // 子代理字段：漏清会让「恢复默认」后 localStorage 残留旧值。
     // 主进程 reset 会广播默认值，但若页面此刻未收到广播（加载中/已销毁），

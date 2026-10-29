@@ -42,17 +42,11 @@ let electronAPI: any = {
     return ipcRenderer.invoke('create-snapshot-marker', { name });
   },
   executeJs: (code: any, callId: any) => {
-    // 附件上传间隔（毫秒），随 JS 执行一并传给主进程的 attachFile 工具
-    let attachDelayMin, attachDelayMax;
     let ssrfGuard = false;
     try {
-      const mn = parseInt(localStorage.getItem('cuckoo-attach-delay-min') as string, 10);
-      const mx = parseInt(localStorage.getItem('cuckoo-attach-delay-max') as string, 10);
-      if (Number.isFinite(mn)) attachDelayMin = mn;
-      if (Number.isFinite(mx)) attachDelayMax = mx;
       ssrfGuard = localStorage.getItem('cuckoo-ssrf-guard') === '1';
     } catch (_) {}
-    return ipcRenderer.invoke('execute-js', { code, callId, attachDelayMin, attachDelayMax, ssrfGuard });
+    return ipcRenderer.invoke('execute-js', { code, callId, ssrfGuard });
   },
   sendEnterToChat: () => {
     return ipcRenderer.invoke('chat-send-enter');

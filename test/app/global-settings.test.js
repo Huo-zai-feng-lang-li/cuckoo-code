@@ -78,13 +78,11 @@ test('规整：负数时间归零、非法文本回退默认、非法次数回�
     retryCount: 'abc',
     retryPrompt: '   ',
     watchdogPrompt: '',
-    attachDelayMax: 999,
   });
   assert.strictEqual(s.retryDelayMin, 0);
   assert.strictEqual(s.retryCount, 3);
   assert.ok(s.retryPrompt.length > 0);
   assert.strictEqual(s.watchdogPrompt, '请继续');
-  assert.strictEqual(s.attachDelayMax, 60, '附件间隔上限 60 秒');
 });
 
 test('规整：ssrfGuard 严格布尔、goalMaxIterations 必须为正', () => {
@@ -100,12 +98,6 @@ test('规整：retryEnabled 缺字段回退默认 true（不能误判为 false�
   assert.strictEqual(s2.retryEnabled, false);
   const s3 = gs.writeAgentSettings({ retryEnabled: 'false' });
   assert.strictEqual(s3.retryEnabled, false, "字符串 'false' 不应判为开");
-});
-
-test('规整：附件间隔先压上限再修关系，不产出 min>max', () => {
-  const s = gs.writeAgentSettings({ attachDelayMin: 100, attachDelayMax: 200 });
-  assert.ok(s.attachDelayMax <= 60, 'max 应被压到 60 以内');
-  assert.ok(s.attachDelayMin <= s.attachDelayMax, 'min 不得大于 max');
 });
 
 test('损坏的 JSON 文件回退默认值而不抛错', () => {

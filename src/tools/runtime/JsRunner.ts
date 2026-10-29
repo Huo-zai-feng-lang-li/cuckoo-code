@@ -165,7 +165,7 @@ class JsRunner {
    * @param code AI 生成的 JavaScript（支持顶层 await）
    * @param projectDir 当前项目目录（相对路径基准）
    * @param windowId 当前对话窗口 id（attachFile 等需要窗口上下文的工具使用）
-   * @param settings 附加设置（attachDelayMin/sessionId 等），透传给工具
+   * @param settings 附加设置（sessionId/ssrfGuard 等），透传给工具
    * @returns {Promise<{success, output?, error?}>}
    */
   async run(code: any, projectDir: any, windowId: any, settings: any): Promise<{ success: boolean; output?: string; error?: string }> {

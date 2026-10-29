@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.10.179] - 2026-10-29
+
+### 修复
+- **附件上传后有 6~20 秒无谓盲等**：`attachFile` 把文件塞进 `<input type=file>` 并触发 `change`（两者都是同步动作，页面处理通常几百毫秒），注入脚本却先无条件 `sleep(waitMs)` 再检查附件 chip——`waitMs` 来自「附件上传后检测等待」设置项，默认 1~10 秒、用户可调到 6~20 秒，等于每传一个附件白等十几秒。而后面本来就有 300ms 轮询 + 15 秒超时兜底，能覆盖所有慢情况。现改为「先查后轮询」：`change` 后立即检查一次，未命中才进轮询。上传确认从 6~20 秒降到通常 0.3 秒内。
+
+### 移除
+- **「附件上传后检测等待」设置项**：盲等删除后 `attachDelayMin/Max` 成为死参数，且该文案与「发送延迟区间」高度混淆（用户反复询问两者区别），整条配置链一并移除（`global-settings` / `ipc/tool` / `bridge/api` / `overlay/panels/settings` / 壳页面 UI 与脚本）。**关键**：`bridge/api.ts` 不再从 localStorage 读该键，避免老用户已存的 6000/20000 残留值继续生效且无法修改。
+- 需求档案 `docs/requirements/099-attach-upload-blind-wait.md`。
+
 ## [0.10.178] - 2026-10-29
 
 ### 修复

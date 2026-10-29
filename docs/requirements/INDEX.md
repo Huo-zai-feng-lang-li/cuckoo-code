@@ -92,5 +92,6 @@
 | 097 | fix | [手机 APK 通知小图标改用 Cuckoo 品牌图标](./097-remote-notify.md) | done | fix/097-remote-notify | 2026-10-29 |
 | 098 | feat | [工具执行反馈闭环（遮罩超时兜底 + 纯净模式秒数 + 发送阶段计时复用）](./098-tool-exec-feedback.md) | done | feat/098-tool-exec-feedback | 2026-10-29 |
 | 099 | feat | [Android 应用图标可切换（activity-alias 方案，4 套可选）](./099-android-app-icon.md) | done | (直接主分支) | 2026-10-29 |
+| 099 | fix | [修复附件上传后的无谓盲等（删除 attachDelay 配置项）](./099-attach-upload-blind-wait.md) | done | fix/099-attach-upload-blind-wait | 2026-10-29 |
 
-共 87 个需求。
+共 88 个需求。

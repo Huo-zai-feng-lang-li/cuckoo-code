@@ -123,11 +123,15 @@ function guessMimeType(fileName: string): string {
  * @param base64 文件内容的 base64
  * @param fileName 文件名
  * @param mimeType MIME 类型
- * @param timeoutMs 等待附件出现的超时
- * @param waitMs 触发 change 后先等待的时间（附件上传间隔）
+ * @param timeoutMs 等待附件出现的超时（轮询上限）
  * @returns IIFE 代码字符串
+ *
+ * 注意：不再有「触发 change 后先盲等」的参数。DataTransfer + change 是同步动作，
+ * 页面处理通常几百毫秒，立即检查即可；未命中再走 300ms 轮询直到 timeoutMs 兜底。
+ * 历史缺陷：旧实现无条件 setTimeout(waitMs) 再检查，waitMs 默认 1~10 秒、用户可调到 6~20 秒，
+ * 等于每传一个附件白等十几秒，而后面本来就有轮询兜底，盲等纯属浪费。
  */
-function buildInjectCode(base64: string, fileName: string, mimeType: string, timeoutMs: number, waitMs: number): string {
+function buildInjectCode(base64: string, fileName: string, mimeType: string, timeoutMs: number): string {
   return (
     '(async () => {\n' +
     '  try {\n' +
@@ -135,7 +139,6 @@ function buildInjectCode(base64: string, fileName: string, mimeType: string, tim
     '    const fileName = ' + JSON.stringify(fileName) + ';\n' +
     '    const mimeType = ' + JSON.stringify(mimeType) + ';\n' +
     '    const timeoutMs = ' + JSON.stringify(timeoutMs) + ';\n' +
-    '    const waitMs = ' + JSON.stringify(waitMs) + ';\n' +
     '    const bin = atob(b64);\n' +
     '    const bytes = new Uint8Array(bin.length);\n' +
     '    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);\n' +
@@ -154,7 +157,6 @@ function buildInjectCode(base64: string, fileName: string, mimeType: string, tim
     '      }\n' +
     '      return false;\n' +
     '    }\n' +
-    '    await new Promise((r) => setTimeout(r, waitMs));\n' +
     '    if (fileVisible()) return { success: true, fileName: fileName };\n' +
     '    const deadline = Date.now() + timeoutMs;\n' +
     '    while (Date.now() < deadline) {\n' +
@@ -197,7 +199,7 @@ class AttachFileTool extends Tool {
   }
 
   async execute(params: any): Promise<ToolResult> {
-    const { filePath, projectDir, currentWindowId, windowId, attachDelayMin, attachDelayMax } = params || {};
+    const { filePath, projectDir, currentWindowId, windowId } = params || {};
     let absPath: string;
     try {
       absPath = resolveFilePath(filePath, projectDir || null);
@@ -244,10 +246,7 @@ class AttachFileTool extends Tool {
     const fileName = path.basename(absPath);
     const mimeType = guessMimeType(fileName);
     const base64 = buffer.toString('base64');
-    const minDelay = Number.isFinite(attachDelayMin) ? attachDelayMin : 1000;
-    const maxDelay = Number.isFinite(attachDelayMax) ? attachDelayMax : 10000;
-    const waitMs = maxDelay > minDelay ? Math.floor(Math.random() * (maxDelay - minDelay)) + minDelay : minDelay;
-    const code = buildInjectCode(base64, fileName, mimeType, UPLOAD_TIMEOUT_MS, waitMs);
+    const code = buildInjectCode(base64, fileName, mimeType, UPLOAD_TIMEOUT_MS);
 
     let result;
     try {
