@@ -185,6 +185,24 @@ function setTaskStatus(running: boolean): void {
  */
 // 遮罩期间：捕获阶段拦截"指向页面（非遮罩盒子）"的指针事件
 let maskBlockHandler: any = null;
+// 遮罩计时器：显示已执行秒数，让用户直观判断"还在跑"还是"卡了"
+let maskTickTimer: any = null;
+let maskStartAt = 0;
+function stopMaskTick(): void {
+  if (maskTickTimer) { clearInterval(maskTickTimer); maskTickTimer = null; }
+}
+function startMaskTick(): void {
+  stopMaskTick();
+  maskStartAt = Date.now();
+  const t = document.querySelector('#cuckoo-tool-mask .cuckoo-tool-mask-text');
+  if (t) t.textContent = '工具调用执行中，请不要有额外操作';
+  maskTickTimer = setInterval(() => {
+    const el = document.querySelector('#cuckoo-tool-mask .cuckoo-tool-mask-text');
+    if (!el) { stopMaskTick(); return; } // 遮罩已移除 → 自停，防计时器泄漏
+    const sec = Math.floor((Date.now() - maskStartAt) / 1000);
+    el.textContent = '工具调用执行中 ' + sec + 's，请不要有额外操作';
+  }, 1000);
+}
 function enableMaskBlock(): void {
   if (maskBlockHandler) return;
   if (typeof document.addEventListener !== 'function') return; // 测试环境无此方法
@@ -212,6 +230,7 @@ function showToolMask(onCancel?: () => void): void {
   const el = document.getElementById('cuckoo-tool-mask');
   if (el) el.classList.remove('cuckoo-hidden');
   enableMaskBlock();
+  startMaskTick();
   const btn = document.getElementById('cuckoo-tool-mask-cancel') as any;
   if (btn) {
     if (onCancel) {
@@ -230,6 +249,7 @@ function showToolMask(onCancel?: () => void): void {
  * 隐藏工具调用遮罩
  */
 function hideToolMask(): void {
+  stopMaskTick();
   const el = document.getElementById('cuckoo-tool-mask');
   if (el) el.classList.add('cuckoo-hidden');
   disableMaskBlock();
