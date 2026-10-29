@@ -3400,7 +3400,7 @@
     if (tc.isAgent) {
       // 子代理：专用卡片，等待主进程 subagents 事件绑定 windowId
       wrap.innerHTML =
-        '<div class="tool-card tool-card-subagent open" id="' + id + '" data-agent-pending="1">' +
+        '<div class="tool-card tool-card-subagent open" id="' + id + '" data-agent-pending="1" data-tool-code="' + esc(code) + '">' +
           '<div class="tool-head">' +
             '<span class="tool-icon" data-cat="agent">' + toolIcon(tc.name) + '</span>' +
             '<span class="tool-name">' + esc(tc.agentName || tc.name) + '</span>' +
@@ -3450,7 +3450,7 @@
     }
 
     wrap.innerHTML =
-      '<div class="tool-card open" id="' + id + '">' +
+      '<div class="tool-card open" id="' + id + '" data-tool-code="' + esc(code) + '">' +
         '<div class="tool-head">' +
           '<span class="tool-icon" data-cat="' + toolCat(tc.name) + '">' + toolIcon(tc.name) + '</span>' +
           '<span class="tool-name">' + esc(tc.name) + '</span>' +
@@ -3469,16 +3469,29 @@
     return id;
   }
 
-  function addToolEnd(success, output, error) {
-    // 找最近一个"运行中"的卡片（不限于 open，避免被折叠后漏匹配）
+  function addToolEnd(success, output, error, code) {
+    // 匹配策略（按优先级）：
+    // 1) 按 code 精确匹配且仍处于 run 状态 → 解决多代码块时 LIFO 错配
+    // 2) 退化为「最后一个 run 卡」（兼容 code 缺失/不匹配的旧路径）
     var all = stream.querySelectorAll('.tool-card');
     var target = null;
-    for (var i = all.length - 1; i >= 0; i--) {
-      // 跳过动态卡：它们由 applySubagents 的「已消失」分支兜底标记完成，
-      // tool-end 对应的是原始 addToolStart 创建的那张卡
-      if (all[i].hasAttribute('data-agent-dynamic')) continue;
-      var b = all[i].querySelector('.tool-badge');
-      if (b && b.classList.contains('run')) { target = all[i]; break; }
+    if (code) {
+      var wanted = String(code);
+      for (var j = 0; j < all.length; j++) {
+        if (all[j].hasAttribute('data-agent-dynamic')) continue;
+        if (all[j].getAttribute('data-tool-code') !== wanted) continue;
+        var bj = all[j].querySelector('.tool-badge');
+        if (bj && bj.classList.contains('run')) { target = all[j]; break; }
+      }
+    }
+    if (!target) {
+      for (var i = all.length - 1; i >= 0; i--) {
+        // 跳过动态卡：它们由 applySubagents 的「已消失」分支兜底标记完成，
+        // tool-end 对应的是原始 addToolStart 创建的那张卡
+        if (all[i].hasAttribute('data-agent-dynamic')) continue;
+        var b = all[i].querySelector('.tool-badge');
+        if (b && b.classList.contains('run')) { target = all[i]; break; }
+      }
     }
     if (!target) return;
     // 子代理卡片：从 pending 队列剔除（避免后续错误绑定）
@@ -3793,7 +3806,7 @@
           // 工具调用开始 = 当前助手回合结束：收尾思考块并关闭当前气泡，避免"思考中…"悬留
           if (cur) { try { var tl0 = cur.thinkBody ? cur.thinkBody.textContent : ''; if (tl0 && cur.thinkLabel) cur.thinkLabel.textContent = '已思考 (' + countThinkChars(tl0) + ' 字)'; } catch (e) { /* ignore */ } clearPendingBubble(); }
           addToolStart(payload.code); setStatus('工具运行中…', 'busy'); pushHist({ t: 'tool', code: payload.code, success: null, output: '', error: '' }); break;
-        case 'tool-end': if (toolRunningCount > 0) toolRunningCount--; if (toolRunningCount <= 0) stopToolTick(); addToolEnd(payload.success, payload.output, payload.error);
+        case 'tool-end': if (toolRunningCount > 0) toolRunningCount--; if (toolRunningCount <= 0) stopToolTick(); addToolEnd(payload.success, payload.output, payload.error, payload.code);
           // 工具结束不等于任务结束，但也不等于"仍在生成"：
           // 还有工具在跑 → 工具运行中；否则等模型产生下一轮输出（task-idle / 流式事件会接管）。
           // 原先无条件置 busy 会在收尾事件丢失时把状态永久钉在运行态。

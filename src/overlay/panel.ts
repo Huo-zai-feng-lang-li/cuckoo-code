@@ -210,7 +210,11 @@ function renderMaskText(): void {
   if (!el) return;
   const sec = Math.floor((Date.now() - maskStartAt) / 1000);
   if (maskDegraded) {
-    el.textContent = '任务仍在后台执行（已 ' + sec + 's），可点下方停止';
+    // 降级态：文案随阶段切换（避免"已跑完在回传"却显示"任务仍在后台执行"误导用户）
+    const isSending = maskLabel === '正在回传结果';
+    el.textContent = isSending
+      ? '正在回传结果（已 ' + sec + 's），可点下方停止'
+      : '任务仍在后台执行（已 ' + sec + 's），可点下方停止';
     return;
   }
   el.textContent = sec > 0 ? (maskLabel + ' ' + sec + 's，请不要有额外操作') : (maskLabel + '，请不要有额外操作');
