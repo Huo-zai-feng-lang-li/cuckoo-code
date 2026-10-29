@@ -192,6 +192,13 @@ let maskTimeoutTimer: any = null;
 let maskStartAt = 0;
 /** 当前遮罩文案前缀（执行阶段「工具调用执行中」/ 发送阶段「正在回传结果」）。 */
 let maskLabel = '工具调用执行中';
+/**
+ * 发送阶段的语义拆分：进入发送阶段时把"工具已执行秒数"定格到 maskExecSec，
+ * 延迟从 maskSendStartAt 单独计时。原实现一个数字混两种语义（工具耗时 + 干等延迟），
+ * 用户看不出时间花在哪。maskSendStartAt === 0 表示尚未进入发送阶段。
+ */
+let maskExecSec = 0;
+let maskSendStartAt = 0;
 /** 遮罩默认最长显示时长（普通工具）；子代理等长任务由调用方传更长的值。 */
 const MASK_TIMEOUT_MS = MASK_DEFAULT_TIMEOUT_MS;
 /** 当前遮罩的超时值（由 showToolMask 传入，供降级态计算） */
@@ -203,31 +210,64 @@ function stopMaskTick(): void {
   if (maskTickTimer) { clearInterval(maskTickTimer); maskTickTimer = null; }
   if (maskTimeoutTimer) { clearTimeout(maskTimeoutTimer); maskTimeoutTimer = null; }
   maskDegraded = false;
+  // 阶段快照随遮罩生命周期复位，避免残留到下一次遮罩
+  maskExecSec = 0;
+  maskSendStartAt = 0;
 }
-/** 渲染遮罩文案（统一出口，秒数由 maskStartAt 推算）。降级态与正常态文案不同。 */
+/**
+ * 把秒数与单位一起包成强调样式（加大 + 加粗 + 主题色，见 overlay.css 的 .cuckoo-tool-mask-text b）。
+ * 参数兜一层 Number()：本函数输出直通 innerHTML，将来若误传字符串不至于引入注入面。
+ */
+function emphSec(sec: number): string {
+  const n = Number(sec);
+  return '<b>' + (Number.isFinite(n) ? n : 0) + 's</b>';
+}
+/** 渲染遮罩文案（统一出口，秒数由 maskStartAt / maskSendStartAt 推算）。降级态与正常态文案不同。 */
 function renderMaskText(): void {
-  const el = document.querySelector('#cuckoo-tool-mask .cuckoo-tool-mask-text');
+  const el: any = document.querySelector('#cuckoo-tool-mask .cuckoo-tool-mask-text');
   if (!el) return;
-  const sec = Math.floor((Date.now() - maskStartAt) / 1000);
+  // maskLabel 仅来自内部常量（'工具调用执行中' / '正在回传结果'），但仍转义以杜绝注入
+  const label = escapeHtml(maskLabel);
+  const totalSec = Math.floor((Date.now() - maskStartAt) / 1000);
+  const sendSec = maskSendStartAt > 0 ? Math.floor((Date.now() - maskSendStartAt) / 1000) : 0;
   if (maskDegraded) {
-    // 降级态：文案随阶段切换（避免"已跑完在回传"却显示"任务仍在后台执行"误导用户）
-    const isSending = maskLabel === '正在回传结果';
-    el.textContent = isSending
-      ? '正在回传结果（已 ' + sec + 's），可点下方停止'
-      : '任务仍在后台执行（已 ' + sec + 's），可点下方停止';
+    // 降级态同样区分阶段：发送阶段也输出「工具 Xs · 延迟 Ys」，
+    // 否则降级路径又把两个数字糊回一个总时长，正好抵消本次改动（而超时恰恰是用户最焦虑的场景）。
+    el.innerHTML = maskSendStartAt > 0
+      ? label + '（工具 ' + emphSec(maskExecSec) + ' · 延迟 ' + emphSec(sendSec) + '），可点下方停止'
+      : '任务仍在后台执行（已 ' + emphSec(totalSec) + '），可点下方停止';
     return;
   }
-  el.textContent = sec > 0 ? (maskLabel + ' ' + sec + 's，请不要有额外操作') : (maskLabel + '，请不要有额外操作');
+  // 发送阶段：工具耗时定格、延迟单独计时，两个数都可见（原来只显示累计总数，看不出在等什么）
+  if (maskSendStartAt > 0) {
+    el.innerHTML = label + '（工具 ' + emphSec(maskExecSec) + ' · 延迟 ' + emphSec(sendSec) + '），请不要有额外操作';
+    return;
+  }
+  el.innerHTML = totalSec > 0
+    ? (label + ' ' + emphSec(totalSec) + '，请不要有额外操作')
+    : (label + '，请不要有额外操作');
 }
 function startMaskTick(reuse?: boolean, label?: string, timeoutMs?: number): void {
-  // 发送阶段复用同一计时：已有计时器时不重置，秒数连续（避免"归零=卡住"的误判）
+  // 发送阶段复用同一计时：已有计时器时不重置（避免"归零=卡住"的误判）。
+  // 但语义拆分：进入发送阶段时把工具耗时定格到 maskExecSec，延迟从 maskSendStartAt 单独计。
   if (reuse && maskTickTimer) {
-    // 阶段切换（执行 → 回传）：只换文案，不动计时，秒数继续
-    if (label) { maskLabel = label; renderMaskText(); }
+    if (label) {
+      // 阶段判定不依赖 label 字面量（调用方改一个字就会静默退化成累计总秒数，且无测试能发现）：
+      // reuse + 已有计时器 + 带 label 本身就是「阶段切换」的唯一语义。
+      // 仅在首次切阶段时拍快照（重复 reuse 不覆盖）。
+      if (maskSendStartAt === 0) {
+        maskExecSec = Math.floor((Date.now() - maskStartAt) / 1000);
+        maskSendStartAt = Date.now();
+      }
+      maskLabel = label;
+      renderMaskText();
+    }
     return;
   }
   stopMaskTick();
   maskStartAt = Date.now();
+  maskExecSec = 0;
+  maskSendStartAt = 0;
   maskLabel = label || '工具调用执行中';
   maskTimeoutMs = (typeof timeoutMs === 'number' && timeoutMs > 0) ? timeoutMs : MASK_TIMEOUT_MS;
   renderMaskText();

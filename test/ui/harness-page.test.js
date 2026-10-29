@@ -50,7 +50,10 @@ test('接住权威生成状态心跳 ai-state（解套"卡在运行中"）', () 
   assert.ok(script.includes("case 'ai-state'"), '事件分发应处理 ai-state');
   assert.ok(/function onAiState\s*\(/.test(script), '应有 onAiState 处理函数');
   const idx = script.indexOf('function onAiState');
-  const body = script.slice(idx, idx + 900);
+  // 按函数体边界切片（不写死字符数）：用下一个顶层 function 作为终点，
+  // 避免实现里加注释就把后面的断言挤出窗口。
+  const nextFn = script.indexOf('\n  function ', idx + 10);
+  const body = script.slice(idx, nextFn > 0 ? nextFn : idx + 2000);
   // 权威判定"已停止"时必须清零工具计数（防 tool-end 丢失导致永久卡住）
   assert.ok(body.includes('toolRunningCount = 0'), 'ai-state 收尾时应清零工具计数');
   assert.ok(body.includes("setStatus('就绪', 'ready')"), 'ai-state 收尾时应复位为就绪');

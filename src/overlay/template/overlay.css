@@ -244,6 +244,17 @@
   animation: cuckoo-spin 0.8s linear infinite;
 }
 .cuckoo-tool-mask-text { font-size: 12.5px; font-weight: 600; color: #16181d; letter-spacing: 0.3px; }
+/* 数字强调：加大 + 加粗 + 等宽 + 主题色（不倾斜、不用荧光色）。
+   让"工具耗时/延迟"一眼可辨，又不喧宾夺主。 */
+.cuckoo-tool-mask-text b {
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 16px;
+  color: #4d6bfe;
+  letter-spacing: 0;
+  padding: 0 1px;
+}
 .cuckoo-tool-mask-cancel {
   padding: 5px 14px; border-radius: 999px;
   border: 1px solid rgba(229, 72, 77, 0.4);
@@ -261,6 +272,7 @@
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   }
   .cuckoo-tool-mask-text { color: #e4e6eb; }
+  .cuckoo-tool-mask-text b { color: #6b83ff; }
   .cuckoo-tool-mask-spinner { border-color: rgba(107, 131, 255, 0.25); border-top-color: #6b83ff; }
 }
 @keyframes cuckoo-spin { to { transform: rotate(360deg); } }
@@ -426,4 +438,8 @@
 }
 #cuckoo-tool-mask.cuckoo-tool-mask-degraded .cuckoo-tool-mask-text {
   color: #fbbf24;
+}
+/* 降级态整体已是琥珀色，数字沿用继承色（不再单独染色，避免撞色） */
+#cuckoo-tool-mask.cuckoo-tool-mask-degraded .cuckoo-tool-mask-text b {
+  color: inherit;
 }
