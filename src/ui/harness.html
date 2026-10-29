@@ -3428,7 +3428,7 @@
       var stopBtn = wrap.querySelector('.tool-stop-btn');
       // 点击头部折叠（但点击停止按钮不折叠）
       head.addEventListener('click', function (e) {
-        if (e && e.target && stopBtn && stopBtn.contains(e.target)) return;
+        if (e.target.closest && e.target.closest('.tool-stop-btn')) return;
         wrap.querySelector('.tool-card').classList.toggle('open');
       });
       stopBtn.addEventListener('click', function (e) {
