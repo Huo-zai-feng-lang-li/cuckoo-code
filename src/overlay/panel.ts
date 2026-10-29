@@ -189,6 +189,8 @@ let maskBlockHandler: any = null;
 let maskTickTimer: any = null;
 let maskTimeoutTimer: any = null;
 let maskStartAt = 0;
+/** 当前遮罩文案前缀（执行阶段「工具调用执行中」/ 发送阶段「正在回传结果」）。 */
+let maskLabel = '工具调用执行中';
 /** 遮罩最长显示时长：超时自动解除（只解 UI，不杀工具进程）。 */
 const MASK_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -196,18 +198,28 @@ function stopMaskTick(): void {
   if (maskTickTimer) { clearInterval(maskTickTimer); maskTickTimer = null; }
   if (maskTimeoutTimer) { clearTimeout(maskTimeoutTimer); maskTimeoutTimer = null; }
 }
-function startMaskTick(reuse?: boolean): void {
+/** 渲染遮罩文案（统一出口，秒数由 maskStartAt 推算）。 */
+function renderMaskText(): void {
+  const el = document.querySelector('#cuckoo-tool-mask .cuckoo-tool-mask-text');
+  if (!el) return;
+  const sec = Math.floor((Date.now() - maskStartAt) / 1000);
+  el.textContent = sec > 0 ? (maskLabel + ' ' + sec + 's，请不要有额外操作') : (maskLabel + '，请不要有额外操作');
+}
+function startMaskTick(reuse?: boolean, label?: string): void {
   // 发送阶段复用同一计时：已有计时器时不重置，秒数连续（避免"归零=卡住"的误判）
-  if (reuse && maskTickTimer) return;
+  if (reuse && maskTickTimer) {
+    // 阶段切换（执行 → 回传）：只换文案，不动计时，秒数继续
+    if (label) { maskLabel = label; renderMaskText(); }
+    return;
+  }
   stopMaskTick();
   maskStartAt = Date.now();
-  const t = document.querySelector('#cuckoo-tool-mask .cuckoo-tool-mask-text');
-  if (t) t.textContent = '工具调用执行中，请不要有额外操作';
+  maskLabel = label || '工具调用执行中';
+  renderMaskText();
   maskTickTimer = setInterval(() => {
     const el = document.querySelector('#cuckoo-tool-mask .cuckoo-tool-mask-text');
     if (!el) { stopMaskTick(); return; } // 遮罩已移除 → 自停，防计时器泄漏
-    const sec = Math.floor((Date.now() - maskStartAt) / 1000);
-    el.textContent = '工具调用执行中 ' + sec + 's，请不要有额外操作';
+    renderMaskText();
   }, 1000);
   // 超时兜底：底层发送/执行卡死时，遮罩不能永久残留。
   // 只解除 UI，不中止工具进程（进程层已有 JsRunner 无活动兜底 / bash 自身 timeout）。
@@ -239,11 +251,11 @@ function disableMaskBlock(): void {
   maskBlockHandler = null;
 }
 
-function showToolMask(onCancel?: () => void, reuseTick?: boolean): void {
+function showToolMask(onCancel?: () => void, reuseTick?: boolean, label?: string): void {
   const el = document.getElementById('cuckoo-tool-mask');
   if (el) el.classList.remove('cuckoo-hidden');
   enableMaskBlock();
-  startMaskTick(reuseTick);
+  startMaskTick(reuseTick, label);
   const btn = document.getElementById('cuckoo-tool-mask-cancel') as any;
   if (btn) {
     if (onCancel) {
