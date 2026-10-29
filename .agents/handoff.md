@@ -1,54 +1,49 @@
-# 最新接续状态 (2026-10-29 第三场 · 已发版)
+# 最新接续状态 (2026-10-29 第四场 · 已发版)
 
 ## 核心进展
-- **需求 095 已合入 master 并随 v0.10.168 发布**：修复子代理窗口泄漏远程事件导致手机误报「已停止生成」。
-- **上一版 v0.10.167**：修复远程扫码按钮布局 + APK 固定签名（需求 094）。
-- **当前版本**：v0.10.168。
+- **需求 096 已发版 v0.10.169**：修复手机端在正常任务结束时误弹「已停止生成」气泡。
+- 近期版本：094（扫码布局+APK 固定签名，v0.10.167）→ 095（子代理泄漏远程事件，v0.10.168）→ 096（停止气泡误报，v0.10.169）。
+- **当前版本**：v0.10.169。
 
-## 095 问题与根因
+## 096 根因
+电脑端 busy watchdog 在「网页已不在生成、静默超 8 秒」时主动收尾并广播 `ai-stop`，手机端对**所有** `ai-stop` 都显示「已停止生成」。
 
-### 症状
-手机远程端在主对话执行任务期间会莫名弹「已停止生成」，电脑端主对话其实还在跑。
+触发条件（很常见）：任务**最后一轮只输出工具代码块、没有正文** →
+1. `stripBlocks` 把内容剥空 → `remote-bridge.ts:97` `if (!clean) return` → 不发 `ai-reply`
+2. `manager.ts` 的 `s.active` 保持 true（只有 ai-reply/stop/error 才清）
+3. `onTaskDone` 明确不清流式状态（manager.ts:384 注释写明）
+4. 8 秒后 watchdog 判定需要兜底 → `onAiStop` → 手机弹「已停止生成」
 
-### 根因（已取证）
-1. `src/bridge/entry.ts` 的 `initRemoteBridge()` **无条件执行**——子代理窗口也初始化了一份（同文件 `initPlugins` 已有 `if (!subCfg)` 门控，remote 漏了）。
-2. 子代理复用父窗口 profileId（`src/app/profile.ts:153` `id: parent.id`，为了共用账本/token/设置）。
-3. 子代理跑满 maxTurns 时调 `requestAbort()`（`src/bridge/subagent.ts:126`）→ `emitUserStop()` → 子代理窗口的 remote-bridge 上报 `ai-stop` → 主进程按父 profileId 广播 → 手机弹「已停止生成」。
-4. 同一路径还会把子代理的 `ai-stream`/`ai-reply`/`tool`/`ai-error` 混进主对话。
+用户什么都没停止，任务只是正常做完了。所以现象是「有时候」——取决于最后一步有没有正文。
 
-### 相邻泄漏路径（审查发现，一并修）
-`addWindow` 无条件 `lastActiveWindowId = win.id`，子代理创建时抢占「主窗口」指针 → `getMainContext()`（12 处调用方）在子代理运行期间返回子代理 → 手机未选窗口时远程「停止」会定位到子代理窗口。
-
-### 修复
-- `src/bridge/entry.ts`：`if (!subCfg) initRemoteBridge();`
-- `src/app/ipc/remote.ts`：`remote-report` 里 `if (ctx && ctx.isSubagent) return { success: true };` 兜底
-- `src/app/window.ts`：新增 `pickMainWindowId()`（排除子代理），`addWindow`/`removeWindow`/closed 回退/`getMainContext`/`getMainWindow`/`setMainWindow` 统一走同一规则
-- `test/main/window.test.js`：5 个回归用例
+## 修复（只改气泡显示，不动状态流转）
+- `src/remote/manager.ts`：`onAiStop(profileId, reason = 'user')`，broadcast 带 `reason`；`busyWatchdogTick` 传 `'watchdog'`。
+- `src/remote/pwa/app.js`：`ai-stop` 分支 `reason === 'watchdog'` 时 `hideExec(); break;`——只复位状态、不弹气泡。
+  - **注意**：这里必须显式 `hideExec()`。子代理审查发现初版漏了它，该场景下 `onToolEvent('end')` 已把执行条置为「正在生成回复…」，不隐藏会永久残留。
 
 ## 验证
 - `npm run typecheck` ✅
 - `npm test` ✅ 131 文件 / 1304 用例
 - `npm run lint` ✅ 0 error（65 个既有 warning）
 - `npm run compile` ✅
-- 子代理 code-reviewer 两轮独立审查，第二轮指出 5 条低/中建议，已全部收口（真值判断改显式 null、getMainContext 补兜底、setMainWindow 补注释、补多主窗口回退用例）
-- **未做真机验证**：需 `npm start` 跑一次 `runAgent` 观察手机端不再误报
+- 子代理 code-reviewer 审查：指出 `hideExec()` 遗漏（已修），其余 4 项核验通过
+- **未做真机验证**
 
 ## 真机验证清单（待做）
-- A. 主对话跑 `runAgent`，子代理收工期间手机端**不**出现「已停止生成」
-- B. 子代理的流式文本不混进主对话气泡
-- C. 手机端主动点停止仍正常显示「已停止生成」
-- D. 多窗口场景下 `getMainContext` 返回正确的主窗口（不受子代理影响）
+- A. 让任务最后一轮只调工具（无正文），手机端**不再**弹「已停止生成」，且执行状态条正常消失（不卡「正在生成回复」）
+- B. 手机端主动点停止 → 仍弹「已停止生成」
+- C. 网页端点停止 → 仍弹「已停止生成」
 
-## 调查中发现的其它问题（未修，待用户确认是否立项）
-1. **watchdog 兜底收尾复用 `ai-stop`**（`src/remote/manager.ts:334`）：网页停止生成且静默超 8 秒后主动调 `onAiStop`，手机显示「已停止生成」，实际可能只是 finished 帧丢失。语义上应区分「用户停止」与「本轮已结束」，需新增独立事件类型。
-2. **ChatGPT 平台把断流判为 stopped**（`src/providers/hooks/chatgpt.ts:117`，`aborted = AbortError || XHR status===0`）：弱网/切后台会误判为用户主动停止。DeepSeek hook 只认拦截到的 `stop_stream` 请求，无此问题。
-3. **`onPhoneStop` 双次 ai-stop**（pre-existing）：`manager.ts:127` 直接 `onAiStop`，主窗口 hook 的 `onUserStop` 也会再报一次。手机侧幂等，非本次引入。
+## 尚未修复的相关问题（待用户决定）
+1. **`onTaskDone` 不清流式状态**，导致 watchdog 每轮都要干等 8 秒才收尾。彻底修法是让 `onTaskDone` 也清状态（与 `onAiReply` 一致），但会改动状态流转，096 刻意没做。
+2. **ChatGPT 平台把断流判为用户停止**（`providers/hooks/chatgpt.ts:117`，`AbortedError`/`XHR status===0`），弱网时会误报「已停止生成」。DeepSeek 只认 `stop_stream` 请求，无此问题。
+3. `onPhoneStop` 双次 ai-stop（pre-existing，手机侧幂等）。
 
-## 遗留
-- 上面 3 条待用户确认。
-- 092 子代理并发池的真机验证清单 A~H 仍未做（历史遗留）。
-- `v0.10.164` tag 违规（含数字 4）仍在 origin，是否删除待用户决定。
+## 历史遗留
+- 092 子代理并发池的真机验证清单 A~H 仍未做。
+- `v0.10.164` tag 违规（含数字 4）仍在 origin。
 
 ## 教训
-- **「共用 profileId」是隐形炸弹**：任何以 profileId 为键的广播/状态，都必须显式区分主窗口与子代理。`ai-state` 早就做了分离（`window.ts` 注释写明），但 `remote-report` 和 `lastActiveWindowId` 两处都漏了。以后新增以 profileId 为键的逻辑，先问一句「子代理会不会污染」。
-- 同一根因往往有多条泄漏路径，修完主路径要顺着 grep 一遍 `profileId` 的消费点。
+- **「共用 profileId」是隐形炸弹**：任何以 profileId 为键的广播/状态，都必须显式区分主窗口与子代理（095）。
+- **事件语义复用是误报温床**：`ai-stop` 同时承担「用户停止」和「兜底收尾」两种语义，用户就会看到莫名其妙的提示。加 `reason` 区分是低成本正解（096）。
+- **只改显示不等于只改一行**：剥离气泡后，原先被 `showExecBrief` 顺带做掉的 `hideExec` 就漏了——子代理审查抓到了，说明改显示路径也要核对全部状态复位点。

@@ -304,8 +304,13 @@ function onAiReply(text: string, profileId: string): void {
   remoteServer.broadcast({ type: 'ai-reply', profileId: pid, text: text || '' });
 }
 
-/** 收到用户停止生成信号 */
-function onAiStop(profileId: string): void {
+/**
+ * 收到停止信号并广播给手机。
+ * @param reason 'user' = 用户主动停止（手机/网页点停止）；'watchdog' = 兜底收尾
+ *   （网页已不在生成、静默超阈值，可能只是 finished 帧丢失）。
+ *   手机端据此决定是否弹「已停止生成」——兜底收尾不弹，避免正常任务结束时误报。
+ */
+function onAiStop(profileId: string, reason: 'user' | 'watchdog' = 'user'): void {
   if (!remoteServer.isRunning()) return;
   const pid = profileId || '';
   clearBusy(pid);
@@ -319,7 +324,7 @@ function onAiStop(profileId: string): void {
   s.thinkSent = '';
   s.active = false;
   s.toolCount = 0;
-  remoteServer.broadcast({ type: 'ai-stop', profileId: pid });
+  remoteServer.broadcast({ type: 'ai-stop', profileId: pid, reason });
 }
 
 /** 卡"生成中"兜底 watchdog 间隔（ms） */
@@ -346,7 +351,7 @@ function busyWatchdogTick(): void {
       if (now - s.lastAt < BUSY_STALE_MS) continue; // 静默不足：可能是刚起手
       console.log('[Remote] watchdog：检测到已停止但未收尾，主动收尾 ' + pid);
     }
-    onAiStop(pid);
+    onAiStop(pid, 'watchdog');
   }
 }
 

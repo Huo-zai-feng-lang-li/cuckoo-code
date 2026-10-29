@@ -567,8 +567,14 @@
       case 'ai-stop':
         if (!isMyProfile(msg.profileId)) break;
         finishStreaming(streamingText);
-        showExecBrief('已停止生成', 1500);
         setExecuting(false);
+        // reason === 'watchdog' 是电脑端的兜底收尾（网页已停、静默超阈值，
+        // 常见于「最后一轮只调工具、没输出正文」的正常结束），并不是用户停止。
+        // 这种收尾只做状态复位，不弹「已停止生成」，避免正常任务结束时的误报。
+        // 注意：必须显式 hideExec()——该场景下 onToolEvent('end') 会把执行条
+        // 置为「正在生成回复…」且 execVisible=true，不隐藏就会一直残留。
+        if (msg.reason === 'watchdog') { hideExec(); break; }
+        showExecBrief('已停止生成', 1500);
         showStopNotice();
         break;
       case 'history':
