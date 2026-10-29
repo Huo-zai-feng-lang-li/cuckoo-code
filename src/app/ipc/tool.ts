@@ -15,7 +15,7 @@ let lastTodosJson = '';
 /** 重置计划（新任务/新对话时调用，避免旧 todo 残留） */
 function resetTodosCache(): void {
   lastTodosJson = '';
-  (globalThis as any).__cuckooTodos = [];
+  (globalThis as any).__cuckooTodos = {};
 }
 
 export { resetTodosCache };
@@ -67,10 +67,12 @@ function registerToolIpc(): void {
       try {
         const allTodos = (globalThis as any).__cuckooTodos;
         let todos = [];
-        if (Array.isArray(allTodos)) {
-          todos = allTodos;
-        } else if (allTodos && typeof allTodos === 'object') {
+        if (allTodos && typeof allTodos === 'object' && !Array.isArray(allTodos)) {
+          // 真相源结构：按 projectDir 分桶的对象
           todos = allTodos[selectedDir || '__default__'] || [];
+        } else if (Array.isArray(allTodos)) {
+          // 兜底：兼容旧的全局单数组结构
+          todos = allTodos;
         }
         if (Array.isArray(todos) && todos.length) {
           const json = JSON.stringify(todos);
