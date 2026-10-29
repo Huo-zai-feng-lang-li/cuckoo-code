@@ -339,10 +339,21 @@
   /* ===== 子代理专用卡片（跑马流光 + 宠物绕圈） ===== */
   .tool-card-subagent {
     position: relative;
-    border: 1px solid transparent !important;
+    border: 1.5px solid transparent !important;
     background: 
       linear-gradient(var(--bg-elev), var(--bg-elev)) padding-box,
-      conic-gradient(from var(--ck-angle), rgba(239, 68, 68, 0.1), rgba(220, 38, 38, 0.8), #ff4d4d, rgba(220, 38, 38, 0.8), rgba(239, 68, 68, 0.1)) border-box !important;
+      conic-gradient(
+        from var(--ck-angle),
+        rgba(239, 68, 68, 0.2) 0deg,
+        rgba(239, 68, 68, 0.6) 60deg,
+        #dc2626 120deg,
+        #ef4444 150deg,
+        #ff3333 180deg,
+        #ef4444 210deg,
+        #dc2626 240deg,
+        rgba(239, 68, 68, 0.6) 300deg,
+        rgba(239, 68, 68, 0.2) 360deg
+      ) border-box !important;
     animation: ck-border-spin 2s linear infinite, ck-pulse-glow 1.5s ease-in-out infinite alternate;
     overflow: visible !important;
     border-radius: 8px;
