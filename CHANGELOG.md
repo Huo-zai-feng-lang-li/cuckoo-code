@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.10.175] - 2026-10-29
+
+### 新增
+- **Android 应用图标可切换**（4 套可选：默认 / 玻璃鸟 / 像素贴纸 / 深蓝金鸟）：基于 `activity-alias` + `PackageManager.setComponentEnabledSetting`。APK 内顶栏调色板按钮打开选择面板，切换后桌面图标几秒内更新（部分国产 ROM 需重启桌面）。状态持久化在 SharedPreferences，切换中途崩溃可在下次启动时自愈。
+- **子代理运行中卡片增强**：显示剩余时间倒计时（mm:ss）、支持单个停止（不再误杀全部并发子代理）；卡片视觉重做（顶部扫光进度条、预览块光标、hover 红调停止按钮）。
+- **工具遮罩超时动态对齐任务上限**：普通工具 5 分钟，含 `runAgent` 的代码块 12 分钟（子代理 10min + 2min 余量）。新增 `src/infra/timeouts.ts` 作为全局超时常量唯一真相源。
+- **遮罩超时降级态**：超时后不再整体消失，改为半透明 + 保留「停止」按钮 + 文案改为「任务仍在后台执行（已 Ns），可点下方停止」，用户仍能中断。
+
+### 修复
+- **纯净模式点击停止会清空输入框**：`harness.html` 的 `stop()` 之前无差别清空 `input.value`，导致用户打了一半的草稿丢失。现在只清待发附件/chip，保留用户输入。
+- **遮罩降级文案被秒级计时器覆盖**：`renderMaskText` 增加降级态判断，避免 `enterMaskDegraded` 设的提示 1 秒后被刷回普通文案。
+- **子代理停止按钮误杀全部并发**：`cancelSubagentsByParent` 增加可选 `targetWindowId` 过滤，IPC 与前端透传，点一个只杀一个。
+
+### 开发约定
+- 新增 `.agents/rules/subagent-dispatch.md`：派发子代理必须遵守「自包含上下文三要素」（用户原始目标 / 主代理修复逻辑 / 待检源码文件），严禁「上一轮你指出」等伪连续措辞。
+- 新增 `sharp` devDependency（供 `scripts/gen-android-icons.mjs` 生成图标资源使用）。
+
 ## [0.10.173] - 2026-10-29
 
 ### 优化

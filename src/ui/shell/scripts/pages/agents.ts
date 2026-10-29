@@ -13,6 +13,13 @@ let searchTerm = '';
 /** 详情弹窗当前展示的代理 */
 let detailAgent: any = null;
 
+/** 秒数格式化为 mm:ss */
+function fmtSec(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
+
 /** 加载"运行中子代理"区块（实时进度） */
 export async function loadRunningSubagents(): Promise<void> {
   const el = document.getElementById('agent-running-list');
@@ -25,17 +32,42 @@ export async function loadRunningSubagents(): Promise<void> {
     if (!list.length) { el.innerHTML = ''; return; }
     el.innerHTML = '<div class="ck-mcp-group-title">运行中</div>' + list.map((s: any) => {
       const elapsed = Math.max(0, Math.round((Date.now() - (s.startedAt || Date.now())) / 1000));
+      const remain = Math.max(0, Math.round(((s.timeoutMs || 0) - (Date.now() - (s.startedAt || Date.now()))) / 1000));
+      const remainText = s.timeoutMs ? ('剩余 ' + fmtSec(remain)) : '';
       const statusText = s.status === 'done' ? '完成' : (s.status === 'error' ? '出错' : '运行中');
-      const preview = (s.preview || '').slice(-160).replace(/</g, '&lt;');
-      return '<div class="ck-skill-item ck-agent-running">' +
+      const preview = escapeHtml((s.preview || '').slice(-160));
+      const stopBtn = (s.status === 'starting' || s.status === 'running')
+        ? '<button class="ck-snip-icon-btn danger ck-agent-stop" data-stop-agent="' + s.windowId + '" title="停止该子代理">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>' +
+          '</button>'
+        : '';
+      return '<div class="ck-agent-running" data-agent-window="' + s.windowId + '">' +
         '<div class="ck-skill-top">' +
           '<span class="ck-skill-name">' + escapeHtml(s.agentName) + '</span>' +
-          '<span class="ck-agent-running-status">' + statusText + ' · ' + elapsed + 's' + (s.turn ? ' · ' + s.turn + ' 轮' : '') + '</span>' +
+          '<span class="ck-agent-running-status">' + statusText + ' · ' + elapsed + 's' +
+            (s.turn ? ' · 第 ' + s.turn + ' 轮' : '') +
+            (remainText ? ' · ' + remainText : '') +
+          '</span>' +
+          stopBtn +
         '</div>' +
         '<div class="ck-skill-desc">' + escapeHtml(s.task || '') + '</div>' +
         (preview ? '<div class="ck-agent-running-preview">' + preview + '</div>' : '') +
       '</div>';
     }).join('');
+    // 停止按钮事件：每次重建后重新绑定（节点随 innerHTML 回收，不会叠加）
+    el.querySelectorAll('.ck-agent-stop').forEach((btn: any) => {
+      btn.addEventListener('click', async (e: any) => {
+        e.stopPropagation();
+        const apiAny: any = api as any;
+        if (typeof apiAny.cancelSubagents !== 'function') return;
+        const wid = parseInt(btn.getAttribute('data-stop-agent'), 10);
+        try {
+          // 传 windowId = 只杀该子代理；防止多个并发时点一个杀全部
+          const r = await apiAny.cancelSubagents(Number.isFinite(wid) ? wid : undefined);
+          if (r && r.cancelled > 0) loadRunningSubagents();
+        } catch (_) { /* ignore */ }
+      });
+    });
   } catch (_) { /* ignore */ }
 }
 

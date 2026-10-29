@@ -2,6 +2,7 @@
  * 覆盖层 UI 基础能力：注入、提示、历史记录、徽章、面板显隐与巡检
  * 由原 preload.js 拆分而来，逻辑保持不变。
  */
+import { MASK_DEFAULT_TIMEOUT_MS } from '../infra/timeouts.js';
 import { OVERLAY_HTML, OVERLAY_CSS } from './template.generated.js';
 import { getProviderByUrl } from '../providers/registry.js';
 import { state } from './state.js';
@@ -191,21 +192,30 @@ let maskTimeoutTimer: any = null;
 let maskStartAt = 0;
 /** 当前遮罩文案前缀（执行阶段「工具调用执行中」/ 发送阶段「正在回传结果」）。 */
 let maskLabel = '工具调用执行中';
-/** 遮罩最长显示时长：超时自动解除（只解 UI，不杀工具进程）。 */
-const MASK_TIMEOUT_MS = 5 * 60 * 1000;
+/** 遮罩默认最长显示时长（普通工具）；子代理等长任务由调用方传更长的值。 */
+const MASK_TIMEOUT_MS = MASK_DEFAULT_TIMEOUT_MS;
+/** 当前遮罩的超时值（由 showToolMask 传入，供降级态计算） */
+let maskTimeoutMs = MASK_TIMEOUT_MS;
+/** 是否已进入降级态（超时后）。降级时文案改由 renderMaskText 统一输出，避免被计时器刷回。 */
+let maskDegraded = false;
 
 function stopMaskTick(): void {
   if (maskTickTimer) { clearInterval(maskTickTimer); maskTickTimer = null; }
   if (maskTimeoutTimer) { clearTimeout(maskTimeoutTimer); maskTimeoutTimer = null; }
+  maskDegraded = false;
 }
-/** 渲染遮罩文案（统一出口，秒数由 maskStartAt 推算）。 */
+/** 渲染遮罩文案（统一出口，秒数由 maskStartAt 推算）。降级态与正常态文案不同。 */
 function renderMaskText(): void {
   const el = document.querySelector('#cuckoo-tool-mask .cuckoo-tool-mask-text');
   if (!el) return;
   const sec = Math.floor((Date.now() - maskStartAt) / 1000);
+  if (maskDegraded) {
+    el.textContent = '任务仍在后台执行（已 ' + sec + 's），可点下方停止';
+    return;
+  }
   el.textContent = sec > 0 ? (maskLabel + ' ' + sec + 's，请不要有额外操作') : (maskLabel + '，请不要有额外操作');
 }
-function startMaskTick(reuse?: boolean, label?: string): void {
+function startMaskTick(reuse?: boolean, label?: string, timeoutMs?: number): void {
   // 发送阶段复用同一计时：已有计时器时不重置，秒数连续（避免"归零=卡住"的误判）
   if (reuse && maskTickTimer) {
     // 阶段切换（执行 → 回传）：只换文案，不动计时，秒数继续
@@ -215,18 +225,30 @@ function startMaskTick(reuse?: boolean, label?: string): void {
   stopMaskTick();
   maskStartAt = Date.now();
   maskLabel = label || '工具调用执行中';
+  maskTimeoutMs = (typeof timeoutMs === 'number' && timeoutMs > 0) ? timeoutMs : MASK_TIMEOUT_MS;
   renderMaskText();
   maskTickTimer = setInterval(() => {
     const el = document.querySelector('#cuckoo-tool-mask .cuckoo-tool-mask-text');
     if (!el) { stopMaskTick(); return; } // 遮罩已移除 → 自停，防计时器泄漏
     renderMaskText();
   }, 1000);
-  // 超时兜底：底层发送/执行卡死时，遮罩不能永久残留。
-  // 只解除 UI，不中止工具进程（进程层已有 JsRunner 无活动兜底 / bash 自身 timeout）。
+  // 超时兜底：底层卡死时不能让遮罩永久遮挡页面。
+  // 降级态：半透明 + 只保留「停止」按钮（用户仍能中断），不整体消失。
   maskTimeoutTimer = setTimeout(() => {
-    hideToolMask();
-    showToast('工具执行超过 5 分钟，已解除遮罩（后台可能仍在运行），请检查', 4000);
-  }, MASK_TIMEOUT_MS);
+    enterMaskDegraded();
+  }, maskTimeoutMs);
+}
+
+/** 超时后进入降级态：遮罩变暗，停止按钮仍可用，文案提示任务仍在后台执行 */
+function enterMaskDegraded(): void {
+  const el = document.getElementById('cuckoo-tool-mask');
+  if (!el) { stopMaskTick(); return; }
+  maskDegraded = true;
+  el.classList.add('cuckoo-tool-mask-degraded');
+  // 统一走 renderMaskText：它已根据 maskDegraded 输出降级文案，
+  // 且每秒 tick 也会持续刷新秒数（避免被下一 tick 覆盖回普通文案）
+  renderMaskText();
+  showToast('任务执行超过 ' + Math.round(maskTimeoutMs / 60000) + ' 分钟，遮罩已降级（任务仍在后台）', 4000);
 }
 function enableMaskBlock(): void {
   if (maskBlockHandler) return;
@@ -251,11 +273,14 @@ function disableMaskBlock(): void {
   maskBlockHandler = null;
 }
 
-function showToolMask(onCancel?: () => void, reuseTick?: boolean, label?: string): void {
+function showToolMask(onCancel?: () => void, reuseTick?: boolean, label?: string, timeoutMs?: number): void {
   const el = document.getElementById('cuckoo-tool-mask');
   if (el) el.classList.remove('cuckoo-hidden');
+  // 仅在「全新遮罩」时清除降级态；reuse 表示同一任务进入发送阶段，
+  // 保持原降级视觉与计时（否则超时 timer 已耗尽，会失去兜底却看起来"恢复正常"）
+  if (el && !reuseTick) el.classList.remove('cuckoo-tool-mask-degraded');
   enableMaskBlock();
-  startMaskTick(reuseTick, label);
+  startMaskTick(reuseTick, label, timeoutMs);
   const btn = document.getElementById('cuckoo-tool-mask-cancel') as any;
   if (btn) {
     if (onCancel) {
@@ -276,7 +301,7 @@ function showToolMask(onCancel?: () => void, reuseTick?: boolean, label?: string
 function hideToolMask(): void {
   stopMaskTick();
   const el = document.getElementById('cuckoo-tool-mask');
-  if (el) el.classList.add('cuckoo-hidden');
+  if (el) { el.classList.add('cuckoo-hidden'); el.classList.remove('cuckoo-tool-mask-degraded'); }
   disableMaskBlock();
   const btn = document.getElementById('cuckoo-tool-mask-cancel') as any;
   if (btn) { btn.classList.add('cuckoo-hidden'); btn.onclick = null; }

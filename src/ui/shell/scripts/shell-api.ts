@@ -165,6 +165,7 @@ export interface ShellAPI {
   listSkills?: () => Promise<any>;
   listAgents?: () => Promise<any>;
   listRunningSubagents?: (parentWindowId?: number) => Promise<any>;
+  cancelSubagents?: (windowId?: number) => Promise<{ success: boolean; cancelled: number }>;
   onSubagentsChanged?: (cb: () => void) => void;
   createAgentFile?: (name: string, scope: string) => Promise<any>;
   openAgentFile?: (agentPath: string) => Promise<any>;

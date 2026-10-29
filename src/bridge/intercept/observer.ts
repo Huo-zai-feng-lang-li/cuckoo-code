@@ -9,6 +9,7 @@ import { handleJsToolScript } from '../loop/executor.js';
 import { buildNotificationSummary } from './notification-summary.js';
 import { sendCombinedJsResultsToChat, sendMessageToChat, cancelPendingSend } from '../../overlay/chat-input.js';
 import { showToolMask, hideToolMask } from '../../overlay/panel.js';
+import { MASK_SUBAGENT_TIMEOUT_MS } from '../../infra/timeouts.js';
 import * as watchdog from '../loop/watchdog.js';
 
 /** 子代理/网关窗口抑制"任务完成"通知（它们的完成属内部过程；主进程侧有 ctx.isSubagent 兜底，
@@ -177,6 +178,18 @@ async function sendToolResultWithRetry(results: any, onSent?: () => void): Promi
  * （每次隔 1s，徒增 ~3s 延迟并向沙箱重复提交非法代码；多块时还会把已成功的块再执行一遍）。
  * 真正的截断代码已由 B-002（断流走 error）与 B-004（未闭合围栏丢弃）在源头拦截，这里一次执行即可。
  */
+/**
+ * 判断这批代码块是否包含子代理调用（runAgent / runAgents）。
+ * 子代理默认 10 分钟上限，遮罩必须活得比任务久，否则先消失。
+ * 静态字符串探测：宁可误判延长遮罩，也不要任务还在跑、遮罩已消失。
+ */
+function hasSubagentCall(blocks: string[]): boolean {
+  for (const b of blocks) {
+    if (/\brunAgents?\s*\(/.test(b)) return true;
+  }
+  return false;
+}
+
 async function executeJsBlocksWithRetry(blocks: string[]): Promise<any[]> {
   // 工具开始（每个代码块一次）
   for (const code of blocks) emitToolCall({ phase: 'start', code });
@@ -227,6 +240,8 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
     // 从检测到工具调用到结果发送完成，全程遮盖页面
     // 执行阶段即显示「停止」：点击 = 放弃等待（沙箱工具已在跑无法中断，但不再回传结果）
     let cancelled = false;
+    // 子代理调用给更长遮罩寿命（10min 任务 + 2min 余量），普通工具 5min
+    const maskTimeout = hasSubagentCall(jsBlocks) ? MASK_SUBAGENT_TIMEOUT_MS : undefined;
     showToolMask(() => {
       cancelled = true;
       // 真杀：通知主进程取消正在跑的子代理（销毁隐藏窗口）
@@ -235,7 +250,7 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
         if (api && typeof api.cancelSubagents === 'function') api.cancelSubagents().catch(() => {});
       } catch (_) { /* ignore */ }
       hideToolMask();
-    });
+    }, false, undefined, maskTimeout);
     let results: any[] = [];
     try {
       results = await executeJsBlocksWithRetry(jsBlocks);

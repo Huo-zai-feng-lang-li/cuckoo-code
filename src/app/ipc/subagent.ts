@@ -39,11 +39,13 @@ function registerSubagentIpc(): void {
     return { success: true, subagents: listRunning(parentWindowId) };
   });
 
-  // 取消当前窗口下所有运行中的子代理（停止按钮 → 真杀隐藏窗口）
-  ipcMain.handle('subagent-cancel', async (event: any) => {
+  // 取消当前窗口下的子代理（停止按钮 → 真杀隐藏窗口）
+  // payload.windowId 存在则只取消该子代理；缺省则取消全部（兼容"停止全部"语义）
+  ipcMain.handle('subagent-cancel', async (event: any, payload: any = {}) => {
     const ctx = windowState.getContextByWebContents(event.sender);
     if (!ctx || !ctx.win || ctx.win.isDestroyed()) return { success: false, cancelled: 0 };
-    const n = cancelSubagentsByParent(ctx.win.id);
+    const target = typeof payload.windowId === 'number' ? payload.windowId : undefined;
+    const n = cancelSubagentsByParent(ctx.win.id, target);
     return { success: true, cancelled: n };
   });
 }

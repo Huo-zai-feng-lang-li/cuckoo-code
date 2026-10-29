@@ -4146,8 +4146,8 @@
       if (!isBusy()) setStatus('就绪', 'ready');
     }, 1500);
     cancelGoalNudge();
-    // 彻底清空输入框与暂存附件：防止任务结果/旧草稿回显或被误发
-    input.value = '';
+    // 只清暂存附件/chip（避免停止后误发），**不清输入框**——
+    // 输入框里是用户正在打的草稿，停止任务不该把用户写了一半的字清掉。
     pendingFiles = [];
     pendingHints = [];
     renderAttach();

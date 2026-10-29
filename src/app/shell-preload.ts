@@ -199,6 +199,7 @@ const shellAPI = {
   },
   // ========== 子代理 ==========
   listRunningSubagents: (parentWindowId?: number) => ipcRenderer.invoke('subagent-list', { parentWindowId }),
+  cancelSubagents: (windowId?: number) => ipcRenderer.invoke('subagent-cancel', { windowId }),
   onSubagentsChanged: (cb: () => void) => {
     ipcRenderer.on('shell-subagents-changed', () => cb());
   },

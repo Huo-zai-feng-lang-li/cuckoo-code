@@ -8,6 +8,7 @@
  */
 import * as windowState from './window.js';
 import { acquireAgentSlot, makeAgentReleaser, tryAcquireAgentSlot, cancelQueuedByParent } from './agent-semaphore.js';
+import { SUBAGENT_TIMEOUT_MS, GATEWAY_TIMEOUT_MS } from '../infra/timeouts.js';
 
 type CreateWindowFn = (profile: any) => number;
 
@@ -44,11 +45,13 @@ export interface RunningSubagent {
   turn: number;
   preview: string;
   error?: string;
+  /** 该子代理的超时上限（毫秒），供 UI 显示剩余时间 */
+  timeoutMs: number;
 }
 const runningSubagents = new Map<number, RunningSubagent>();
 
 /** 注册一个刚开始的子代理 */
-function registerRunning(info: { windowId: number; parentWindowId: number; agentName: string; task: string }): void {
+function registerRunning(info: { windowId: number; parentWindowId: number; agentName: string; task: string; timeoutMs: number }): void {
   runningSubagents.set(info.windowId, {
     windowId: info.windowId,
     parentWindowId: info.parentWindowId,
@@ -58,6 +61,7 @@ function registerRunning(info: { windowId: number; parentWindowId: number; agent
     status: 'starting',
     turn: 0,
     preview: '',
+    timeoutMs: info.timeoutMs,
   });
   notifyParent(info.parentWindowId);
 }
@@ -106,12 +110,14 @@ export { listRunning, updateRunning };
  * 取消某父窗口下所有运行中的子代理（真杀：销毁隐藏窗口 + 唤醒等待）。
  * 供停止按钮经 IPC 调用。返回取消的数量。
  */
-export function cancelSubagentsByParent(parentWindowId: number): number {
+export function cancelSubagentsByParent(parentWindowId: number, targetWindowId?: number): number {
   // 先取消该窗口下**排队中**的请求：它们还没创建窗口、不在 runningSubagents 里，
   // 若不取消，前 3 个跑完后排队的照样会启动，用户的"停止"意图落空。
-  let n = cancelQueuedByParent(parentWindowId);
+  // 指定 targetWindowId 时不取消排队（排队者没有 windowId，无法精确匹配目标）。
+  let n = targetWindowId === undefined ? cancelQueuedByParent(parentWindowId) : 0;
   for (const [windowId, info] of Array.from(runningSubagents.entries())) {
     if (info.parentWindowId !== parentWindowId) continue;
+    if (targetWindowId !== undefined && windowId !== targetWindowId) continue;
     try {
       const ctx = windowState.getWindowContext(windowId);
       if (ctx && ctx.win && !ctx.win.isDestroyed()) {
@@ -187,7 +193,7 @@ export async function runAgent(opts: {
   timeoutMs?: number;
 }): Promise<string> {
   if (!_createWindow || !_profileManager) throw new Error('子代理依赖未注入');
-  const timeoutMs = opts.timeoutMs || 600000; // 默认 10 分钟
+  const timeoutMs = opts.timeoutMs || SUBAGENT_TIMEOUT_MS; // 默认 10 分钟
 
   // 取父窗口的项目目录 + providerId（用于构建工具系统提示）
   const parentCtx = windowState.getWindowContext(opts.parentWindowId);
@@ -224,7 +230,7 @@ export async function runAgent(opts: {
     windowId = _createWindow(subProfile);
     incRunning(opts.parentProfileId);
     counted = true;
-    registerRunning({ windowId, parentWindowId: opts.parentWindowId, agentName: opts.agentName, task: opts.task });
+    registerRunning({ windowId, parentWindowId: opts.parentWindowId, agentName: opts.agentName, task: opts.task, timeoutMs });
 
     // 关键：把父窗口的项目目录写入子代理窗口的 sessionStore，
     // 否则子代理执行工具（execute-js 从 ctx.sessionStore.state.selectedProjectDir 取）
@@ -342,7 +348,7 @@ export async function runGatewayQuery(opts: {
     return { ok: false, error: (err && err.message) ? err.message : String(err) };
   }
   if (opts.onChunk) gatewayStreams.set(windowId, opts.onChunk);
-  const timeoutMs = opts.timeoutMs || 300000;
+  const timeoutMs = opts.timeoutMs || GATEWAY_TIMEOUT_MS;
   let hardTimer: any = null;
   try {
     const r: SubagentResult = await Promise.race<SubagentResult>([
