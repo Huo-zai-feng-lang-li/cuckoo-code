@@ -2,7 +2,7 @@
 id: 098
 type: feat
 title: 工具执行反馈闭环（遮罩超时兜底 + 纯净模式秒数 + 发送阶段计时复用）
-status: doing
+status: done
 branch: feat/098-tool-exec-feedback
 created: 2026-10-29
 updated: 2026-10-29

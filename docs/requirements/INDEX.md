@@ -90,6 +90,6 @@
 | 095 | fix | [子代理窗口泄漏远程事件导致手机误报「已停止生成」](./095-subagent-remote-leak.md) | done | fix/095-subagent-remote-leak | 2026-10-29 |
 | 096 | fix | [手机端「已停止生成」气泡在正常任务结束时误报](./096-remote-stop-bubble.md) | done | fix/096-remote-stop-bubble | 2026-10-29 |
 | 097 | fix | [手机 APK 通知小图标改用 Cuckoo 品牌图标](./097-remote-notify.md) | done | fix/097-remote-notify | 2026-10-29 |
-| 098 | feat | [工具执行反馈闭环（遮罩超时兜底 + 纯净模式秒数 + 发送阶段计时复用）](./098-tool-exec-feedback.md) | doing | feat/098-tool-exec-feedback | 2026-10-29 |
+| 098 | feat | [工具执行反馈闭环（遮罩超时兜底 + 纯净模式秒数 + 发送阶段计时复用）](./098-tool-exec-feedback.md) | done | feat/098-tool-exec-feedback | 2026-10-29 |
 
 共 86 个需求。
