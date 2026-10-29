@@ -1408,6 +1408,164 @@
     }
   }
 
+
+  // ===== 应用图标切换（仅 APK 生效）=====
+  /** 图标 id → 展示名 + 预览地址（4 张图放 PWA 静态目录，随编译复制到 out） */
+  const APP_ICON_META = [
+    { id: 'default', label: '默认', src: '/app-icons/default.png' },
+    { id: 'glass',   label: '玻璃鸟', src: '/app-icons/glass.png' },
+    { id: 'sticker', label: '像素贴纸', src: '/app-icons/sticker.png' },
+    { id: 'gold',    label: '深蓝金鸟', src: '/app-icons/gold.png' },
+  ];
+
+  /** 获取 AppIcon 插件代理；非 APK 环境返回 null */
+  function getAppIconPlugin() {
+    if (!isNativeShell()) return null;
+    try {
+      const cap = window.Capacitor || {};
+      if (cap.Plugins && cap.Plugins.AppIcon) return cap.Plugins.AppIcon;
+      if (typeof cap.registerPlugin === 'function') {
+        try { return cap.registerPlugin('AppIcon'); } catch {}
+      }
+    } catch (e) {
+      console.warn('[AppIcon] 插件获取异常:', e);
+    }
+    return null;
+  }
+
+  /** 极简本地 toast（仅图标切换用，避免引入全局 toast 依赖） */
+  let iconToastEl = null;
+  function showIconToast(msg, isError) {
+    if (!iconToastEl) {
+      iconToastEl = document.createElement('div');
+      iconToastEl.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);' +
+        'padding:10px 16px;border-radius:10px;font-size:13px;z-index:1000;' +
+        'background:rgba(20,22,26,0.92);color:#fff;box-shadow:0 4px 16px rgba(0,0,0,0.3);' +
+        'opacity:0;transition:opacity 0.2s;pointer-events:none;max-width:80vw;text-align:center;';
+      document.body.appendChild(iconToastEl);
+    }
+    iconToastEl.textContent = msg;
+    if (isError) iconToastEl.style.background = 'rgba(190,40,40,0.95)';
+    else iconToastEl.style.background = 'rgba(20,22,26,0.92)';
+    iconToastEl.style.opacity = '1';
+    clearTimeout(iconToastEl._t);
+    iconToastEl._t = setTimeout(() => { iconToastEl.style.opacity = '0'; }, 2200);
+  }
+
+  /** 初始化图标切换 UI（仅原生壳） */
+  function initAppIconSwitcher() {
+    const plugin = getAppIconPlugin();
+    if (!plugin) return;
+
+    const btn = $('btn-app-icon');
+    const sheet = $('icon-sheet');
+    const grid = $('icon-sheet-grid');
+    const backdrop = $('icon-sheet-backdrop');
+    const closeBtn = $('icon-sheet-close');
+    if (!btn || !sheet || !grid) return;
+
+    btn.style.display = '';
+    let currentId = '';
+
+    function setActive(id) {
+      currentId = id;
+      grid.querySelectorAll('.icon-card').forEach((el) => {
+        el.classList.toggle('active', el.dataset.id === id);
+      });
+    }
+
+    let availableIds = null;   // 由后端 get() 返回；null 表示尚未知（先全渲染）
+    function render() {
+      grid.innerHTML = '';
+      const list = availableIds
+        ? APP_ICON_META.filter((m) => availableIds.includes(m.id))
+        : APP_ICON_META;
+      if (list.length === 0) {
+        // 后端明确返回空白名单 —— 显式空态，避免渲染出可点击但必然失败的卡片
+        const empty = document.createElement('div');
+        empty.className = 'icon-sheet-empty';
+        empty.textContent = '当前设备暂不支持更换图标';
+        grid.appendChild(empty);
+        return;
+      }
+      list.forEach((meta) => {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'icon-card';
+        card.dataset.id = meta.id;
+        card.innerHTML =
+          '<img class="icon-card-img" src="' + meta.src + '" alt="' + meta.label + '" loading="lazy" />' +
+          '<span class="icon-card-label">' + meta.label + '</span>';
+        card.addEventListener('click', () => switchIcon(meta.id));
+        grid.appendChild(card);
+      });
+    }
+
+    let switching = false;
+    /** 超时竞速：原生侧若挂起，避免 switching 单飞锁永久死锁 */
+    function withTimeout(promise, ms) {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('原生调用超时')), ms)),
+      ]);
+    }
+
+    async function switchIcon(id) {
+      if (switching) return;              // 并发防护：切换中忽略点击
+      if (id === currentId) { closeSheet(); return; }
+      switching = true;
+      grid.classList.add('busy');
+      try {
+        const res = await withTimeout(plugin.set({ id }), 8000);
+        const applied = (res && res.current) || id;
+        setActive(applied);
+        // toast 合并：只发一条，warning 优先显示，避免同 tick 覆盖
+        if (res && res.warning) {
+          showIconToast('已切换，但' + res.warning, true);
+        } else if (res && res.changed) {
+          showIconToast('图标已切换，桌面将在几秒内更新');
+        }
+        closeSheet();
+      } catch (e) {
+        console.warn('[AppIcon] 切换失败:', e);
+        showIconToast('切换失败：' + (e && e.message ? e.message : e), true);
+      } finally {
+        switching = false;
+        grid.classList.remove('busy');
+      }
+    }
+
+    function openSheet() {
+      if (sheet.classList.contains('hidden')) {
+        sheet.classList.remove('hidden');
+      }
+    }
+    function closeSheet() {
+      sheet.classList.add('hidden');
+    }
+
+    btn.addEventListener('click', openSheet);
+    if (backdrop) backdrop.addEventListener('click', closeSheet);
+    if (closeBtn) closeBtn.addEventListener('click', closeSheet);
+
+    // Esc 关闭
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !sheet.classList.contains('hidden')) closeSheet();
+    });
+    render();
+    // 读取当前图标（失败不阻断，UI 仍可用）
+    plugin.get()
+      .then((res) => {
+        if (!res) return;
+        if (Array.isArray(res.available)) {
+          availableIds = res.available;   // 空数组语义为"无可用"，render 会渲染空态
+          render();
+        }
+        if (res.current) setActive(res.current);
+      })
+      .catch((e) => console.warn('[AppIcon] get 失败:', e));
+  }
+
   // ===== 启动 =====
   // 恢复草稿（手机切后台被系统杀进程 reload 时，避免用户打字丢失）
   try {
@@ -1452,6 +1610,8 @@
     
     // 原生壳：启动前台服务保活
     startNativeKeepAlive();
+    // 原生壳：初始化图标切换 UI
+    initAppIconSwitcher();
 
     // 后台发起真正连接
     connect();

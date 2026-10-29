@@ -1452,3 +1452,123 @@ svg { flex-shrink: 0; }
     transition-duration: 0.001ms !important;
   }
 }
+
+
+(End of file - total 1455 lines)
+</content>
+
+/* ========== 应用图标选择面板 ========== */
+.icon-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.icon-sheet.hidden { display: none; }
+.icon-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.icon-sheet:not(.hidden) .icon-sheet-backdrop { opacity: 1; }
+.icon-sheet-panel {
+  position: relative;
+  background: var(--panel-bg, #ffffff);
+  color: var(--text, #1a1a1a);
+  border-radius: 22px 22px 0 0;
+  padding: 8px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  box-shadow: 0 -6px 30px rgba(0, 0, 0, 0.15);
+}
+.icon-sheet:not(.hidden) .icon-sheet-panel { transform: translateY(0); }
+.icon-sheet-handle {
+  width: 40px;
+  height: 4px;
+  background: var(--divider, #d0d0d0);
+  border-radius: 2px;
+  margin: 6px auto 12px;
+  opacity: 0.6;
+}
+.icon-sheet-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 4px;
+  text-align: center;
+}
+.icon-sheet-sub {
+  font-size: 12px;
+  color: var(--text-muted, #888);
+  margin: 0 0 16px;
+  text-align: center;
+  line-height: 1.5;
+}
+.icon-sheet-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.icon-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px;
+  border-radius: 14px;
+  background: var(--card-bg, #f4f4f6);
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.12s;
+  user-select: none;
+}
+.icon-card:active { transform: scale(0.96); }
+.icon-card.active { border-color: var(--accent, #3b82f6); }
+.icon-card-img {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+.icon-card-label {
+  font-size: 11px;
+  color: var(--text-muted, #666);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.icon-sheet-close {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 12px;
+  background: var(--card-bg, #f4f4f6);
+  color: var(--text, #1a1a1a);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.icon-sheet-close:active { background: var(--card-bg-hover, #e8e8ec); }
+
+/* 切换中：卡片变暗、禁用点击 */
+.icon-sheet-grid.busy { opacity: 0.55; pointer-events: none; }
+/* 空白名单态 */
+.icon-sheet-empty {
+  grid-column: 1 / -1;
+  padding: 24px 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted, #888);
+}
