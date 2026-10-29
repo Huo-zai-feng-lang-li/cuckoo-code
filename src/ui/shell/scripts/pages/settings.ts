@@ -159,7 +159,7 @@ document.getElementById('st-reset')?.addEventListener('click', async () => {
     }
     // 3) 纯净模式字号回默认（1.0）+ 子代理宠物重置
     if (typeof anyApi.setUiPrefs === 'function') {
-      try { await anyApi.setUiPrefs({ harnessZoom: 1.0, subagentPet: { enabled: true, customPath: '', size: 56 } }); } catch (_) { /* ignore */ }
+      try { await anyApi.setUiPrefs({ harnessZoom: 1.0 }); } catch (_) { /* ignore */ }
       loadUiPrefs(); // 刷新 UI
     }
     // 4) 活动栏图标全部显示
@@ -310,12 +310,8 @@ document.querySelectorAll<HTMLElement>('.ck-collapse-head[data-collapse]').forEa
   });
 });
 
-// ===== 外观：纯净模式字号 & 子代理宠物配置 =====
+// ===== 外观：纯净模式字号 =====
 const zoomSelect = document.getElementById('st-harness-zoom') as any;
-const petEnabled = document.getElementById('st-pet-enabled') as any;
-const petPath = document.getElementById('st-pet-path') as any;
-const petSize = document.getElementById('st-pet-size') as any;
-const petSizeVal = document.getElementById('st-pet-size-val');
 
 /** 重新读取设置（刷新按钮也会调用） */
 export function loadUiPrefs(): void {
@@ -325,14 +321,6 @@ export function loadUiPrefs(): void {
       if (r && r.success && r.data) {
         if (typeof r.data.harnessZoom === 'number' && zoomSelect) {
           zoomSelect.value = String(r.data.harnessZoom);
-        }
-        if (r.data.subagentPet) {
-          if (petEnabled) petEnabled.checked = r.data.subagentPet.enabled !== false;
-          if (petPath) petPath.value = r.data.subagentPet.customPath || '';
-          if (petSize && r.data.subagentPet.size) {
-            petSize.value = String(r.data.subagentPet.size);
-            if (petSizeVal) petSizeVal.textContent = r.data.subagentPet.size + 'px';
-          }
         }
       }
     }).catch(() => {});
@@ -350,29 +338,6 @@ if (zoomSelect) {
       anyApi.setUiPrefs({ harnessZoom: z }).catch(() => {});
     }
   });
-}
-
-if (petEnabled || petPath || petSize) {
-  const anyApi = api as any;
-  const savePet = () => {
-    if (typeof anyApi.setUiPrefs === 'function') {
-      anyApi.setUiPrefs({
-        subagentPet: {
-          enabled: petEnabled ? petEnabled.checked : true,
-          customPath: petPath ? petPath.value.trim() : '',
-          size: petSize ? parseInt(petSize.value, 10) : 56
-        }
-      }).catch(() => {});
-    }
-  };
-  if (petEnabled) petEnabled.addEventListener('change', savePet);
-  if (petPath) petPath.addEventListener('change', savePet);
-  if (petSize) {
-    petSize.addEventListener('input', () => {
-      if (petSizeVal) petSizeVal.textContent = petSize.value + 'px';
-    });
-    petSize.addEventListener('change', savePet);
-  }
 }
 
 // ===== 安全：执行策略（三档单选，切换即持久化）=====

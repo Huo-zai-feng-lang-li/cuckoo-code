@@ -29,41 +29,6 @@
                 </div>
               </div>
 
-              <!-- 子代理宠物（默认展开） -->
-              <div class="ck-card">
-                <div class="ck-collapse-head" data-collapse="subagent-pet" aria-expanded="true">
-                  <svg class="ck-collapse-caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>
-                  <span class="ck-collapse-title">子代理宠物绕圈</span>
-                  <span class="ck-collapse-summary">开关 · 自定义图片</span>
-                </div>
-                <div class="ck-collapse-body" data-collapse-body="subagent-pet">
-                  <div class="ck-set-field ck-set-toggle">
-                    <span class="ck-set-key">启用宠物绕圈</span>
-                    <label class="ck-switch">
-                      <input type="checkbox" id="st-pet-enabled" />
-                      <span class="ck-switch-track"></span>
-                    </label>
-                  </div>
-                  <div class="ck-set-field">
-                    <span class="ck-set-key">自定义图片路径（留空则使用内置/文件夹）</span>
-                    <input type="text" class="ck-set-input" id="st-pet-path" placeholder="例如 D:/images/cat.png 或 D:/images/pets" />
-                  </div>
-                  <div class="ck-set-field">
-                    <span class="ck-set-key">宠物图片尺寸</span>
-                    <div class="ck-set-inline">
-                      <input type="range" class="ck-set-input" id="st-pet-size" min="32" max="96" step="4" style="flex: 1; padding: 0;" />
-                      <span class="ck-set-sep" id="st-pet-size-val" style="width: 40px; text-align: right;">56px</span>
-                    </div>
-                  </div>
-                  <p class="ck-about-tip">
-                    <strong>尺寸要求：</strong>推荐 <strong>128×128</strong> 或 <strong>256×256</strong> 的正方形图（PNG/JPG/WebP），单张不超过 5MB（越小加载越快）。<br>
-                    <strong>图片处理：</strong>非正方形图片会以<strong>居中等比裁切</strong>的方式填满圆环，<strong>绝对不会被拉伸变形</strong>。<br>
-                    <strong>轮换规则：</strong>如果填的是文件夹，会按文件名顺序自动轮换（3 秒/张）。首次读取大文件时可能需要几秒钟。<br>
-                    也可以把图直接丢进 <code>userData/pets/</code> 目录，系统会自动读取。
-                  </p>
-                </div>
-              </div>
-
               <!-- 活动栏图标（默认折叠） -->
               <div class="ck-card">
                 <div class="ck-collapse-head" data-collapse="activitybar" aria-expanded="false">

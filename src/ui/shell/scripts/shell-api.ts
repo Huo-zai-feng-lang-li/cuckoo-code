@@ -198,9 +198,6 @@ export interface ShellAPI {
   resetSettings?: () => Promise<any>;
   getUiPrefs?: () => Promise<any>;
   setUiPrefs?: (data: any) => Promise<any>;
-  /** 列出可用宠物图（Base64 数组） */
-  listPets?: () => Promise<any>;
-  onPetsChanged?: (cb: () => void) => void;
   /** 布局变更广播（跨窗口同步侧栏宽度 / 活动栏顺序与显隐） */
   onShellLayoutChanged?: (cb: (layout: any) => void) => void;
   // 关于

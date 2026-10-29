@@ -528,100 +528,33 @@
     max-height: 160px; opacity: 1; margin-top: 0;
     transition-delay: .3s;
   }
-  /* ===== 运行中子代理卡片（霓虹红线流光 + 宠物绕圈）===== */
-  @property --ck-angle {
-    syntax: '<angle>';
-    initial-value: 0deg;
-    inherits: false;
-  }
+  /* ===== 运行中子代理卡片（静态红边框） ===== */
   .ck-agent-running {
     position: relative;
     display: flex; flex-direction: column; gap: 8px;
-    margin: 32px 32px;
+    margin: 8px 10px;
     padding: 12px 14px 12px 16px;
-    border-radius: 12px;
-    border: 1.5px solid transparent !important;
-    background: 
-      linear-gradient(var(--ck-bg), var(--ck-bg)) padding-box,
-      conic-gradient(
-        from var(--ck-angle),
-        rgba(239, 68, 68, 0.2) 0deg,
-        rgba(239, 68, 68, 0.6) 60deg,
-        #dc2626 120deg,
-        #ef4444 150deg,
-        #ff3333 180deg,
-        #ef4444 210deg,
-        #dc2626 240deg,
-        rgba(239, 68, 68, 0.6) 300deg,
-        rgba(239, 68, 68, 0.2) 360deg
-      ) border-box !important;
-    animation: ck-border-spin 2s linear infinite, ck-pulse-glow 1.5s ease-in-out infinite alternate;
-    overflow: visible !important;
+    border-radius: 10px;
+    border: 1px solid var(--ck-border) !important;
+    border-left: 3px solid #ef4444 !important;
+    background: var(--ck-surface) !important;
+    overflow: hidden;
   }
-  @keyframes ck-border-spin {
-    to { --ck-angle: 360deg; }
-  }
-  @keyframes ck-pulse-glow {
-    0% { box-shadow: 0 0 4px rgba(239,68,68,0.1); }
-    100% { box-shadow: 0 0 16px rgba(239,68,68,0.3); }
-  }
-  
-  .ck-agent-running .ck-pet-orb {
-    position: absolute;
-    top: 0; left: 0;
-    width: var(--pet-size, 56px); height: var(--pet-size, 56px); 
-    offset-path: border-box;
-    offset-anchor: center;
-    offset-rotate: 0deg;
-    background-size: cover;
-    background-repeat: no-repeat;
-    background-position: center;
-    /* 如果没有背景图，则不显示背景色和阴影 */
-    background-color: var(--pet-bg, transparent);
-    border-radius: 50%;
-    box-shadow: var(--pet-shadow, none);
-    z-index: 50; 
-    pointer-events: auto;
-    cursor: pointer;
-    background-image: var(--pet-img, none);
-    animation: ck-pet-orbit 16s linear infinite;
-    display: var(--pet-display, none);
-  }
-  /* 鼠标悬停在圈上时暂停 */
-  .ck-agent-running .ck-pet-orb:hover {
-    animation-play-state: paused;
-  }
-  
-  @keyframes ck-pet-orbit {
-    0% { offset-distance: 0%; }
-    100% { offset-distance: 100%; }
-  }
-  
-  /* 动态注入 */
-  
-  .ck-agent-running > * {
-    position: relative;
-    z-index: 3;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .ck-agent-running { animation: none; }
-    .ck-agent-running::after { animation: none; display: none; }
-  }
-  .ck-agent-running .ck-skill-top { gap: 10px; }
+  .ck-agent-running .ck-skill-top { gap: 8px; flex-wrap: wrap; align-items: center; }
   .ck-agent-running .ck-skill-desc {
     display: block; max-height: 160px; opacity: 1; margin-top: 0;
     font-size: 12px; color: var(--ck-text-2); line-height: 1.55;
   }
   .ck-agent-running-status {
-    margin-left: auto; font-size: 11px;
+    margin-left: auto; font-size: 10.5px;
     color: #fca5a5;
     flex-shrink: 0; font-variant-numeric: tabular-nums;
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 2px 8px; border-radius: 20px;
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 7px; border-radius: 20px;
     background: rgba(239, 68, 68, 0.15);
     font-weight: 600;
     border: 1px solid rgba(239, 68, 68, 0.3);
-    animation: ck-badge-pulse 2s infinite;
+    white-space: nowrap;
   }
   @keyframes ck-badge-pulse {
     0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.2); }
@@ -651,6 +584,7 @@
     pointer-events: none;
   }
   .ck-agent-running .ck-skill-name {
+    flex: 1 1 60px; min-width: 60px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     font-size: 13px; font-weight: 600; letter-spacing: .1px; color: var(--ck-text);
   }
   .ck-agent-running .ck-skill-name::before {
@@ -2909,41 +2843,6 @@ paths:            # 可选；省略 = 始终生效
                       <option value="1.5">超大 (150%)</option>
                     </select>
                   </div>
-                </div>
-              </div>
-
-              <!-- 子代理宠物（默认展开） -->
-              <div class="ck-card">
-                <div class="ck-collapse-head" data-collapse="subagent-pet" aria-expanded="true">
-                  <svg class="ck-collapse-caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>
-                  <span class="ck-collapse-title">子代理宠物绕圈</span>
-                  <span class="ck-collapse-summary">开关 · 自定义图片</span>
-                </div>
-                <div class="ck-collapse-body" data-collapse-body="subagent-pet">
-                  <div class="ck-set-field ck-set-toggle">
-                    <span class="ck-set-key">启用宠物绕圈</span>
-                    <label class="ck-switch">
-                      <input type="checkbox" id="st-pet-enabled" />
-                      <span class="ck-switch-track"></span>
-                    </label>
-                  </div>
-                  <div class="ck-set-field">
-                    <span class="ck-set-key">自定义图片路径（留空则使用内置/文件夹）</span>
-                    <input type="text" class="ck-set-input" id="st-pet-path" placeholder="例如 D:/images/cat.png 或 D:/images/pets" />
-                  </div>
-                  <div class="ck-set-field">
-                    <span class="ck-set-key">宠物图片尺寸</span>
-                    <div class="ck-set-inline">
-                      <input type="range" class="ck-set-input" id="st-pet-size" min="32" max="96" step="4" style="flex: 1; padding: 0;" />
-                      <span class="ck-set-sep" id="st-pet-size-val" style="width: 40px; text-align: right;">56px</span>
-                    </div>
-                  </div>
-                  <p class="ck-about-tip">
-                    <strong>尺寸要求：</strong>推荐 <strong>128×128</strong> 或 <strong>256×256</strong> 的正方形图（PNG/JPG/WebP），单张不超过 5MB（越小加载越快）。<br>
-                    <strong>图片处理：</strong>非正方形图片会以<strong>居中等比裁切</strong>的方式填满圆环，<strong>绝对不会被拉伸变形</strong>。<br>
-                    <strong>轮换规则：</strong>如果填的是文件夹，会按文件名顺序自动轮换（3 秒/张）。首次读取大文件时可能需要几秒钟。<br>
-                    也可以把图直接丢进 <code>userData/pets/</code> 目录，系统会自动读取。
-                  </p>
                 </div>
               </div>
 
@@ -7801,68 +7700,6 @@ paths:            # 可选；省略 = 始终生效
 
   // src/ui/shell/scripts/pages/agents.ts
   init_shared();
-  var petImages = [];
-  var currentPetIndex = 0;
-  var petInterval = null;
-  function setPetImage() {
-    if (!petImages.length) return;
-    const img = petImages[currentPetIndex];
-    document.documentElement.style.setProperty("--pet-img", 'url("' + img + '")');
-  }
-  function loadPets() {
-    const apiAny = api;
-    if (typeof apiAny.listPets !== "function") return;
-    apiAny.listPets().then((res) => {
-      const files = res && res.files ? res.files : [];
-      if (files.length > 0) {
-        if (files.length === petImages.length && files.every((f, i) => f === petImages[i])) return;
-        petImages = files;
-        currentPetIndex = 0;
-        setPetImage();
-        document.documentElement.style.setProperty("--pet-display", "block");
-        document.documentElement.style.setProperty("--pet-bg", "var(--ck-surface)");
-        document.documentElement.style.setProperty("--pet-shadow", "0 4px 16px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.2)");
-        if (!petInterval) {
-          petInterval = setInterval(() => {
-            currentPetIndex = (currentPetIndex + 1) % petImages.length;
-            setPetImage();
-          }, 3e3);
-        }
-      } else {
-        petImages = [];
-        document.documentElement.style.setProperty("--pet-display", "none");
-        if (petInterval) {
-          clearInterval(petInterval);
-          petInterval = null;
-        }
-        document.documentElement.style.setProperty("--pet-img", "none");
-        document.documentElement.style.setProperty("--pet-bg", "transparent");
-        document.documentElement.style.setProperty("--pet-shadow", "none");
-      }
-    }).catch(() => {
-    });
-  }
-  function refreshPetsAll() {
-    loadPets();
-    const apiAny = api;
-    if (typeof apiAny.getUiPrefs === "function") {
-      apiAny.getUiPrefs().then((r) => {
-        if (r && r.success && r.data && r.data.subagentPet && r.data.subagentPet.size) {
-          document.documentElement.style.setProperty("--pet-size", r.data.subagentPet.size + "px");
-        }
-      }).catch(() => {
-      });
-    }
-  }
-  try {
-    refreshPetsAll();
-    const apiAny = api;
-    if (typeof apiAny.onPetsChanged === "function") {
-      apiAny.onPetsChanged(refreshPetsAll);
-    }
-    window.addEventListener("focus", refreshPetsAll);
-  } catch (_) {
-  }
   var allAgents = [];
   var scopeFilter = "all";
   var searchTerm = "";
@@ -7901,7 +7738,7 @@ paths:            # 可选；省略 = 始终生效
         const preview = escapeHtml((s.preview || "").slice(-160));
         if (!node) {
           const stopBtn = s.status === "starting" || s.status === "running" ? '<button class="ck-snip-icon-btn danger ck-agent-stop" data-stop-agent="' + s.windowId + '" title="\u505C\u6B62\u8BE5\u5B50\u4EE3\u7406"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>' : "";
-          const html = '<div class="ck-agent-running" data-agent-window="' + s.windowId + '"><div class="ck-skill-top"><span class="ck-skill-name">' + escapeHtml(s.agentName) + '</span><span class="ck-agent-running-status">' + statusText + " \xB7 " + elapsed + "s" + (s.turn ? " \xB7 \u7B2C " + s.turn + " \u8F6E" : "") + (remainText ? " \xB7 " + remainText : "") + "</span>" + stopBtn + '</div><div class="ck-skill-desc">' + escapeHtml(s.task || "") + '</div><div class="ck-agent-running-preview" style="display:none"></div><div class="ck-pet-orb"></div></div>';
+          const html = '<div class="ck-agent-running" data-agent-window="' + s.windowId + '"><div class="ck-skill-top"><span class="ck-skill-name" title="' + escapeAttr(s.agentName) + '">' + escapeHtml(s.agentName) + '</span><span class="ck-agent-running-status">' + statusText + " \xB7 " + elapsed + "s" + (s.turn ? " \xB7 \u7B2C " + s.turn + " \u8F6E" : "") + (remainText ? " \xB7 " + remainText : "") + "</span>" + stopBtn + '</div><div class="ck-skill-desc">' + escapeHtml(s.task || "") + '</div><div class="ck-agent-running-preview" style="display:none"></div></div>';
           el2.insertAdjacentHTML("beforeend", html);
           node = el2.querySelector('.ck-agent-running[data-agent-window="' + s.windowId + '"]');
         } else {
@@ -9447,7 +9284,7 @@ paths:            # 可选；省略 = 始终生效
       }
       if (typeof anyApi.setUiPrefs === "function") {
         try {
-          await anyApi.setUiPrefs({ harnessZoom: 1, subagentPet: { enabled: true, customPath: "", size: 56 } });
+          await anyApi.setUiPrefs({ harnessZoom: 1 });
         } catch (_) {
         }
         loadUiPrefs();
@@ -9599,10 +9436,6 @@ paths:            # 可选；省略 = 始终生效
     });
   });
   var zoomSelect = document.getElementById("st-harness-zoom");
-  var petEnabled = document.getElementById("st-pet-enabled");
-  var petPath = document.getElementById("st-pet-path");
-  var petSize = document.getElementById("st-pet-size");
-  var petSizeVal = document.getElementById("st-pet-size-val");
   function loadUiPrefs() {
     const anyApi = api;
     if (typeof anyApi.getUiPrefs === "function") {
@@ -9610,14 +9443,6 @@ paths:            # 可选；省略 = 始终生效
         if (r && r.success && r.data) {
           if (typeof r.data.harnessZoom === "number" && zoomSelect) {
             zoomSelect.value = String(r.data.harnessZoom);
-          }
-          if (r.data.subagentPet) {
-            if (petEnabled) petEnabled.checked = r.data.subagentPet.enabled !== false;
-            if (petPath) petPath.value = r.data.subagentPet.customPath || "";
-            if (petSize && r.data.subagentPet.size) {
-              petSize.value = String(r.data.subagentPet.size);
-              if (petSizeVal) petSizeVal.textContent = r.data.subagentPet.size + "px";
-            }
           }
         }
       }).catch(() => {
@@ -9635,29 +9460,6 @@ paths:            # 可选；省略 = 始终生效
         });
       }
     });
-  }
-  if (petEnabled || petPath || petSize) {
-    const anyApi = api;
-    const savePet = () => {
-      if (typeof anyApi.setUiPrefs === "function") {
-        anyApi.setUiPrefs({
-          subagentPet: {
-            enabled: petEnabled ? petEnabled.checked : true,
-            customPath: petPath ? petPath.value.trim() : "",
-            size: petSize ? parseInt(petSize.value, 10) : 56
-          }
-        }).catch(() => {
-        });
-      }
-    };
-    if (petEnabled) petEnabled.addEventListener("change", savePet);
-    if (petPath) petPath.addEventListener("change", savePet);
-    if (petSize) {
-      petSize.addEventListener("input", () => {
-        if (petSizeVal) petSizeVal.textContent = petSize.value + "px";
-      });
-      petSize.addEventListener("change", savePet);
-    }
   }
   var EXEC_MODES = ["smart", "workspace", "strict"];
   var currentExecMode = "smart";

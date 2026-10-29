@@ -4,73 +4,7 @@
 import { api, ckAlert, ckConfirm, escapeHtml, escapeAttr } from '../shared.js';
 import { addRecent } from '../recent.js';
 
-// 动态加载用户自定义宠物图
-let petImages: string[] = [];
-let currentPetIndex = 0;
-let petInterval: any = null;
 
-function setPetImage() {
-  if (!petImages.length) return;
-  const img = petImages[currentPetIndex];
-  document.documentElement.style.setProperty('--pet-img', 'url("' + img + '")');
-}
-
-function loadPets() {
-  const apiAny: any = api as any;
-  if (typeof apiAny.listPets !== 'function') return;
-  apiAny.listPets().then((res: any) => {
-    const files = (res && res.files) ? res.files : [];
-    if (files.length > 0) {
-      // 列表完全没变才跳过（逐项比对：只换第 2 张及以后的图也要刷新）
-      if (files.length === petImages.length && files.every((f: string, i: number) => f === petImages[i])) return;
-      
-      petImages = files;
-      currentPetIndex = 0;
-      setPetImage();
-      
-      document.documentElement.style.setProperty('--pet-display', 'block');
-      document.documentElement.style.setProperty('--pet-bg', 'var(--ck-surface)');
-      document.documentElement.style.setProperty('--pet-shadow', '0 4px 16px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.2)');
-      // 设置尺寸（如果 prefs 里有 size 字段则使用，否则默认 56）
-      // 稍后通过 getUiPrefs 获取 size
-      
-      if (!petInterval) {
-        petInterval = setInterval(() => {
-          currentPetIndex = (currentPetIndex + 1) % petImages.length;
-          setPetImage();
-        }, 3000);
-      }
-    } else {
-      petImages = [];
-      document.documentElement.style.setProperty('--pet-display', 'none');
-      if (petInterval) { clearInterval(petInterval); petInterval = null; }
-      document.documentElement.style.setProperty('--pet-img', 'none');
-      document.documentElement.style.setProperty('--pet-bg', 'transparent');
-      document.documentElement.style.setProperty('--pet-shadow', 'none');
-    }
-  }).catch(() => {});
-}
-// 全局刷新函数：同时重读图和尺寸配置
-function refreshPetsAll() {
-  loadPets();
-  const apiAny: any = api as any;
-  if (typeof apiAny.getUiPrefs === 'function') {
-    apiAny.getUiPrefs().then((r: any) => {
-      if (r && r.success && r.data && r.data.subagentPet && r.data.subagentPet.size) {
-        document.documentElement.style.setProperty('--pet-size', r.data.subagentPet.size + 'px');
-      }
-    }).catch(() => {});
-  }
-}
-
-try {
-  refreshPetsAll();
-  const apiAny: any = api as any;
-  if (typeof apiAny.onPetsChanged === 'function') {
-    apiAny.onPetsChanged(refreshPetsAll);
-  }
-  window.addEventListener('focus', refreshPetsAll);
-} catch (_) { /* ignore */ }
 
 /** 全部子代理缓存（供搜索/筛选/详情） */
 let allAgents: any[] = [];
@@ -128,7 +62,7 @@ export async function loadRunningSubagents(): Promise<void> {
           : '';
         const html = '<div class="ck-agent-running" data-agent-window="' + s.windowId + '">' +
           '<div class="ck-skill-top">' +
-            '<span class="ck-skill-name">' + escapeHtml(s.agentName) + '</span>' +
+            '<span class="ck-skill-name" title="' + escapeAttr(s.agentName) + '">' + escapeHtml(s.agentName) + '</span>' +
             '<span class="ck-agent-running-status">' + statusText + ' · ' + elapsed + 's' +
               (s.turn ? ' · 第 ' + s.turn + ' 轮' : '') +
               (remainText ? ' · ' + remainText : '') +
@@ -137,7 +71,6 @@ export async function loadRunningSubagents(): Promise<void> {
           '</div>' +
           '<div class="ck-skill-desc">' + escapeHtml(s.task || '') + '</div>' +
           '<div class="ck-agent-running-preview" style="display:none"></div>' +
-          '<div class="ck-pet-orb"></div>' +
         '</div>';
         el.insertAdjacentHTML('beforeend', html);
         node = el.querySelector('.ck-agent-running[data-agent-window="' + s.windowId + '"]');

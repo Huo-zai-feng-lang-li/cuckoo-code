@@ -1,7 +1,30 @@
 # 最新接续状态 (2026-10-30)
 
 ## 核心进展
-- 发布 v0.10.189：工具回传阶段计时语义拆分（工具耗时 / 拟人化延迟分开显示），原版遮罩 + 纯净模式状态栏双端同步。
+- 发布 v0.10.190：移除子代理宠物绕圈特性、移除子代理卡片流光，恢复静态红边框；修复卡片间距过大与代理名称不显示的问题。
+- 上一版 v0.10.189：工具回传阶段计时语义拆分（工具耗时 / 拟人化延迟分开显示）。
+
+## 本轮改动（v0.10.190）
+
+### 移除
+- 子代理宠物绕圈特性整体移除：主进程 IPC（`harness-list-pets`）、Base64 LRU 缓存、`userData/pets` 目录读取、自定义路径设置、设置页「子代理宠物」卡片、渲染层 `.ck-pet-orb` 节点与轮换定时器。
+- `src/ui/assets/default-pet.png` 已删除。
+- 子代理卡片流光边框（`conic-gradient` + `@property --ck-angle` 旋转）全部移除；壳页面与纯净模式双端恢复静态边框 + 左侧红色标识条，图标红色保留。
+- `UiPrefs.subagentPet` 字段、`onPetsChanged` / `cuckoo-pets-changed` 广播链路一并清理。
+
+### 修复
+- **卡片左右间距过大**：移除宠物后 `margin` 由 `32px` 恢复为 `8px 10px`。
+- **代理名称不显示**：`.ck-skill-name` 缺 `flex: 1; min-width`，被右侧长状态徽章挤成 1px。现改为 `flex: 1 1 60px; min-width: 60px` 支持省略号，`.ck-skill-top` 加 `flex-wrap: wrap`，徽章字号降为 10.5px 且允许换行。
+
+### 关于同名代理并发
+同一代理并发跑多次不会冲突：每次调用分配独立 `windowId` 与沙箱上下文，界面并列两张卡片独立计时。
+
+### 验证状态
+- 真机 CDP 验证：卡片 margin 为 `8px 10px`、无 `.ck-pet-orb`、动画为 none、名称宽度 237px 正常显示。
+- 全仓 grep 无 `subagentPet|ck-pet|listPets|onPetsChanged` 残留。
+- typecheck / compile / lint（0 error）/ test 全绿。
+
+## 上一版（v0.10.189）
 
 ## 核心动机
 工具跑完到结果发回 AI 之间有 6~16 秒拟人化延迟（由「发送节奏」设置决定）。
@@ -49,3 +72,4 @@
 ## 下一步建议
 - 若觉得 16px/15px 偏大，改 `overlay.css` 的 `.cuckoo-tool-mask-text b` 与 `harness.html` 的 `.status b` 的 font-size 即可，其余逻辑不受影响。
 - 快照 `snap-1793289429968-bp5j1v` 可用于回滚本轮全部改动。
+

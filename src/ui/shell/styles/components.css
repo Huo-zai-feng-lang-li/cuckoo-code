@@ -170,100 +170,33 @@
     max-height: 160px; opacity: 1; margin-top: 0;
     transition-delay: .3s;
   }
-  /* ===== 运行中子代理卡片（霓虹红线流光 + 宠物绕圈）===== */
-  @property --ck-angle {
-    syntax: '<angle>';
-    initial-value: 0deg;
-    inherits: false;
-  }
+  /* ===== 运行中子代理卡片（静态红边框） ===== */
   .ck-agent-running {
     position: relative;
     display: flex; flex-direction: column; gap: 8px;
-    margin: 32px 32px;
+    margin: 8px 10px;
     padding: 12px 14px 12px 16px;
-    border-radius: 12px;
-    border: 1.5px solid transparent !important;
-    background: 
-      linear-gradient(var(--ck-bg), var(--ck-bg)) padding-box,
-      conic-gradient(
-        from var(--ck-angle),
-        rgba(239, 68, 68, 0.2) 0deg,
-        rgba(239, 68, 68, 0.6) 60deg,
-        #dc2626 120deg,
-        #ef4444 150deg,
-        #ff3333 180deg,
-        #ef4444 210deg,
-        #dc2626 240deg,
-        rgba(239, 68, 68, 0.6) 300deg,
-        rgba(239, 68, 68, 0.2) 360deg
-      ) border-box !important;
-    animation: ck-border-spin 2s linear infinite, ck-pulse-glow 1.5s ease-in-out infinite alternate;
-    overflow: visible !important;
+    border-radius: 10px;
+    border: 1px solid var(--ck-border) !important;
+    border-left: 3px solid #ef4444 !important;
+    background: var(--ck-surface) !important;
+    overflow: hidden;
   }
-  @keyframes ck-border-spin {
-    to { --ck-angle: 360deg; }
-  }
-  @keyframes ck-pulse-glow {
-    0% { box-shadow: 0 0 4px rgba(239,68,68,0.1); }
-    100% { box-shadow: 0 0 16px rgba(239,68,68,0.3); }
-  }
-  
-  .ck-agent-running .ck-pet-orb {
-    position: absolute;
-    top: 0; left: 0;
-    width: var(--pet-size, 56px); height: var(--pet-size, 56px); 
-    offset-path: border-box;
-    offset-anchor: center;
-    offset-rotate: 0deg;
-    background-size: cover;
-    background-repeat: no-repeat;
-    background-position: center;
-    /* 如果没有背景图，则不显示背景色和阴影 */
-    background-color: var(--pet-bg, transparent);
-    border-radius: 50%;
-    box-shadow: var(--pet-shadow, none);
-    z-index: 50; 
-    pointer-events: auto;
-    cursor: pointer;
-    background-image: var(--pet-img, none);
-    animation: ck-pet-orbit 16s linear infinite;
-    display: var(--pet-display, none);
-  }
-  /* 鼠标悬停在圈上时暂停 */
-  .ck-agent-running .ck-pet-orb:hover {
-    animation-play-state: paused;
-  }
-  
-  @keyframes ck-pet-orbit {
-    0% { offset-distance: 0%; }
-    100% { offset-distance: 100%; }
-  }
-  
-  /* 动态注入 */
-  
-  .ck-agent-running > * {
-    position: relative;
-    z-index: 3;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .ck-agent-running { animation: none; }
-    .ck-agent-running::after { animation: none; display: none; }
-  }
-  .ck-agent-running .ck-skill-top { gap: 10px; }
+  .ck-agent-running .ck-skill-top { gap: 8px; flex-wrap: wrap; align-items: center; }
   .ck-agent-running .ck-skill-desc {
     display: block; max-height: 160px; opacity: 1; margin-top: 0;
     font-size: 12px; color: var(--ck-text-2); line-height: 1.55;
   }
   .ck-agent-running-status {
-    margin-left: auto; font-size: 11px;
+    margin-left: auto; font-size: 10.5px;
     color: #fca5a5;
     flex-shrink: 0; font-variant-numeric: tabular-nums;
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 2px 8px; border-radius: 20px;
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 7px; border-radius: 20px;
     background: rgba(239, 68, 68, 0.15);
     font-weight: 600;
     border: 1px solid rgba(239, 68, 68, 0.3);
-    animation: ck-badge-pulse 2s infinite;
+    white-space: nowrap;
   }
   @keyframes ck-badge-pulse {
     0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.2); }
@@ -293,6 +226,7 @@
     pointer-events: none;
   }
   .ck-agent-running .ck-skill-name {
+    flex: 1 1 60px; min-width: 60px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     font-size: 13px; font-weight: 600; letter-spacing: .1px; color: var(--ck-text);
   }
   .ck-agent-running .ck-skill-name::before {
