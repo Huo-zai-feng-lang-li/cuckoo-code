@@ -1,73 +1,84 @@
-# 最新接续状态 (2026-10-29 13:15)
+# 最新接续状态 (2026-10-29 14:30)
 
 ## 核心进展
-- **需求 099 · Android 应用图标可切换** 已完成（待真机验证）。
+- **v0.10.175 已发布**（master `a991ba7`，tag 已推送，CI 构建中）：
+  - Android 应用图标可切换（4 套，activity-alias 方案）
+  - 遮罩超时对齐任务上限 + 降级态
+  - 纯净模式停止不清输入框
+  - 子代理卡片增强（倒计时 + 单杀停止）
+- 当前工作区干净。
 
-## 核心动机与背景 (Motivation & Background)
+## 本轮修复的核心问题
 
-**需求来源**：用户提供了三张 AI 生成的图标（`D:/Desktop/app-icon/{1,2,3}.png`），希望 Android 端除默认图标外还能在应用内切换。默认图标沿用现有 Windows 版图标（黑底双蛋 + 弧线），保持品牌统一。
+### 1. Android 应用图标切换（需求 099，done）
+- 4 套图标：default（黑底双蛋，Windows 同款）/ glass / sticker / gold
+- `android/app/src/main/res` 下 60 张 PNG + 12 个 XML
+- `AppIconPlugin.java`：activity-alias + SharedPreferences 持久化
+- `scripts/gen-android-icons.mjs`：从 `assets/android-icons/*.png` 生成全部资源
+- PWA 侧顶栏调色板按钮 + 底部选择面板
+- **待真机验证**（本机无 JDK）
 
-**技术约束（调研结论）**：
-- Android 不支持运行时直接改 `android:icon`，唯一标准做法是 `activity-alias` + `PackageManager.setComponentEnabledSetting`。
-- 桌面端（Windows/macOS）图标打包时写死进 .exe/.app 和快捷方式，**运行时不可改**，因此本需求只针对 Android。
-- Capacitor 8 手动注册的原生插件需要 `cap.registerPlugin('xxx')` 动态获取代理（不能用 `cap.Plugins.xxx` 硬编码，虽然有兜底）。
+### 2. 遮罩超时 bug（曾导致子代理 495s 困惑）
+- 根因：遮罩硬编码 5min 超时，子代理上限 10min，任务还在跑遮罩先消失
+- 修复：`src/infra/timeouts.ts` 统一常量；`observer.ts` 检测 `runAgent` 调用后传 12min
+- 降级态：超时后不整体消失，改为半透明 + 保留停止按钮 + 文案「任务仍在后台执行（已 Ns），可点下方停止」
 
-## 关键设计与实现 (Implementation & Decisions)
+### 3. 纯净模式停止清输入框 bug
+- 根因：`harness.html` 的 `stop()` 无条件 `input.value = ''`
+- 修复：只清 pendingFiles/pendingHints，保留输入框内容
 
-### 资源生成（scripts/gen-android-icons.mjs）
-- 四套图标：`default / glass / sticker / gold`，源图统一 1024×1024 存 `assets/android-icons/`。
-- `--prepare` 模式：外部原图（2048×2048）→ 按各图标独立 `crop` 比例中心裁切 → 缩放到 1024 → **BFS flood fill 从四边清除连通近白像素**（阈值 RGB≥235）去掉白圆角边。
-  - sticker 裁到 0.82（去掉厚灰框），其余 0.92，default 1.0（原本就是透明圆角）。
-- 每套图标生成：5 密度 × (legacy 方/圆 + adaptive 前景 108dp) = 15 张 PNG，加 2 个 anydpi XML + 1 个 color 资源。
-- adaptive 背景色：**四角内侧 5%~18% 区域**采样平均色（早期版本用边缘环带会采到贴纸灰框/金边，已修）。
-- legacy 圆角用 SVG mask `dest-in` 合成；adaptive 前景是 108dp 画布 72dp 内容居中。
+### 4. 子代理卡片增强
+- RunningSubagent 加 timeoutMs 字段
+- 卡片显示剩余 mm:ss 倒计时
+- 停止按钮支持单杀（`cancelSubagentsByParent` 加 targetWindowId 过滤）
+- 视觉重做（顶部扫光条 + 预览块光标 + hover 红调停止按钮）
 
-### Android 端
-- `AndroidManifest.xml`：主 `MainActivity` 移除 LAUNCHER filter，改为 4 个 `activity-alias`，默认 `MainActivity_default` enabled=true，其余 false。
-- `AppIconPlugin.java`：
-  - `get()` 返回 `{ current, available }`，状态从 SharedPreferences（`cuckoo_app_icon`）读——**不能依赖 getComponentEnabledSetting 回读**，部分 ROM 有延迟。
-  - `set({id})` 幂等：目标已生效直接 resolve；否则 disable 旧 → enable 新 → 兜底 disable 其余全部，均带 `DONT_KILL_APP`。
-  - `isAliasEnabled` 处理 `COMPONENT_ENABLED_STATE_DEFAULT`：此时以 manifest 为准，只有 default 视为启用。
-- `MainActivity.java`：`registerPlugin(AppIconPlugin.class)`。
-
-### PWA 端（src/remote/pwa）
-- 顶栏新增 `btn-app-icon`（调色板图标），**仅在 APK 内显示**（`getAppIconPlugin()` 返回 null 时隐藏）。
-- 底部弹出面板 `#icon-sheet`：4 宫格卡片，选中态高亮，点击调 `plugin.set({id})`。
-- 本地极简 toast `showIconToast`（PWA 原本没有全局 toast）。
-- 预览图 `src/remote/pwa/app-icons/*.png`（128×128，由 assets/android-icons 缩放）。
-
-### 清理
-- 删除旧 `ic_launcher.{png,xml}` / `ic_launcher_foreground.xml` / `ic_launcher_background.xml` 及其密度副本（无引用，避免 APK 双份资源）。
-- `package.json` files 排除 `assets/android-icons/**`（6.21MB，不参与 Electron 打包）。
-
-## 验证结果
-- `npm run typecheck` ✅
-- `npm run lint` ✅ 0 error（65 warning 全为历史遗留）
-- `npm test` ✅ 131 files / 1304 tests
-- `npm run compile` ✅
-- `node --check src/remote/pwa/app.js` ✅
-- **未做**：APK 构建 + 真机验证（本机无 JDK；需 CI 或用户出包验证）
+### 5. 派发子代理协议
+- 新增 `.agents/rules/subagent-dispatch.md`
+- 硬约束：子代理完全无状态，严禁「上一轮你指出」等伪连续措辞；必须三要素自包含（用户原始目标 / 主代理修复逻辑 / 待检源码文件）
+- 已记入长期记忆
 
 ## 待办事项 (Next Steps)
-- [ ] **真机验证**（需构建 APK）：
-  1. 首次安装默认图标是黑底双蛋
-  2. 顶栏调色板按钮出现（浏览器/PWA 网页模式下不出现）
-  3. 依次切 glass/sticker/gold，桌面图标几秒内更新
-  4. 切换后重启 App，图标保持
-  5. 反复切换不出现双图标（同 app 两个桌面入口）
-  6. 国产 ROM（MIUI/EMUI）延迟表现
-- [ ] 低优先级：`ForegroundService` 通知小图标目前用系统 `android.R.drawable.ic_dialog_info`，可考虑换成 `ic_stat_cuckoo` 的品牌版（不在本需求范围）。
-- [ ] 历史遗留：172/173 真机验证；092 并发池 A~H；v0.10.164 tag 违规仍待定。
+
+### P0 · 真机验证（用户手动）
+- [ ] 图标切换：默认黑底双蛋 → 切 glass/sticker/gold，桌面几秒内更新，重启后保持
+- [ ] 遮罩降级：普通工具 5min 超时降级；含子代理任务 12min 超时降级；降级后停止按钮可用
+- [ ] 纯净模式停止：输入框有草稿时点停止，草稿保留
+- [ ] 子代理卡片：倒计时正确显示；点单个停止只杀该子代理（并发多个时验证）
+- [ ] 子代理派发：给全新子代理派任务时，用自包含上下文，不写"上一轮"
+
+### P1 · 后续改进（未做）
+- [ ] 子代理 runAgent 完整展示模块（时间轴/工具流/token），单开需求 100
+- [ ] 子代理对话污染 DeepSeek/Claude 网页历史（N 个子代理 = 历史多 N 条），需产品决策是否要"跑完自动删除"
+- [ ] 老版本升级兼容：LAUNCHER 从 MainActivity 迁到 activity-alias 后，旧桌面快捷方式会失效，需 release note 说明
+
+### P2 · 历史遗留
+- [ ] `ForegroundService` 通知小图标用系统图标，非品牌图标
+- [ ] `gen-android-icons.mjs` 硬编码 `D:/Desktop/app-icon/*.png`（有 existsSync 降级不崩，仅 dev 脚本）
+- [ ] 172/173 真机验证（本轮之后可能需要重验，因为遮罩逻辑变了）
+- [ ] 092 并发池 A~H 真机验证
+- [ ] v0.10.164 tag 违规仍在 origin，是否删除待定
 
 ## 关键上下文
-- 目录: `D:/Desktop/Super-File/cuckoo-code`
-- 主要文件:
-  - `scripts/gen-android-icons.mjs` — 图标资源生成（`--prepare` 预处理源图）
-  - `assets/android-icons/{default,glass,sticker,gold}.png` — 1024 源图（**已去白边**）
-  - `android/app/src/main/AndroidManifest.xml` — 4 个 activity-alias
-  - `android/app/src/main/java/com/cuckoo/cuckoocode/AppIconPlugin.java` — 图标切换插件
-  - `src/remote/pwa/index.html` — `btn-app-icon` + `#icon-sheet` 面板
-  - `src/remote/pwa/app.js` — `initAppIconSwitcher()` / `showIconToast()` / `getAppIconPlugin()`
-  - `src/remote/pwa/style.css` — 末尾图标面板样式
-  - `src/remote/pwa/app-icons/*.png` — 128×128 预览图
-  - `docs/requirements/099-android-app-icon.md` — 需求档案
+
+### 项目目录
+`D:/Desktop/Super-File/cuckoo-code`
+
+### 关键文件（本轮改动）
+- `src/infra/timeouts.ts` — 全局超时常量唯一真相源（新建）
+- `src/overlay/panel.ts` — 遮罩降级态 + 动态超时（L195-252）
+- `src/bridge/intercept/observer.ts` — `hasSubagentCall` 探测 + 遮罩超时传参（L180-270）
+- `src/ui/harness.html` — `stop()` 不再清输入框（L4141-4175）
+- `src/app/subagent.ts` — `cancelSubagentsByParent` 支持 windowId（L109-134）
+- `src/ui/shell/scripts/pages/agents.ts` — 运行中卡片倒计时 + 停止按钮（L17-72）
+- `.agents/rules/subagent-dispatch.md` — 派发子代理协议（新建）
+- `android/app/src/main/java/com/cuckoo/cuckoocode/AppIconPlugin.java` — 图标切换插件（需求 099）
+
+### 版本与提交
+- 当前版本：`0.10.175`
+- HEAD：`a991ba7`
+- 待 CI 产出 Windows 安装包 + Android APK
+
+### 发布纪律
+- 版本号禁止含数字 4（已遵守：0.10.173 → 0.10.175，跳过 174）
+- 三处一致：package.json / CHANGELOG 顶部 / git tag
