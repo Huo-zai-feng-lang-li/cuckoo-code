@@ -2936,6 +2936,26 @@
   /** 对话是否在运行：模型生成中，或工具正在执行（工具执行期间任务同样没结束） */
   function isBusy() { return generating || toolRunningCount > 0; }
 
+  // 工具执行秒数：工具运行中在状态条实时显示已执行时长，便于判断"还在跑"还是"卡了"
+  var toolTickTimer = null;
+  var toolStartAt = 0;
+  function startToolTick() {
+    if (toolTickTimer) return; // 已有计时（多工具并行时从第一个开始）
+    toolStartAt = Date.now();
+    toolTickTimer = setInterval(function () {
+      if (toolRunningCount <= 0) { stopToolTick(); return; }
+      // 只改文字，绝不能走 setStatus —— 它会把 generating 置 true，
+      // 导致工具结束后状态卡在「生成中…」（工具运行 ≠ 模型在生成）。
+      if (statusEl && statusText && statusEl.classList.contains('busy')) {
+        var sec = Math.floor((Date.now() - toolStartAt) / 1000);
+        statusText.textContent = '工具运行中 ' + sec + 's…';
+      }
+    }, 1000);
+  }
+  function stopToolTick() {
+    if (toolTickTimer) { clearInterval(toolTickTimer); toolTickTimer = null; }
+  }
+
   // ===== 队列"立即发送"：等旧任务停止（尾部事件过去）再发，防回填到新对话 =====
   // 判据：自 stop（及最后一次事件）起持续 AI_STOP_QUIET_MS 无事件，且网页生成状态已停；
   //       超时兜底。aiPageGenerating 来自 bridge 的 ai-state，但 stop 信号会令其乐观置 false，
@@ -2954,6 +2974,7 @@
   var abortStamp = 0;      // 最近一次中止时的代次，事件若仍等于它则视为"上一代的尾巴"
   function markAborted() {
     toolRunningCount = 0;
+    stopToolTick(); // 立即停表：否则新工具 start 会沿用旧 toolStartAt，秒数跨中止错显
     abortEpoch++;
     abortStamp = abortEpoch;
   }
@@ -3462,11 +3483,11 @@
         }
         case 'tool-start': cancelGoalNudge();
           // 中止后、尚未开始新任务时到达的工具开始事件：只渲染卡片，不重新置忙
-          if (!aborted()) { toolRunningCount++; syncBusyIndicators(); }
+          if (!aborted()) { toolRunningCount++; syncBusyIndicators(); startToolTick(); }
           // 工具调用开始 = 当前助手回合结束：收尾思考块并关闭当前气泡，避免"思考中…"悬留
           if (cur) { try { var tl0 = cur.thinkBody ? cur.thinkBody.textContent : ''; if (tl0 && cur.thinkLabel) cur.thinkLabel.textContent = '已思考 (' + countThinkChars(tl0) + ' 字)'; } catch (e) { /* ignore */ } clearPendingBubble(); }
           addToolStart(payload.code); setStatus('工具运行中…', 'busy'); pushHist({ t: 'tool', code: payload.code, success: null, output: '', error: '' }); break;
-        case 'tool-end': if (toolRunningCount > 0) toolRunningCount--; addToolEnd(payload.success, payload.output, payload.error);
+        case 'tool-end': if (toolRunningCount > 0) toolRunningCount--; if (toolRunningCount <= 0) stopToolTick(); addToolEnd(payload.success, payload.output, payload.error);
           // 工具结束不等于任务结束，但也不等于"仍在生成"：
           // 还有工具在跑 → 工具运行中；否则等模型产生下一轮输出（task-idle / 流式事件会接管）。
           // 原先无条件置 busy 会在收尾事件丢失时把状态永久钉在运行态。

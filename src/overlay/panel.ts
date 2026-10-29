@@ -187,11 +187,18 @@ function setTaskStatus(running: boolean): void {
 let maskBlockHandler: any = null;
 // 遮罩计时器：显示已执行秒数，让用户直观判断"还在跑"还是"卡了"
 let maskTickTimer: any = null;
+let maskTimeoutTimer: any = null;
 let maskStartAt = 0;
+/** 遮罩最长显示时长：超时自动解除（只解 UI，不杀工具进程）。 */
+const MASK_TIMEOUT_MS = 5 * 60 * 1000;
+
 function stopMaskTick(): void {
   if (maskTickTimer) { clearInterval(maskTickTimer); maskTickTimer = null; }
+  if (maskTimeoutTimer) { clearTimeout(maskTimeoutTimer); maskTimeoutTimer = null; }
 }
-function startMaskTick(): void {
+function startMaskTick(reuse?: boolean): void {
+  // 发送阶段复用同一计时：已有计时器时不重置，秒数连续（避免"归零=卡住"的误判）
+  if (reuse && maskTickTimer) return;
   stopMaskTick();
   maskStartAt = Date.now();
   const t = document.querySelector('#cuckoo-tool-mask .cuckoo-tool-mask-text');
@@ -202,6 +209,12 @@ function startMaskTick(): void {
     const sec = Math.floor((Date.now() - maskStartAt) / 1000);
     el.textContent = '工具调用执行中 ' + sec + 's，请不要有额外操作';
   }, 1000);
+  // 超时兜底：底层发送/执行卡死时，遮罩不能永久残留。
+  // 只解除 UI，不中止工具进程（进程层已有 JsRunner 无活动兜底 / bash 自身 timeout）。
+  maskTimeoutTimer = setTimeout(() => {
+    hideToolMask();
+    showToast('工具执行超过 5 分钟，已解除遮罩（后台可能仍在运行），请检查', 4000);
+  }, MASK_TIMEOUT_MS);
 }
 function enableMaskBlock(): void {
   if (maskBlockHandler) return;
@@ -226,11 +239,11 @@ function disableMaskBlock(): void {
   maskBlockHandler = null;
 }
 
-function showToolMask(onCancel?: () => void): void {
+function showToolMask(onCancel?: () => void, reuseTick?: boolean): void {
   const el = document.getElementById('cuckoo-tool-mask');
   if (el) el.classList.remove('cuckoo-hidden');
   enableMaskBlock();
-  startMaskTick();
+  startMaskTick(reuseTick);
   const btn = document.getElementById('cuckoo-tool-mask-cancel') as any;
   if (btn) {
     if (onCancel) {
