@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.10.181] - 2026-10-29
+
+### 修复
+- **Android 顶栏布局挤压**：新增调色板图标按钮后，logo + Cuckoo 文字 + 在线 pill + 5 个按钮总宽超过手机屏宽，按钮重叠。修复：`icon-btn` 从 36px 缩到 32px；加窄屏媒体查询（<420px 隐藏品牌名与状态文字，<340px 隐藏状态 pill）。
+- **图标选择面板不显示（点击只模糊不见面板）**：
+  1. `src/remote/pwa/style.css` 残留工具包装污染行（`(End of file...)` + `</content>`）导致后续 CSS 解析中断，面板样式全失效。已清除。
+  2. 面板用了 6 个不存在的 CSS 变量（`--panel-bg` / `--text` / `--card-bg` / `--card-bg-hover` / `--text-muted` / `--divider`），全部 fallback 成写死浅色，深色主题下白底。改为项目实际变量（`--bg-card` / `--fg` / `--bg-soft` / `--bg-elev` / `--fg-muted` / `--border-strong`）。
+  3. 面板加 `z-index: 1` + `max-height: 80vh` + `overflow-y: auto`，防层级被 backdrop 盖住或内容溢出。
+
 ## [0.10.180] - 2026-10-29
 
 ### 修复
