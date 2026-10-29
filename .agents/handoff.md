@@ -1,35 +1,37 @@
-# 最新接续状态 (2026-10-29 · v0.10.170 已发版)
+# 最新接续状态 (2026-10-29 · v0.10.171 已发版)
 
 ## 核心进展
-- **需求 097 已合入 master 并随 v0.10.170 发布**：手机端远程 App 任务完成通知的小图标由 Capacitor 模板占位图改为 Cuckoo 品牌鸟形图标。
-- 近期版本：094（扫码布局+APK 固定签名）→ 095（子代理泄漏远程事件）→ 096（停止气泡误报）→ 097（通知小图标）。
+- **v0.10.171 发布**：修复纯净模式计划面板卡在「正在生成计划条目」+ 工具遮罩显示已执行秒数。
+- 近期版本：094（扫码布局+APK 签名）→ 095（子代理泄漏远程事件）→ 096（停止气泡误报）→ 097（通知小图标）→ 171（计划面板 + 遮罩计时）。
 
-## 097 根因更正记录（重要教训）
-最初判断「任务完成通知不弹 = 权限只在后台请求」。**该判断被证伪**：
-- `android/app/src/main/java/com/cuckoo/cuckoocode/MainActivity.java:15-20` 每次冷启动都原生请求 `POST_NOTIFICATIONS`（Android 13+）。
-- 据此在 JS 侧加的 `ensureNotifyPermission()` 是冗余的，且会与原生请求叠加造成**双重权限弹窗**，已全部撤销。
-- 教训：读不到文件内容时不要断言「子代理误读」。本轮曾错误驳回子代理的正确结论，后经 `readLines` 亲验纠正。
+## v0.10.171 两笔改动
 
-## 097 实际改动（极小）
-- `src/remote/pwa/app.js`：`smallIcon` 由 `ic_stat_icon_config_sample` → `ic_stat_cuckoo`（1 行）
-- `android/app/src/main/res/drawable/ic_stat_cuckoo.xml`：新增 Cuckoo 鸟形纯白单色 vector（24dp）
-- `android/app/src/main/res/drawable/ic_stat_icon_config_sample.xml`：删除（模板占位图，无其它引用）
+### 1. 计划面板数据链路修复（多轮修复后定稿）
+**根因（两层）**：
+- 表层：todoWrite 把列表按 projectDir 分桶存成对象（`{ "D:/xxx": [...] }`），主进程用 `Array.isArray` 判断恒 false，数据从未推送。
+- 深层（子代理审查发现的真凶）：`resetTodosCache()` 把 `__cuckooTodos` 置为**空数组 `[]`**，而 todo-write 的守卫 `if (!__cuckooTodos)` 判断空数组为 **truthy**，跳过对象初始化 → 项目列表被挂成数组自定义属性 → tool.ts 又按数组分支取到空数组 → 不推送。且 `harness-send` 每次发消息都调 reset，**主路径必然踩中**。
 
-## 097 验证
-- typecheck ✅ / test ✅ 131 文件 1304 用例 / lint ✅ 0 error（65 既有 warning）/ compile ✅
-- 子代理 code-reviewer 审查 + 主代理独立复核：diff 仅 1 行代码，无 ensureNotifyPermission 残留、无旧图标残留、新图标合法。
-- **未做真机验证**
+**修复**：
+- `src/app/ipc/tool.ts`：`resetTodosCache` 写 `{}`；读取时**对象优先、数组兜底**（兼容旧脏状态）。
+- `src/tools/impl/todo-write.ts`：加防御——`__cuckooTodos` 是数组时重建为对象。
 
-## 未解决的真问题（待真机确认后另立项）
-**App 切后台时 WebView JS 可能被系统节流/冻结** → `task-done` 的 WebSocket 消息排队到回前台才处理 → 此时 `visibilityState === 'visible'` → 不弹通知。
-这不是权限问题，也不是图标问题。要修需原生侧接收或防节流，属独立较大改动。
+### 2. 工具遮罩计时（src/overlay/panel.ts）
+`startMaskTick()` / `stopMaskTick()`：遮罩显示时每秒刷新「工具调用执行中 Ns」；隐藏时停表；元素被移除时自停防泄漏。
 
-## 真机验证清单（097）
-- A. 任务完成且 App 在后台时，能否弹系统通知（若不能 → 印证上面的节流问题）
-- B. 通知小图标显示为 Cuckoo 鸟形，非白块/对勾
-- C. App 在前台时不弹通知（不刷屏）
+## 验证
+- typecheck / lint（0 error，65 既有 warning）/ test（131 文件 1304 用例）/ compile 全绿。
+- 子代理 code-reviewer 审查两笔改动，挖出上述【高】问题并已修；主代理独立复核。
+
+## 已知小限制（未修，可接受）
+1. **AI 主动 `todoWrite([])` 清空计划时前端不清空**：靠 `harness-send` 每次发消息推空列表兜底，日常无残留。彻底修需在 tool.ts 对空数组也推送，会与「任务开始清空」时序打架，风险大于收益。
+2. **发送阶段秒数归零**：observer.ts 发送阶段二次 `showToolMask` 会重置计时，秒数从 N 跳回 0。属体验瑕疵，不影响功能。
+3. `lastTodosJson` 为模块级单例，多窗口并行时去重键不按 ctx 隔离（内容相同时视觉无差异，影响极小）。
 
 ## 历史遗留
-- 096 真机验证清单 A~C 仍未做。
-- 092 子代理并发池真机验证 A~H 仍未做。
+- 096 / 097 真机验证清单未做。
+- 092 子代理并发池真机验证 A~H 未做。
 - `v0.10.164` tag 违规（含数字 4）仍在 origin。
+
+## 教训
+- **「空数组是 truthy」再次踩坑**：`if (!x)` 对 `[]` 不成立，守卫形同虚设。写「初始化若不存在」这类守卫时，必须显式排除错误类型（`Array.isArray`）。
+- **子代理审查真能救命**：表层修复（对象/数组判断）看似合理，但 reset 写空数组让它在主路径完全失效。是子代理顺着调用链挖出来的。
