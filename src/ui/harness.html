@@ -342,7 +342,10 @@
   }
   .tool-card-subagent .tool-name { color: var(--text); font-weight: 600; }
   .tool-card-subagent .tool-arg { 
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;
+  }
+  .tool-card-subagent .tool-caret {
+    pointer-events: none;
   }
   .tool-agent-remaining {
     font-size: 10.5px; color: var(--text-dim); font-variant-numeric: tabular-nums;
@@ -3428,7 +3431,11 @@
       var stopBtn = wrap.querySelector('.tool-stop-btn');
       // 点击头部折叠（但点击停止按钮不折叠）
       head.addEventListener('click', function (e) {
-        if (e.target.closest && e.target.closest('.tool-stop-btn')) return;
+        var t = e.target;
+        while (t && t !== head) {
+          if (t.classList && t.classList.contains('tool-stop-btn')) return;
+          t = t.parentNode;
+        }
         wrap.querySelector('.tool-card').classList.toggle('open');
       });
       stopBtn.addEventListener('click', function (e) {
@@ -3659,7 +3666,11 @@
     var stopBtn = wrap.querySelector('.tool-stop-btn');
     if (head) {
       head.addEventListener('click', function (e) {
-        if (e.target.closest && e.target.closest('.tool-stop-btn')) return;
+        var t = e.target;
+        while (t && t !== head) {
+          if (t.classList && t.classList.contains('tool-stop-btn')) return;
+          t = t.parentNode;
+        }
         card.classList.toggle('open');
       });
     }
