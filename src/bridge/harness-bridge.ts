@@ -71,6 +71,17 @@ export function initHarnessBridge(): void {
   // 变化即时上报 + 每 2 秒心跳（harness 页面可能在生成中途才被创建/刷新，
   // 只报变化的话它会拿不到当前状态）。
   let aiGenerating = false;
+  // 最近一次"AI 页面确实有动作"的时间戳。心跳看门狗据此复位卡死的 aiGenerating。
+  // 背景：aiGenerating 由流式/回复/工具/错误/停止等事件驱动，任一关键帧丢失
+  //（页面重载、hook 中断、SSE 异常收尾）都会让它永久停在 true，
+  // 心跳随即持续上报 g=true，使 harness 侧的静默兜底永远失效 —— 界面卡「生成中…」。
+  let lastAiActivityAt = Date.now();
+  function markAiActivity(): void { lastAiActivityAt = Date.now(); }
+  // 无任何 AI 页面活动多久后判定 aiGenerating 是陈旧残留。
+  // 取值说明：工具执行期间 aiGenerating 本应为 false（finished 帧已复位），
+  // 框架侧长任务由 harness 的 toolRunning 容忍窗口（10 分钟）单独兜底，
+  // 故这里给 120s 不会误伤正常长任务。
+  const AI_GENERATING_STALE_MS = 120000;
   function setAiGenerating(next: boolean): void {
     if (aiGenerating === next) return;
     aiGenerating = next;
@@ -82,12 +93,21 @@ export function initHarnessBridge(): void {
     report({ type: 'ai-state', generating: next });
   }
   try {
-    setInterval(() => report({ type: 'ai-state', generating: aiGenerating }), 2000);
+    setInterval(() => {
+      // 看门狗：aiGenerating 卡 true 且长时间无任何真实活动 → 判定为陈旧残留，强制复位。
+      // 否则心跳会一直上报 g=true，harness 永远等不到"AI 已停止"，只能手动点停止解套。
+      if (aiGenerating && Date.now() - lastAiActivityAt > AI_GENERATING_STALE_MS) {
+        console.warn('[Cuckoo Harness] aiGenerating 已 ' + Math.round((Date.now() - lastAiActivityAt) / 1000) + 's 无活动，判定为陈旧残留，强制复位');
+        setAiGenerating(false);
+      }
+      report({ type: 'ai-state', generating: aiGenerating });
+    }, 2000);
   } catch (_) { /* ignore */ }
 
   // 流式增量 → 上报
   onStream((ev: any) => {
     if (!ev) return;
+    markAiActivity();
     if (ev.finished) {
       // 收尾帧 = 流式输出结束（网页本轮生成已完成）。
       // 这是最可靠的"停止生成"信号：即使最终回复含工具块（onInterceptedResponse
@@ -103,6 +123,7 @@ export function initHarnessBridge(): void {
 
   // AI 回复完成 → 上报（目标收束由 goalDone 工具在主进程直接推送，这里不再检测文本标记）
   onInterceptedResponse((text: string, meta: any) => {
+    markAiActivity();
     const raw = text || '';
     // 回复里没有工具调用 → 本轮真的结束（有工具调用时后面还有工具循环）
     if (!HAS_TOOL_BLOCK_RE.test(raw)) setAiGenerating(false);
@@ -114,17 +135,20 @@ export function initHarnessBridge(): void {
   // 任务空闲（observer 判定：回复里没有工具调用 = 本轮任务真的结束）→ 上报。
   // 这是"网页执行完了"的权威终态信号：harness 据此收尾，不再靠超时猜。
   onTaskIdle(() => {
+    markAiActivity();
     setAiGenerating(false);
     report({ type: 'task-idle' });
   });
 
   // AI 请求失败 → 不再处于生成中（重试引擎会重新投递，届时再置忙）
   onAiError(() => {
+    markAiActivity();
     setAiGenerating(false);
   });
 
   // 网页模式点"停止"（hook 检测到 status=stopped）→ 同步纯净模式收尾
   onUserStop(() => {
+    markAiActivity();
     setAiGenerating(false);
     report({ type: 'task-idle' });
   });
@@ -132,6 +156,7 @@ export function initHarnessBridge(): void {
   // 工具调用事件 → 上报（含计划解析）
   onToolCall((ev: any) => {
     if (!ev) return;
+    markAiActivity();
     if (ev.phase === 'start') {
       report({ type: 'tool-start', code: ev.code });
       // 计划（todoWrite）改由主进程读官方 globalThis.__cuckooTodos 后推送，这里不再用正则解析
@@ -151,6 +176,9 @@ export function initHarnessBridge(): void {
   // harness 自己发的用户消息（tag='harness'）不上报：气泡已显示，状态机自己管。
   onMessageDelivered((info: any) => {
     if (!info) return;
+    // 投递即视为活动：从"消息发出"到"首个流式帧"之间可能隔着拟人化延迟（6~16s）
+    // 乃至模型排队，不续命的话看门狗可能把这段正常等待误判为陈旧残留。
+    markAiActivity();
     setAiGenerating(true); // 有消息投递 = AI 页面即将工作
     if (info.tag === 'harness') return;
     report({ type: 'framework-send', tag: info.tag || '', system: !!info.isSystem });

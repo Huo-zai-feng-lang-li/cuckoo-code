@@ -1,5 +1,41 @@
 # 最新接续状态 (2026-10-30)
 
+## 本轮改动（未提交，未发版）：纯净模式限流重试耗尽后永久卡「运行中」
+
+### 用户诉求
+限流（HTTP 429）自动重试次数用尽后，纯净模式状态栏仍显示运行中、不自动停止。用户问「是否应该停止？是不是我说错了？」——属实，是 bug。
+
+### 根因（两层）
+1. **harness 侧（致命）**：`src/ui/harness.html` 的事件分发入口对所有事件无条件 `lastActivityAt = Date.now()`。bridge 每 2s 发一次 `ai-state` 心跳，心跳不断续命 → `onAiState(false)` 与 1.5s 兜底的静默判据（6s）**永远不成立** → 永不自动收尾。
+2. **bridge 侧（真机复现时暴露）**：`aiGenerating` 只由事件驱动，任一关键帧丢失（页面重载 / hook 中断 / SSE 异常收尾）就永久停在 `true`，心跳持续上报 `g=true`，harness 收到 `onAiState(true)` 又不断续命 → 同样卡死。此路径与 429 无关，是通用故障面。
+3. **次因**：retry 引擎只往 AI 页面 window 派发 `cuckoo-retry-state`（仅 remote-bridge 订阅），纯净模式是独立 `file://` 视图，对「等待重试 / 耗尽」完全无感。
+
+### 修复（6 个文件，+162 −5）
+- `src/ui/harness.html`
+  - 事件入口：`if (payload.type !== 'ai-state') lastActivityAt = Date.now();`（ai-state 是状态同步而非活动；真生成时由 `onAiState(true)` 分支自己续命）
+  - 新增 `retryUntil` + `onRetryState(state, delayMs)`：pending → 置忙「等待自动重试…」并设 `retryUntil = now + delay + 120s`；exhausted → 立即收尾「重试已达上限」；cancelled/success → 清 retryUntil
+  - `onAiState` 与 1.5s 兜底 **两处**都加 `if (retryUntil > Date.now()) return;`
+  - 事件分发新增 `case 'retry-state'`；`clearTransientState()` 补 `retryUntil = 0`
+- `src/bridge/loop/retry.ts`：`emitRetryState(state, extra?)` 增加第二参数 + `ipcRenderer.invoke('harness-retry-state', detail)`
+- `src/app/ipc/harness.ts`：新增 `harness-retry-state` handler，转发成 `harness-event { type:'retry-state' }`
+- `src/bridge/harness-bridge.ts`：新增 `lastAiActivityAt` + `markAiActivity()`（挂在 onStream / onInterceptedResponse / onToolCall / onTaskIdle / onAiError / onUserStop）+ 心跳内看门狗（`AI_GENERATING_STALE_MS = 120s` 无活动即强制 `setAiGenerating(false)`）
+- 两个测试文件各补守卫用例（含看门狗误杀/自愈两条）
+
+### 真机验证（开发版 CDP 9444，单实例干净环境）
+- 代码加载：`aiStateExcl=true, retryCase=true, guards=2`
+- 场景 A：就绪 → 第1次429「等待自动重试…」→ 第2次429（耗尽）「重试已达上限」✅
+- 场景 B：出字「生成中…」→ finished 帧「生成中…」→ 静默 9s（仅心跳）「就绪」✅（根因修复生效）
+- 场景 C：pending 后静默 13s 仍「等待自动重试…」✅（不误杀）
+- typecheck / compile / test（131 文件 **1308** 用例）/ lint（0 error）全绿
+
+### 关键经验（重要）
+- **「事件入口无差别刷新 activity 时间戳」是隐蔽杀手**：任何周期心跳都会让所有基于静默的兜底永久失效。给 activity 时间戳续命必须区分「状态同步」与「真实活动」。
+- **双端状态机各有各的卡死面**：harness 侧修好了「收到 g=true 就不会收尾」，但 bridge 侧本身可能永久报 g=true。修复一个卡死点不代表闭环，必须真机跑出来才算数——本轮就是先修好 harness，真机一跑发现 bridge 也卡，才补齐看门狗。
+- **CDP 验证前先确认窗口配对**：多实例/多窗口时 `/json/list` 里同 URL 条目有多个，必须先用一次探测事件确认哪个 harness 与哪个 AI 页面配对，否则测的是别人的窗口，结论全错（本轮踩过）。
+- **子代理提的 [中] 项要重视**：code-reviewer 明确指出「bridge 侧 aiGenerating 卡 true 缺兜底」，当时判定为「非本次引入、不阻塞合并」，但真机立刻复现。经验：子代理标出的固有风险若与本次修复的同一故障面相关，应当场一并解决。
+
+## 上一条改动（c4819f8，未发版）
+
 ## 核心进展
 - 提交 c4819f8：「回到底部」按钮空闲态平滑滚动，流式时保持瞬移（isBusy 分流）。
 - 提交 c163f3b：三处折叠容器（工具卡片/思考过程/侧边栏子代理预览）平滑过渡动画。

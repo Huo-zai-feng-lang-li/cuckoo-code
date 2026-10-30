@@ -193,6 +193,40 @@ test('AI 请求失败 → ai-state 置为已停止', async () => {
   assert.strictEqual(lastAiState(), false);
 });
 
+// ===== aiGenerating 看门狗：陈旧残留必须能自愈 =====
+// 回归背景：aiGenerating 只由事件驱动，任一关键帧丢失（页面重载 / hook 中断 /
+// SSE 异常收尾）都会让它永久停在 true，心跳随即持续上报 g=true，
+// 使 harness 的静默兜底永远失效 —— 界面卡「生成中…」，只能手动点停止解套。
+
+test('看门狗：aiGenerating 长期无活动 → 心跳自动复位为已停止', async () => {
+  streamCb({ think: '', text: '输出中', finished: false });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.strictEqual(lastAiState(), true, '前置：应处于生成中');
+
+  const hb = S.intervals.find((x) => x.ms === 2000);
+  // 把"最近活动时间"推到看门狗阈值之外（真实 120s，测试用假时钟推进）
+  const realNow = Date.now;
+  Date.now = () => realNow() + 10 * 60 * 1000;
+  try {
+    S.reported.length = 0;
+    hb.fn();
+    await new Promise((r) => setTimeout(r, 0));
+  } finally {
+    Date.now = realNow;
+  }
+  assert.strictEqual(lastAiState(), false, '长时间无活动应收敛为已停止，否则界面永久卡生成中');
+});
+
+test('看门狗：持续有流式活动时不得误杀生成中', async () => {
+  streamCb({ think: '', text: '输出中', finished: false });
+  await new Promise((r) => setTimeout(r, 0));
+  const hb = S.intervals.find((x) => x.ms === 2000);
+  S.reported.length = 0;
+  hb.fn();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.strictEqual(lastAiState(), true, '刚有活动时不能被复位');
+});
+
 test('状态未变化时不重复上报（避免刷屏）', async () => {
   streamCb({ think: '', text: 'a', finished: false });
   await new Promise((r) => setTimeout(r, 0));

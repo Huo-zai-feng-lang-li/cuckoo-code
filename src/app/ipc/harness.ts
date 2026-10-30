@@ -447,6 +447,23 @@ function registerHarnessIpc(): void {
     return { success: true };
   });
 
+  // 自动重试状态（bridge 的 retry 引擎上报）→ 转发给 harness 页面。
+  // 纯净模式是独立页面，看不到 AI 页面的倒计时浮层：等待期间需显式置忙并豁免静默判据，
+  // 耗尽时需立即收尾（否则界面永久卡在运行中）。
+  ipcMain.handle('harness-retry-state', (event: any, payload: any) => {
+    const ctx = findContext(event.sender);
+    if (!ctx) return { success: false };
+    const hv = (ctx as any).harnessView;
+    if (hv && !hv.webContents.isDestroyed()) {
+      hv.webContents.send('harness-event', {
+        type: 'retry-state',
+        state: payload && payload.state,
+        delayMs: payload && payload.delayMs,
+      });
+    }
+    return { success: true };
+  });
+
   // 停止生成（IPC 入口）
   ipcMain.handle('harness-stop', async (event: any) => {
     const ctx = findContext(event.sender);

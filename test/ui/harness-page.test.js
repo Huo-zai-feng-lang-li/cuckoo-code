@@ -61,6 +61,41 @@ test('接住权威生成状态心跳 ai-state（解套"卡在运行中"）', () 
   assert.ok(/AI_STATE_QUIET_MS/.test(script), '应有静默期保护常量');
 });
 
+test('ai-state 心跳不得刷新 lastActivityAt（否则静默兜底永久失效）', () => {
+  // 回归背景：心跳每 2s 一次且无条件续命 lastActivityAt，
+  // 使 onAiState / 1.5s 兜底的静默判据永远不成立 → AI 侧已停止（如限流重试耗尽）
+  // 时界面永久卡在运行中，只能手动点停止解套。
+  const idx = script.indexOf('api.onEvent(function (payload)');
+  assert.ok(idx > 0, '应能找到事件分发入口');
+  const body = script.slice(idx, idx + 800);
+  assert.ok(
+    /if \(payload\.type !== 'ai-state'\) lastActivityAt = Date\.now\(\);/.test(body),
+    'ai-state 必须排除在活动刷新之外'
+  );
+});
+
+test('自动重试状态接入：等待期间保持忙、耗尽立即收尾', () => {
+  assert.ok(script.includes("case 'retry-state'"), '事件分发应处理 retry-state');
+  assert.ok(/function onRetryState\s*\(/.test(script), '应有 onRetryState 处理函数');
+  const idx = script.indexOf('function onRetryState');
+  const nextFn = script.indexOf('\n  function ', idx + 10);
+  const body = script.slice(idx, nextFn > 0 ? nextFn : idx + 2000);
+  // 等待期间：必须置忙（否则倒计时开始界面就"就绪"了）
+  assert.ok(body.includes("setStatus('等待自动重试…', 'busy')"), 'pending 应置忙');
+  // 耗尽：必须立即收尾，不能等超时
+  assert.ok(body.includes("setStatus('重试已达上限', 'ready')"), 'exhausted 应收尾');
+  // 等待窗口内静默判据要被豁免（onAiState 与 1.5s 兜底两处都必须）
+  const guards = script.split('if (retryUntil > Date.now())').length - 1;
+  assert.ok(guards >= 2, 'onAiState 与 1.5s 兜底都应豁免重试等待窗口');
+  // 清理路径必须有：否则残留会让后续任务永远豁免静默收尾
+  assert.ok(body.includes('retryUntil = 0'), 'onRetryState 应清 retryUntil');
+  const clearFn = script.slice(script.indexOf('function clearTransientState'));
+  assert.ok(
+    clearFn.slice(0, 2000).includes('retryUntil = 0'),
+    'clearTransientState 应清 retryUntil'
+  );
+});
+
 test('静默兜底有界：不允许数分钟级卡在运行态', () => {
   const m = script.match(/var limit = Date\.now\(\) < frameworkDriveUntil \? (\d+) : (\d+);/);
   assert.ok(m, '应能找到静默兜底的容忍上限');

@@ -1100,7 +1100,7 @@
     <button class="init-project-btn" id="init-project-btn" style="display:none">首次对话需选择项目目录</button>
     <div class="composer-inner">
       <div class="composer-resize" id="composer-resize" title="拖拽调整输入框高度"></div>
-      <button class="scroll-bottom" id="scroll-bottom" title="回到底部"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M8 13l-4-4M8 13l4-4"/></svg></button>
+      <button class="scroll-bottom" id="scroll-bottom"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M8 13l-4-4M8 13l4-4"/></svg></button>
       <div class="slash-menu" id="slash-menu"></div>
       <div class="composer-tools">
         <button class="attach-btn" id="attach-btn" title="添加附件（图片/文件）"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 4.5l-5 5a2 2 0 0 0 2.8 2.8l5-5a3.5 3.5 0 0 0-5-5l-4.5 4.5a5 5 0 0 0 7 7l4-4"/></svg></button>
@@ -1791,6 +1791,7 @@
     generating = false;
     clearAbortSuppression();
     frameworkDriveUntil = 0;
+    retryUntil = 0;
     // 作废在途的"立即发送"等待：切会话/新对话后，那条消息不应再被发出（否则会串到新会话）
     manualSendToken++;
     manualSendInFlight = false;
@@ -3247,6 +3248,35 @@
   // 不能套用 6s 静默判据（否则默认 6~16s 延迟会被误杀）。
   // 给足 3 次重试 × 16s + 排队余量（~51s），取 120s 兜底；超时说明发送链路确实卡死，强制收尾。
   var SEND_TICK_MAX_MS = 120000;
+  // 自动重试等待窗口：AI 页面在此期间本就不生成（在等服务端限流冷却），
+  // 不能套用 6s 静默判据，否则倒计时刚开始界面就"就绪"了。
+  // 由 bridge 的 retry 引擎经主进程转发（retry-state: pending / exhausted / cancelled / success）。
+  var retryUntil = 0;
+  function onRetryState(state, delayMs) {
+    if (state === 'pending') {
+      var d = Number(delayMs);
+      if (!Number.isFinite(d) || d <= 0) d = 120000;
+      // 冷却倒计时 + 拟人化延迟(6~16s) + AI 起跑余量。到期仍无任何真实事件 = 发送链路卡死，
+      // 交由下方静默判据兜底收尾（不允许无限期挂在运行态）。
+      retryUntil = Date.now() + d + 120000;
+      lastActivityAt = Date.now();
+      if (!aborted()) setStatus('等待自动重试…', 'busy');
+      return;
+    }
+    retryUntil = 0;
+    if (state === 'exhausted') {
+      // 达上限：AI 页面不会再有任何终态事件（没有回复、没有工具、没有 task-idle），
+      // 必须立即收尾，否则界面永久卡在运行中，只能手动点停止解套。
+      stopSendTick();
+      toolRunningCount = 0;
+      frameworkDriveUntil = 0;
+      setStatus('重试已达上限', 'ready');
+      clearPendingBubble();
+      return;
+    }
+    // cancelled / success：不改运行态，交还给真实事件（success 后 AI 会开始生成）
+    lastActivityAt = Date.now();
+  }
   function onAiState(generating) {
     aiPageGenerating = !!generating;
     if (generating) {
@@ -3268,6 +3298,8 @@
       }
       stopSendTick();
     }
+    // 自动重试等待窗口内：AI 页面本就不生成，不能据"未生成"收尾
+    if (retryUntil > Date.now()) { lastActivityAt = Date.now(); return; }
     var quietMs = toolRunningCount > 0 ? AI_STATE_QUIET_TOOL_MS : AI_STATE_QUIET_MS;
     if (Date.now() - lastActivityAt <= quietMs) return;
     stopSendTick();
@@ -3298,6 +3330,9 @@
       return;
     }
     if (!generating) return;
+    // 自动重试等待窗口内：AI 页面本就不生成（在等服务端限流冷却），不能据静默收尾。
+    // 正常由 onAiState 每 2s 心跳续命，这里兜住"心跳本身中断"的极端情形。
+    if (retryUntil > Date.now()) return;
     // sendTick 活跃时：onAiState 每 2s 刷新 lastActivityAt，idle 始终很小，
     // 本兜底不会误杀（sendTick 自身有 SEND_TICK_MAX_MS 上限）。
     var idle = Date.now() - lastActivityAt;
@@ -3891,7 +3926,11 @@
   if (api.onEvent) {
     api.onEvent(function (payload) {
       if (!payload) return;
-      lastActivityAt = Date.now();
+      // ai-state 是"状态同步"而非"活动"：它每 2 秒心跳一次，若无差别续命，
+      // lastActivityAt 永远新鲜 → onAiState / 1.5s 兜底的静默判据永不成立，
+      // AI 侧已停止（如限流超上限、请求报错、网页静默崩溃）时界面会永久卡在运行中。
+      // 真在生成时由 onAiState(generating=true) 分支自己续命，不受影响。
+      if (payload.type !== 'ai-state') lastActivityAt = Date.now();
       switch (payload.type) {
         case 'subagents': applySubagents(payload.subagents || []); break;
         case 'user':
@@ -3952,6 +3991,8 @@
         case 'task-idle': onTaskIdle(); break;
         // AI 页面权威生成状态（每 2 秒心跳）→ 校正运行态，解套"卡在运行中"
         case 'ai-state': onAiState(!!payload.generating); break;
+        // 自动重试状态（等待 / 耗尽 / 取消）：纯净模式看不到 AI 页面的倒计时浮层，需显式同步
+        case 'retry-state': onRetryState(payload.state, payload.delayMs); break;
         case 'assistant': {
           var aText = (payload.text || '').trim();
           onAssistantDone(payload.text);

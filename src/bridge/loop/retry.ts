@@ -80,8 +80,13 @@ let compacting = false;
 /** 派发重试状态事件（供 remote-bridge 等订阅）：
  *  决定"可自动重试的错误"是否立即当终态上报，避免手机端在重试成功前就显示失败。
  *  state: 'pending' 进入重试等待 | 'success' 重试成功 | 'exhausted' 达上限 | 'cancelled' 用户取消 */
-function emitRetryState(state: string): void {
-  try { window.dispatchEvent(new CustomEvent('cuckoo-retry-state', { detail: { state } })); } catch (_) { /* ignore */ }
+function emitRetryState(state: string, extra?: any): void {
+  const detail = Object.assign({ state }, extra || {});
+  try { window.dispatchEvent(new CustomEvent('cuckoo-retry-state', { detail })); } catch (_) { /* ignore */ }
+  // 纯净模式（harness）在独立页面，看不到 AI 页面的倒计时浮层，也收不到上面的 window 事件。
+  // 必须经主进程转发：否则等待期间界面会"假装空闲"，耗尽后更是永久卡在运行中
+  //（AI 页面已停止，不会再有 task-idle / ai-state(true) 等终态事件）。
+  try { ipcRenderer.invoke('harness-retry-state', detail).catch(() => {}); } catch (_) { /* ignore */ }
 }
 
 let setCompacting = function setCompacting(v: any): void {
@@ -226,7 +231,7 @@ let handleError = function handleError(detail: any): void {
   }, delay);
 
   pending = { kind: is429 ? '429' : 'normal', timer: timer, countdownTimer: cdTimer, remainMs: delay };
-  emitRetryState('pending');
+  emitRetryState('pending', { delayMs: delay });
 };
 
 /** 切换前是否取消过 pending 重试（用于"恢复"时判断） */
