@@ -108,26 +108,26 @@
   .status { font-size: 11.5px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
   .status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim); flex-shrink: 0; position: relative; top: 1.5px; }
   .status.busy { color: var(--text); }
-  .status.busy .dot { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
+  .status.busy .dot { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
   .status.ready .dot { background: var(--green); }
   /* 状态栏秒数强调：加大 + 加粗 + 等宽（跳秒不抖），不倾斜、不发荧光。
-     颜色取 --amber（随明暗主题自动切换）。<b> 连单位 s 一起包裹，
+     颜色取 --accent（主题蓝，随明暗主题自动切换）。<b> 连单位 s 一起包裹，
      避免"数字粗、单位细"的割裂感。 */
   .status b {
     font-style: normal;
     font-weight: 700;
     font-size: 15px;
     font-variant-numeric: tabular-nums;
-    color: var(--amber);
+    color: var(--accent);
     letter-spacing: 0;
     padding: 0 1px;
   }
   /* 工具运行态：正文常规文字色，秒数使用更大字号与 800 粗（黄色由 .status b 提供） */
   .status.busy:not(.sending) b { font-size: 16px; font-weight: 800; }
-  /* 「结果待发送」态：正文使用常规文字色，与黄色数字形成对比；
-     dot 保持黄色脉冲，运行态标识不变 */
+  /* 「结果待发送」态：正文使用常规文字色，与主题蓝数字形成对比；
+     dot 保持主题蓝脉冲，运行态标识不变 */
   .status.sending { color: var(--text); }
-  .status.sending .dot { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
+  .status.sending .dot { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
   .tb-btn {
     -webkit-app-region: no-drag;
