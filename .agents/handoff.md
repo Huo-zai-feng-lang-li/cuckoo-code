@@ -1,76 +1,58 @@
 # 最新接续状态 (2026-10-30)
 
 ## 核心进展
-- 提交 [最新] / 95e75f9：纯净模式状态栏秒数特殊展示（白字 + 主题蓝 16px/800 粗）+ 圆点垂直居中修复。
-- 提交 [最新]：修复内容区与侧边栏子代理卡片点击无法折叠/展开的问题。
-  - 侧边栏：补箭头指示、修复轮询强制折叠、加空内容提示。
-  - 内容区：点击事件从仅 `.tool-head` 扩大到整卡，加文本选区防误触。
-- 提交 b10c233：修复子代理卡片 UI 三问题（边框线 / 点击展开 / 剩余时间不一致）。
-- 上一版 v0.10.191：子代理运行卡片左侧标识条改主题色 0.5px 细线，状态徽章改为可收缩，清理死代码。
+- 提交 c4819f8：「回到底部」按钮空闲态平滑滚动，流式时保持瞬移（isBusy 分流）。
+- 提交 c163f3b：三处折叠容器（工具卡片/思考过程/侧边栏子代理预览）平滑过渡动画。
+- 提交 95e75f9 / b3bc972：纯净模式状态栏秒数特殊展示（白字 + 主题蓝 16px/800 粗）+ 圆点垂直居中。
+- 提交 c0ff691 / dc43687：子代理卡片点击展开修复（侧边栏 + 内容区整卡点击）。
 
-## 本轮改动（95e75f9 + 4e55a43，未发版）
+## 本轮改动（c4819f8，未发版）
 
 ### 用户诉求
-纯净模式（harness）状态栏「工具运行中 16s…」的秒数与正文同为琥珀细体不醒目；「框架：工具结果回传」整行黄色不好看；前置圆点未垂直居中。最终确认效果：正文白、数字加大加粗，颜色统一使用页面原本的主题蓝。
+点击「回到底部」按钮时内容区平滑滚动，而非瞬间跳转。用户强调「不要引入问题，导致其他功能受伤，不好做可以不做」。
 
-### 根因
-1. v0.10.189 给状态栏加过 `.status b` 强调样式，但**只有「结果待发送」用了 `innerHTML + <b>`**（`escapeSecHtml()`）；「工具运行中」的 `startToolTick()` 用的是 `textContent` 纯文本，完全没吃到 `b` 样式。
-2. 数字 16px 撑高行高，导致 6px 圆点在 `align-items: center` 下视觉偏上。
+### 两次失败的历史（重要经验）
+1. **第一次**：自造方案 `scroll-behavior: smooth` + 监听 `scrollend` 事件 + 600ms 兜底。被叫停回滚——外挂状态机与项目已有的贴底状态机（`settleScrollBottom`：代次控制 + `suppressPin` 防误判 + 8 次重试 + 三重用户意图监听）打架，时序无法保证。
+2. **第二次**：直接复用 `smoothScrollToBottom()`（导航 hover 在用）但不分流。子代理指出两个风险：① `document.hidden` 可能让动画退化为瞬移；② 流式期间 `scrollBottom()` 的 rAF 与动画抢写 scrollTop 造成抖动。
 
-### 最终修改（仅 `src/ui/harness.html`）
-- `.status.busy` / `.status.sending` 正文颜色改为 `--text`（高对比白）。
-- `.status b`（数字）为 `--accent`（主题蓝）。
-- 新增 `.status.busy:not(.sending) b { font-size: 16px; font-weight: 800; }` —— 运行中秒数 16px + 800 粗。
-- `.status .dot` 增加 `flex-shrink: 0; position: relative; top: 1.5px;`，修复数字撑高行高导致的圆点偏上。
-- JS：`startToolTick` 内 `textContent` → `innerHTML = '工具运行中 ' + escapeSecHtml(sec) + '…'`。
+### 最终方案：isBusy 分流
+```js
+scrollBtn.addEventListener('click', function () {
+  pinBottom = true;
+  updateScrollBtn();
+  if (isBusy()) {              // 流式/工具运行中 → 完全走原瞬移路径
+    settleScrollBottom(true);
+    _lastScrollTop = stream.scrollTop;
+    return;
+  }
+  // 空闲 → 复用导航 hover 的平滑滚动
+  _settleGen++;
+  if (_settleTimer) { clearTimeout(_settleTimer); _settleTimer = null; }
+  if (_settleCleanup) { try { _settleCleanup(); } catch (_) {} _settleCleanup = null; }
+  resetExpectVars();
+  suppressPin = false;
+  smoothScrollToBottom(stream, 220);
+});
+```
+
+关键点：**流式期间两条路径互斥**，从源头消除抢写；空闲态复用已验证的 `smoothScrollToBottom`（rAF 逐帧 + WeakMap token 防并发 + hidden 降级）。
 
 ### 关键经验
-- **「某个元素没吃到样式」先查是 textContent 还是 innerHTML**：`textContent` 写入的纯文本不含标签，`<b>` 的 CSS 规则对它完全无效。
-- **中文字体 + 大字号数字会导致视觉重心偏移**：`align-items: center` 是盒模型居中，不是视觉居中，小圆点需要 `position: relative; top: 1~2px` 微调。
+- **改滚动/动画逻辑前先找项目里已有的实现**：`smoothScrollToBottom`（导航 hover）已经踩过所有坑（hidden 降级、token 防并发），直接复用比自造安全得多。
+- **复用现有函数时仍要评估调用场景差异**：导航 hover 场景下内容通常已接近底部，与「回到底部」按钮的「离底很远」场景差异大，抢写风险不同。必须加分流条件。
+- **判断「改动是否安全」不能只靠代码推理**：先让用户真机验证（本次空闲态丝滑滚动已确认生效，反证 `document.hidden` 为 false，L4344 那条"始终 hidden"的注释已过时）。
+
+### 已知低危边界（子代理审查，建议维持现状）
+1. 空闲点击后 220ms 内立刻发消息 → 两类 rAF 同帧竞争，理论上有约 200ms 中间值抖动，但最终必然收敛到底部。
+2. 220ms 内内容异步撑高 → 动画停在旧 target，略高于真底；纯空闲态极少发生。
+两条都要改共享的 `smoothScrollToBottom`，会影响导航 hover，风险不对等，故不改。
 
 ### 验证状态
 - typecheck / test（131 文件 1304 用例）/ lint（0 error）/ compile 全绿。
-- 子代理 code-reviewer 审查通过（8 项核验：CSS 优先级、:not 排除、XSS、HTML 残留、setStatus 混用等均无问题）。
-- **未做真机验证**：纯 UI 视觉改动，建议 `npm start` 目视确认明暗两主题下的观感。
+- **真机已验证**：空闲态点击「回到底部」为丝滑滚动（用户确认）。
+- 子代理 code-reviewer 审查通过（无高/中危，两条低危均为自收敛的极窄边界）。
 
-## 最新补充：侧边栏卡片点击无效修复
-
-### 用户反馈
-子代理卡片点击还是无法打开/折叠。
-
-### 根因
-1. **轮询覆盖**：侧边栏 2 秒轮询刷新时，如果子代理此时没有产生 preview（实时输出为空），更新逻辑里直接执行了 `previewEl.style.display = 'none'`，把用户刚点开的预览框强行关掉了，表现就是“点不开”或“闪一下就没”。
-2. **没有视觉反馈**：卡片上没有箭头等展开指示，且预览为空时点开也是白板。
-
-### 修复（`src/ui/shell/scripts/pages/agents.ts`）
-- 增加展开/收起的下拉箭头 SVG，并带 180 度旋转动画。
-- 轮询更新时，判断 `dataset.collapsed === '0'`（用户手动展开），如果是则不再强制 display='none'。
-- 预览为空时，展开状态下显示占位文案「（暂无预览输出）」。
-
-## 上一条改动（b10c233）
-
-### 修复（用户反馈的三个问题）
-1. **左侧主题色细线去除**：`harness.html` 的 `.tool-card-subagent` 与 `components.css` 的 `.ck-agent-running` 各删一行 `border-left: 0.5px solid ... !important`。（v0.10.191 刚加的，用户看过觉得不要）
-2. **点击无法展开**：
-   - 侧边栏（`src/ui/shell/scripts/pages/agents.ts`）的 `.ck-agent-running` 卡片**原本完全没有绑定点击事件**，渲染了 `<div class="ck-agent-running-preview" style="display:none">` 却无 toggle 入口，导致永远打不开。已补整卡点击切换 + `dataset.collapsed` 记录手动态（防 2 秒轮询重置）+ 文本选区时跳过（防误触折叠）。
-   - 内容区 `harness.html` 本身有 `tool-head` 点击折叠，未破坏。
-3. **剩余时间不一致（差 2 分钟）**：
-   - 根因：侧边栏原代码 `(s.timeoutMs || 0)`，字段缺失时按 0 算 → 显示 `00:00`；内容区 `s.timeoutMs || 600000` → 显示真实剩余。若子代理已跑约 8 分钟，正好差 2 分钟。
-   - 修复：侧边栏对齐为 `const tmo = s.timeoutMs || 600000`（= `SUBAGENT_TIMEOUT_MS`，见 `src/infra/timeouts.ts`）。
-   - 附带：非运行态（done/error）侧边栏不再显示「剩余 00:00」，与 harness 的 `elapsed + 's'` 文案对齐。
-
-### 顺带清理
-- `.ck-agent-running` padding `12px 14px 12px 16px` → `12px 14px`（左侧 16px 是原 border-left 的补偿，删线后不对称）。
-- `elapsed`/`remain` 复用同一个 `Date.now()`。
-
-### 关键经验
-- **侧边栏（shell）与内容区（harness）是两套独立渲染代码**：同一个数据字段，任何一处漏兜底或缺交互就会表现不一致。改子代理卡片必须两端同步核对。
-- `shell.html` 是 `components.css` + `scripts/**` 的构建产物，改真源后跑 `npm run compile`，diff 里会出现 shell.html 变更，属正常。
-
-### 验证状态
-- typecheck / lint（0 error，65 warning 基线持平）/ test（131 文件 1304 用例）/ compile 全绿。
-- 子代理 code-reviewer 审查通过（中危项已修：done/error 残留文案）。
-- **未做真机验证**：本次改的是 UI 样式与交互，建议 `npm start` 真机确认——重点看侧边栏卡片点击能展开/折叠且 2 秒轮询后不回弹、两端剩余秒数一致、无左侧线条。
+## 上一条改动（c163f3b）
 
 ## 上一版（v0.10.191）
 
