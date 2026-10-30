@@ -1160,13 +1160,17 @@ svg { flex-shrink: 0; }
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(env(safe-area-inset-bottom) + 70px);
+  /* 贴在输入框上方：跟随 composer 的**实际**高度（多行输入时 textarea 会撑高）。
+     写死 70px 会导致多行输入时胶囊被输入框遮住。--composer-h 由 app.js 用
+     ResizeObserver 维护；兜底 70px 覆盖脚本尚未初始化完的那一瞬间。 */
+  bottom: calc(var(--composer-h, 70px) + 10px);
   display: flex;
   justify-content: center;
   pointer-events: none;
   z-index: 15;
   padding: 0 16px;
   animation: cardFadeUp 0.28s var(--ease-out);
+  transition: bottom 0.12s var(--ease-out);
 }
 
 .exec-pill {
