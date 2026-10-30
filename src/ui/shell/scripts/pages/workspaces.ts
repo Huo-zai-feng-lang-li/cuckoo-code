@@ -82,7 +82,11 @@ function byTimeDesc(a: any, b: any): number {
 function renderItem(s: any, currentSessionId: string | null, archived: boolean = false, hasChildren: boolean = false, sub: boolean = false): string {
   // 无标题兜底：优先显示创建时间（有可读语义），否则用短 ID，避免裸露完整 UUID
   const fallbackLabel = s.createdAt ? fmtCreatedAt(s.createdAt) : ('对话 ' + String(s.sessionId || '').slice(0, 8));
-  const label = (s.kind === 'subagent' && s.agentName) ? ('子代理: ' + s.agentName) : (s.title || fallbackLabel);
+  // 子代理：显示"代理名 · 任务标题"，便于在主对话列表识别它做了什么（无 title 时回退只显示代理名）
+  const subagentLabel = (s.kind === 'subagent' && s.agentName)
+    ? ('子代理: ' + s.agentName + (s.title ? ' · ' + s.title : ''))
+    : null;
+  const label = subagentLabel || s.title || fallbackLabel;
   const time = relTime(s.updatedAt);
   const isCur = s.sessionId === currentSessionId;
   const renameBtn = '<span class="ck-ws-act" data-act="rename" aria-label="重命名">' +

@@ -1,6 +1,32 @@
 # 最新接续状态 (2026-10-31)
 
-## 本轮改动（v0.10.197）：系统提示词末尾格式锚定 + 对话命名指令前移
+## 本轮改动（v0.10.198）：工作区列表显示子代理任务标题
+
+### 用户反馈（真机截图）
+工作区列表里子代理只显示「子代理: code-reviewer」，看不出它审计/处理了什么。用户指出「自带里应该也需要命名的，这样方便看子代理审计了什么东西」——推翻了我先前「子代理不需要命名」的错误判断。
+
+### 根因（两层）
+1. **显示层丢弃标题**：`src/ui/shell/scripts/pages/workspaces.ts` 的 `renderItem` 里，`s.kind === 'subagent' && s.agentName` 为真时**无条件**只取 `agentName`，`s.title` 即使有值也不显示。
+2. **子代理压根不命名**：子代理复用主模板（`buildPrompt`），但 `extraPrompt` 末尾的「任务：xxx / 完成后直接给出最终结果」权重高于模板里的命名指令，模型通常直接干活。
+
+### 修复（2 处，+2 文件）
+- `src/ui/shell/scripts/pages/workspaces.ts`：抽出 `subagentLabel`，有 title 时拼成「子代理: 代理名 · 标题」，无 title 回退原样。长文本走既有 `.ck-ws-name` 省略号。
+- `src/bridge/subagent.ts`：`buildSubagentPrompt` 在「任务：」之前插入「开始前先调用 nameConversation 用一句话概括你的任务（≤20 字）」。
+- `src/ui/shell.html`：build-shell 生成物（workspaces.ts 的编译结果），随 compile 自动更新。
+
+### 验证
+- typecheck / compile / test（131 文件 1314 用例）/ lint（0 errors）全绿
+- 首轮跑测出现过 1 个用例失败，重跑全绿——系 `test/remote/server.test.js` 端口竞争偶发，与本次改动无关
+- **未做真机验证**：需重启开发版 → 跑一次子代理 → 确认列表显示「子代理: xxx · 任务概括」
+
+### 提交纪律（本次特别处理）
+工作区同时有另一会话在改 `src/remote/manager.ts` + `src/remote/pwa/app.js`，且存在 `compile-out.txt / lint-out.txt / temp-served.js / test-out.txt` 等临时文件。**只提交本次相关文件**，不碰他人改动、不清理他人临时文件。
+
+### 关键经验
+- **「某功能不需要」要先看 UI 消费端**：我一度判断「子代理不需要命名」，理由是 UI 显示 agentName。但用户要的恰恰是「agentName + 任务」的组合信息，显示层丢弃 title 才是 bug，不是设计。
+- **子代理与主对话共用模板时，额外约束要放 extraPrompt（真正末尾）**：写在主模板里的指令会被子代理的额外指令压过去。
+
+## 上一条改动（v0.10.197）：系统提示词末尾格式锚定 + 对话命名指令前移
 
 ### 用户反馈
 1. 模型偶发输出 DSML 格式工具调用（`<|DSML|invoke>`）。用户补充关键规律：**新开对话第一次回复时频发**（非必现），因为用户级规则要求先读 `.agents/handoff.md`，第一次回复必然是一次工具调用。

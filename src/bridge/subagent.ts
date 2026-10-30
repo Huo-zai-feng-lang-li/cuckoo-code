@@ -56,6 +56,8 @@ function buildSubagentPrompt(cfg: SubagentConfig): string {
   }
   parts.push('');
   parts.push('---');
+  parts.push('开始前先调用 nameConversation 用一句话概括你的任务（≤20 字），便于在主对话工作区列表识别你做了什么。');
+  parts.push('');
   parts.push('任务：' + cfg.task);
   parts.push('');
   parts.push('完成后直接给出最终结果（不要再调用工具）。');
