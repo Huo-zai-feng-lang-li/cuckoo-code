@@ -494,7 +494,10 @@
     background: var(--border-strong); opacity: 0; transition: opacity .15s, background .15s;
     z-index: 3;
   }
-  .composer-inner:hover .composer-resize { opacity: .55; }
+  /* 悬停显示拖拽手柄，但鼠标在「回到底部」按钮上时不显示：
+     该按钮虽然视觉上浮在输入框外，却是 .composer-inner 的子元素，
+     :hover 会冒泡到父容器，导致指针移向按钮时手柄被误激活。 */
+  .composer-inner:hover:not(:has(.scroll-bottom:hover)) .composer-resize { opacity: .55; }
   .composer-resize:hover, .composer-resize:active { opacity: 1; background: var(--accent); }
   /* 增强中：科技流光边框（conic 旋转扫描 + 外发光脉动） */
   @property --enh-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
@@ -3448,7 +3451,17 @@
     // 有实际输出 = AI 页面正在工作。框架自动发送的轮次（工具结果回传/看门狗/压缩等）
     // 由 onFrameworkSend 置忙；这里兜住"未收到投递事件但确实在出字"的情况。
     // finished 帧不置忙：收尾交给 onAssistantDone（否则会在结束瞬间又点亮运行态）。
-    if (!finished && (text || think) && !isBusy()) setStatus('生成中…', 'busy');
+    if (!finished && (text || think)) {
+      if (!isBusy()) {
+        setStatus('生成中…', 'busy');
+      } else if (statusText && /^框架：/.test(statusText.textContent || '')) {
+        // AI 已经真的出字了，说明框架投递的那一轮已被消费 —— 状态栏必须如实反映
+        // "AI 正在生成"，而不是停留在「框架：工具结果回传」这类过渡态。
+        // 不加此分支时，工具跑完后的整轮回复期间状态栏都冻在「框架：…」，
+        // 与右侧思考内容/正文流式输出明显不符。
+        setStatus('生成中…', 'busy');
+      }
+    }
     if (!cur) cur = createAssistant();
     if (cur.pending && (think || text)) {
       cur.pending = false;
@@ -5464,6 +5477,9 @@
 
   scrollBtn = document.getElementById('scroll-bottom');
   if (scrollBtn) {
+    // 阻止「点按钮 → 按钮获得焦点 → 父容器 :focus-within → 输入框边框变蓝」的误触。
+    // 在 pointerdown 阶段拦截默认聚焦行为；click 仍正常触发（不 preventDefault click）。
+    scrollBtn.addEventListener('pointerdown', function (e) { e.preventDefault(); });
     scrollBtn.addEventListener('click', function () {
       pinBottom = true;
       updateScrollBtn();

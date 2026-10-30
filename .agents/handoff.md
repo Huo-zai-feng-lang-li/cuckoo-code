@@ -1,6 +1,37 @@
 # 最新接续状态 (2026-10-30)
 
-## 本轮改动（未提交，未发版）：纯净模式限流重试耗尽后永久卡「运行中」
+## 本轮改动（v0.10.193）：纯净模式三处 UI 交互缺陷
+
+### 用户反馈（真机截图 + 描述）
+1. AI 正在思考输出时，右上角状态栏仍显示「框架：工具结果回传」，状态不真实。
+2. 鼠标移向「回到底部」按钮，输入框顶部的拖拽手柄被误激活。
+3. 点击「回到底部」按钮，输入框边框变蓝（误触聚焦）。
+
+### 根因与修复（仅 src/ui/harness.html 一个文件）
+
+**① 状态栏停在「框架：…」**
+- 根因：`onStream` 切「生成中…」的条件是 `!finished && (text||think) && !isBusy()`。框架投递（onFrameworkSend）已把 isBusy 置 true，条件永远不成立，整轮回复期间状态栏冻结在「框架：工具结果回传」。
+- 修复：拆成两分支——不忙时照旧 setStatus；忙且当前文案以「框架：」开头时，也切「生成中…」。其它忙态（「结果待发送」）不受影响。
+
+**② hover 误触拖拽手柄**
+- 根因：`.scroll-bottom` 视觉上 `bottom: calc(100% + 8px)` 浮在输入框外，但 DOM 上是 `.composer-inner` 的子元素，指针移过去时父容器 `:hover` 一并生效，命中 `.composer-inner:hover .composer-resize { opacity: .55 }`。
+- 修复：改为 `.composer-inner:hover:not(:has(.scroll-bottom:hover)) .composer-resize`。
+
+**③ 点击导致边框变蓝**
+- 根因：按钮被点击后抢焦点 → 父容器 `:focus-within` 成立 → 命中项目既有规则 `.composer-inner:focus-within { border: 1px solid #3b82f6 !important }`（第 768-777 行，是有意设计的聚焦蓝框）。
+- 修复：`scrollBtn.addEventListener('pointerdown', e => e.preventDefault())` 拦掉默认聚焦，click 逻辑不受影响。
+
+### 关键经验（重要）
+- **判断"谁导致样式变化"必须用 forcePseudoState 逐个隔离验证**，不能靠猜。本轮我先猜成「hover 冒泡导致变蓝」，实测数据直接推翻：hover 后是白色 `--border-strong`，蓝框来自 `:focus-within` 的 `!important` 规则。
+- **测试假阳性比没测更危险**：第一次验证「点击不变蓝」时按钮处于 `display:none`，`focus()` 根本不生效，而 `activeElement` 恰好是 input（页面初始化时已聚焦），边框本来就是蓝的——"点击后没变化"被误读成"修复生效"。重做时必须先 `blur()` 清焦点 + 强制按钮可见，才拿到真数据。
+- **CDP 改写 DOM 要保结构**：曾用 `.status` 的 `textContent = '...'` 模拟状态文案，直接把内层 `<span id="status-text">` 冲掉，后续全部测试报 null 错误。正确做法是改内层 span 的 textContent。
+- **`:has()` 在本项目可用**（Electron 44 / Chromium 129+），项目已有多处使用，非新引入风险。
+
+### 验证
+- typecheck / compile / lint（0 error）/ test（131 文件 1308 用例）全绿
+- 真机 CDP 三项逐一验证（含反向验证：非框架态不被误改、hover 手柄在按钮上不显示、真实点击后 :focus-within 不成立）
+
+## 上一条改动（v0.10.192）：纯净模式限流重试耗尽后永久卡「运行中」
 
 ### 用户诉求
 限流（HTTP 429）自动重试次数用尽后，纯净模式状态栏仍显示运行中、不自动停止。用户问「是否应该停止？是不是我说错了？」——属实，是 bug。
