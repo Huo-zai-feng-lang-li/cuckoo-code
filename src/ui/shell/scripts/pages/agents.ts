@@ -47,9 +47,12 @@ export async function loadRunningSubagents(): Promise<void> {
 
     list.forEach((s: any) => {
       let node = el.querySelector('.ck-agent-running[data-agent-window="' + s.windowId + '"]') as HTMLElement | null;
-      const elapsed = Math.max(0, Math.round((Date.now() - (s.startedAt || Date.now())) / 1000));
-      const remain = Math.max(0, Math.round(((s.timeoutMs || 0) - (Date.now() - (s.startedAt || Date.now()))) / 1000));
-      const remainText = s.timeoutMs ? ('剩余 ' + fmtSec(remain)) : '';
+      const now = Date.now();
+      const elapsed = Math.max(0, Math.round((now - (s.startedAt || now)) / 1000));
+      const tmo = s.timeoutMs || 600000; // = SUBAGENT_TIMEOUT_MS，见 src/infra/timeouts.ts
+      const remain = Math.max(0, Math.round((tmo - (now - (s.startedAt || now))) / 1000));
+      const isRunning = s.status !== 'done' && s.status !== 'error';
+      const remainText = isRunning ? ('剩余 ' + fmtSec(remain)) : '';
       const statusText = s.status === 'done' ? '完成' : (s.status === 'error' ? '出错' : '运行中');
       const preview = escapeHtml((s.preview || '').slice(-160));
 
@@ -92,13 +95,33 @@ export async function loadRunningSubagents(): Promise<void> {
         const previewEl = node.querySelector('.ck-agent-running-preview') as HTMLElement | null;
         if (previewEl) {
           if (preview) {
-            previewEl.style.display = '';
+            // 只有未手动折叠时才自动展示
+            if (previewEl.dataset.collapsed !== '1') {
+              previewEl.style.display = '';
+            }
             previewEl.textContent = preview;
           } else {
             previewEl.style.display = 'none';
           }
         }
       }
+    });
+    // 点击卡片切换预览显示
+    el.querySelectorAll('.ck-agent-running').forEach((card: any) => {
+      if (card.dataset.boundClick === '1') return;
+      card.dataset.boundClick = '1';
+      card.addEventListener('click', (e: any) => {
+        if (e.target.closest('.ck-agent-stop')) return;
+        // 用户正在选中文字时不触发折叠
+        const sel = window.getSelection();
+        if (sel && sel.toString().length > 0) return;
+        const pre = card.querySelector('.ck-agent-running-preview');
+        if (pre) {
+          const isHidden = pre.style.display === 'none';
+          pre.style.display = isHidden ? '' : 'none';
+          pre.dataset.collapsed = isHidden ? '0' : '1';
+        }
+      });
     });
     // 停止按钮事件：每次重建后重新绑定（节点随 innerHTML 回收，不会叠加）
     el.querySelectorAll('.ck-agent-stop').forEach((btn: any) => {
