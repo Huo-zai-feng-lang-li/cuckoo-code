@@ -1,10 +1,36 @@
 # 最新接续状态 (2026-10-30)
 
 ## 核心进展
+- 提交 95e75f9 / 4e55a43：纯净模式状态栏秒数特殊展示（白字 + 亮黄 16px/800 粗）+ 圆点垂直居中修复。
 - 提交 b10c233：修复子代理卡片 UI 三问题（边框线 / 点击展开 / 剩余时间不一致）。
 - 上一版 v0.10.191：子代理运行卡片左侧标识条改主题色 0.5px 细线，状态徽章改为可收缩，清理死代码。
 
-## 本轮改动（b10c233，未发版）
+## 本轮改动（95e75f9 + 4e55a43，未发版）
+
+### 用户诉求
+纯净模式（harness）状态栏「工具运行中 16s…」的秒数与正文同为琥珀细体不醒目；「框架：工具结果回传」整行黄色不好看；前置圆点未垂直居中。最终确认效果：正文白、数字亮黄加大加粗（参考用户提供的图三）。
+
+### 根因
+1. v0.10.189 给状态栏加过 `.status b` 强调样式，但**只有「结果待发送」用了 `innerHTML + <b>`**（`escapeSecHtml()`）；「工具运行中」的 `startToolTick()` 用的是 `textContent` 纯文本，完全没吃到 `b` 样式。
+2. 数字 16px 撑高行高，导致 6px 圆点在 `align-items: center` 下视觉偏上。
+
+### 最终修改（仅 `src/ui/harness.html`）
+- `.status.busy` / `.status.sending` 正文颜色改为 `--text`（高对比白）。
+- `.status b`（数字）为 `--amber`（亮黄）。
+- 新增 `.status.busy:not(.sending) b { font-size: 16px; font-weight: 800; }` —— 运行中秒数 16px + 800 粗。
+- `.status .dot` 增加 `flex-shrink: 0; position: relative; top: 1.5px;`，修复数字撑高行高导致的圆点偏上。
+- JS：`startToolTick` 内 `textContent` → `innerHTML = '工具运行中 ' + escapeSecHtml(sec) + '…'`。
+
+### 关键经验
+- **「某个元素没吃到样式」先查是 textContent 还是 innerHTML**：`textContent` 写入的纯文本不含标签，`<b>` 的 CSS 规则对它完全无效。
+- **中文字体 + 大字号数字会导致视觉重心偏移**：`align-items: center` 是盒模型居中，不是视觉居中，小圆点需要 `position: relative; top: 1~2px` 微调。
+
+### 验证状态
+- typecheck / test（131 文件 1304 用例）/ lint（0 error）/ compile 全绿。
+- 子代理 code-reviewer 审查通过（8 项核验：CSS 优先级、:not 排除、XSS、HTML 残留、setStatus 混用等均无问题）。
+- **未做真机验证**：纯 UI 视觉改动，建议 `npm start` 目视确认明暗两主题下的观感。
+
+## 上一条改动（b10c233）
 
 ### 修复（用户反馈的三个问题）
 1. **左侧主题色细线去除**：`harness.html` 的 `.tool-card-subagent` 与 `components.css` 的 `.ck-agent-running` 各删一行 `border-left: 0.5px solid ... !important`。（v0.10.191 刚加的，用户看过觉得不要）
