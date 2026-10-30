@@ -52,7 +52,96 @@ scrollBtn.addEventListener('click', function () {
 - **真机已验证**：空闲态点击「回到底部」为丝滑滚动（用户确认）。
 - 子代理 code-reviewer 审查通过（无高/中危，两条低危均为自收敛的极窄边界）。
 
-## 上一条改动（c163f3b）
+
+## 上一条改动（c163f3b）：折叠容器平滑过渡动画
+
+### 用户诉求
+子代理卡片、工具卡片、思考过程的折叠/展开是瞬间跳变，要求加平滑过渡动画。
+
+### 方案
+启用 CSS `interpolate-size: allow-keywords`（Electron 44 / Chromium 129+），使 `height: 0 ↔ auto` 可直接过渡，无需写死 max-height、无需改 HTML 结构。
+
+### 修改（5 个文件）
+- `src/ui/harness.html`：`:root` 加 interpolate-size；`.think-body` / `.tool-body` 从 display 切换改为 height+opacity+border 过渡
+- `src/ui/shell/styles/base.css`：`:root` 加 interpolate-size
+- `src/ui/shell/styles/components.css`：`.ck-agent-running-preview` 改 class 控制的 height 过渡
+- `src/ui/shell/scripts/pages/agents.ts`：style.display → classList.toggle('open')
+- `src/ui/shell.html`：build-shell 生成物
+
+过渡统一 `.25s cubic-bezier(.25,.1,.25,1)`，透明度 200ms。
+
+### 关键经验
+- **display: none 不能过渡**：必须用 height/opacity 等可动画属性。`interpolate-size` 是现代方案，不用写死 max-height。
+- **伪元素在 height:0 + overflow:hidden 下会被正确裁掉**，不会露残影。
+- `max-height` 与 `height: auto` 共存时，`height: auto` 的过渡目标会被 clamp 到 max-height，是预期行为（预览限高）。
+
+### 验证
+- typecheck / test（131 文件 1304 用例）/ lint（0 error）/ compile 全绿
+- 子代理 code-reviewer 审查通过（9 项核验，3 条低危均为一致性建议，已确认不改）
+
+## 本轮改动（95e75f9 + 4e55a43，未发版）
+
+### 用户诉求
+纯净模式（harness）状态栏「工具运行中 16s…」的秒数与正文同为琥珀细体不醒目；「框架：工具结果回传」整行黄色不好看；前置圆点未垂直居中。最终确认效果：正文白、数字加大加粗，颜色统一使用页面原本的主题蓝。
+
+### 根因
+1. v0.10.189 给状态栏加过 `.status b` 强调样式，但**只有「结果待发送」用了 `innerHTML + <b>`**（`escapeSecHtml()`）；「工具运行中」的 `startToolTick()` 用的是 `textContent` 纯文本，完全没吃到 `b` 样式。
+2. 数字 16px 撑高行高，导致 6px 圆点在 `align-items: center` 下视觉偏上。
+
+### 最终修改（仅 `src/ui/harness.html`）
+- `.status.busy` / `.status.sending` 正文颜色改为 `--text`（高对比白）。
+- `.status b`（数字）为 `--accent`（主题蓝）。
+- 新增 `.status.busy:not(.sending) b { font-size: 16px; font-weight: 800; }` —— 运行中秒数 16px + 800 粗。
+- `.status .dot` 增加 `flex-shrink: 0; position: relative; top: 1.5px;`，修复数字撑高行高导致的圆点偏上。
+- JS：`startToolTick` 内 `textContent` → `innerHTML = '工具运行中 ' + escapeSecHtml(sec) + '…'`。
+
+### 关键经验
+- **「某个元素没吃到样式」先查是 textContent 还是 innerHTML**：`textContent` 写入的纯文本不含标签，`<b>` 的 CSS 规则对它完全无效。
+- **中文字体 + 大字号数字会导致视觉重心偏移**：`align-items: center` 是盒模型居中，不是视觉居中，小圆点需要 `position: relative; top: 1~2px` 微调。
+
+### 验证状态
+- typecheck / test（131 文件 1304 用例）/ lint（0 error）/ compile 全绿。
+- 子代理 code-reviewer 审查通过（8 项核验：CSS 优先级、:not 排除、XSS、HTML 残留、setStatus 混用等均无问题）。
+- **未做真机验证**：纯 UI 视觉改动，建议 `npm start` 目视确认明暗两主题下的观感。
+
+## 最新补充：侧边栏卡片点击无效修复
+
+### 用户反馈
+子代理卡片点击还是无法打开/折叠。
+
+### 根因
+1. **轮询覆盖**：侧边栏 2 秒轮询刷新时，如果子代理此时没有产生 preview（实时输出为空），更新逻辑里直接执行了 `previewEl.style.display = 'none'`，把用户刚点开的预览框强行关掉了，表现就是“点不开”或“闪一下就没”。
+2. **没有视觉反馈**：卡片上没有箭头等展开指示，且预览为空时点开也是白板。
+
+### 修复（`src/ui/shell/scripts/pages/agents.ts`）
+- 增加展开/收起的下拉箭头 SVG，并带 180 度旋转动画。
+- 轮询更新时，判断 `dataset.collapsed === '0'`（用户手动展开），如果是则不再强制 display='none'。
+- 预览为空时，展开状态下显示占位文案「（暂无预览输出）」。
+
+## 上一条改动（b10c233）
+
+### 修复（用户反馈的三个问题）
+1. **左侧主题色细线去除**：`harness.html` 的 `.tool-card-subagent` 与 `components.css` 的 `.ck-agent-running` 各删一行 `border-left: 0.5px solid ... !important`。（v0.10.191 刚加的，用户看过觉得不要）
+2. **点击无法展开**：
+   - 侧边栏（`src/ui/shell/scripts/pages/agents.ts`）的 `.ck-agent-running` 卡片**原本完全没有绑定点击事件**，渲染了 `<div class="ck-agent-running-preview" style="display:none">` 却无 toggle 入口，导致永远打不开。已补整卡点击切换 + `dataset.collapsed` 记录手动态（防 2 秒轮询重置）+ 文本选区时跳过（防误触折叠）。
+   - 内容区 `harness.html` 本身有 `tool-head` 点击折叠，未破坏。
+3. **剩余时间不一致（差 2 分钟）**：
+   - 根因：侧边栏原代码 `(s.timeoutMs || 0)`，字段缺失时按 0 算 → 显示 `00:00`；内容区 `s.timeoutMs || 600000` → 显示真实剩余。若子代理已跑约 8 分钟，正好差 2 分钟。
+   - 修复：侧边栏对齐为 `const tmo = s.timeoutMs || 600000`（= `SUBAGENT_TIMEOUT_MS`，见 `src/infra/timeouts.ts`）。
+   - 附带：非运行态（done/error）侧边栏不再显示「剩余 00:00」，与 harness 的 `elapsed + 's'` 文案对齐。
+
+### 顺带清理
+- `.ck-agent-running` padding `12px 14px 12px 16px` → `12px 14px`（左侧 16px 是原 border-left 的补偿，删线后不对称）。
+- `elapsed`/`remain` 复用同一个 `Date.now()`。
+
+### 关键经验
+- **侧边栏（shell）与内容区（harness）是两套独立渲染代码**：同一个数据字段，任何一处漏兜底或缺交互就会表现不一致。改子代理卡片必须两端同步核对。
+- `shell.html` 是 `components.css` + `scripts/**` 的构建产物，改真源后跑 `npm run compile`，diff 里会出现 shell.html 变更，属正常。
+
+### 验证状态
+- typecheck / lint（0 error，65 warning 基线持平）/ test（131 文件 1304 用例）/ compile 全绿。
+- 子代理 code-reviewer 审查通过（中危项已修：done/error 残留文案）。
+- **未做真机验证**：本次改的是 UI 样式与交互，建议 `npm start` 真机确认——重点看侧边栏卡片点击能展开/折叠且 2 秒轮询后不回弹、两端剩余秒数一致、无左侧线条。
 
 ## 上一版（v0.10.191）
 
@@ -146,5 +235,6 @@ scrollBtn.addEventListener('click', function () {
 ## 下一步建议
 - 若觉得 16px/15px 偏大，改 `overlay.css` 的 `.cuckoo-tool-mask-text b` 与 `harness.html` 的 `.status b` 的 font-size 即可，其余逻辑不受影响。
 - 快照 `snap-1793289429968-bp5j1v` 可用于回滚本轮全部改动。
+
 
 
