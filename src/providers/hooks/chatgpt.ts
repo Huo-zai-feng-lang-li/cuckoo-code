@@ -19,9 +19,10 @@
 import { createFrameDecoder, extractData } from './shared/sse.js';
 import { maskAsNative } from './shared/native-mask.js';
 
+// 幂等标记放模块作用域，避免在 window 上留可枚举的 cuckoo 标签（同 deepseek）
+var __installed = false;
+
 function install(): void {
-  // 幂等标记放闭包内，避免在 window 上留可枚举的 cuckoo 标签（同 deepseek）
-  var __installed = false;
   if (__installed) return;
   __installed = true;
 

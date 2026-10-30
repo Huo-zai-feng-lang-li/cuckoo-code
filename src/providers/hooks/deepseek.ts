@@ -10,11 +10,12 @@ import { matchProviderEndpoint } from './shared/url-match.js';
 import { createIdleWatchdog } from './shared/idle-watchdog.js';
 import { maskAsNative } from './shared/native-mask.js';
 
+// 幂等标记放模块作用域（不是 install 内部！放函数内每次调用都会重置，等于没有）。
+// 也不用 window 属性：那等于给页面留了可枚举的 "本页被 Cuckoo 改过" 标签
+//（Object.keys(window).filter(k => k.includes('cuckoo')) 一行命中）。
+var __installed = false;
+
 function install(): void {
-  // 幂等标记放闭包内：挂到 window 上等于给页面留了可枚举的 "本页被 Cuckoo 改过" 标签
-  //（Object.keys(window).filter(k => k.includes('cuckoo')) 一行命中）。
-  // hook 是 IIFE，install() 本身只会执行一次，闭包变量足够。
-  var __installed = false;
   if (__installed) return;
   __installed = true;
 
