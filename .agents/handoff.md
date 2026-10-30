@@ -1,9 +1,35 @@
 # 最新接续状态 (2026-10-30)
 
 ## 核心进展
-- 发布 v0.10.191：子代理运行卡片左侧标识条改为主题色 0.5px 细线，状态徽章改为可收缩，清理死代码。
-- v0.10.190：移除子代理宠物绕圈与流光特效，恢复静态边框；修复卡片间距与名称不显示。
-- v0.10.189：工具回传阶段计时语义拆分。
+- 提交 b10c233：修复子代理卡片 UI 三问题（边框线 / 点击展开 / 剩余时间不一致）。
+- 上一版 v0.10.191：子代理运行卡片左侧标识条改主题色 0.5px 细线，状态徽章改为可收缩，清理死代码。
+
+## 本轮改动（b10c233，未发版）
+
+### 修复（用户反馈的三个问题）
+1. **左侧主题色细线去除**：`harness.html` 的 `.tool-card-subagent` 与 `components.css` 的 `.ck-agent-running` 各删一行 `border-left: 0.5px solid ... !important`。（v0.10.191 刚加的，用户看过觉得不要）
+2. **点击无法展开**：
+   - 侧边栏（`src/ui/shell/scripts/pages/agents.ts`）的 `.ck-agent-running` 卡片**原本完全没有绑定点击事件**，渲染了 `<div class="ck-agent-running-preview" style="display:none">` 却无 toggle 入口，导致永远打不开。已补整卡点击切换 + `dataset.collapsed` 记录手动态（防 2 秒轮询重置）+ 文本选区时跳过（防误触折叠）。
+   - 内容区 `harness.html` 本身有 `tool-head` 点击折叠，未破坏。
+3. **剩余时间不一致（差 2 分钟）**：
+   - 根因：侧边栏原代码 `(s.timeoutMs || 0)`，字段缺失时按 0 算 → 显示 `00:00`；内容区 `s.timeoutMs || 600000` → 显示真实剩余。若子代理已跑约 8 分钟，正好差 2 分钟。
+   - 修复：侧边栏对齐为 `const tmo = s.timeoutMs || 600000`（= `SUBAGENT_TIMEOUT_MS`，见 `src/infra/timeouts.ts`）。
+   - 附带：非运行态（done/error）侧边栏不再显示「剩余 00:00」，与 harness 的 `elapsed + 's'` 文案对齐。
+
+### 顺带清理
+- `.ck-agent-running` padding `12px 14px 12px 16px` → `12px 14px`（左侧 16px 是原 border-left 的补偿，删线后不对称）。
+- `elapsed`/`remain` 复用同一个 `Date.now()`。
+
+### 关键经验
+- **侧边栏（shell）与内容区（harness）是两套独立渲染代码**：同一个数据字段，任何一处漏兜底或缺交互就会表现不一致。改子代理卡片必须两端同步核对。
+- `shell.html` 是 `components.css` + `scripts/**` 的构建产物，改真源后跑 `npm run compile`，diff 里会出现 shell.html 变更，属正常。
+
+### 验证状态
+- typecheck / lint（0 error，65 warning 基线持平）/ test（131 文件 1304 用例）/ compile 全绿。
+- 子代理 code-reviewer 审查通过（中危项已修：done/error 残留文案）。
+- **未做真机验证**：本次改的是 UI 样式与交互，建议 `npm start` 真机确认——重点看侧边栏卡片点击能展开/折叠且 2 秒轮询后不回弹、两端剩余秒数一致、无左侧线条。
+
+## 上一版（v0.10.191）
 
 ## 本轮改动（v0.10.191）
 
