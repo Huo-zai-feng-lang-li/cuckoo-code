@@ -13,6 +13,8 @@
 
 - **hook 在 window 上留下可枚举的 cuckoo 标记**：三个 hook 用 `window.__cuckoo*HookInstalled__` 做幂等，页面一行 `Object.keys(window).filter(k => k.includes('cuckoo'))` 就能识别。改为闭包变量（hook 本身是 IIFE，天然只执行一次）。
 
+- **hook 的幂等标记写错作用域（真 bug）**：三平台 hook 把 `__installed` 声明在 `install()` 函数体**内部**，每次调用都重置为 false，幂等判断实际无效。当前只因 `install()` 恰好只被调用一次才没暴露，但任何未来的重复注入路径都会让 `fetch` / `XHR` 被二次包装（叠加多层 intercept、SSE 重复派发）。现已提到模块作用域。
+
 - **userAgentData 的品牌补丁此前从未真正生效**：排查中发现两个连锁缺陷 —— ① `navigator.userAgentData` 每次访问返回**新对象**，打在实例上的补丁随对象一起丢弃（`brands` 之所以生效是因为走了原型 getter）；② 原生 `getHighEntropyValues` 要求 `this` 是实例，原型包装若固化对象会抛 `Illegal invocation`。现统一只打原型，且包装内用 `apply(this, arguments)` 保留调用时的 this。用 `defineProperty` 而非直接赋值（原生方法是原型上的只读方法，非严格模式下普通赋值会静默失败）。
 
 - **子代理启动间隔默认 0 秒**：同账号多路子代理同时开 SSE 是明显机器人特征，默认 0 秒等于完全不设防。默认值改为 2~5 秒随机；`migrateLegacy` 把旧默认 (0,0) 迁移到 (2,5)，用户自定义值原样保留。
