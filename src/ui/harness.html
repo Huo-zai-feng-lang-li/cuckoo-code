@@ -5425,9 +5425,22 @@
   if (scrollBtn) {
     scrollBtn.addEventListener('click', function () {
       pinBottom = true;
-      settleScrollBottom(true);
-      // settle 是异步的，这里先同步一次，防 _lastScrollTop 落后
-      _lastScrollTop = stream.scrollTop;
+      updateScrollBtn();
+      // 流式/工具运行中：贴底 rAF（scrollBottom）每帧都在写 scrollTop，与平滑动画抢写会抖动。
+      // 此时沿用原有的瞬移 + settle 兜底（与改动前完全一致，零回归风险）。
+      if (isBusy()) {
+        settleScrollBottom(true);
+        _lastScrollTop = stream.scrollTop;
+        return;
+      }
+      // 空闲态：复用导航 hover 的平滑滚动实现（rAF 逐帧缓动，不依赖 scrollend）。
+      // 先中止可能在跑的 settle 重试循环，避免它把 scrollTop 又拉回与动画互相覆写。
+      _settleGen++;
+      if (_settleTimer) { clearTimeout(_settleTimer); _settleTimer = null; }
+      if (_settleCleanup) { try { _settleCleanup(); } catch (_) {} _settleCleanup = null; }
+      resetExpectVars();
+      suppressPin = false;
+      smoothScrollToBottom(stream, 220);
     });
   }
   // 记录上一次已知的 scrollTop，用于区分"用户主动上滚"与"内容增长导致的被动 scroll"。
