@@ -3555,16 +3555,14 @@
           '</div>' +
         '</div>';
       stream.appendChild(wrap);
-      var head = wrap.querySelector('.tool-head');
       var stopBtn = wrap.querySelector('.tool-stop-btn');
-      // 点击头部折叠（但点击停止按钮不折叠）
-      head.addEventListener('click', function (e) {
-        var t = e.target;
-        while (t && t !== head) {
-          if (t.classList && t.classList.contains('tool-stop-btn')) return;
-          t = t.parentNode;
-        }
-        wrap.querySelector('.tool-card').classList.toggle('open');
+      var cardEl = wrap.querySelector('.tool-card');
+      // 点击整个卡片即可折叠（但点击停止按钮或选中文字时不折叠）
+      cardEl.addEventListener('click', function (e) {
+        if (e.target.closest('.tool-stop-btn')) return;
+        var sel = window.getSelection();
+        if (sel && sel.toString().length > 0) return;
+        cardEl.classList.toggle('open');
       });
       stopBtn.addEventListener('click', function (e) {
         e.stopPropagation();
@@ -3790,15 +3788,12 @@
       '</div>';
     stream.appendChild(wrap);
     var card = wrap.querySelector('.tool-card');
-    var head = wrap.querySelector('.tool-head');
     var stopBtn = wrap.querySelector('.tool-stop-btn');
-    if (head) {
-      head.addEventListener('click', function (e) {
-        var t = e.target;
-        while (t && t !== head) {
-          if (t.classList && t.classList.contains('tool-stop-btn')) return;
-          t = t.parentNode;
-        }
+    if (card) {
+      card.addEventListener('click', function (e) {
+        if (e.target.closest('.tool-stop-btn')) return;
+        var sel = window.getSelection();
+        if (sel && sel.toString().length > 0) return;
         card.classList.toggle('open');
       });
     }
