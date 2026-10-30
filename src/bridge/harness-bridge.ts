@@ -26,6 +26,7 @@ import {
 import { sendToChat, cancelPendingSend, clearInputArea, onMessageDelivered } from '../overlay/chat-input.js';
 import { hideToolMask } from '../overlay/panel.js';
 import { cancelPendingForSwitch, resumeRetry } from './loop/retry.js';
+import { extractJsToolBlocks } from './parser/js-detector.js';
 import { setSuspended as setWatchdogSuspended } from './loop/watchdog.js';
 
 const require = createRequire(import.meta.url);
@@ -129,7 +130,15 @@ export function initHarnessBridge(): void {
     if (!HAS_TOOL_BLOCK_RE.test(raw)) setAiGenerating(false);
     // 透传服务端权威消息 id（供 harness 真截断定位；平台未提供时为 null）
     const msgIds = (meta && meta.msgIds) || null;
-    report({ type: 'assistant-done', text: stripToolBlocks(raw), msgIds });
+    // hasTool 必须显式透传：text 已被 stripToolBlocks 剥掉工具块，harness 侧无从判断。
+    // observer 是先通知本回调、再执行工具（emitToolCall start 在之后），
+    // 故此刻 harness 的 toolRunningCount 仍为 0 —— 不带此标记会让状态栏误闪「就绪」。
+    // ⚠️ 必须用 extractJsToolBlocks 而非 HAS_TOOL_BLOCK_RE：后者是宽松正则，
+    //    普通回答里附带的 js 示例也会命中，但那种块根本不会被执行
+    //    （extractJsToolBlocks 要求 js 块是纯代码块且调用了工具函数）。
+    //    用宽松正则会让状态栏误显示「工具运行中…」，随后被静默兜底收尾。
+    const hasTool = extractJsToolBlocks(raw).length > 0;
+    report({ type: 'assistant-done', text: stripToolBlocks(raw), msgIds, hasTool });
   });
 
   // 任务空闲（observer 判定：回复里没有工具调用 = 本轮任务真的结束）→ 上报。

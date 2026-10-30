@@ -96,6 +96,46 @@ test('自动重试状态接入：等待期间保持忙、耗尽立即收尾', ()
   );
 });
 
+test('onAssistantDone 接 hasTool：含工具时保持忙态，避免闪「就绪」', () => {
+  // 回归背景：observer 先通知 assistant-done、后执行工具（发 tool-start）。
+  // 此刻 toolRunningCount 仍为 0，若不看 hasTool，状态栏会短暂显示「就绪」。
+  const idx = script.indexOf('function onAssistantDone');
+  assert.ok(idx > 0, '应能找到 onAssistantDone');
+  const nextFn = script.indexOf('\n  function ', idx + 10);
+  const body = script.slice(idx, nextFn > 0 ? nextFn : idx + 2000);
+  assert.ok(/function onAssistantDone\s*\(text, hasTool\)/.test(body), '应接收 hasTool 参数');
+  assert.ok(body.includes('else if (hasTool) setStatus('), 'hasTool 为真时应保持忙态');
+  // 透传链路两端都要接上
+  assert.ok(
+    script.includes('onAssistantDone(adRaw, payload.hasTool)'),
+    'assistant-done 分支应透传 hasTool'
+  );
+});
+
+test('过渡态用状态位而非文案前缀匹配', () => {
+  // 回归背景：原先 onStream 靠 /^框架：/ 匹配状态栏文案判断过渡态，
+  // 文案一改（技术词→人话）就静默失效，状态栏会整轮冻在过渡文案上。
+  assert.ok(/var inFrameworkPhase = false;/.test(script), '应有 inFrameworkPhase 状态位');
+  const setIdx = script.indexOf('function setStatus');
+  const setNext = script.indexOf('\n  function ', setIdx + 10);
+  const setBody = script.slice(setIdx, setNext > 0 ? setNext : setIdx + 1200);
+  assert.ok(setBody.includes('inFrameworkPhase = false'), 'setStatus 应清状态位');
+  const fwIdx = script.indexOf('function onFrameworkSend');
+  const fwNext = script.indexOf('\n  function ', fwIdx + 10);
+  const fwBody = script.slice(fwIdx, fwNext > 0 ? fwNext : fwIdx + 1500);
+  assert.ok(fwBody.includes('inFrameworkPhase = true'), 'onFrameworkSend 应置状态位');
+  // 置位必须在 setStatus 之后：setStatus 会清零，先置后清等于没置
+  const setCallAt = fwBody.indexOf('setStatus(');
+  const flagAt = fwBody.indexOf('inFrameworkPhase = true');
+  assert.ok(setCallAt >= 0 && flagAt > setCallAt, '置位必须在 setStatus 之后，否则会被立刻清掉');
+  // clearTransientState 直接改 DOM 绕过 setStatus，必须显式清
+  const clearIdx = script.indexOf('function clearTransientState');
+  assert.ok(
+    script.slice(clearIdx, clearIdx + 2500).includes('inFrameworkPhase = false'),
+    'clearTransientState 应清状态位（它绕过 setStatus）'
+  );
+});
+
 test('静默兜底有界：不允许数分钟级卡在运行态', () => {
   const m = script.match(/var limit = Date\.now\(\) < frameworkDriveUntil \? (\d+) : (\d+);/);
   assert.ok(m, '应能找到静默兜底的容忍上限');

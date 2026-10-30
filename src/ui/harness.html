@@ -1795,6 +1795,10 @@
     clearAbortSuppression();
     frameworkDriveUntil = 0;
     retryUntil = 0;
+    // 同理必须显式清：本函数末尾直接改 DOM 绕过 setStatus，
+    // 而 setStatus 才是清该状态位的唯一入口。残留会让下个会话里
+    // 「就绪」状态被意外的 onStream 帧误判成「生成中…」并点亮停止键。
+    inFrameworkPhase = false;
     // 作废在途的"立即发送"等待：切会话/新对话后，那条消息不应再被发出（否则会串到新会话）
     manualSendToken++;
     manualSendInFlight = false;
@@ -3171,6 +3175,8 @@
     stopSendTick();
     // 中止后、且尚未开始新任务时，忽略迟到的 busy（否则按钮会在停止后跳回停止态）
     if (state === 'busy' && aborted()) return;
+    // 任何状态改写都意味着离开「等 AI 开口」的过渡态（含它自己再次进入前的旧值）
+    inFrameworkPhase = false;
     statusText.textContent = text;
     statusEl.className = 'status' + (state ? ' ' + state : '');
     generating = (state === 'busy');
@@ -3197,6 +3203,10 @@
   //   本窗口只影响兜底判定的容忍度，避免长任务被过早重置。
   var FRAMEWORK_DRIVE_MS = 120000;
   var frameworkDriveUntil = 0;
+  // 当前状态栏是否处于「框架投递后、等 AI 开口」的过渡态。
+  // 用状态位而非匹配文案前缀：文案会改（技术词 → 人话），字符串匹配一旦失配，
+  // onStream 就无法把状态切回「生成中…」，状态栏又会整轮冻在过渡文案上。
+  var inFrameworkPhase = false;
   function onFrameworkSend(tag) {
     if (aborted()) return; // 用户已主动中止：丢弃迟到的框架指令，防止被旧工具结果重新激活或回显
     var label = FW_LABELS[tag] || tag || '框架指令';
@@ -3207,7 +3217,9 @@
     frameworkDriveUntil = Date.now() + FRAMEWORK_DRIVE_MS;
     lastActivityAt = Date.now();
     stopSendTick(); // 框架已把消息投递出去，「结果待发送」窗口结束
-    setStatus('框架：' + label, 'busy');
+    setStatus('已发送，等待 AI 响应…（' + label + '）', 'busy');
+    // 必须放在 setStatus 之后：setStatus 会清这个状态位（任何状态改写都算离开过渡态）
+    inFrameworkPhase = true;
     if (!cur) {
       // 无助手气泡时补占位（正文随后由流式事件填充），让"正在跑"看得见
       cur = createAssistant();
@@ -3452,15 +3464,9 @@
     // 由 onFrameworkSend 置忙；这里兜住"未收到投递事件但确实在出字"的情况。
     // finished 帧不置忙：收尾交给 onAssistantDone（否则会在结束瞬间又点亮运行态）。
     if (!finished && (text || think)) {
-      if (!isBusy()) {
-        setStatus('生成中…', 'busy');
-      } else if (statusText && /^框架：/.test(statusText.textContent || '')) {
-        // AI 已经真的出字了，说明框架投递的那一轮已被消费 —— 状态栏必须如实反映
-        // "AI 正在生成"，而不是停留在「框架：工具结果回传」这类过渡态。
-        // 不加此分支时，工具跑完后的整轮回复期间状态栏都冻在「框架：…」，
-        // 与右侧思考内容/正文流式输出明显不符。
-        setStatus('生成中…', 'busy');
-      }
+      // AI 真的出字了 = 框架投递的那一轮已被消费，状态栏必须如实反映"正在生成"。
+      // inFrameworkPhase 由 onFrameworkSend 置位，任何 setStatus 都会清掉它。
+      if (!isBusy() || inFrameworkPhase) setStatus('生成中…', 'busy');
     }
     if (!cur) cur = createAssistant();
     if (cur.pending && (think || text)) {
@@ -3514,9 +3520,13 @@
     // 注意：finished 时不置空 cur，交给 onAssistantDone 收尾（否则会重复渲染一条）
   }
 
-  function onAssistantDone(text) {
+  function onAssistantDone(text, hasTool) {
     // 回复完成：若有工具仍在执行，任务并未结束 —— 状态与按钮都保持"运行中"
+    // hasTool：本回合回复里含工具调用块（由 bridge 判定后透传）。此时 observer 尚未发出
+    // tool-start（它在本回调之后才执行工具），toolRunningCount 仍是 0 ——
+    // 若不看这个标记，状态栏会先闪一下「就绪」再变「工具运行中…」，看着像任务已结束。
     if (toolRunningCount > 0) setStatus('工具运行中…', 'busy');
+    else if (hasTool) setStatus('工具运行中…', 'busy');
     else setStatus('就绪', 'ready');
     var t = (text || '').trim();
     // 去重：与上一条已完成一致则忽略（防 finished 流 + assistant-done 双触发）
@@ -3974,7 +3984,7 @@
           // 注：仅 DeepSeek 产出 number 型 responseMessageId（截断功能本身也仅 DeepSeek 支持）；
           // 其他平台（如 ChatGPT 产出 string）此处置 null，截断按钮会温柔拒绝。
           var adWebMsgId = (payload.msgIds && typeof payload.msgIds.responseMessageId === 'number') ? payload.msgIds.responseMessageId : null;
-          onAssistantDone(adRaw);
+          onAssistantDone(adRaw, payload.hasTool);
           if (adText && adText !== lastPushedAssistant) { lastPushedAssistant = adText; pushHist({ t: 'assistant', text: adRaw, think: adThink, webMsgId: adWebMsgId }); }
           // 草拟阶段拿到计划条目 → 立刻进闸门（条目来自 todoWrite 工具或裸 JSON 识别）
           if (planState && planState.phase === 'draft' && planBySession[currentSessionId] && planBySession[currentSessionId].length) planAwaitConfirm();
@@ -4008,7 +4018,7 @@
         case 'retry-state': onRetryState(payload.state, payload.delayMs); break;
         case 'assistant': {
           var aText = (payload.text || '').trim();
-          onAssistantDone(payload.text);
+          onAssistantDone(payload.text, payload.hasTool);
           var aWebMsgId = (payload.msgIds && typeof payload.msgIds.responseMessageId === 'number') ? payload.msgIds.responseMessageId : null;
           if (aText && aText !== lastPushedAssistant) { lastPushedAssistant = aText; pushHist({ t: 'assistant', text: payload.text, webMsgId: aWebMsgId }); }
           break;

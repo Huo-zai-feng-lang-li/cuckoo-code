@@ -227,6 +227,44 @@ test('看门狗：持续有流式活动时不得误杀生成中', async () => {
   assert.strictEqual(lastAiState(), true, '刚有活动时不能被复位');
 });
 
+// ===== hasTool 透传：状态栏"就绪闪烁"的修复依据 =====
+// 回归背景：observer 先通知 responseListeners（harness 收到 assistant-done），
+// 之后才执行工具（发 tool-start）。此刻 harness 的 toolRunningCount 仍为 0，
+// 若不透传 hasTool，状态栏会短暂显示「就绪」再跳「工具运行中…」，看着像任务已结束。
+
+test('assistant-done 透传 hasTool=true（含可执行工具块）', async () => {
+  CB.response('我来读一下\n```cuckoo\nawait read("a.js")\n```\n');
+  await new Promise((r) => setTimeout(r, 0));
+  const p = S.reported.find((x) => x.type === 'assistant-done');
+  assert.ok(p, '应上报 assistant-done');
+  assert.strictEqual(p.hasTool, true, '含可执行工具块时 hasTool 应为 true');
+});
+
+test('assistant-done 透传 hasTool=false（普通文本回复）', async () => {
+  CB.response('这是一段普通回答，没有工具调用。');
+  await new Promise((r) => setTimeout(r, 0));
+  const p = S.reported.find((x) => x.type === 'assistant-done');
+  assert.strictEqual(p.hasTool, false, '无工具块时 hasTool 应为 false');
+});
+
+// 关键回归：宽松正则 HAS_TOOL_BLOCK_RE 会把这两种情况误判为"有工具"，
+// 但它们根本不会被执行（extractJsToolBlocks 要求 js 块是纯代码块且调了工具函数）。
+// 误判后果：状态栏显示「工具运行中…」，随后被静默兜底收尾。
+
+test('hasTool 判据：正常回答里附 js 示例 → false（不误报）', async () => {
+  CB.response('给你个例子：\n```js\nconst a = 1;\n```\n就这些');
+  await new Promise((r) => setTimeout(r, 0));
+  const p = S.reported.find((x) => x.type === 'assistant-done');
+  assert.strictEqual(p.hasTool, false, '普通回答里的 js 示例不会被执行，不应算工具');
+});
+
+test('hasTool 判据：js 纯代码块但无工具调用 → false（不误报）', async () => {
+  CB.response('```js\nconst a = 1;\n```');
+  await new Promise((r) => setTimeout(r, 0));
+  const p = S.reported.find((x) => x.type === 'assistant-done');
+  assert.strictEqual(p.hasTool, false, '纯代码块无工具调用，不会执行，不应算工具');
+});
+
 test('状态未变化时不重复上报（避免刷屏）', async () => {
   streamCb({ think: '', text: 'a', finished: false });
   await new Promise((r) => setTimeout(r, 0));
