@@ -17,11 +17,13 @@
  *    与 aborted），证据不足时按「完成」而非「停止」上报，避免吞掉正常回复。
  */
 import { createFrameDecoder, extractData } from './shared/sse.js';
+import { maskAsNative } from './shared/native-mask.js';
 
 function install(): void {
-  var MARKER = '__cuckooChatgptHookInstalled__';
-  if (window[MARKER]) return;
-  window[MARKER] = true;
+  // 幂等标记放闭包内，避免在 window 上留可枚举的 cuckoo 标签（同 deepseek）
+  var __installed = false;
+  if (__installed) return;
+  __installed = true;
 
   // 会话流式接口：POST /backend-api/(f/)?conversation
   // （f/ 是前端网关前缀，部分账号/灰度路由会带上）
@@ -467,7 +469,7 @@ function install(): void {
   // ---------- fetch 拦截 ----------
   var origFetch = window.fetch;
   if (typeof origFetch === 'function') {
-    window.fetch = function (input: any, init: any) {
+    window.fetch = maskAsNative(function (input: any, init: any) {
       var url = typeof input === 'string' ? input
         : (input && input.url) ? input.url
         : (input && input.href) ? input.href : '';
@@ -522,14 +524,14 @@ function install(): void {
         dispatch('', 'error', null, null, { reason: 'network', name: err && err.name, sessionId: fetchSessionId }, { path: 'network-error', name: err && err.name });
         throw err;
       });
-    };
+    }, 'fetch', 1);
   }
 
   // ---------- XHR 拦截（被动读取 responseText） ----------
   var origOpen = XMLHttpRequest.prototype.open;
   var origSend = XMLHttpRequest.prototype.send;
   var xhrInfo = new WeakMap();
-  XMLHttpRequest.prototype.open = function (method, url) {
+  XMLHttpRequest.prototype.open = maskAsNative(function (method, url) {
     try { xhrInfo.set(this, { url: url, method: method }); } catch (e) { /* ignore */ }
     // 停止类请求：不走正文观察，只置标志
     try {
@@ -539,8 +541,8 @@ function install(): void {
       }
     } catch (e) { /* ignore */ }
     return origOpen.apply(this, arguments);
-  };
-  XMLHttpRequest.prototype.send = function (body) {
+  }, 'open', 2);
+  XMLHttpRequest.prototype.send = maskAsNative(function (body) {
     var info = xhrInfo.get(this);
     if (info && isCompletion(info.url, info.method)) {
       userStopped = false; // 新的会话流开始：复位用户停止标志
@@ -548,7 +550,7 @@ function install(): void {
       try { observeXhr(this, info); } catch (e) { /* ignore */ }
     }
     return origSend.apply(this, arguments);
-  };
+  }, 'send', 0);
 
   function observeXhr(xhr, info) {
     var lastLen = 0;

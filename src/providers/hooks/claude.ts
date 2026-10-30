@@ -7,11 +7,13 @@
 import { createFrameDecoder, parseBlock } from './shared/sse.js';
 import { decideClaudeStreamExit } from './shared/claude-status.js';
 import { createIdleWatchdog } from './shared/idle-watchdog.js';
+import { maskAsNative } from './shared/native-mask.js';
 
 function install(): void {
-  var MARKER = '__cuckooClaudeHookInstalled__';
-  if (window[MARKER]) return;
-  window[MARKER] = true;
+  // 幂等标记放闭包内，避免在 window 上留可枚举的 cuckoo 标签（同 deepseek）
+  var __installed = false;
+  if (__installed) return;
+  __installed = true;
 
   // claude.ai 的 completion 端点形如：
   // /api/organizations/{org}/chat_conversations/{conv}/completion
@@ -176,7 +178,7 @@ function install(): void {
   // ---------- fetch 拦截 ----------
   var origFetch = window.fetch;
   if (typeof origFetch === 'function') {
-    window.fetch = function (input: any, init: any) {
+    window.fetch = maskAsNative(function (input: any, init: any) {
       var url = typeof input === 'string' ? input
         : (input && input.url) ? input.url
         : (input && input.href) ? input.href : '';
@@ -189,24 +191,24 @@ function install(): void {
         } catch (e) { /* ignore */ }
         return response;
       });
-    };
+    }, 'fetch', 1);
   }
 
   // ---------- XHR 拦截（被动读取 responseText）----------
   var origOpen = XMLHttpRequest.prototype.open;
   var origSend = XMLHttpRequest.prototype.send;
   var xhrInfo = new WeakMap();
-  XMLHttpRequest.prototype.open = function (method, url) {
+  XMLHttpRequest.prototype.open = maskAsNative(function (method, url) {
     try { xhrInfo.set(this, { url: url, method: method }); } catch (e) { /* ignore */ }
     return origOpen.apply(this, arguments);
-  };
-  XMLHttpRequest.prototype.send = function () {
+  }, 'open', 2);
+  XMLHttpRequest.prototype.send = maskAsNative(function () {
     var info = xhrInfo.get(this);
     if (info && isCompletion(info.url, info.method)) {
       try { observeXhr(this); } catch (e) { /* ignore */ }
     }
     return origSend.apply(this, arguments);
-  };
+  }, 'send', 0);
 
   function observeXhr(xhr) {
     var lastLen = 0;
