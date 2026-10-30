@@ -32,10 +32,10 @@ test('文件不存在时 readAgentSettings 返回防封默认值', () => {
   assert.strictEqual(s.retryEnabled, true);
   assert.strictEqual(s.retry429Count, 1);
   assert.strictEqual(s.watchdogCount, 1);
-  // 子代理新字段默认值（并发 3、间隔 0 = 保持旧行为）
+  // 子代理新字段默认值（并发 3、间隔 2~5 秒 = 需求 100 打散并发启动特征）
   assert.strictEqual(s.maxConcurrentAgents, 3);
-  assert.strictEqual(s.agentStartIntervalMin, 0);
-  assert.strictEqual(s.agentStartIntervalMax, 0);
+  assert.strictEqual(s.agentStartIntervalMin, 2);
+  assert.strictEqual(s.agentStartIntervalMax, 5);
 });
 
 test('子代理并发：1~10 合法，越界回退/压顶', () => {
@@ -133,6 +133,19 @@ test('migrateLegacy：用户真实自定义的值原样保留', () => {
   assert.strictEqual(s.retryDelayMax, 20);
   assert.strictEqual(s.sendDelayMin, 2);
   assert.strictEqual(s.sendDelayMax, 3);
+});
+
+test('migrateLegacy：子代理启动间隔旧默认 0/0 迁移为 2/5', () => {
+  // 需求 100：旧默认 0/0 等于"完全不打散并发启动"，属未自定义痕迹，须迁移。
+  const s = gs.migrateLegacy({ agentStartIntervalMin: 0, agentStartIntervalMax: 0 });
+  assert.strictEqual(s.agentStartIntervalMin, 2);
+  assert.strictEqual(s.agentStartIntervalMax, 5);
+});
+
+test('migrateLegacy：子代理启动间隔用户自定义值原样保留', () => {
+  const s = gs.migrateLegacy({ agentStartIntervalMin: 10, agentStartIntervalMax: 20 });
+  assert.strictEqual(s.agentStartIntervalMin, 10);
+  assert.strictEqual(s.agentStartIntervalMax, 20);
 });
 
 test('migrateLegacy：旧真值 sendDelay 1/10 秒必须命中迁移（防回归）', () => {

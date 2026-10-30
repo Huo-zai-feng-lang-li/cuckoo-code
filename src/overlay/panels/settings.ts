@@ -136,7 +136,7 @@ interface SettingsData {
   ssrfGuard: boolean;
   /** 子代理并发上限（1~10；默认 3） */
   maxConcurrentAgents: number;
-  /** 子代理启动间隔区间（秒；0 = 不等待，默认 0） */
+  /** 子代理启动间隔区间（秒；0 = 不等待，默认 2~5） */
   agentStartIntervalMin: number;
   agentStartIntervalMax: number;
 }
@@ -169,8 +169,9 @@ function getSettingsData(): SettingsData {
     ssrfGuard: lsGet('cuckoo-ssrf-guard') === '1',
     // 子代理并发/间隔：主进程权威源，AI 页面 localStorage 仅作回显缓存
     maxConcurrentAgents: int(lsGet('cuckoo-max-concurrent-agents'), 3),
-    agentStartIntervalMin: sec(lsGet('cuckoo-agent-start-interval-min'), 0),
-    agentStartIntervalMax: sec(lsGet('cuckoo-agent-start-interval-max'), 0),
+    // 需求 100：默认 2~5 秒，打散同账号多路子代理的并发启动特征
+    agentStartIntervalMin: sec(lsGet('cuckoo-agent-start-interval-min'), 2),
+    agentStartIntervalMax: sec(lsGet('cuckoo-agent-start-interval-max'), 5),
   };
 }
 

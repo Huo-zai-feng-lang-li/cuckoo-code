@@ -8,11 +8,15 @@
 import { createFrameDecoder, parseBlock } from './shared/sse.js';
 import { matchProviderEndpoint } from './shared/url-match.js';
 import { createIdleWatchdog } from './shared/idle-watchdog.js';
+import { maskAsNative } from './shared/native-mask.js';
 
 function install(): void {
-  var MARKER = '__cuckooDeepseekHookInstalled__';
-  if (window[MARKER]) return;
-  window[MARKER] = true;
+  // 幂等标记放闭包内：挂到 window 上等于给页面留了可枚举的 "本页被 Cuckoo 改过" 标签
+  //（Object.keys(window).filter(k => k.includes('cuckoo')) 一行命中）。
+  // hook 是 IIFE，install() 本身只会执行一次，闭包变量足够。
+  var __installed = false;
+  if (__installed) return;
+  __installed = true;
 
   var COMPLETION_PATH = '/api/v0/chat/completion';
   var STOP_STREAM_PATH = '/api/v0/chat/stop_stream';
@@ -417,7 +421,7 @@ function install(): void {
   // ---------- fetch 拦截 ----------
   var origFetch = window.fetch;
   if (typeof origFetch === 'function') {
-    window.fetch = function (input: any, init: any) {
+    window.fetch = maskAsNative(function (input: any, init: any) {
       var url = typeof input === 'string' ? input
         : (input && input.url) ? input.url
         : (input && input.href) ? input.href : '';
@@ -498,7 +502,7 @@ function install(): void {
         dispatch('', 'error', null, null, { reason: 'network', name: err && err.name, sessionId: fetchSessionId }, { path: 'network-error', name: err && err.name });
         throw err;
       });
-    };
+    }, 'fetch', 1);
   }
 
   // ---------- XHR 拦截（被动读取 responseText）----------
@@ -506,7 +510,7 @@ function install(): void {
   var origSend = XMLHttpRequest.prototype.send;
   var origSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
   var xhrInfo = new WeakMap();
-  XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
+  XMLHttpRequest.prototype.setRequestHeader = maskAsNative(function (name, value) {
     try {
       var inf = xhrInfo.get(this) || {};
       if (!inf.headers) inf.headers = {};
@@ -516,8 +520,8 @@ function install(): void {
       // 改到 send 时统一缓存一次。
     } catch (e) { /* ignore */ }
     return origSetRequestHeader.apply(this, arguments);
-  };
-  XMLHttpRequest.prototype.open = function (method, url) {
+  }, 'setRequestHeader', 2);
+  XMLHttpRequest.prototype.open = maskAsNative(function (method, url) {
     try { xhrInfo.set(this, { url: url, method: method }); } catch (e) { /* ignore */ }
     // 拦截 stop_stream：用户主动停止的直接证据
     try {
@@ -527,8 +531,8 @@ function install(): void {
       }
     } catch (e) { /* ignore */ }
     return origOpen.apply(this, arguments);
-  };
-  XMLHttpRequest.prototype.send = function (body) {
+  }, 'open', 2);
+  XMLHttpRequest.prototype.send = maskAsNative(function (body) {
     var info = xhrInfo.get(this);
     // 统一在此缓存请求头（此时所有 setRequestHeader 已调用完，一次搞定）
     if (info && info.headers) cacheHeaders(info.headers);
@@ -538,7 +542,7 @@ function install(): void {
       try { observeXhr(this); } catch (e) { console.error('[Cuckoo Code][hook] observeXhr 异常: ' + e.message); }
     }
     return origSend.apply(this, arguments);
-  };
+  }, 'send', 0);
 
 
   function observeXhr(xhr) {

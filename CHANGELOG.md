@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.10.200] - 2026-10-31
+
+### 修复
+- **删除了两个「早已不存在」的 API 伪造**：此前给 `window.chrome` 补了 `loadTimes` / `csi`，这两个 API 在 Chrome 64 就被移除。UA 声称高版本 Chrome、页面上却存在早已移除的 API，是比不伪造更可疑的反向特征。已删除；`chrome.runtime` / `chrome.app` 保留（Google OAuth 登录依赖，见需求 050）。
+
+- **hook 替换的 fetch / XHR 现在会伪装成原生函数**：三个平台的网络拦截器都会替换 `window.fetch` 与 `XMLHttpRequest.prototype.open/send/setRequestHeader`，但此前 `toString()` 直接暴露源码，站点一行检测即可识破。新增 `hooks/shared/native-mask.ts` 的 `maskAsNative()`，把 `toString` 伪装成 `function xxx() { [native code] }`，并**补齐 `length`**（原生 fetch=1、send=0、open=2、setRequestHeader=2）—— 只伪装 `toString` 而不对齐 `length`，`window.fetch.length` 一行就露馅。
+
+- **用户代理与平台信息自相矛盾（macOS 用户必中）**：UA、`sec-ch-ua-platform`、`navigator.userAgentData` 此前全部硬编码 Windows，但 `navigator.platform` 是原生真实值 —— macOS 上「UA 说 Windows、platform 说 MacIntel」，一眼假。现三处统一按 `process.platform` 生成；`userAgentData` 从「整体伪造」改为「最小覆盖」，只补 `brands` / `fullVersionList` 里缺的 Google Chrome 品牌，platform / platformVersion / mobile 全部透传 Chromium 原生值（伪造得越少越难露馅）。
+
+- **高熵 Client Hints 删而不补**：`ensureClientHints` 会删掉 `sec-ch-ua-full-version(-list)` 却不补发，导致 Client Hints 画像比真实 Chrome 少一项。现在改为：原本没发就不硬加（真实 Chrome 也不会无条件发），原本发了就用修正后的值替换。
+
+- **hook 在 window 上留下可枚举的 cuckoo 标记**：三个 hook 用 `window.__cuckoo*HookInstalled__` 做幂等，页面一行 `Object.keys(window).filter(k => k.includes('cuckoo'))` 就能识别。改为闭包变量（hook 本身是 IIFE，天然只执行一次）。
+
+- **userAgentData 的品牌补丁此前从未真正生效**：排查中发现两个连锁缺陷 —— ① `navigator.userAgentData` 每次访问返回**新对象**，打在实例上的补丁随对象一起丢弃（`brands` 之所以生效是因为走了原型 getter）；② 原生 `getHighEntropyValues` 要求 `this` 是实例，原型包装若固化对象会抛 `Illegal invocation`。现统一只打原型，且包装内用 `apply(this, arguments)` 保留调用时的 this。用 `defineProperty` 而非直接赋值（原生方法是原型上的只读方法，非严格模式下普通赋值会静默失败）。
+
+- **子代理启动间隔默认 0 秒**：同账号多路子代理同时开 SSE 是明显机器人特征，默认 0 秒等于完全不设防。默认值改为 2~5 秒随机；`migrateLegacy` 把旧默认 (0,0) 迁移到 (2,5)，用户自定义值原样保留。
+
+### 验证
+- typecheck / compile / test（131 文件 1316 用例）/ lint（0 errors，65 warnings 基线持平）全绿。
+- 真机 CDP 探针（开发版 9444，DeepSeek 页面，Windows）实测：
+  - `navigator.platform=Win32`、UA 含 `Chrome/152` 且无 Electron 标识、`userAgentData.platform=Windows` —— 三者一致
+  - `userAgentData.brands` 含 Google Chrome；高熵值 `fullVersionList` 含 Google Chrome
+  - `navigator.webdriver=false`；`chrome.loadTimes` / `chrome.csi` 均为 `undefined`
+  - `fetch` / `XHR.open/send/setRequestHeader` 的 `toString()` 均含 `[native code]`，且 `length` 已对齐原生值（fetch=1、send=0、open=2、setRequestHeader=2）
+  - `Object.keys(window)` 中已无任何 cuckoo 标记
+- 子代理 code-reviewer 独立审查：提出 9 条，复核后采纳 5 条（hook window 标记、maskAsNative 的 length 与自有 toString、brands getter 未伪装、sec-ch-ua-full-version-list 删而不补）；驳回 1 条（migrateLegacy 每次保存都跑 —— 实际 `ipc/settings.ts:111` 有 `hasAgentSettingsFile()` 守卫，只在首次初始化执行）；其余 3 条（chrome.runtime/app 伪造、`cuckoo-ds-headers` 明文 token、grease 品牌值硬编码）记录为已知残留，本次不动。
+
+### 已知残留（记录备查，非本次范围）
+1. `chrome.runtime` / `chrome.app` 伪造 —— 真实 Chrome 的普通网页通常没有这两个对象，伪造它们本身可疑；但这是 Google OAuth 登录的历史依赖（需求 050），贸然删除会破坏登录，需单独评估。
+2. `cuckoo-ds-headers` 明文存 `authorization` 于 localStorage —— 同源页面可读，既是安全暴露也是强指纹；改动面涉及压缩流程，需单独需求。
+3. `"Not_A Brand";v="24"` 是 GREASE 值硬编码，真 Chrome 随主版本轮换；改错反而更假，暂留。
+4. `Function.prototype.toString.call(window.fetch)` 仍可绕过实例上的 toString 伪装 —— 防它必须改 `Function.prototype.toString` 本身，破坏面过大。
+5. 压缩流程直调 API、并发与时长特征属产品固有属性，非代码缺陷。
+
 ## [0.10.199] - 2026-10-31
 
 ### 修复

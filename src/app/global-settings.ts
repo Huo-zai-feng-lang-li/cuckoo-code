@@ -66,8 +66,10 @@ export const AGENT_SETTINGS_DEFAULTS: AgentSettings = {
   goalMaxIterations: 50,
   ssrfGuard: false,
   maxConcurrentAgents: 3,
-  agentStartIntervalMin: 0,
-  agentStartIntervalMax: 0,
+  // 需求 100：默认不再是 0 —— 同账号多路子代理同时开 SSE 是明显机器人特征。
+  // 2~5 秒随机间隔足以打散"并发启动"，对正常使用几乎无感。
+  agentStartIntervalMin: 2,
+  agentStartIntervalMax: 5,
   autoCompactEnabled: false,
   autoCompactThreshold: 80,
 };
@@ -163,6 +165,10 @@ const LEGACY_DEFAULTS = {
   // 将不被 migrateLegacy 命中，防封新默认对其完全失效。
   sendDelayMin: 1,
   sendDelayMax: 10,
+  // 子代理启动间隔的旧默认是 0/0（= 完全不打散）。恰好等于旧默认的视为"从未自定义"，
+  // 迁移到新的 2/5（需求 100）。
+  agentStartIntervalMin: 0,
+  agentStartIntervalMax: 0,
 };
 
 /**
@@ -182,6 +188,13 @@ export function migrateLegacy(raw: any): AgentSettings {
   if (same(n.sendDelayMin, LEGACY_DEFAULTS.sendDelayMin) && same(n.sendDelayMax, LEGACY_DEFAULTS.sendDelayMax)) {
     n.sendDelayMin = AGENT_SETTINGS_DEFAULTS.sendDelayMin;
     n.sendDelayMax = AGENT_SETTINGS_DEFAULTS.sendDelayMax;
+  }
+  // 子代理启动间隔：旧默认 0/0 表示"从未自定义"，迁移到 2/5。
+  // 用户真实自定义过的值（如 10/20）原样保留。
+  if (same(n.agentStartIntervalMin, LEGACY_DEFAULTS.agentStartIntervalMin) &&
+      same(n.agentStartIntervalMax, LEGACY_DEFAULTS.agentStartIntervalMax)) {
+    n.agentStartIntervalMin = AGENT_SETTINGS_DEFAULTS.agentStartIntervalMin;
+    n.agentStartIntervalMax = AGENT_SETTINGS_DEFAULTS.agentStartIntervalMax;
   }
   return n;
 }
