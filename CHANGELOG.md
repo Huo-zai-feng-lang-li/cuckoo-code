@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.10.197] - 2026-10-31
+
+### 优化
+- **系统提示词末尾补强工具调用格式锚定**：新开对话第一次回复时，模型偶发输出 DeepSeek 原生 DSML 格式（`<|DSML|invoke>`）而非 cuckoo 代码块。根因是首次回复通常为读 `.agents/handoff.md`，此刻对话历史里没有任何「assistant 用 cuckoo 块」的先例，而系统提示词最大的块是 12K 的 TypeScript 声明（形态近似 tools schema），cuckoo 示例又埋在提示词中段、距生成点太远。现于三个平台模板（`deepseek`/`claude`/`default`）的最末尾——即生成前最后读到的位置——将末尾指令改为「直接输出 cuckoo 代码块（JavaScript）……工具调用只允许这一种格式」。采用正向排他表述，**不点名任何错误格式**，避免历史上「提示词出现 DSML 字样反向诱导模型」的问题回退。
+- **对话命名指令移至提示词末尾并精简**：AI 此前几乎不再调用 `nameConversation` 命名标题（对话从 A 任务切到 B 任务也不更新）。根因是命名指令原本由 `name-conversation` 工具的 `getPromptSection` 注入，位置在系统提示词中部（距末尾 100+ 行），被后续内容稀释，且与「先读 handoff」规则竞争注意力。现将「新对话首次回复第一个动作是 `nameConversation`、主题切换时重命名」移至三个模板最末尾；原 `getPromptSection` 的 6 行冗长文案精简为 1 行，只保留「标题怎么写」的规范，与末尾的「何时调」职责分离，消除重复噪音。
+
+### 验证
+- typecheck / compile / test（131 文件 1314 用例）/ lint（0 errors）全绿。
+- 子代理 code-reviewer 独立审查：位置一致性、语义完整性、契约隔离（`getPromptSection` 不参与 `apiMetas`）、反向诱导（新增文案逐字无 DSML/XML 字样）、测试断言关联均核验通过，整体风险评级「低」，证据信心 9/10。
+
 ## [0.10.196] - 2026-10-31
 
 ### 修复
