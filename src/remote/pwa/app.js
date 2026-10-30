@@ -69,8 +69,16 @@
   let streamNode = null;
   let streamingText = '';
   // 工具/延迟计时器（提前声明：resetView 等早期定义的函数会访问，避免 TDZ 死区）
-  let toolTickTimer = null, toolStartAt = 0;
-  let sendTickTimer = null, sendStartAt = 0;
+  // lastTickAt 用于「冻结检测」：移动端切后台会暂停 setInterval，回到前台后
+  // 第一次 tick 的 (now - lastTickAt) 会是一次巨大的跳跃。检测到跳跃就把 startAt
+  // 往后推掉冻结时长，秒数保持连续 —— 这是 visibilitychange 补偿之外的兜底，
+  // 防止某些浏览器不派发/延迟派发 visibilitychange 时秒数仍然爆炸。
+  let toolTickTimer = null, toolStartAt = 0, toolLastTickAt = 0;
+  let sendTickTimer = null, sendStartAt = 0, sendLastTickAt = 0;
+  // 页面进入后台的时刻（0 = 当前在前台）。用于回前台时补偿计时基准。
+  let hiddenAt = 0;
+  // 冻结判定阈值：正常 tick 1000ms，超过 3000ms 视为标签页被冻结过。
+  const FROZEN_TICK_MS = 3000;
   // 思考气泡（正文气泡上方的可折叠块）
   let thinkEl = null;        // 思考块容器（.msg-think）
   let thinkBody = null;      // 思考正文容器（流式 append）
@@ -414,7 +422,34 @@
   // 正确做法：回前台先主动发一个 ping，1.5s 内没等到 pong 才判定半开 → 立即重连。
   const FOREGROUND_PING_TIMEOUT = 1500;
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible' || !token) return;
+    // ---- 进入后台 ----
+    if (document.visibilityState === 'hidden') {
+      hiddenAt = Date.now();
+      return;
+    }
+    if (!token) { hiddenAt = 0; return; }
+
+    // ---- 从后台恢复：先修计时器，再走连接探活 ----
+    // 后台冻结 setInterval 期间 Date.now() 照常走，回来第一 tick 会一次性算出
+    // 真实流逝的墙钟时间（几百秒）。分两档处理：
+    const awayMs = hiddenAt ? (Date.now() - hiddenAt) : 0;
+    hiddenAt = 0;
+    if (awayMs > 10000) {
+      // 离开较久：执行态大概率已过时（工具早跑完，或相关消息在后台丢失）。
+      // 保守清理，让后续真实事件（tool / sending / ai-reply / task-done）重新驱动 UI，
+      // 而不是继续显示一个失去意义的秒数。
+      if (execVisible) {
+        stopSendTick(); stopToolTick();
+        hideExec();
+        setExecuting(false);
+      }
+    } else if (awayMs > 0) {
+      // 短暂离开：把计时基准往后推同样时长，秒数保持连续，用户无感。
+      // 同时重置 lastTickAt —— 否则 tick 内的「冻结检测」会把同样的时长再扣一次。
+      if (toolTickTimer) { toolStartAt += awayMs; toolLastTickAt = Date.now(); }
+      if (sendTickTimer) { sendStartAt += awayMs; sendLastTickAt = Date.now(); }
+    }
+
     if (!connected) {
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       reconnectDelay = 1000;
@@ -628,6 +663,25 @@
     if (!profilesReady || !currentProfileId) return true;
     return pid === currentProfileId;
   }
+
+  // 执行胶囊贴输入框上方：composer 高度随 textarea 行数变化，写死 bottom 会被遮住。
+  // 用 ResizeObserver 把实际高度同步到 CSS 变量 --composer-h（style.css 的 .exec-status 消费）。
+  // 没有 ResizeObserver 时退化为监听 window resize（老浏览器兜底，不如前者精确但不至于失效）。
+  (function watchComposerHeight() {
+    const composerEl = document.querySelector('.composer');
+    if (!composerEl) return;
+    function apply() {
+      const h = composerEl.offsetHeight;
+      // h=0 说明 #app 当前是 hidden（登录页/切窗口），保留上一次的值，别把胶囊顶到屏幕外
+      if (h > 0) document.documentElement.style.setProperty('--composer-h', h + 'px');
+    }
+    apply();
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(apply).observe(composerEl);
+    } else {
+      window.addEventListener('resize', apply);
+    }
+  })();
 
   function resetView() {
     messages.innerHTML = '';
@@ -1132,13 +1186,20 @@
   function stopToolTick() {
     if (toolTickTimer) { clearInterval(toolTickTimer); toolTickTimer = null; }
     toolStartAt = 0;
+    toolLastTickAt = 0;
   }
   function startToolTick() {
     stopToolTick();
     toolStartAt = Date.now();
+    toolLastTickAt = toolStartAt;
     function tick() {
       if (!execVisible) { stopToolTick(); return; }
-      const sec = Math.floor((Date.now() - toolStartAt) / 1000);
+      const now = Date.now();
+      const delta = now - toolLastTickAt;
+      // 冻结兜底：delta 远超正常间隔 → 标签页被暂停过，扣掉冻结时长
+      if (delta > FROZEN_TICK_MS) toolStartAt += (delta - 1000);
+      toolLastTickAt = now;
+      const sec = Math.floor((now - toolStartAt) / 1000);
       showExec('工具运行中 ' + sec + 's…');
     }
     tick();
@@ -1147,13 +1208,20 @@
   function stopSendTick() {
     if (sendTickTimer) { clearInterval(sendTickTimer); sendTickTimer = null; }
     sendStartAt = 0;
+    sendLastTickAt = 0;
   }
   function startSendTick() {
     stopSendTick();
     sendStartAt = Date.now();
+    sendLastTickAt = sendStartAt;
     function tick() {
       if (!execVisible) { stopSendTick(); return; }
-      const sec = Math.floor((Date.now() - sendStartAt) / 1000);
+      const now = Date.now();
+      const delta = now - sendLastTickAt;
+      // 同上：冻结兜底，防止「延迟发送 300s…」
+      if (delta > FROZEN_TICK_MS) sendStartAt += (delta - 1000);
+      sendLastTickAt = now;
+      const sec = Math.floor((now - sendStartAt) / 1000);
       showExec('延迟发送 ' + sec + 's…');
     }
     tick();
