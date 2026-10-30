@@ -94,6 +94,6 @@
 | 099 | feat | [Android 应用图标可切换（activity-alias 方案，4 套可选）](./099-android-app-icon.md) | done | (直接主分支) | 2026-10-29 |
 | 099 | fix | [修复附件上传后的无谓盲等（删除 attachDelay 配置项）](./099-attach-upload-blind-wait.md) | done | fix/099-attach-upload-blind-wait | 2026-10-29 |
 | 100 | fix | [浏览器指纹一致性加固（降低账号风控风险）](./100-fingerprint-hardening.md) | done | fix/100-fingerprint-hardening | 2026-10-31 |
-| 101 | fix | [手机端执行胶囊遮挡输入框 + 后台回来计时秒数爆炸](./101-remote-exec-pill-timer.md) | doing | fix/101-remote-exec-pill-timer | 2026-10-31 |
+| 101 | fix | [手机端执行胶囊遮挡输入框 + 后台回来计时秒数爆炸](./101-remote-exec-pill-timer.md) | done | fix/101-remote-exec-pill-timer | 2026-10-31 |
 
 共 90 个需求。

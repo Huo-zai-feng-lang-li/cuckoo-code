@@ -2,7 +2,7 @@
 id: 101
 type: fix
 title: 手机端执行胶囊遮挡输入框 + 后台回来计时秒数爆炸
-status: doing
+status: done
 branch: fix/101-remote-exec-pill-timer
 created: 2026-10-31
 updated: 2026-10-31
