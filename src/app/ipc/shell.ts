@@ -337,7 +337,15 @@ function registerShellIpc(): void {
 
   ipcMain.handle('shell-reload', async (event: any) => {
     const view = viewOf(event);
-    if (view) view.webContents.reload();
+    if (!view || view.webContents.isDestroyed()) return { success: false };
+    view.webContents.reload();
+    
+    // 同步重置纯净视图（如果已创建），防止底层网页重载后纯净页面状态脱节
+    const ctx = windowState.getContextByWebContents(view.webContents);
+    const hv = ctx && (ctx as any).harnessView;
+    if (hv && !hv.webContents.isDestroyed()) {
+      try { hv.webContents.reloadIgnoringCache(); } catch (_) { /* ignore */ }
+    }
     return { success: true };
   });
 
@@ -350,6 +358,11 @@ function registerShellIpc(): void {
     if (!provider) return { success: false };
     try {
       await view.webContents.loadURL(provider.homeUrl);
+      // 同步重置纯净视图（首页等价于新对话，丢弃残留状态）
+      const hv = ctx && (ctx as any).harnessView;
+      if (hv && !hv.webContents.isDestroyed()) {
+        try { hv.webContents.send('harness-event', { type: 'reset' }); } catch (_) { /* ignore */ }
+      }
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };

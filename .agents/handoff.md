@@ -1,6 +1,48 @@
-# 最新接续状态 (2026-10-30)
+# 最新接续状态 (2026-10-31)
 
-## 本轮改动（v0.10.195）：纯净模式状态栏文案与就绪闪烁
+## 本轮改动（v0.10.196）：刷新按钮与主页入口同步重置纯净视图
+
+### 用户反馈
+纯净模式下点工具栏「刷新」按钮感觉毫无反应，怀疑是否该去掉它。
+
+### 根因
+`shell-reload`（`src/app/ipc/shell.ts:338`）只做 `view.webContents.reload()` —— 刷的是底层 AI 网页。纯净模式是覆盖其上的独立 WebContentsView（`ctx.harnessView`），有自己的重载通道 `harness-reload`，两条链路完全独立。于是：底层网页重载、hook 重注入、上下文作废，纯净视图仍挂着旧气泡和旧状态 → 点刷新看起来没反应 + 状态脱节。
+
+### 修复（2 文件，+26 −2）
+- `src/app/ipc/shell.ts`
+  - `shell-reload`：AI 网页 reload 后，取 ctx 并同步 `harnessView.reloadIgnoringCache()`
+  - `shell-home`：导航回首页后，向 harness 发 `{ type: 'reset' }` 事件丢弃残留状态
+- `src/app/entry.ts`
+  - 菜单「重新加载」（`Ctrl+R`）：同步刷新 harnessView
+  - 菜单「主页」：同步发 harness reset
+
+### 子代理审查（code-reviewer）结论
+可合并，无空指针、无泄漏、无遗漏 reload 入口。提出 1 个 [中] + 3 个 [低]：
+- [中] 「主页」入口同类脱节 → **已当场补齐**
+- [低] 两处销毁判断写法不一致 → 保持（均安全）
+- [低] reloadHarness 调用散在 3 处无 helper → 暂不抽，等第 4 处入口出现再做
+- [低] `before-input-event` 里 harness 聚焦时 Ctrl+R 只刷 harness 不刷 view → **刻意保留**（那是开发者重载 harness HTML 的便利入口，与用户点刷新按钮不是同一场景）
+
+### 真机验证（CDP 9444）
+在 harness 和 DeepSeek 页面各写内存探针 `window.__ckProbe`，CDP 真实点击 `#btn-reload`：
+```
+BEFORE: harness=C47C... deepseek=D7AA... shell=A7F9...
+MARK:   harness=HARNESS_MARK  deepseek=DEEPSEEK_MARK
+CLICK:  {"ok":true}
+AFTER:  harness=C47C... deepseek=D7AA...      ← target id 未变（同一 webContents）
+PROBE:  harness=undefined    deepseek=undefined ← 两页内存都被清空 = 都重载了
+```
+`undefined` 即成功证据：若 harness 未刷新，探针仍会是 `'HARNESS_MARK'`。
+
+### 关键经验
+- **"刷新"按钮的语义要按用户直觉定义**：用户点刷新 = 重置当前看到的界面，而不是"刷新看不见的底层"。底层与展示层分离的架构下（WebContentsView 叠层），任何"重载/重置"入口都必须两端一起处理。
+- **同类入口要一次找齐**：子代理指出「主页」有完全相同的症状。如果只修用户报的那一个，下次还要再修一遍。修状态脱节类 bug 时，应把语义等价的入口（新对话/主页/刷新/切换会话）全部过一遍。
+- **CDP 探针法验证页面重载**：写入 `window.__xxx` 内存标记 → 触发操作 → 读回。返回 `undefined` 就证明页面真的重新加载了，比看截图靠谱。同时对比 target id 可区分"重载"与"换了个 webContents"。
+
+### 版本号
+`0.10.195` → `0.10.196`（不含数字 4，无需跳过）。
+
+## 上一条改动（v0.10.195）：纯净模式状态栏文案与就绪闪烁
 
 ### 用户反馈
 状态栏文案看不懂（「框架：工具结果回传」），且怀疑其他状态是否准确。

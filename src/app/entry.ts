@@ -795,6 +795,11 @@ function setupAppMenu() {
             if (view && view.webContents && !view.webContents.isDestroyed()) {
               view.webContents.reload();
             }
+            // 同步重置纯净视图（如果已创建）
+            const hv = ctx ? (ctx as any).harnessView : null;
+            if (hv && hv.webContents && !hv.webContents.isDestroyed()) {
+              try { hv.webContents.reloadIgnoringCache(); } catch (_) { /* ignore */ }
+            }
           }
         },
         {
@@ -817,7 +822,13 @@ function setupAppMenu() {
             const view = ctx ? ctx.view : null;
             if (ctx && ctx.providerId && view && view.webContents && !view.webContents.isDestroyed()) {
               const provider = getProvider(ctx.providerId);
-              if (provider) view.webContents.loadURL(provider.homeUrl);
+              if (provider) {
+                view.webContents.loadURL(provider.homeUrl);
+                const hv = (ctx as any).harnessView;
+                if (hv && !hv.webContents.isDestroyed()) {
+                  try { hv.webContents.send('harness-event', { type: 'reset' }); } catch (_) { /* ignore */ }
+                }
+              }
             }
           }
         }
