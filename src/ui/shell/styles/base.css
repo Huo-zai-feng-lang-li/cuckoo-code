@@ -8,6 +8,8 @@
 
 /* ===== 浅色（默认）===== */
   :root {
+    /* 允许 height: auto 参与过渡（Electron 44 / Chromium 129+ 支持） */
+    interpolate-size: allow-keywords;
     --ck-bg: #ffffff;
     --ck-bg-sub: #fbfbfd;
     --ck-toolbar: #fbfbfd;

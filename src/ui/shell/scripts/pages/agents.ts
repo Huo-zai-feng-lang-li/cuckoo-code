@@ -72,7 +72,7 @@ export async function loadRunningSubagents(): Promise<void> {
             '<svg class="ck-agent-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-left:6px;flex-shrink:0;transition:transform .2s;opacity:.5;"><path d="M6 9l6 6 6-6"/></svg>' +
           '</div>' +
           '<div class="ck-skill-desc">' + escapeHtml(s.task || '') + '</div>' +
-          '<div class="ck-agent-running-preview" style="display:none"></div>' +
+          '<div class="ck-agent-running-preview"></div>' +
         '</div>';
         el.insertAdjacentHTML('beforeend', html);
         node = el.querySelector('.ck-agent-running[data-agent-window="' + s.windowId + '"]');
@@ -98,13 +98,13 @@ export async function loadRunningSubagents(): Promise<void> {
           if (preview) {
             // 只有未手动折叠时才自动展示
             if (previewEl.dataset.collapsed !== '1') {
-              previewEl.style.display = '';
+              previewEl.classList.add('open');
             }
             previewEl.textContent = preview;
           } else {
             // 如果没有实时输出，尊重用户手动态，不要在轮询时强制关掉
             if (previewEl.dataset.collapsed !== '0') {
-              previewEl.style.display = 'none';
+              previewEl.classList.remove('open');
             }
             if (previewEl.dataset.collapsed === '0' && (!previewEl.textContent || previewEl.textContent === '（暂无预览输出）')) {
               previewEl.textContent = '（暂无预览输出）';
@@ -124,9 +124,10 @@ export async function loadRunningSubagents(): Promise<void> {
         if (sel && sel.toString().length > 0) return;
         const pre = card.querySelector('.ck-agent-running-preview');
         if (pre) {
-          const isHidden = pre.style.display === 'none';
-          pre.style.display = isHidden ? '' : 'none';
-          pre.dataset.collapsed = isHidden ? '0' : '1';
+          const wasCollapsed = !pre.classList.contains('open');
+          const isHidden = wasCollapsed;
+          pre.classList.toggle('open', wasCollapsed);
+          pre.dataset.collapsed = wasCollapsed ? '0' : '1';
           // 控制箭头旋转
           const arrow = card.querySelector('.ck-agent-arrow');
           if (arrow) arrow.style.transform = isHidden ? 'rotate(180deg)' : '';

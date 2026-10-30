@@ -21,6 +21,8 @@
 
 /* ===== 浅色（默认）===== */
   :root {
+    /* 允许 height: auto 参与过渡（Electron 44 / Chromium 129+ 支持） */
+    interpolate-size: allow-keywords;
     --ck-bg: #ffffff;
     --ck-bg-sub: #fbfbfd;
     --ck-toolbar: #fbfbfd;
@@ -557,15 +559,23 @@
   }
   .ck-agent-running-preview {
     position: relative;
-    margin-top: 4px; padding: 10px 12px 10px 24px;
+    margin-top: 0; padding: 0 12px 0 24px;
     background: color-mix(in srgb, var(--ck-text) 4%, transparent);
-    border: 1px solid color-mix(in srgb, var(--ck-text) 8%, transparent);
+    border: 0 solid color-mix(in srgb, var(--ck-text) 8%, transparent);
     border-radius: 8px;
     font-family: ui-monospace, Consolas, "SF Mono", monospace;
     font-size: 11.5px; line-height: 1.6;
     color: var(--ck-text-2);
     white-space: pre-wrap; word-break: break-all;
     max-height: 84px; overflow: hidden;
+    height: 0; opacity: 0;
+    transition: height .25s cubic-bezier(.25,.1,.25,1), padding .25s cubic-bezier(.25,.1,.25,1), margin .25s cubic-bezier(.25,.1,.25,1), border-width .25s cubic-bezier(.25,.1,.25,1), opacity .2s ease;
+  }
+  .ck-agent-running-preview.open {
+    height: auto; opacity: 1;
+    padding: 10px 12px 10px 24px;
+    margin-top: 4px;
+    border-width: 1px;
   }
   .ck-agent-running-preview::before {
     content: '›';
@@ -7736,7 +7746,7 @@ paths:            # 可选；省略 = 始终生效
         const preview = escapeHtml((s.preview || "").slice(-160));
         if (!node) {
           const stopBtn = s.status === "starting" || s.status === "running" ? '<button class="ck-snip-icon-btn danger ck-agent-stop" data-stop-agent="' + s.windowId + '" title="\u505C\u6B62\u8BE5\u5B50\u4EE3\u7406"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>' : "";
-          const html = '<div class="ck-agent-running" data-agent-window="' + s.windowId + '"><div class="ck-skill-top"><span class="ck-skill-name" title="' + escapeAttr(s.agentName) + '">' + escapeHtml(s.agentName) + '</span><span class="ck-agent-running-status">' + statusText + " \xB7 " + elapsed + "s" + (s.turn ? " \xB7 \u7B2C " + s.turn + " \u8F6E" : "") + (remainText ? " \xB7 " + remainText : "") + "</span>" + stopBtn + '<svg class="ck-agent-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-left:6px;flex-shrink:0;transition:transform .2s;opacity:.5;"><path d="M6 9l6 6 6-6"/></svg></div><div class="ck-skill-desc">' + escapeHtml(s.task || "") + '</div><div class="ck-agent-running-preview" style="display:none"></div></div>';
+          const html = '<div class="ck-agent-running" data-agent-window="' + s.windowId + '"><div class="ck-skill-top"><span class="ck-skill-name" title="' + escapeAttr(s.agentName) + '">' + escapeHtml(s.agentName) + '</span><span class="ck-agent-running-status">' + statusText + " \xB7 " + elapsed + "s" + (s.turn ? " \xB7 \u7B2C " + s.turn + " \u8F6E" : "") + (remainText ? " \xB7 " + remainText : "") + "</span>" + stopBtn + '<svg class="ck-agent-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-left:6px;flex-shrink:0;transition:transform .2s;opacity:.5;"><path d="M6 9l6 6 6-6"/></svg></div><div class="ck-skill-desc">' + escapeHtml(s.task || "") + '</div><div class="ck-agent-running-preview"></div></div>';
           el2.insertAdjacentHTML("beforeend", html);
           node = el2.querySelector('.ck-agent-running[data-agent-window="' + s.windowId + '"]');
         } else {
@@ -7755,12 +7765,12 @@ paths:            # 可选；省略 = 始终生效
           if (previewEl) {
             if (preview) {
               if (previewEl.dataset.collapsed !== "1") {
-                previewEl.style.display = "";
+                previewEl.classList.add("open");
               }
               previewEl.textContent = preview;
             } else {
               if (previewEl.dataset.collapsed !== "0") {
-                previewEl.style.display = "none";
+                previewEl.classList.remove("open");
               }
               if (previewEl.dataset.collapsed === "0" && (!previewEl.textContent || previewEl.textContent === "\uFF08\u6682\u65E0\u9884\u89C8\u8F93\u51FA\uFF09")) {
                 previewEl.textContent = "\uFF08\u6682\u65E0\u9884\u89C8\u8F93\u51FA\uFF09";
@@ -7778,9 +7788,10 @@ paths:            # 可选；省略 = 始终生效
           if (sel && sel.toString().length > 0) return;
           const pre = card.querySelector(".ck-agent-running-preview");
           if (pre) {
-            const isHidden = pre.style.display === "none";
-            pre.style.display = isHidden ? "" : "none";
-            pre.dataset.collapsed = isHidden ? "0" : "1";
+            const wasCollapsed = !pre.classList.contains("open");
+            const isHidden = wasCollapsed;
+            pre.classList.toggle("open", wasCollapsed);
+            pre.dataset.collapsed = wasCollapsed ? "0" : "1";
             const arrow = card.querySelector(".ck-agent-arrow");
             if (arrow) arrow.style.transform = isHidden ? "rotate(180deg)" : "";
             if (isHidden && (!pre.textContent || pre.textContent === "\uFF08\u6682\u65E0\u9884\u89C8\u8F93\u51FA\uFF09")) {
