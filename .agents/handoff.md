@@ -1,6 +1,66 @@
 # 最新接续状态 (2026-10-31)
 
-## 本轮改动（v0.10.198）：工作区列表显示子代理任务标题
+## 本轮改动（v0.10.199）：手机端远程状态栏补齐「工具运行秒数」与「延迟发送」态
+
+### 用户反馈
+纯净模式（harness）的状态栏前几版已改成「生成中…」「工具运行中 16s…」「结果待发送（工具 Ns · 延迟 Ns）」，但手机端远程 PWA 完全没同步——只有静态「正在生成回复…」「正在调用系统工具…」，没有秒数、没有延迟态。用户要求：手机端也显示延迟发送 + 秒数，文案用「延迟发送 Ns…」。
+
+### 关键事实（分析阶段纠正的三个错误认知）
+1. **manager.ts 已有 toolCount**（L400-401），无需在 bridge 层重建计数 → 改动面从 3 文件降到 2 文件，bridge 层零风险。
+2. **ai-reply 和 tool-start 时序错开**（observer 先通知 responseListeners 再执行工具），不存在「ai-reply 误隐藏 sending」的冲突。
+3. **showExec 的 '正在执行…' 兜底是死代码**（10 个调用点全传具体文案），不改名、不删。
+
+### 改动（2 文件核心 + 1 文件文案，+79 −11）
+**src/remote/manager.ts**（+8）
+- onTool 新增 `wasLastTool = (phase === 'end' && s.toolCount === 1)`
+- 广播后追加 `if (wasLastTool) broadcast({ type:'tool', phase:'sending' })`
+- 用 `wasLastTool` 而非事后判 `toolCount===0`：防 ai-reply 已清零后迟到 end 误触发
+- 复用 'tool' 通道（不新增 type），免改 IPC 白名单
+
+**src/remote/pwa/app.js**（+70 −11）
+- 计时器变量上移到顶部变量区（L72-73），避 resetView 的 TDZ（项目已有惯例，L63 注释同问题）
+- 新增 stopToolTick/startToolTick/stopSendTick/startSendTick，每个 tick 有活性守卫 `if (!execVisible) { stopXxxTick(); return; }`
+- onToolEvent：start → 工具运行中 0s… + startToolTick；sending → 延迟发送 0s… + startSendTick；end 不处理（多工具并行首个 end 不代表全部结束）
+- **8 处收尾/重入口全部配对 stop**：ai-start / ai-reply / task-done / ai-stop / ai-error / 断线 3s / resetView / stopBtn / appendStreaming 兜底 / doSend 成功 / sys
+- task-done 补 `hideExec() + setExecuting(false)`：末轮「只调工具、无正文」靠 ai-reply 兜不住
+- 文案对齐：'正在生成回复…' → '生成中…'
+
+**src/remote/pwa/index.html**（+1 −1）
+- exec-text 初始占位 '正在生成回复…' → '生成中…'
+
+### 子代理审查（code-reviewer）关键产出
+抓出 1 个 **[高] 真实缺陷**（主代理首次分析漏掉）：
+- **stopBtn 回调未停计时器** → showExecBrief 重新点亮 execVisible → 1s 后 tick 守卫失效 → 覆盖「已停止生成」+ 清掉 execBriefTimer → **状态条永久卡「延迟发送」+ 计时器永久泄漏**（半开连接丢 stop 时尤其致命）
+- 另有 [中] appendStreaming 兜底、[低] sys 分支、[低] index.html 占位文案
+- 全部已修，并重跑真机验证 stopBtn 场景通过
+
+**根因洞察**：活性守卫只能兜「hideExec 后无人再点亮」，兜不住「hideExec 后紧跟 showExec/showExecBrief 重新点亮」→ 凡「进入新显示阶段」的入口都必须显式 stop 另一个计时器，不能依赖守卫。
+
+### 真机验证（playwright 注入 mock WebSocket + 本地静态服务，10 组场景全过）
+- A 单工具全链路：生成中… → 工具运行中 0s… → 2s… → tool-end 仍工具运行中 → 延迟发送 0s… → 2s… → 生成中… → task-done 隐藏 ✅
+- B 多工具并行：首个 end 仍工具运行中，第二个 end 仍工具运行中，sending 才切延迟发送 ✅
+- C 延迟中用户停止：「已停止生成」1.5s 后隐藏 ✅
+- D sending 中 watchdog 收尾：立刻隐藏，不显「已停止生成」✅
+- E 工具运行中断线 3s：保持到 3s 后隐藏 ✅
+- F 工具运行中 ai-error：隐藏 ✅
+- G 非当前 profile 消息：忽略 ✅
+- H sending 后立即 ai-reply：隐藏 ✅
+- 关键回归：延迟发送中点击停止按钮 → 显示「已停止生成」→ 1.2s 不被覆盖 → 2.7s 隐藏无泄漏 ✅
+- 重连补发首帧：延迟发送 → 生成中，稳定不回跳 ✅
+
+### 验证
+typecheck / compile / test（131 文件 1314 用例）/ lint（0 errors）全绿。首轮有 1 个 run-captured 测试偶发失败（子进程超时杀进程，负载下抖动），单跑与全量重跑均通过，与本次无关。
+
+### 关键经验
+- **「本地正计时」跨端偏差可忽略**：手机端比电脑端晚 100~500ms 开始计时（事件经 WS 传输），但在随机 6~16s 的「感觉计时」里无意义，正计时不累积偏差，且偏差方向是「偏小」更安全（不会显得卡住）。为消 0.5s 感知误差引入时钟同步是过度工程。
+- **守卫式清理不如入口式清理可靠**：活性守卫（!execVisible 自停）只能兜「没人再点亮」，挡不住「另一个 showExec 重新点亮」。凡是「进入新显示阶段」的入口都必须显式 stop，不能只靠守卫。本轮 stopBtn 卡死正是此教训。
+- **子代理指出的 [高] 项要当场核实修复**：主代理分析时列了 7 处清理，自以为堵全，实际漏了 stopBtn 这个「用户主动停止」的高频路径。子代理逐行走调用点才发现。
+- **PWA 验证必须用 HTTP 而非 file://**：file:// 下相对路径解析成 D:/ 根目录导致 app.js 加载失败；且 http-server 的 cwd 要确认（首次启动目录不对，服务的是旧文件，一度误判「改动没生效」）。
+
+### 版本号
+0.10.198 → 0.10.199（不含数字 4）。
+
+## 上一条改动（v0.10.198）：工作区列表显示子代理任务标题
 
 ### 用户反馈（真机截图）
 工作区列表里子代理只显示「子代理: code-reviewer」，看不出它审计/处理了什么。用户指出「自带里应该也需要命名的，这样方便看子代理审计了什么东西」——推翻了我先前「子代理不需要命名」的错误判断。

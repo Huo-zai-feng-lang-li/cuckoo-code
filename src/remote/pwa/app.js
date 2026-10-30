@@ -68,6 +68,9 @@
   let streamingEl = null;
   let streamNode = null;
   let streamingText = '';
+  // 工具/延迟计时器（提前声明：resetView 等早期定义的函数会访问，避免 TDZ 死区）
+  let toolTickTimer = null, toolStartAt = 0;
+  let sendTickTimer = null, sendStartAt = 0;
   // 思考气泡（正文气泡上方的可折叠块）
   let thinkEl = null;        // 思考块容器（.msg-think）
   let thinkBody = null;      // 思考正文容器（流式 append）
@@ -354,6 +357,7 @@
         disconnectTimer = null;
         if (connected) return; // 已重连成功：保持执行态，不闪
         setConn('off');
+        stopSendTick(); stopToolTick();
         hideExec();
         setExecuting(false);
       }, 3000);
@@ -515,9 +519,10 @@
         break;
       case 'ai-start':
         if (!isMyProfile(msg.profileId)) break;
+        stopSendTick(); stopToolTick();
         // 防御性：异常顺序下可能残留旧流式气泡，先移除避免僵尸 DOM 累积
         if (streamingEl) { try { streamingEl.remove(); } catch {} }
-        showExec('正在生成回复…');
+        showExec('生成中…');
         setExecuting(true);
         streamingText = '';
         STREAM_MD_INTERVAL = 120; // 新一轮对话，重置渲染节流间隔
@@ -544,6 +549,7 @@
         break;
       case 'ai-reply': {
         if (!isMyProfile(msg.profileId)) break;
+        stopSendTick(); stopToolTick();
         finishStreaming(msg.text || '');
         hideExec();
         setExecuting(false);
@@ -558,6 +564,12 @@
       }
       case 'task-done': {
         if (!isMyProfile(msg.profileId)) break;
+        // 任务真正结束：清计时器 + 隐藏执行条。
+        // 此前靠 ai-reply 隐藏已够；但末轮「只调工具、无正文」时不会有 ai-reply 的隐藏时机
+        // （之前靠 ai-reply 已 hideExec，本次 sending 态可能延续到 task-done），必须自己收尾。
+        stopSendTick(); stopToolTick();
+        hideExec();
+        setExecuting(false);
         // 整个任务结束（工具循环退出）才提醒一次
         if (document.visibilityState === 'hidden') {
           notifyReply(msg.text || '');
@@ -566,13 +578,14 @@
       }
       case 'ai-stop':
         if (!isMyProfile(msg.profileId)) break;
+        stopSendTick(); stopToolTick();
         finishStreaming(streamingText);
         setExecuting(false);
         // reason === 'watchdog' 是电脑端的兜底收尾（网页已停、静默超阈值，
         // 常见于「最后一轮只调工具、没输出正文」的正常结束），并不是用户停止。
         // 这种收尾只做状态复位，不弹「已停止生成」，避免正常任务结束时的误报。
-        // 注意：必须显式 hideExec()——该场景下 onToolEvent('end') 会把执行条
-        // 置为「正在生成回复…」且 execVisible=true，不隐藏就会一直残留。
+        // 注意：必须显式 hideExec()——该场景下可能正处于「延迟发送」态
+        // （execVisible=true），不隐藏就会一直残留。
         if (msg.reason === 'watchdog') { hideExec(); break; }
         showExecBrief('已停止生成', 1500);
         showStopNotice();
@@ -583,6 +596,7 @@
         break;
       case 'ai-error':
         if (!isMyProfile(msg.profileId)) break;
+        stopSendTick(); stopToolTick();
         finishStreaming(streamingText);
         hideExec();
         setExecuting(false);
@@ -596,7 +610,7 @@
         if (msg.profileId && !isMyProfile(msg.profileId)) break;
         if (msg.text) {
           addSystem(msg.text);
-          if (!msg.keepBusy) { hideExec(); setExecuting(false); }
+          if (!msg.keepBusy) { stopSendTick(); stopToolTick(); hideExec(); setExecuting(false); }
         }
         break;
       case 'pong':
@@ -621,6 +635,7 @@
     streamNode = null;
     streamingText = '';
     resetThink();
+    stopSendTick(); stopToolTick();
     hideExec();
     setExecuting(false);
     checkEmptyState();
@@ -1021,8 +1036,10 @@
     if (!delta) return;
     if (!streamingEl) {
       startStreaming();
-      // 可能因重连漏掉了 ai-start 消息，补上 UI 状态
-      showExec('正在生成回复…');
+      // 可能因重连漏掉了 ai-start 消息，补上 UI 状态。
+      // 补 stop：处于「延迟发送」态时重连补发首帧，不停 sendTick 会让文案来回跳。
+      stopSendTick(); stopToolTick();
+      showExec('生成中…');
       setExecuting(true);
     }
     streamingText += delta;
@@ -1109,13 +1126,52 @@
     el.appendChild(bar);
   }
 
+  // 工具/延迟本地正计时（±0.5s 偏差，在 6~16s 随机延迟里可忽略）。
+  // 计时器变量在顶部变量区声明（防 TDZ）；活性守卫：!execVisible 时自停，
+  // 防外部 hideExec 未配套 stopTick 时泄漏。
+  function stopToolTick() {
+    if (toolTickTimer) { clearInterval(toolTickTimer); toolTickTimer = null; }
+    toolStartAt = 0;
+  }
+  function startToolTick() {
+    stopToolTick();
+    toolStartAt = Date.now();
+    function tick() {
+      if (!execVisible) { stopToolTick(); return; }
+      const sec = Math.floor((Date.now() - toolStartAt) / 1000);
+      showExec('工具运行中 ' + sec + 's…');
+    }
+    tick();
+    toolTickTimer = setInterval(tick, 1000);
+  }
+  function stopSendTick() {
+    if (sendTickTimer) { clearInterval(sendTickTimer); sendTickTimer = null; }
+    sendStartAt = 0;
+  }
+  function startSendTick() {
+    stopSendTick();
+    sendStartAt = Date.now();
+    function tick() {
+      if (!execVisible) { stopSendTick(); return; }
+      const sec = Math.floor((Date.now() - sendStartAt) / 1000);
+      showExec('延迟发送 ' + sec + 's…');
+    }
+    tick();
+    sendTickTimer = setInterval(tick, 1000);
+  }
+
   function onToolEvent(phase) {
     if (phase === 'start') {
-      showExec('正在调用系统工具…');
+      stopSendTick();
+      showExec('工具运行中 0s…');
       setExecuting(true);
-    } else if (phase === 'end') {
-      showExec('正在生成回复…');
+      startToolTick();
+    } else if (phase === 'sending') {
+      // 最后一个工具跑完 → 进入拟人化延迟窗口
+      stopToolTick();
+      startSendTick();
     }
+    // 'end' 不处理：多工具并行时首个 end 不代表全部结束；等 sending 或下一轮事件接管
   }
 
   // ===== 执行状态条 / 发送停止按钮 =====
@@ -1241,7 +1297,8 @@
     syncSendBtn();
     try { localStorage.removeItem(DRAFT_KEY); } catch {}
     if (sendRaw({ type: 'send', text })) {
-      showExec('正在生成回复…');
+      stopSendTick(); stopToolTick();
+      showExec('生成中…');
       setExecuting(true);
     } else {
       if (sendQueue.length >= MAX_QUEUE) sendQueue.shift();
@@ -1252,6 +1309,9 @@
 
   sendBtn.addEventListener('click', doSend);
   stopBtn.addEventListener('click', () => {
+    // 先停计时器：showExecBrief 会重新点亮 execVisible，
+    // 若不停，1s 后 tick 的活性守卫失效 → 覆盖「已停止生成」并清掉 execBriefTimer → 永久卡「延迟发送」
+    stopSendTick(); stopToolTick();
     if (!sendRaw({ type: 'stop' })) {
       // 发送失败（连接半开/断开）：不能静默——用户以为停了，实际没停
       addSystem('连接已断开，停止指令未送达，正在重连…');

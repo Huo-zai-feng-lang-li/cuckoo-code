@@ -397,11 +397,19 @@ function onTool(phase: string, name: string, profileId: string): void {
   const pid = profileId || '';
   const s = getStreamState(pid);
   // 维护工具计数（watchdog 据此判断"是否在工具执行阶段"）
+  // wasLastTool：本次 end 恰好把计数从 1 减到 0 = 最后一个工具跑完。
+  // 用它而非事后判 s.toolCount===0：防止 ai-reply 已清零后到达的迟到 end 误触发 sending。
+  const wasLastTool = (phase === 'end' && s.toolCount === 1);
   if (phase === 'start') s.toolCount++;
   else if (phase === 'end' && s.toolCount > 0) s.toolCount--;
   s.lastAt = Date.now();
   s.toolLastAt = Date.now();
   remoteServer.broadcast({ type: 'tool', profileId: pid, phase, name: name || '' });
+  // 最后一个工具跑完 → 通知手机进入「延迟发送」窗口（工具结果回传 AI 后、AI 下一轮生成前的拟人化延迟）。
+  // 用独立 phase 而非新 type：复用现有 'tool' 通道，无需改 IPC 广播白名单。
+  if (wasLastTool) {
+    remoteServer.broadcast({ type: 'tool', profileId: pid, phase: 'sending', name: '' });
+  }
 }
 
 /** 广播远程启用状态给所有 AI 页面（bridge 门控开关） */
