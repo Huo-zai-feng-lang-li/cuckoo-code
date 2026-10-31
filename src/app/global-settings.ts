@@ -87,70 +87,95 @@ export function hasAgentSettingsFile(): boolean {
   try { return fs.existsSync(getAgentSettingsFile()); } catch (_) { return false; }
 }
 
+/** 数值解析：非数字回退默认 */
+function toNum(v: any, def: number): number {
+  const n = typeof v === 'number' ? v : parseFloat(String(v));
+  return Number.isFinite(n) ? n : def;
+}
+
+/** 非负数值：负数归零 */
+function toNonNeg(v: any, def: number): number {
+  const n = toNum(v, def);
+  return n < 0 ? 0 : n;
+}
+
+/** 整数解析：非整数回退默认 */
+function toInt(v: any, def: number): number {
+  const n = typeof v === 'number' ? v : parseInt(String(v), 10);
+  return Number.isFinite(n) ? n : def;
+}
+
+/** 非空文本：非字符串或全空白回退默认 */
+function toStr(v: any, def: string): string {
+  if (typeof v !== 'string') return def;
+  const t = v.trim();
+  return t ? t : def;
+}
+
+/**
+ * 严格布尔：只认 true / 'true'，避免文件被手改成 'false'/'0' 时误判为开。
+ * 缺字段（undefined）回退默认 —— 不能用表达式兜底，否则 undefined 会被判成 false。
+ */
+function toBool(v: any, def: boolean): boolean {
+  if (v === undefined) return def;
+  return v === true || v === 'true';
+}
+
+/**
+ * 区间规整：两端都非负；max < min 时把 max 抬到 min。
+ * 返回 [min, max]，供解构赋值直接对应到设置字段。
+ */
+function toRange(rawMin: any, rawMax: any, defMin: number, defMax: number): [number, number] {
+  const min = toNonNeg(rawMin, defMin);
+  const max = toNonNeg(rawMax, defMax);
+  return max < min ? [min, min] : [min, max];
+}
+
+/** 正整数：非正回退默认（如 goalMaxIterations 必须 > 0） */
+function toPositiveInt(v: any, def: number): number {
+  const n = toInt(v, def);
+  return n > 0 ? n : def;
+}
+
+/** 并发上限：1~10 合法；<1 或非数字回退默认，>10 压到 10 */
+function toConcurrency(v: any, def: number): number {
+  const n = toInt(v, def);
+  if (n < 1) return def;
+  return n > 10 ? 10 : n;
+}
+
 /** 规整：缺字段回退默认、时间/次数非负、文本非空、布尔严格 */
 function normalize(raw: any): AgentSettings {
   const d = { ...AGENT_SETTINGS_DEFAULTS };
   if (!raw || typeof raw !== 'object') return d;
-  const num = (v: any, def: number): number => {
-    const n = typeof v === 'number' ? v : parseFloat(String(v));
-    return Number.isFinite(n) ? n : def;
-  };
-  const nonNeg = (v: any, def: number): number => {
-    const n = num(v, def);
-    return n < 0 ? 0 : n;
-  };
-  const int = (v: any, def: number): number => {
-    const n = typeof v === 'number' ? v : parseInt(String(v), 10);
-    return Number.isFinite(n) ? n : def;
-  };
-  const str = (v: any, def: string): string => {
-    if (typeof v !== 'string') return def;
-    const t = v.trim();
-    return t ? t : def;
-  };
-  let dmin = nonNeg(raw.retryDelayMin, d.retryDelayMin);
-  let dmax = nonNeg(raw.retryDelayMax, d.retryDelayMax);
-  if (dmax < dmin) dmax = dmin;
-  let smin = nonNeg(raw.sendDelayMin, d.sendDelayMin);
-  let smax = nonNeg(raw.sendDelayMax, d.sendDelayMax);
-  if (smax < smin) smax = smin;
-  // 子代理启动间隔：非负；max < min 时抬到 min
-  const intervalMin = nonNeg(raw.agentStartIntervalMin, d.agentStartIntervalMin);
-  let intervalMax = nonNeg(raw.agentStartIntervalMax, d.agentStartIntervalMax);
-  if (intervalMax < intervalMin) intervalMax = intervalMin;
+
+  const [retryDelayMin, retryDelayMax] = toRange(raw.retryDelayMin, raw.retryDelayMax, d.retryDelayMin, d.retryDelayMax);
+  const [sendDelayMin, sendDelayMax] = toRange(raw.sendDelayMin, raw.sendDelayMax, d.sendDelayMin, d.sendDelayMax);
+  const [agentStartIntervalMin, agentStartIntervalMax] = toRange(
+    raw.agentStartIntervalMin, raw.agentStartIntervalMax,
+    d.agentStartIntervalMin, d.agentStartIntervalMax,
+  );
+
   return {
-    // 严格布尔：只认 true / false，避免文件被手改成 'false'/'0' 时误判为开。
-    // 缺字段时回退默认（不能用表达式兜底，否则 undefined 会被判成 false）。
-    retryEnabled: raw.retryEnabled === undefined ? d.retryEnabled
-      : (raw.retryEnabled === true || raw.retryEnabled === 'true'),
-    retryDelayMin: dmin,
-    retryDelayMax: dmax,
-    retryCount: int(raw.retryCount, d.retryCount),
-    retry429Delay: nonNeg(raw.retry429Delay, d.retry429Delay),
-    retry429Count: int(raw.retry429Count, d.retry429Count),
-    retryPrompt: str(raw.retryPrompt, d.retryPrompt),
-    xhrIdleTimeout: nonNeg(raw.xhrIdleTimeout, d.xhrIdleTimeout),
-    watchdogPrompt: str(raw.watchdogPrompt, d.watchdogPrompt),
-    watchdogCount: int(raw.watchdogCount, d.watchdogCount),
-    sendDelayMin: smin,
-    sendDelayMax: smax,
-    goalMaxIterations: (() => {
-      const v = int(raw.goalMaxIterations, d.goalMaxIterations);
-      return v > 0 ? v : d.goalMaxIterations;
-    })(),
+    retryEnabled: toBool(raw.retryEnabled, d.retryEnabled),
+    retryDelayMin,
+    retryDelayMax,
+    retryCount: toInt(raw.retryCount, d.retryCount),
+    retry429Delay: toNonNeg(raw.retry429Delay, d.retry429Delay),
+    retry429Count: toInt(raw.retry429Count, d.retry429Count),
+    retryPrompt: toStr(raw.retryPrompt, d.retryPrompt),
+    xhrIdleTimeout: toNonNeg(raw.xhrIdleTimeout, d.xhrIdleTimeout),
+    watchdogPrompt: toStr(raw.watchdogPrompt, d.watchdogPrompt),
+    watchdogCount: toInt(raw.watchdogCount, d.watchdogCount),
+    sendDelayMin,
+    sendDelayMax,
+    goalMaxIterations: toPositiveInt(raw.goalMaxIterations, d.goalMaxIterations),
     ssrfGuard: raw.ssrfGuard === true,
-    // 子代理并发：1~10（<1 或非数字回退默认 3；>10 压到 10）
-    maxConcurrentAgents: (() => {
-      const v = int(raw.maxConcurrentAgents, d.maxConcurrentAgents);
-      if (v < 1) return d.maxConcurrentAgents;
-      if (v > 10) return 10;
-      return v;
-    })(),
-    agentStartIntervalMin: intervalMin,
-    agentStartIntervalMax: intervalMax,
-    autoCompactEnabled: raw.autoCompactEnabled === undefined ? d.autoCompactEnabled
-      : (raw.autoCompactEnabled === true || raw.autoCompactEnabled === 'true'),
-    autoCompactThreshold: nonNeg(raw.autoCompactThreshold, d.autoCompactThreshold),
+    maxConcurrentAgents: toConcurrency(raw.maxConcurrentAgents, d.maxConcurrentAgents),
+    agentStartIntervalMin,
+    agentStartIntervalMax,
+    autoCompactEnabled: toBool(raw.autoCompactEnabled, d.autoCompactEnabled),
+    autoCompactThreshold: toNonNeg(raw.autoCompactThreshold, d.autoCompactThreshold),
   };
 }
 

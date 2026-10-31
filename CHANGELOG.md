@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.10.202] - 2026-10-31
+
+### 重构
+- **`global-settings.ts` 的 `normalize` 圈复杂度从 12 降到 3**：这是配置文件的字段规整函数（缺字段回退默认、时间/次数非负、文本非空、布尔严格）。原实现把 4 个解析闭包 + 3 组区间规整 + 18 个字段赋值全塞在一个函数里，圈复杂度随字段数线性膨胀。本次抽出 9 个纯函数（`toNum` / `toNonNeg` / `toInt` / `toStr` / `toBool` / `toRange` / `toPositiveInt` / `toConcurrency`）：
+  - 区间规整（`max < min` 时抬到 `min`）原先重复 3 遍，现统一为 `toRange` 一次解构拿到 `[min, max]`
+  - 严格布尔（缺字段回退默认、只认 `true`/`'true'`）原先用三元表达式写了两遍，现统一为 `toBool`
+  - `goalMaxIterations` 的正整数校验、`maxConcurrentAgents` 的 1~10 压顶，各自抽成独立函数
+  行为完全不变（20 个配置测试全过）。
+
+### 验证
+- typecheck / compile / test（131 文件 1316 用例）/ lint（0 errors，65 warnings 基线持平）全绿
+- 复杂度实测：`normalize` 12→3，新增 9 个辅助函数均 ≤ 3
+- 单跑 `test/app/global-settings.test.js` 20 用例全过
+
 ## [0.10.201] - 2026-10-31
 
 ### 修复
