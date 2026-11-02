@@ -1,14 +1,17 @@
-# 最新接续状态 (2026-11-03 00:20)
+# 最新接续状态 (2026-11-03 01:10)
 
 ## 核心进展
 
-**已发版 `v0.10.205`**（上一版 `v0.10.203` 是需求 102 宠物 + 103 工具结果拟人化）。
+**已发版 `v0.10.206`**（上一版 `v0.10.205` 是需求 104 手机端延迟发送卡死 + 宠物气泡间距）。
 
-本版包含：
+本版（0.10.206）包含：
+- **纯净模式右上角状态条在宠物关闭时不可见** → 改为按宠物是否存在动态裁决显隐：宠物在 → 隐藏（避免与宠物气泡同屏重复）；宠物不在 → 显形兜底。新增单点函数 `syncStatusVisibility()`，5 处调用覆盖全部路径，并堵住 `initPet()` 两个早退分支导致永久隐藏的坑。
+
+`v0.10.205` 包含：
 - **需求 104：手机端「延迟发送」永久卡死**（真 bug）+ 手机宠物气泡间距过高 → 已修复。
 - **需求 103 补遗**：`src/prompt/{deepseek,claude,chatgpt,default}.md` 的示例已同步为新句式（`跑完了，结果：`，单段不带 `成功`）。
 
-四项校验全绿，手机端 PWA 与桌面端回归均通过 CDP 实测。
+四项校验全绿，手机端 PWA 与桌面端回归均通过 CDP 实测；0.10.206 另做 7 档窗口宽度布局实测 + 子代理审计（code-reviewer / arch-guard 均无必须修复项）。
 
 ### 需求 104 一句话结论
 
@@ -85,7 +88,7 @@
 ## 待办事项 (Next Steps)
 
 - [ ] **用户手机真机验证需求 104**：跑一轮真实工具循环，确认「延迟发送」不再卡死、气泡间距合适（代码已发版，等真机确认）
-- [ ] **确认 GitHub Actions 构建结果**：`v0.10.205` 应触发 Win/Mac/APK 三端构建，去 Actions 页确认产物是否成功挂上 Release
+- [ ] **确认 GitHub Actions 构建结果**：`v0.10.206` 应触发 Win/Mac/APK 三端构建，去 Actions 页确认产物是否成功挂上 Release
 - [ ] **遗留（未处理）**：`isMyProfile` 的"宽松→严格"切换仍可能导致**流式内容**在窗口选择过期后不显示。本次只解决了终态收尾（僵尸执行条），流式串窗口属另一议题
 - [ ] **遗留（未查证）**：「为什么 profileId 会失配」——需真机复现时抓具体值才能定位
 - [ ] **如需发下一个版本**：手动 `git push origin master` + `git push origin vX.Y.Z`（post-commit 钩子已删，不再自动推）
@@ -93,8 +96,9 @@
 ## 关键上下文
 
 - 目录：`D:\\Desktop\\Super-File\\cuckoo-code`
-- 分支：`master`，tag `v0.10.205`
+- 分支：`master`，tag `v0.10.206`
 - 需求档案：`docs/requirements/102-harness-pet.md`、`docs/requirements/103-tool-result-humanize.md`、`docs/requirements/104-remote-terminal-reset.md`
+- **0.10.206 无需求档案**：单文件 UI 行为调整（`src/ui/harness.html` +29/−8），按项目规则属"小改动免档案"。变更详情见 CHANGELOG `[0.10.206]`。
 - **核心文件**
   - `src/ui/pets/pet.js` — 渲染引擎（零依赖；新增可选 `opts.clampX`，不传时桌面端行为完全不变）
   - `src/ui/pets/pet.css` — 桌面端气泡样式
@@ -119,6 +123,10 @@
   # 查窗口：curl http://127.0.0.1:9444/json/list
   # 杀进程：powershell -c "Get-Process electron | Stop-Process -Force"（不要用 taskkill，会被安全策略拦）
   ```
+
+- **本次踩坑：探针测试会污染用户偏好**
+  用 CDP 探针反复调 `setUiPrefs({ petEnabled: false/true })` 会让主进程把整份偏好写回磁盘；`setUiPrefs` 只提交指定字段，其余字段从内存值写回，而内存值可能被拖动检测改过 → **用户的 `petX` 从 0.603 被改成了 0.94**。
+  → 铁律：探针要改用户偏好时，先 `read` 原值，测完显式写回原值；或改用独立 `CUCKOO_HOME` 目录隔离。
 
 - **本次踩坑：临时改用户配置的教训**
   用 PowerShell 的 `ConvertTo-Json | Set-Content` 改 `~/.cuckoo/remote.json` 会**把嵌套对象压成扁平 + 加 BOM**，导致 `readConfig` 解析出 `enabled:false`。

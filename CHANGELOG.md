@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.10.206] - 2026-11-03
+
+### 修复
+- **纯净模式右上角状态条在宠物关闭时不可见**：状态条（「生成中…」/「工具运行中 12s…」/「结果待发送（工具 Ns · 延迟 Ns）」）的文案早已迁到宠物气泡，DOM 用 `.sr-only` 视觉隐藏但仍承担运行态判定。问题是宠物被关掉（或 `CuckooPet` 创建失败）后，状态条仍留在隐藏态——用户既看不到气泡也看不到状态，完全不知道任务在不在跑。
+  现改为**按宠物是否存在动态裁决**：宠物在 → 隐藏（避免同屏重复）；宠物不在 → 显形兜底。新增单点函数 `syncStatusVisibility()`，在 5 处调用覆盖全部路径：
+  - `boot()` 的 `petEnabled === false` 分支
+  - `boot()` 创建宠物之后（建成功 → 隐藏，建失败 → 显形）
+  - `setStatus()`（替换原先无条件的 `add('sr-only')`——`className` 整体重写会丢掉该类名）
+  - `resetConversation`（切会话 / 新对话）
+  - `initPet()` 的两个早退分支（`window.CuckooPet` 未加载 / `.composer-inner` 不存在）—— 原先直接 `return` 会让状态条永久隐藏
+
+### 验证
+- `npm run typecheck` / `npm test`（131 文件 1320 用例）/ `npm run lint`（0 errors，65 warnings 基线持平）/ `npm run compile` 全绿。
+- 真机（开发版 Electron，CDP 9444）逐场景实测：宠物开启 → 状态条 `.sr-only` + 1×1 不可见；关闭宠物 → 去掉 `.sr-only`、35.2px 可见；重新开启 → 恢复隐藏；真实 `setStatus` 链路后 `.sr-only` 被正确加回。
+- 顶栏布局 7 档宽度实测（1490 / 1200 / 1000 / 900 / 800 / 700 / 620）：最长文案「结果待发送（工具 123s · 延迟 16s）」在最窄 620px 下自动缩到 159px，无换行、无裁剪、无重叠、无横向溢出。
+- 子代理审计：`code-reviewer` 穷举 `pet` 全部写入点确认无路径遗漏、不污染任何运行态变量；`arch-guard` 取证确认 `harness.html` 为手写真源（`build-shell.mjs` 的 `OUT` 只指向 `shell.html`），本次手改合规、未触碰生成物。
+
 ## [0.10.205] - 2026-11-02
 
 ### 修复

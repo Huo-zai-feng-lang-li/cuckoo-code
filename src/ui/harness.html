@@ -108,8 +108,9 @@
   .brand svg { width: 15px; height: 15px; color: var(--accent); }
   .brand-hint { font-size: 10.5px; font-weight: 400; color: var(--amber, #d9a05b); opacity: .85; letter-spacing: 0; }
   .topbar .spacer { flex: 1; }
-  /* 状态条视觉隐藏（保留 DOM：它是运行态载体，generating 由 setStatus 写入）。
-     文案全部迁到宠物气泡（见 src/ui/pets/pet.css），视线焦点在输入框上方。 */
+  /* 状态条：宠物在 → 加 .sr-only 视觉隐藏（文案由宠物气泡承担，避免同屏重复）；
+     宠物不在（设置里关掉 / 创建失败）→ 去掉 .sr-only 显形，作为运行态兜底载体。
+     显隐由 JS 的 syncStatusVisibility() 单点控制，CSS 这里只定义隐藏长什么样。 */
   .status.sr-only {
     position: absolute; width: 1px; height: 1px;
     margin: -1px; padding: 0; border: 0;
@@ -1840,7 +1841,7 @@
     if (statusText) statusText.textContent = '就绪';
     if (statusEl) {
       statusEl.className = 'status ready';
-      statusEl.classList.add('sr-only');   // 独立兜底：不依赖上面的字符串拼接
+      syncStatusVisibility();   // 同样按「宠物是否存在」裁决，不无脑隐藏
     }
     try { if (pet) pet.clearBubble(); } catch (e) { /* ignore */ }
     // 指示器必须同步刷新：上面已把 generating / toolRunningCount 清零，
@@ -3178,6 +3179,21 @@
   // 三态映射：工具在跑 → working（按并行数走 pack 的 tiers 档位）；
   //          模型出字 → thinking；其余 → idle（空闲 60s 自动睡觉、偶发 idle-look/idle-spout）。
   var pet = null;
+  /**
+   * 状态条显隐单点控制。
+   *
+   * 宠物存在时：状态文案由宠物气泡表达，状态条加 .sr-only 视觉隐藏（DOM 必须保留，
+   * 它是 generating / busy 判定链的数据载体，删掉会断）。
+   * 宠物不存在时（设置里关掉、或 CuckooPet 创建失败）：状态条显形，作为运行态兜底，
+   * 否则用户既看不到气泡也看不到状态，完全不知道任务在不在跑。
+   *
+   * 只在「宠物实例有无」变化时调用（boot / 销毁），不在每次 setStatus 里重复算。
+   */
+  function syncStatusVisibility() {
+    if (!statusEl) return;
+    if (pet) statusEl.classList.add('sr-only');
+    else statusEl.classList.remove('sr-only');
+  }
   function syncPet() {
     if (!pet) return;
     if (toolRunningCount > 0) {
@@ -3270,9 +3286,10 @@
     // 任何状态改写都意味着离开「等 AI 开口」的过渡态（含它自己再次进入前的旧值）
     inFrameworkPhase = false;
     statusText.textContent = text;
-    // sr-only 必须保留：状态条视觉隐藏，文案已迁到宠物气泡（见 syncPet / petBubble）
+    // className 整体重写会丢掉 .sr-only，故每次都按「宠物是否存在」重新裁决一次。
+    // 不能无脑 add：宠物关闭时状态条必须显形（见 syncStatusVisibility）。
     statusEl.className = 'status' + (state ? ' ' + state : '');
-    statusEl.classList.add('sr-only');   // 独立兜底：任何 className 重写都不会让状态条视觉复活
+    syncStatusVisibility();
     generating = (state === 'busy');
     if (generating) lastActivityAt = Date.now();
     syncBusyIndicators();
@@ -4079,14 +4096,16 @@
   // 尺寸/开关读主进程 UI 偏好（与纯净模式字号同一份 ui-prefs.json）。
   // 宠物只是装饰：初始化失败一律静默降级，绝不影响对话。
   (function initPet() {
-    if (!window.CuckooPet) return;
+    // 早退也必须裁决状态条显隐：宠物建不出来时它是唯一运行态载体，
+    // 不能因为这里 return 就永久留在 .sr-only 里（用户会看不到任何状态）。
+    if (!window.CuckooPet) { syncStatusVisibility(); return; }
     var anchor = document.querySelector('.composer-inner');
-    if (!anchor) return;
+    if (!anchor) { syncStatusVisibility(); return; }
     /** 按偏好（重）建宠物：设置页改开关/大小时也走这里 */
     function boot(prefs) {
       var p = prefs || {};
       if (pet) { try { pet.destroy(); } catch (e) { /* ignore */ } pet = null; }
-      if (p.petEnabled === false) return;
+      if (p.petEnabled === false) { syncStatusVisibility(); return; }
       var size = typeof p.petSize === 'number' ? p.petSize : 96;
       try {
         pet = window.CuckooPet.create('deepy-whale', size, anchor, {
@@ -4105,6 +4124,8 @@
           },
         });
       } catch (e) { pet = null; }
+      // 宠物建出来了 → 状态条隐藏；建失败 → 状态条显形兜底
+      syncStatusVisibility();
       if (pet) syncPet();
     }
     try {
