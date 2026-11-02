@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.10.205] - 2026-11-02
+
+### 修复
+- **手机端「延迟发送 Ns…」永久卡死（需求 104）**：手机端所有终态事件（`ai-reply` / `task-done` / `ai-stop` / `ai-error` / `sys`）都走 `isMyProfile()` 严格过滤——它在收到窗口列表后只认当前选中的 profileId。而「延迟发送」计时器的**唯一**停表途径就是这些终态事件。一旦手机端 localStorage 里的 `cuckoo-last-profile` 与电脑端广播的 profileId 失配（换过窗口 / 新建对话 / 旧值过期），所有能停表的事件全被静默丢弃，`setInterval` 又没有自停条件 → 永久数秒，电脑端其实早已跑完好几轮。三层修复：
+  - **兜底**：`startSendTick` 增加 45s 硬超时（`SEND_TICK_MAX_MS`），正常延迟仅 6~16s，超时强制收尾；
+  - **治本**：终态事件不再做 profileId 判定（收尾动作对所有窗口都安全，误收最多提前收尾一次，下一轮 `ai-start` 立即重建）；
+  - **拆分**：`sys` 分支原来一条判定同时管「复位」和「显示文案」，窗口选择过期时连复位一起吞；现拆成复位无条件执行、文案仍按窗口过滤。
+  - `ai-start` 的 `stopSendTick / stopToolTick` 提到过滤之前（幂等动作先停表再判内容）。
+  - **不担心串窗口**：真正会污染界面的流式内容（`ai-start` 后续逻辑 / `ai-stream` / `tool` / `history`）仍走严格 `isMyProfile`。
+- **手机端宠物气泡离宠物头顶太远（需求 104）**：`pet.js` 的 `anchorBottom()` 把气泡间距硬编码成 16px（注释还写着"故留 52px"，与代码早已不一致）。桌面宠物 160~215px，16px 相对不显；手机端宠物固定 64px，同样的 16px 就是明显悬空。改为可选 `opts.bubbleGap`（默认 16，**不传时桌面端行为完全不变**），手机端传 8，并修正过期注释。
+- **prompt 示例与回传实现不一致（需求 103 补遗）**：`src/prompt/{deepseek,claude,chatgpt,default}.md` 的「系统返回」示例仍写着旧句式（`刚跑完 1 段代码，结果如下：` + 单段带 `成功`），与 0.10.203 改成的「5 选 1 随机前缀 + 单段不加成功」不符。现统一改为 `跑完了，结果：` 且单段不带 `成功` 锚点。
+
+### 验证
+- `npm run typecheck` / `npm test`（131 文件 1320 用例）/ `npm run lint`（0 errors，65 warnings 基线持平）/ `npm run compile` 全绿。
+- 手机端 PWA 真机（浏览器窗口 + CDP）：连接「已在线」、宠物渲染 62.4px、气泡间距反推 **8.0000**（新值生效）、`image-rendering: pixelated`。
+- 桌面端回归（纯净模式）：宠物 124.8px、气泡间距反推 **16**（未被影响），`image-rendering: pixelated`。
+- 产物校验：`out/src/remote/pwa/app.js` 含 `SEND_TICK_MAX_MS` / `sendHardStopTimer`，`isTerminalEvent` 无残留（自查时发现该恒真函数是死判定，已改为直接不判 + 就地注释）。
+- `node --check` 三个改动 JS 文件语法通过；三文件 `eslint` 零输出。
+
 ## [0.10.203] - 2026-11-02
 
 ### 新增

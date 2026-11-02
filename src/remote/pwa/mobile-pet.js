@@ -87,6 +87,9 @@
       creating = true;
       pet = engine.create(PACK_ID, SIZE_PX, hostEl, {
         x: clampXForHost(readX()),
+        // 气泡离宠物头顶的间距：桌面端默认 16px 是按大尺寸宠物调的，
+        // 手机端宠物只有 64px，同样的 16px 显得悬空，收到 8px 贴回来。
+        bubbleGap: 8,
         // 拖动全程按宠物实际宽度钳位（pet.js 的 clampX 钩子，默认不传时行为不变）。
         // 这样 DOM 位置与 pet.js 内部 xRatio 永远一致，不会出现"松手跳回/下次拖动跳变"。
         clampX: clampXForHost,

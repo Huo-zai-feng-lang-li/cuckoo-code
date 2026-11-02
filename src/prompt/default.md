@@ -144,9 +144,8 @@ log(r);
 **系统返回**：
 
 ```
-刚跑完 1 段代码，结果如下：
+跑完了，结果：
 
-成功
 <path>src/greeting.txt</path>
 <type>file</type>
 <content>

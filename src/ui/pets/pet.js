@@ -130,6 +130,10 @@
     // 6% 会让半个身子探出屏幕。传了 clampX 就在拖动全程用它，保证 DOM 与
     // 内部 xRatio 永远一致（否则松手后纠正 DOM 会造成下次拖动起点跳变）。
     var clampX = typeof opts.clampX === 'function' ? opts.clampX : null;
+    // 气泡底边与宠物绘制框顶部的间距（px）。
+    // 不传则保持桌面端既有值 16；手机端宠物小，传更小的值让气泡贴回来。
+    var bubbleGap = (typeof opts.bubbleGap === 'number' && isFinite(opts.bubbleGap))
+      ? Math.max(0, opts.bubbleGap) : 16;
     // 点击彩蛋池（动画名数组）：点一下按顺序轮播，播完一圈重新洗牌。
     // 为空时回退 pack.reactions 的 tapLeft / tapRight。
     var clickPool = Array.isArray(opts.clickAnimations) ? opts.clickAnimations.filter(function (n) {
@@ -203,8 +207,10 @@
     function anchorBottom(box) {
       var visibleH = Math.max(0, (pack.canvas[1] - box.y) * unit);
       // 与宠物拉开距离：点击彩蛋（conducting / building 等 box.y=0 的高个动画）
-      // 头顶会顶到画布最上沿，间隙太小会压住动画本体，故留 52px。
-      return visibleH + 16;
+      // 头顶会顶到画布最上沿，间隙太小会压住动画本体。
+      // 间距由调用方按宠物尺寸决定（bubbleGap，默认 16px）：桌面宠物大，
+      // 16px 相对比例小；手机端宠物只有 64px，同样的 16px 会显得悬空。
+      return visibleH + bubbleGap;
     }
     // 初始值给一个偏高位置，paint() 首次调用会按真实动画修正（宁高勿低）
     bubblesEl.style.bottom = anchorBottom({ y: 0 }) + 'px';

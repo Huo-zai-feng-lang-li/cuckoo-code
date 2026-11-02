@@ -97,5 +97,6 @@
 | 101 | fix | [手机端执行胶囊遮挡输入框 + 后台回来计时秒数爆炸](./101-remote-exec-pill-timer.md) | done | fix/101-remote-exec-pill-timer | 2026-10-31 |
 | 102 | feature | [纯净模式输入框宠物（气泡互动 + 可拖动）](./102-harness-pet.md) | done | (直接主分支，用户要求先做最优端且不提交) | 2026-11-02 |
 | 103 | fix | [工具结果回传文案拟人化（降低服务端内容特征识别）](./103-tool-result-humanize.md) | done | fix/103-tool-result-humanize | 2026-11-02 |
+| 104 | fix | [手机端「延迟发送」永久卡死（终态事件被窗口过滤丢弃）+ 手机宠物气泡间距过高](./104-remote-terminal-reset.md) | done | (直接主分支，用户要求先真机验证，不提交) | 2026-11-02 |
 
-共 92 个需求。
+共 93 个需求。

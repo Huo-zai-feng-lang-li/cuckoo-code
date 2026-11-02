@@ -75,10 +75,15 @@
   // 防止某些浏览器不派发/延迟派发 visibilitychange 时秒数仍然爆炸。
   let toolTickTimer = null, toolStartAt = 0, toolLastTickAt = 0;
   let sendTickTimer = null, sendStartAt = 0, sendLastTickAt = 0;
+  // 「延迟发送」硬超时兜底：正常延迟 6~16s，远超即说明停表事件丢了。
+  let sendHardStopTimer = null;
   // 页面进入后台的时刻（0 = 当前在前台）。用于回前台时补偿计时基准。
   let hiddenAt = 0;
   // 冻结判定阈值：正常 tick 1000ms，超过 3000ms 视为标签页被冻结过。
   const FROZEN_TICK_MS = 3000;
+  // 「延迟发送」计时上限（ms）：正常延迟 6~16s。超过这个数一定意味着终态事件
+  // 被过滤/丢失，必须强制收尾，否则「延迟发送 300s…」会永久挂着（手机端实测故障）。
+  const SEND_TICK_MAX_MS = 45000;
   // 思考气泡（正文气泡上方的可折叠块）
   let thinkEl = null;        // 思考块容器（.msg-think）
   let thinkBody = null;      // 思考正文容器（流式 append）
@@ -553,8 +558,11 @@
         updateProfiles(msg.profiles || [], msg.currentProfileId || '');
         break;
       case 'ai-start':
-        if (!isMyProfile(msg.profileId)) break;
+        // 停表属于幂等收尾动作，先无条件执行；否则一旦窗口选择过期，
+        // 「延迟发送」计时器就永远等不到停表（与 task-done 同源的僵尸状态）。
+        // 其余内容类操作（清僵尸气泡、置忙、宠物状态）仍严格按窗口过滤。
         stopSendTick(); stopToolTick();
+        if (!isMyProfile(msg.profileId)) break;
         // 防御性：异常顺序下可能残留旧流式气泡，先移除避免僵尸 DOM 累积
         if (streamingEl) { try { streamingEl.remove(); } catch {} }
         showExec('生成中…');
@@ -584,8 +592,13 @@
         if (msg.textDelta) appendStreaming(msg.textDelta);
         petEvent('thinking');
         break;
+      // ===== 终态收尾：不看 profileId =====
+      // ai-reply / task-done / ai-stop / ai-error / sys 只做「这一轮结束了」的收尾动作
+      // （停计时器、隐藏执行条、复位发送按钮），不含任何对话内容。一旦因窗口选择过期
+      // 被 isMyProfile 丢弃，手机端就再没有任何事件能收尾 —— 实测「延迟发送 300s…」永久挂着。
+      // 误收的代价可控：最多提前收尾一次，下一轮 ai-start 立刻重建。
+      // 流式内容（ai-start / ai-stream / tool / history）仍走严格 isMyProfile，不串窗口。
       case 'ai-reply': {
-        if (!isMyProfile(msg.profileId)) break;
         stopSendTick(); stopToolTick();
         finishStreaming(msg.text || '');
         hideExec();
@@ -601,7 +614,6 @@
         break;
       }
       case 'task-done': {
-        if (!isMyProfile(msg.profileId)) break;
         // 任务真正结束：清计时器 + 隐藏执行条。
         // 此前靠 ai-reply 隐藏已够；但末轮「只调工具、无正文」时不会有 ai-reply 的隐藏时机
         // （之前靠 ai-reply 已 hideExec，本次 sending 态可能延续到 task-done），必须自己收尾。
@@ -616,7 +628,6 @@
         break;
       }
       case 'ai-stop':
-        if (!isMyProfile(msg.profileId)) break;
         stopSendTick(); stopToolTick();
         finishStreaming(streamingText);
         setExecuting(false);
@@ -635,7 +646,6 @@
         renderHistory(msg.history || []);
         break;
       case 'ai-error':
-        if (!isMyProfile(msg.profileId)) break;
         stopSendTick(); stopToolTick();
         finishStreaming(streamingText);
         hideExec();
@@ -648,11 +658,11 @@
         onToolEvent(msg.phase);
         break;
       case 'sys':
-        if (msg.profileId && !isMyProfile(msg.profileId)) break;
-        if (msg.text) {
-          addSystem(msg.text);
-          if (!msg.keepBusy) { stopSendTick(); stopToolTick(); hideExec(); setExecuting(false); }
-        }
+        // 拆开处理：复位动作（停表/隐藏执行条）属于收尾语义，必须无条件执行；
+        // 而提示文案会串窗口，仍按当前窗口过滤后再显示。
+        // 旧实现一条判定同时管两件事 —— 窗口选择过期时连复位一起吞掉，执行条永久残留。
+        if (msg.text && isMyProfile(msg.profileId)) addSystem(msg.text);
+        if (!msg.keepBusy) { stopSendTick(); stopToolTick(); hideExec(); setExecuting(false); }
         break;
       case 'pong':
         lastPong = Date.now();
@@ -1223,6 +1233,7 @@
   }
   function stopSendTick() {
     if (sendTickTimer) { clearInterval(sendTickTimer); sendTickTimer = null; }
+    if (sendHardStopTimer) { clearTimeout(sendHardStopTimer); sendHardStopTimer = null; }
     sendStartAt = 0;
     sendLastTickAt = 0;
   }
@@ -1242,6 +1253,17 @@
     }
     tick();
     sendTickTimer = setInterval(tick, 1000);
+    // 硬超时兜底（真 bug 防线）：正常延迟是 6~16s。若停表事件（ai-start /
+    // ai-reply / task-done / ai-stop / ai-error）因 profileId 不匹配被 isMyProfile
+    // 丢弃，计时器本身没有任何自停条件 → 会一直数到几百秒，用户误判电脑卡死。
+    // 这里给一个绝对上限，到点强制收尾，宁可少显示几秒也不留僵尸状态。
+    sendHardStopTimer = setTimeout(() => {
+      sendHardStopTimer = null;
+      console.warn('[Remote] 延迟发送超时兜底（' + (SEND_TICK_MAX_MS / 1000) + 's 未见终态），强制收尾');
+      stopSendTick();
+      hideExec();
+      setExecuting(false);
+    }, SEND_TICK_MAX_MS);
   }
 
   function onToolEvent(phase) {
