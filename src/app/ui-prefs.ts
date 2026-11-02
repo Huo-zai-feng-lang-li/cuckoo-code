@@ -4,6 +4,9 @@
  *
  * 目前：
  *   - harnessZoom：纯净模式缩放（0.8 ~ 1.6，默认 1.0）
+ *   - petEnabled：宠物总开关（同时控制纯净模式与桌面宠物）
+ *   - petSize / petDesktopSize：纯净模式与桌面的显示边长（各自记忆，滚轮调整）
+ *   - petX：纯净模式宠物的横向站位比例（拖动后记忆）
  *   - promptEnhancer：纯净模式提示词增强配置
  *
  * API Key 默认空（源码不硬编码任何密钥，开源安全）；用户在设置里填写后存 ui-prefs.json。
@@ -33,8 +36,23 @@ export interface PromptEnhancerConfig {
   backgroundImage: string;
 }
 
+/** 宠物显示边长（px）。历史上是三档字符串（small/medium/large），现已统一为数字。 */
+export type PetSize = number;
+export const PET_SIZE_MIN = 48;
+export const PET_SIZE_MAX = 256;
+/** 旧三档 → px 的映射（兼容老配置） */
+const LEGACY_PET_SIZE: Record<string, number> = { small: 64, medium: 96, large: 128 };
+
 export interface UiPrefs {
   harnessZoom: number;
+  /** 显示宠物（同时控制纯净模式与桌面宠物） */
+  petEnabled: boolean;
+  /** 纯净模式宠物显示边长（px，48 ~ 256；滚轮调整） */
+  petSize: PetSize;
+  /** 桌面宠物显示边长（px，48 ~ 256；滚轮调整；桌面通常设得更大） */
+  petDesktopSize: PetSize;
+  /** 宠物横向站位比例（0.06 ~ 0.94，相对输入框宽度；拖动后记忆） */
+  petX: number;
   promptEnhancer: PromptEnhancerConfig;
   /**
    * 壳页面布局（全窗口共享）：localStorage 键 → 值（均以字符串存）。
@@ -56,6 +74,10 @@ export const LAYOUT_KEYS = [
 
 const DEFAULTS: UiPrefs = {
   harnessZoom: 1.0,
+  petEnabled: true,
+  petSize: 96,
+  petDesktopSize: 160,
+  petX: 0.18,
   shellLayout: {},
   promptEnhancer: {
     enabled: true,
@@ -87,6 +109,21 @@ function clampZoom(v: any): number {
   const n = typeof v === 'number' ? v : parseFloat(v);
   if (!Number.isFinite(n)) return DEFAULTS.harnessZoom;
   return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(n * 100) / 100));
+}
+
+/** 规整宠物横向站位：钳到 6%~94%（两端留出半个身位，避免贴边被裁） */
+function clampPetX(v: any): number {
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  if (!Number.isFinite(n)) return DEFAULTS.petX;
+  return Math.max(0.06, Math.min(0.94, Math.round(n * 1000) / 1000));
+}
+
+/** 规整宠物尺寸：数字（px）钳到 [40, 200]；旧的三档字符串按映射表转换 */
+function normPetSize(v: any): PetSize {
+  if (typeof v === 'string' && LEGACY_PET_SIZE[v]) return LEGACY_PET_SIZE[v];
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  if (!Number.isFinite(n)) return DEFAULTS.petSize;
+  return Math.max(PET_SIZE_MIN, Math.min(PET_SIZE_MAX, Math.round(n)));
 }
 
 function clampRounds(v: any): number {
@@ -125,9 +162,24 @@ function normLayout(raw: any): Record<string, string> {
 function readPrefs(): UiPrefs {
   // C-003：损坏回退 .bak
   const o = readJsonRobustSync<Record<string, any> | null>(getPrefsFile(), null);
-  if (!o) return { harnessZoom: DEFAULTS.harnessZoom, promptEnhancer: { ...DEFAULTS.promptEnhancer }, shellLayout: {} };
+  if (!o) {
+    return {
+      harnessZoom: DEFAULTS.harnessZoom,
+      petEnabled: DEFAULTS.petEnabled,
+      petSize: DEFAULTS.petSize,
+      petDesktopSize: DEFAULTS.petDesktopSize,
+      petX: DEFAULTS.petX,
+      promptEnhancer: { ...DEFAULTS.promptEnhancer },
+      shellLayout: {},
+    };
+  }
   return {
     harnessZoom: clampZoom(o && o.harnessZoom),
+    petEnabled: o.petEnabled !== false,
+    petSize: normPetSize(o && o.petSize),
+    // 老配置只有 petSize 时，桌面沿用同值（避免突然跳到 160）
+    petDesktopSize: normPetSize(o && o.petDesktopSize !== undefined ? o.petDesktopSize : o && o.petSize),
+    petX: clampPetX(o && o.petX),
     promptEnhancer: normEnhancer(o && o.promptEnhancer),
     shellLayout: normLayout(o && o.shellLayout),
   };
@@ -137,6 +189,10 @@ function writePrefs(patch: Partial<UiPrefs>): UiPrefs {
   const cur = readPrefs();
   const next: UiPrefs = { ...cur };
   if (patch.harnessZoom !== undefined) next.harnessZoom = clampZoom(patch.harnessZoom);
+  if (patch.petEnabled !== undefined) next.petEnabled = !!patch.petEnabled;
+  if (patch.petSize !== undefined) next.petSize = normPetSize(patch.petSize);
+  if (patch.petDesktopSize !== undefined) next.petDesktopSize = normPetSize(patch.petDesktopSize);
+  if (patch.petX !== undefined) next.petX = clampPetX(patch.petX);
   if (patch.promptEnhancer !== undefined) next.promptEnhancer = normEnhancer({ ...cur.promptEnhancer, ...patch.promptEnhancer });
   // shellLayout 为增量合并：只覆盖本次提交的键，其余保持
   if (patch.shellLayout !== undefined) next.shellLayout = { ...cur.shellLayout, ...normLayout(patch.shellLayout) };

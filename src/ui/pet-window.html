@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'">
+<title>Cuckoo Pet</title>
+<link rel="stylesheet" href="pets/pet.css">
+<style>
+  /* 桌面宠物窗口：整体透明，只有宠物与气泡可见。
+     背景色跟随 Cuckoo 主题的兜底值（--ck-* 由主进程 theme-presenter 注入，本窗口没有 → 用深色兜底）。 */
+  :root {
+    --bg-elev: #14161b;
+    --border: rgba(255, 255, 255, 0.10);
+    --shadow-color: rgba(0, 0, 0, 0.45);
+    --text-2: #c0c6d2;
+    --accent: #7b8fff;
+  }
+  html, body {
+    margin: 0; height: 100%; background: transparent; overflow: hidden;
+    user-select: none; -webkit-user-select: none;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  }
+  /* 可拖动区域：整块透明底都能拖；宠物本体留给点击彩蛋 */
+  #stage {
+    position: absolute; inset: 0;
+    -webkit-app-region: drag;
+  }
+  /* 桌面版宠物：贴窗口底部居中。
+     left / margin-left 由 pet.js 统一算（left:50% + 负半宽），
+     这里不能再叠加 flex 居中，否则会双重偏移。 */
+  #stage .ck-pet {
+    bottom: 6px;
+    -webkit-app-region: no-drag;
+  }
+  /* 桌面版气泡：容器由 JS 定位在宠物上方。
+     窗口只有 200px 宽，气泡必须能溢出窗口（窗口本身透明无边框），
+     否则 flex 会把文字压成竖排。 */
+  #stage .ck-pet-bubbles { max-width: none; }
+  /* 桌面窗口里不画小尾巴：宠物与气泡的从属关系本就一目了然，
+     且窗口高度受限，尾巴容易落在宠物身上变成"菱形噪点"。 */
+  #stage .ck-pet-bubbles::after { display: none !important; }
+  #stage .ck-pet-bubble {
+    max-width: 320px;
+    white-space: nowrap;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="pets/pets.generated.js"></script>
+<script src="pets/pet.js"></script>
+<script>
+(function () {
+  var api = window.petWindowAPI || {};
+  var stage = document.getElementById('stage');
+  var pet = null;
+  var curSize = 96;   // 当前显示边长（px）
+  var lastState = null;   // 最近一次状态：重建宠物（换尺寸）后补发，避免气泡闪空
+
+  // 状态映射：桌面宠物只做视觉表达，具体文案由主进程推来（与纯净模式同源）
+  function applyState(msg) {
+    if (!msg) return;
+    lastState = msg;
+    if (!pet) return;
+    if (msg.state === 'working') pet.setState('working', 1);
+    else if (msg.state === 'thinking') pet.setState('thinking');
+    else pet.setState('idle');
+    // 上层：情绪文案（本地按状态随机挑，带节流）；下层：功能状态（来自 harness）
+    var group = msg.state === 'working' ? 'working' : (msg.state === 'thinking' ? 'thinking' : 'idle');
+    try { pet.randomMood(group); } catch (e) { /* ignore */ }
+    // html 仅用于我们自产的 <b> 秒数强调（harness 侧保证内容可控）
+    if (msg.text) pet.bubble(msg.text, !!msg.sticky, msg.sticky ? 0 : 2600, msg.html ? { html: true } : null);
+    else pet.bubble('', true);
+  }
+
+  function normPx(v) {
+    var n = typeof v === 'number' ? v : parseFloat(v);
+    if (!isFinite(n)) return 96;
+    return Math.max(48, Math.min(256, Math.round(n)));
+  }
+
+  function boot(size) {
+    if (!window.CuckooPet || pet) return;
+    curSize = normPx(size);
+    try {
+      pet = window.CuckooPet.create('deepy-whale', curSize, stage, {
+        x: 0.5,   // 桌面窗口里居中（窗口本身就是给宠物的）
+        clickAnimations: ['idle-spout', 'react-double', 'roam-hop', 'music', 'conducting', 'carrying', 'waking', 'idle-look'],
+        // 桌面窗口：拖动宠物本体 = 移动整个窗口（整屏可拖，不用找空白处）
+        windowDrag: {
+          move: function (dx, dy) {
+            try { if (api.dragBy) api.dragBy(dx, dy); } catch (e) { /* ignore */ }
+          },
+          // 点击（未拖动）宠物 → 恢复主窗口
+          click: function () {
+            try { if (api.activate) api.activate(); } catch (e) { /* ignore */ }
+          },
+        },
+      });
+    } catch (e) { pet = null; }
+  }
+
+  /** 切尺寸：已建好宠物时走 setSize（不重建，保留动画/状态），否则建新的 */
+  function applySize(size) {
+    var s = normPx(size);
+    if (s === curSize && pet) return;
+    curSize = s;
+    if (pet) {
+      try { pet.setSize(s); return; } catch (e) { /* 回退重建 */ }
+    }
+    boot(s);
+    if (lastState) applyState(lastState);
+  }
+
+  // ---- 滚轮改大小：悬停后滚动切三档（small / medium / large），落盘后由主进程回推 onSize ----
+  var wheelTimer = null;
+  window.addEventListener('wheel', function (ev) {
+    ev.preventDefault();
+    // 步进按比例：小尺寸细调、大尺寸快调，手感一致
+    var step = Math.max(3, Math.round(curSize * 0.06));
+    var want = normPx(curSize + (ev.deltaY < 0 ? step : -step));
+    if (want === curSize) return;        // 已到上下限
+    // 滚动过程中不量化（否则尺寸按格子跳，观感是抖），保持连续跟手
+    curSize = want;
+    if (pet && pet.setSizeSmooth) { try { pet.setSizeSmooth(want); } catch (e) { /* ignore */ } }
+    if (wheelTimer) clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(function () {
+      wheelTimer = null;
+      if (pet && pet.setSize) { try { pet.setSize(curSize); } catch (e) { /* ignore */ } }  // 停手后对齐，恢复锐利
+      try { if (api.setSize) api.setSize(curSize); } catch (e) { /* ignore */ }             // 落盘 + 同步窗口尺寸
+    }, 180);
+  }, { passive: false });
+
+  // 先按默认尺寸建好（避免主进程 did-finish-load 早于监听器注册造成空窗），
+  // 收到 init / size 变更时按新档重建。
+  boot(96);
+  if (api.onInit) api.onInit(function (d) { applySize(d && d.size); });
+  if (api.onSize) api.onSize(function (d) { applySize(d && d.size); });
+  if (api.onState) api.onState(function (msg) { applyState(msg); });
+})();
+</script>
+</body>
+</html>

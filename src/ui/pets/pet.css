@@ -1,0 +1,116 @@
+/* ===== 宠物（纯净模式输入框上方，移植自 dsh-go）=====
+   贴在输入框上边缘：.composer-inner 是 position:relative，宠物 bottom:100% 即其顶边。
+   输入框长高时随布局自然上移，无需 JS 跟随（对应 dsh-go 的 PetPerch 层内跟随）。
+   横向位置由 left 百分比控制（默认偏左，避开居中的「回到底部」按钮），可拖动并记忆。 */
+.ck-pet {
+  position: absolute;
+  bottom: 100%;
+  /* 横向居中由 JS 设 margin-left: -半宽（px）。
+     不用 transform: translateX(-50%)：它会产生 .5px 偏移，
+     配合 pixelated 会让精灵图整片发糊（像素画最常见的问题）。 */
+  pointer-events: auto;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  z-index: 4;
+  margin-bottom: 2px;
+}
+.ck-pet.dragging { cursor: grabbing; }
+.ck-pet-img {
+  position: absolute;
+  background-repeat: no-repeat;
+  /* 像素画默认最近邻；JS 也会设置同名属性（保持单一策略：永远是 pixelated） */
+  image-rendering: pixelated;
+  -webkit-user-drag: none;
+}
+
+/* ===== 气泡（文字互动）=====
+   设计目标：在深色界面上"一眼能认出来"。
+   手法：渐变描边（accent→青）+ 呼吸光晕 + 左上高光，而不是单纯加粗边框。
+   容器底部由 JS 动态算到「当前动画实际顶部」——不同动画高度差很大
+   （idle 顶在 y=26，thinking 顶在 y=6），固定锚点必遮住动画。
+   竖向堆叠、最多两层：提示层在上、状态层贴宠物。
+   未显示的层 display:none —— 不能只靠 opacity:0，否则仍占高度，
+   会把可见的那层顶到半空（"这轮做完了"曾因此飘得很高）。
+   pointer-events: none —— 气泡只做提示，不挡输入框与「回到底部」按钮的点击。 */
+.ck-pet-bubbles {
+  position: absolute;
+  left: 50%;
+  /* 气泡层不许向下延伸进宠物身体区域：pointer-events 已关闭，
+     这里再加一条硬限制，避免任何动画下压住头部 */
+  max-height: 60vh;
+  overflow: visible;
+  /* 用 margin 居中而非 transform：transform 会产生 .5px 亚像素偏移，
+     导致气泡文字发虚（与精灵图模糊同源）。宽度由内容决定，故用 -50% 不可行，
+     这里保留 translateX 但下面的文字层单独对齐。 */
+  transform: translateX(-50%);
+  display: flex;
+  /* 正常列方向：DOM 首个元素排最上（hint 情绪在上，status 状态在下贴宠物） */
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  transition: bottom .2s ease;
+}
+/* 不画尾巴：容器高度由 flex 动态决定（气泡层数变化时高度跳变），
+   尾巴相对容器定位会随之漂移，变成宠物脚下的"菱形噪点"。
+   气泡本身已足够指示归属，去掉更干净。 */
+.ck-pet-bubble {
+  position: relative;
+  max-width: 280px;
+  padding: 8px 16px;
+  border-radius: 14px;
+  /* 实心深底：只让荧光边框发光，气泡内部保持干净（不做渐变/毛玻璃） */
+  background: #0d0f14;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  display: none;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  /* 统一描边 + 单圈简洁荧光：跟随主题色（--accent），两层气泡共用一套 */
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  box-shadow:
+    0 0 12px -4px color-mix(in srgb, var(--accent) 32%, transparent),
+    0 6px 16px -10px var(--shadow-color);
+}
+/* 情绪层（上层）：胶囊形 + 主题色文字，与状态层共用实心底和荧光边框，
+   只靠字号/圆角/文字色区分层级，避免两套视觉规则打架。 */
+.ck-pet-bubble-hint {
+  font-size: 11.5px;
+  font-weight: 450;
+  color: color-mix(in srgb, var(--accent) 68%, #eef2ff);
+  padding: 6px 15px;
+  border-radius: 999px;
+  letter-spacing: 0.03em;
+  animation: none;
+}
+.ck-pet-bubble.show {
+  display: block;
+  animation: ck-pet-bubble-in .2s cubic-bezier(.22, 1, .36, 1) both;
+}
+@keyframes ck-pet-bubble-in {
+  from { opacity: 0; transform: translateY(5px) scale(.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* 气泡内秒数强调：与状态条同语义（大号 + 800 粗 + 等宽 + 主题色），跳秒不抖 */
+.ck-pet-bubble b {
+  font-style: normal;
+  font-weight: 800;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  /* VIP 金：在冷色荧光气泡里形成唯一暖色焦点，一眼抓到"几秒" */
+  color: #ffc94d;
+  letter-spacing: 0.01em;
+  padding: 1px 6px;
+  margin: 0 2px;
+  border-radius: 6px;
+  background: color-mix(in srgb, #ffc94d 15%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #ffc94d 32%, transparent);
+  display: inline-block;
+  line-height: 1.3;
+}

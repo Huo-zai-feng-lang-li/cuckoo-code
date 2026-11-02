@@ -12,6 +12,7 @@ import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { readPrefs, writePrefs } from '../ui-prefs.js';
 import { applyHarnessZoom } from '../harness-zoom.js';
+import { setPetWindowSize, isPetWindowVisible, destroyPetWindow } from '../pet-window.js';
 import * as globalSettings from '../global-settings.js';
 
 const require = createRequire(import.meta.url);
@@ -199,8 +200,47 @@ function registerSettingsIpc(): void {
   ipcMain.handle('get-ui-prefs', async () => {
     return { success: true, data: readPrefs() };
   });
+
+  /**
+   * 下发宠物偏好：纯净模式（harness 宠物重建）+ 桌面宠物窗口（尺寸切换）。
+   * 设置页改开关/大小、桌面窗口内滚轮改大小，都走这里，保证单一出口。
+   */
+  function applyPetPrefs(prefs: any): void {
+    try {
+      const contexts = windowState.getAllContexts();
+      for (const ctx of contexts) {
+        const hv = ctx && (ctx as any).harnessView;
+        if (hv && hv.webContents && !hv.webContents.isDestroyed()) {
+          try {
+            hv.webContents.send('harness-pet-prefs', {
+              petEnabled: prefs.petEnabled, petSize: prefs.petSize, petX: prefs.petX,
+            });
+          } catch (_) { /* ignore */ }
+        }
+      }
+    } catch (_) { /* ignore */ }
+    // 桌面宠物用独立尺寸（桌面通常设得更大），没开就不必推
+    try {
+      if (prefs.petEnabled === false) {
+        // 关掉总开关：桌面浮窗立即销毁。否则它会一直飘在桌面上，
+        // 直到主窗口下次 minimize 时被 syncPetWindow 顺手清掉。
+        destroyPetWindow();
+      } else if (isPetWindowVisible()) {
+        setPetWindowSize(prefs.petDesktopSize);
+      }
+    } catch (_) { /* ignore */ }
+  }
+
+  // 桌面宠物窗口内滚轮改大小 → 落盘 petDesktopSize（与纯净模式的 petSize 互不影响）
+  ipcMain.on('pet-window-set-size', (_event: any, size: any) => {
+    let next: any = null;
+    try { next = writePrefs({ petDesktopSize: size }); } catch (_) { return; }  // writePrefs 内已钳 48~256
+    try { setPetWindowSize(next.petDesktopSize); } catch (_) { /* ignore */ }
+  });
   ipcMain.handle('set-ui-prefs', async (event: any, { data }: any) => {
     const next = writePrefs(data || {});
+    // 宠物偏好变化才推（避免每次字号调整都重建宠物）
+    const petChanged = !!data && (data.petEnabled !== undefined || data.petSize !== undefined || data.petDesktopSize !== undefined);
     try {
       const contexts = windowState.getAllContexts();
       for (const ctx of contexts) {
@@ -210,6 +250,7 @@ function registerSettingsIpc(): void {
         }
       }
     } catch (_) { /* ignore */ }
+    if (petChanged) applyPetPrefs(next);
     // 布局变化（侧栏宽度 / 活动栏顺序 / 显隐）→ 广播给所有壳页面（含本窗口，幂等）。
     // 原因：壳页面 localStorage 按 partition 隔离，跨 profile 窗口互不相通，只能由主进程中转。
     if (data && data.shellLayout !== undefined) {

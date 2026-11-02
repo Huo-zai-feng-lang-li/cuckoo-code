@@ -340,6 +340,8 @@
   .ck-ab-toggle-list .ck-set-field { padding: 5px 0; border-bottom: 1px solid var(--ck-border); }
   .ck-ab-toggle-list .ck-set-key { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ck-set-key { font-size: 12px; color: var(--ck-text-2); }
+  /* 设置项右侧的数值提示（如宠物大小 72px），弱化显示 */
+  .ck-set-hint { font-size: 11px; color: var(--ck-text-dim); margin-left: 4px; font-variant-numeric: tabular-nums; }
   .ck-set-input {
     width: 100%; min-height: 32px;
     background: var(--ck-surface); border: 1px solid transparent;

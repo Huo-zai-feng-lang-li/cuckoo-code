@@ -700,6 +700,8 @@
   .ck-ab-toggle-list .ck-set-field { padding: 5px 0; border-bottom: 1px solid var(--ck-border); }
   .ck-ab-toggle-list .ck-set-key { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ck-set-key { font-size: 12px; color: var(--ck-text-2); }
+  /* 设置项右侧的数值提示（如宠物大小 72px），弱化显示 */
+  .ck-set-hint { font-size: 11px; color: var(--ck-text-dim); margin-left: 4px; font-variant-numeric: tabular-nums; }
   .ck-set-input {
     width: 100%; min-height: 32px;
     background: var(--ck-surface); border: 1px solid transparent;
@@ -2847,6 +2849,13 @@ paths:            # 可选；省略 = 始终生效
                       <option value="1.26">特大 (126%)</option>
                       <option value="1.5">超大 (150%)</option>
                     </select>
+                  </div>
+                  <div class="ck-set-field ck-set-toggle">
+                    <span class="ck-set-key">桌面宠物（纯净模式 + 最小化后桌面）</span>
+                    <label class="ck-switch">
+                      <input type="checkbox" id="st-pet-enabled" />
+                      <span class="ck-switch-track"></span>
+                    </label>
                   </div>
                 </div>
               </div>
@@ -9321,7 +9330,7 @@ paths:            # 可选；省略 = 始终生效
       }
       if (typeof anyApi.setUiPrefs === "function") {
         try {
-          await anyApi.setUiPrefs({ harnessZoom: 1 });
+          await anyApi.setUiPrefs({ harnessZoom: 1, petEnabled: true, petSize: 96, petDesktopSize: 160 });
         } catch (_) {
         }
         loadUiPrefs();
@@ -9473,6 +9482,7 @@ paths:            # 可选；省略 = 始终生效
     });
   });
   var zoomSelect = document.getElementById("st-harness-zoom");
+  var petEnabledEl = document.getElementById("st-pet-enabled");
   function loadUiPrefs() {
     const anyApi = api;
     if (typeof anyApi.getUiPrefs === "function") {
@@ -9481,6 +9491,7 @@ paths:            # 可选；省略 = 始终生效
           if (typeof r.data.harnessZoom === "number" && zoomSelect) {
             zoomSelect.value = String(r.data.harnessZoom);
           }
+          if (petEnabledEl) petEnabledEl.checked = r.data.petEnabled !== false;
         }
       }).catch(() => {
       });
@@ -9494,6 +9505,15 @@ paths:            # 可选；省略 = 始终生效
       if (!Number.isFinite(z)) return;
       if (typeof anyApi.setUiPrefs === "function") {
         anyApi.setUiPrefs({ harnessZoom: z }).catch(() => {
+        });
+      }
+    });
+  }
+  if (petEnabledEl) {
+    petEnabledEl.addEventListener("change", () => {
+      const anyApi = api;
+      if (typeof anyApi.setUiPrefs === "function") {
+        anyApi.setUiPrefs({ petEnabled: !!petEnabledEl.checked }).catch(() => {
         });
       }
     });

@@ -9,6 +9,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-src 'none'">
 <title>Cuckoo Harness</title>
 <link rel="stylesheet" href="vendor/katex/katex.min.css">
+<link rel="stylesheet" href="pets/pet.css">
 <script src="vendor/katex/katex.min.js"></script>
 <style>
   /* ===== 跟随 Cuckoo 主题（--ck-* 由 theme-presenter 写入）=====
@@ -107,6 +108,13 @@
   .brand svg { width: 15px; height: 15px; color: var(--accent); }
   .brand-hint { font-size: 10.5px; font-weight: 400; color: var(--amber, #d9a05b); opacity: .85; letter-spacing: 0; }
   .topbar .spacer { flex: 1; }
+  /* 状态条视觉隐藏（保留 DOM：它是运行态载体，generating 由 setStatus 写入）。
+     文案全部迁到宠物气泡（见 src/ui/pets/pet.css），视线焦点在输入框上方。 */
+  .status.sr-only {
+    position: absolute; width: 1px; height: 1px;
+    margin: -1px; padding: 0; border: 0;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
   .status { font-size: 11.5px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
   .status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim); flex-shrink: 0; position: relative; top: 1.5px; }
   .status.busy { color: var(--text); }
@@ -1049,7 +1057,7 @@
       <span class="brand-hint">（当前版本仅支持单对话，请勿在运行过程切换对话）</span>
     </div>
     <div class="spacer"></div>
-    <div class="status ready" id="status"><span class="dot"></span><span id="status-text">就绪</span></div>
+    <div class="status ready sr-only" id="status"><span class="dot"></span><span id="status-text">就绪</span></div>
     <button class="tb-btn" id="btn-enh-settings" title="提示词增强设置">增强设置</button>
     <button class="tb-btn" id="btn-web" title="返回网页模式 (Ctrl+Shift+H)">网页模式</button>
   </div>
@@ -1172,6 +1180,9 @@
 </div>
 <script src="vendor/marked.umd.js"></script>
 <script src="vendor/cuckoo-sanitize.js"></script>
+<!-- 宠物（移植自 dsh-go）：数据由 scripts/build-pets.mjs 从 src/ui/pets/<id>/pack.json 生成 -->
+<script src="pets/pets.generated.js"></script>
+<script src="pets/pet.js"></script>
 <script>
 (function () {
   var api = window.harnessAPI || {};
@@ -1827,7 +1838,11 @@
     // 刻意直接改 DOM 而不走 setStatus：后者在"非 busy 且非 aborted"时会调度 maybeFlushQueue，
     // 而此刻 sendQueue 尚未被调用方清空（顺序在下面），会引入不必要的排队副作用。
     if (statusText) statusText.textContent = '就绪';
-    if (statusEl) statusEl.className = 'status ready';
+    if (statusEl) {
+      statusEl.className = 'status ready';
+      statusEl.classList.add('sr-only');   // 独立兜底：不依赖上面的字符串拼接
+    }
+    try { if (pet) pet.clearBubble(); } catch (e) { /* ignore */ }
     // 指示器必须同步刷新：上面已把 generating / toolRunningCount 清零，
     // 若只改文案不刷指示器，切会话后可能残留"停止按钮 + 进度条转动"，
     // 与"就绪"文案自相矛盾（resetConversation 原本就靠外部补，onSessionChanged 没有）。
@@ -3089,6 +3104,9 @@
       if (statusEl && statusText && statusEl.classList.contains('busy')) {
         var sec = Math.floor((Date.now() - toolStartAt) / 1000);
         statusText.innerHTML = '工具运行中 ' + escapeSecHtml(sec) + '…';
+        // 状态与耗时同一行：「工具执行中 7s」
+        petBubble((toolRunningCount > 1 ? '工具执行中 ×' + toolRunningCount : '工具执行中') + ' ' + petSec(sec), true, 0, true);
+        petMood('working');
       }
     }, 1000);
   }
@@ -3108,6 +3126,8 @@
     if (statusEl) statusEl.classList.add('sending');
     var sendSec = Math.floor((Date.now() - sendStartAt) / 1000);
     statusText.innerHTML = '结果待发送（工具 ' + escapeSecHtml(sendExecSec) + ' · 延迟 ' + escapeSecHtml(sendSec) + '）';
+    petBubble('等待发送 ' + petSec(sendSec), true, 0, true);
+    petMood('waiting');
   }
   function startSendTick(execSec) {
     stopSendTick();
@@ -3154,10 +3174,82 @@
   function clearAbortSuppression() { abortStamp = 0; }
   function aborted() { return abortStamp !== 0 && abortStamp === abortEpoch; }
 
+  // ===== 宠物（移植自 dsh-go）：状态由运行态派生，不掺业务逻辑 =====
+  // 三态映射：工具在跑 → working（按并行数走 pack 的 tiers 档位）；
+  //          模型出字 → thinking；其余 → idle（空闲 60s 自动睡觉、偶发 idle-look/idle-spout）。
+  var pet = null;
+  function syncPet() {
+    if (!pet) return;
+    if (toolRunningCount > 0) {
+      pet.setState('working', toolRunningCount);
+      // 工具刚起跑：占位文案，秒数由 startToolTick 每秒刷新
+      petBubble((toolRunningCount > 1 ? '工具执行中 ×' + toolRunningCount : '工具执行中') + ' ' + petSec(0), true, 0, true);
+      petMood('working');
+    } else if (generating) {
+      pet.setState('thinking');
+      petBubble('生成中…', true);
+      petMood('writing');
+    } else {
+      pet.setState('idle');
+      // 空闲时不挂常驻气泡（"就绪"没有信息量，宠物本身已表达）
+      try { pet.clearBubble(); } catch (e) { /* ignore */ }
+    }
+  }
+  /** 一次性表情（完成 / 出错）；拿不到宠物包时静默忽略 */
+  function flashPet(state) {
+    if (!pet) return;
+    try { pet.flash(state); } catch (e) { /* ignore */ }
+  }
+  /**
+   * 宠物气泡（原右上角状态条的全部文案迁到这里）。
+   * sticky=true 常驻（忙态 + 秒数），false 为瞬时提醒（几秒自动淡出）。
+   */
+  // 情绪气泡的分组（thinking / working / waiting / writing / idle / done / error）
+  var petMoodGroup = 'idle';
+
+  /** 由状态文案推断该配哪一组情绪文案 */
+  function moodGroupOf(text) {
+    var s = String(text || '');
+    if (/工具|执行/.test(s)) return 'working';
+    if (/已发送|等待|回传/.test(s)) return 'waiting';
+    if (/生成|写/.test(s)) return 'writing';
+    if (/重试|限流/.test(s)) return 'thinking';
+    if (/出错|失败/.test(s)) return 'error';
+    return 'thinking';
+  }
+
+  /** 设情绪分组并让宠物随机挑一句（内部有节流，不会狂换） */
+  function petMood(group) {
+    petMoodGroup = group || 'idle';
+    if (!pet) return;
+    try { pet.randomMood(petMoodGroup); } catch (e) { /* ignore */ }
+  }
+
+  function petBubble(text, sticky, ms, html) {
+    // 桌面宠物窗口（主窗口最小化后独立显示）：文案与纯净模式同源。
+    // 下层 = 功能状态（含耗时），上层 = 情绪文案，两层一起下发。
+    try {
+      if (api.setPetState) {
+        api.setPetState({
+          state: toolRunningCount > 0 ? 'working' : (generating ? 'thinking' : 'idle'),
+          text: text || '',
+          sticky: !!sticky,
+          html: !!html,
+          hint: sticky ? '' : undefined,
+        });
+      }
+    } catch (e) { /* ignore */ }
+    if (!pet || !text) return;
+    try { pet.bubble(text, sticky, ms, html ? { html: true } : null); } catch (e) { /* ignore */ }
+  }
+  /** 秒数强调：与状态条同款 <b>（只在数字处加粗，单位跟数字一起） */
+  function petSec(sec) { return '<b>' + (sec | 0) + 's</b>'; }
+
   var lastBusyNotify = false;
   /** 按"对话在运行"统一刷新进度条 / 发送按钮 / 忙状态通知 */
   function syncBusyIndicators() {
     var busy = isBusy();
+    syncPet();
     progressEl.className = 'progress' + (busy ? ' on' : '');
     updateSendButton();
     if (busy !== lastBusyNotify) {
@@ -3178,12 +3270,24 @@
     // 任何状态改写都意味着离开「等 AI 开口」的过渡态（含它自己再次进入前的旧值）
     inFrameworkPhase = false;
     statusText.textContent = text;
+    // sr-only 必须保留：状态条视觉隐藏，文案已迁到宠物气泡（见 syncPet / petBubble）
     statusEl.className = 'status' + (state ? ' ' + state : '');
+    statusEl.classList.add('sr-only');   // 独立兜底：任何 className 重写都不会让状态条视觉复活
     generating = (state === 'busy');
     if (generating) lastActivityAt = Date.now();
     syncBusyIndicators();
     // 任务结束（就绪且无工具在跑）：自动发送队列下一条
     if (state !== 'busy' && !isBusy()) { try { setTimeout(maybeFlushQueue, 30); } catch (e) { /* ignore */ } }
+    // 忙态文案同步到宠物气泡；空闲（就绪）不冒泡，避免废话。
+    // 放在最后：不打断「generating 赋值 → maybeFlushQueue」这段既有逻辑的相邻性。
+    if (generating) {
+      // 状态层：这条状态是「现在在做什么」的权威描述
+      petBubble(text, true);
+      petMood(moodGroupOf(text));
+    } else if (!toolRunningCount) {
+      try { if (pet) pet.clearBubble(); } catch (e) { /* ignore */ }
+      try { if (api.setPetState) api.setPetState({ state: 'idle', text: '', sticky: true, html: false, hint: '' }); } catch (e) { /* ignore */ }
+    }
   }
 
   /**
@@ -3193,10 +3297,10 @@
    * 故：进入运行态、状态栏标注来源、并刷新活动时间（避免静默兜底把长任务误判为结束）。
    */
   var FW_LABELS = {
-    'JS汇总': '工具结果回传', '看门狗': '等待超时催继续', '重试': '失败自动重试',
-    '重试(操作频繁)': '限流自动重试', '压缩-摘要': '上下文压缩', 'MCP信息': 'MCP 信息',
-    '技能与代理清单': '技能与代理清单', '继续': '自动续跑', '系统提示词': '系统提示词',
-    'JSON工具调用提示': '格式纠正', 'XML工具调用提示': '格式纠正',
+    'JS汇总': '把工具结果发给 AI', '看门狗': 'AI 没动静，催一下', '重试': '发送失败，自动重试',
+    '重试(操作频繁)': '被限流，自动重试', '压缩-摘要': '压缩上下文', 'MCP信息': '读取 MCP 工具清单',
+    '技能与代理清单': '读取技能清单', '继续': '自动继续', '系统提示词': '准备系统提示词',
+    'JSON工具调用提示': '纠正工具调用格式', 'XML工具调用提示': '纠正工具调用格式',
   };
   // 框架驱动窗口：期间放宽静默兜底（压缩等流程可长时间无事件）。
   // ★ 这不是"保持运行态"的开关 —— 真正的收尾靠 observer 的 task-idle 权威信号，
@@ -3207,6 +3311,16 @@
   // 用状态位而非匹配文案前缀：文案会改（技术词 → 人话），字符串匹配一旦失配，
   // onStream 就无法把状态切回「生成中…」，状态栏又会整轮冻在过渡文案上。
   var inFrameworkPhase = false;
+  /** 框架侧驱动（系统提示词/工具结果回传/重试等）的说明性气泡，只在不打扰时补 */
+  var FW_BUBBLE = {
+    // 统一说「人话」：不出现"回传/汇总"这类实现词，用户只关心"现在在干嘛"
+    'JS汇总': '把结果发给 AI…', '看门狗': 'AI 太久没动静，催一下',
+    '重试': '发失败了，正在重发', '重试(操作频繁)': '太频繁被限流，等会重发',
+    '压缩-摘要': '上下文太长，压缩一下', '继续': '接着往下做',
+    'MCP信息': '读取 MCP 工具清单', '技能与代理清单': '读取技能清单',
+    '系统提示词': '准备一下…', 'JSON工具调用提示': '格式不对，纠正一下',
+    'XML工具调用提示': '格式不对，纠正一下',
+  };
   function onFrameworkSend(tag) {
     if (aborted()) return; // 用户已主动中止：丢弃迟到的框架指令，防止被旧工具结果重新激活或回显
     var label = FW_LABELS[tag] || tag || '框架指令';
@@ -3218,6 +3332,9 @@
     lastActivityAt = Date.now();
     stopSendTick(); // 框架已把消息投递出去，「结果待发送」窗口结束
     setStatus('已发送，等待 AI 响应…（' + label + '）', 'busy');
+    // 有专属说明就用它，否则沿用「已发送」文案（setStatus 已冒泡）
+    petBubble(FW_BUBBLE[tag] || label, true);
+    petMood('waiting');
     // 必须放在 setStatus 之后：setStatus 会清这个状态位（任何状态改写都算离开过渡态）
     inFrameworkPhase = true;
     if (!cur) {
@@ -3236,6 +3353,7 @@
     stopSendTick();
     frameworkDriveUntil = 0;
     lastActivityAt = Date.now();
+    flashPet('attention'); // 一轮任务真正结束：宠物给个"完成"表情
     if (toolRunningCount > 0) {
       // 工具计数仍 >0：可能是真在跑，也可能是 tool-end 丢失的残留账目。
       // 无论哪种，本轮"AI 已空闲"的事实必须被记录 —— 调度一次带退避的续跑，
@@ -3245,6 +3363,10 @@
     }
     setStatus('就绪', 'ready');
     clearPendingBubble(); // 清掉空的占位气泡（有内容的保留）
+    // 必须放在 setStatus 之后：setStatus('就绪') 会清空两层气泡，
+    // 先弹会被立刻抹掉（用户反馈过"完成提示一闪就没"）。
+    petBubble('这轮做完了', false, 2600);
+    petMood('done');
   }
 
   /**
@@ -3275,7 +3397,12 @@
       // 交由下方静默判据兜底收尾（不允许无限期挂在运行态）。
       retryUntil = Date.now() + d + 120000;
       lastActivityAt = Date.now();
-      if (!aborted()) setStatus('等待自动重试…', 'busy');
+      if (!aborted()) {
+        setStatus('等待自动重试…', 'busy');
+        // 冷却倒计时期间气泡会停在「生成中…」上，补一条更准确的说明
+        petBubble('被限流 ' + petSec(Math.round(d / 1000)) + ' 后重试', true, 0, true);
+        petMood('thinking');
+      }
       return;
     }
     retryUntil = 0;
@@ -3286,6 +3413,8 @@
       toolRunningCount = 0;
       frameworkDriveUntil = 0;
       setStatus('重试已达上限', 'ready');
+      petBubble('重试到头了，手动再试一次？', false, 4200);
+      flashPet('error');
       clearPendingBubble();
       return;
     }
@@ -3946,6 +4075,50 @@
     }
   }
 
+  // ===== 宠物：挂在输入框上边缘（.composer-inner 是 position:relative）=====
+  // 尺寸/开关读主进程 UI 偏好（与纯净模式字号同一份 ui-prefs.json）。
+  // 宠物只是装饰：初始化失败一律静默降级，绝不影响对话。
+  (function initPet() {
+    if (!window.CuckooPet) return;
+    var anchor = document.querySelector('.composer-inner');
+    if (!anchor) return;
+    /** 按偏好（重）建宠物：设置页改开关/大小时也走这里 */
+    function boot(prefs) {
+      var p = prefs || {};
+      if (pet) { try { pet.destroy(); } catch (e) { /* ignore */ } pet = null; }
+      if (p.petEnabled === false) return;
+      var size = typeof p.petSize === 'number' ? p.petSize : 96;
+      try {
+        pet = window.CuckooPet.create('deepy-whale', size, anchor, {
+          // hover 滚轮缩放：40~200px，松手后持久化（不重建宠物，保留动画/位置）
+          onResize: function (px) {
+            try { if (api.setUiPrefs) api.setUiPrefs({ petSize: px }); } catch (e) { /* ignore */ }
+          },
+          x: typeof p.petX === 'number' ? p.petX : 0.18,   // 默认偏左：避开居中的「回到底部」按钮
+          // 点击彩蛋：每次点一下按轮播顺序换一个（洗牌，不连续重复）。
+          // 吐水=idle-spout / 撒花=react-double / 翻跟头=roam-hop / 唱歌=music
+          // 拍手=conducting / 递东西=carrying / 醒神=waking / 瞟一眼=idle-look
+          clickAnimations: ['idle-spout', 'react-double', 'roam-hop', 'music', 'conducting', 'carrying', 'waking', 'idle-look'],
+          onMove: function (ratio) {
+            // 拖动结束 → 持久化（只存位置，不触发重建）
+            try { if (api.setUiPrefs) api.setUiPrefs({ petX: ratio }); } catch (e) { /* ignore */ }
+          },
+        });
+      } catch (e) { pet = null; }
+      if (pet) syncPet();
+    }
+    try {
+      if (api.onPetPrefs) api.onPetPrefs(function (prefs) { boot(prefs); });
+      if (api.getUiPrefs) {
+        api.getUiPrefs().then(function (r) {
+          boot(r && r.success ? r.data : null);
+        }).catch(function () { boot(null); });
+      } else {
+        boot(null);
+      }
+    } catch (e) { /* ignore */ }
+  })();
+
   if (api.onEvent) {
     api.onEvent(function (payload) {
       if (!payload) return;
@@ -4031,6 +4204,12 @@
           if (cur) { try { var tl0 = cur.thinkBody ? cur.thinkBody.textContent : ''; if (tl0 && cur.thinkLabel) cur.thinkLabel.textContent = '已思考 (' + countThinkChars(tl0) + ' 字)'; } catch (e) { /* ignore */ } clearPendingBubble(); }
           addToolStart(payload.code); setStatus('工具运行中…', 'busy'); pushHist({ t: 'tool', code: payload.code, success: null, output: '', error: '' }); break;
         case 'tool-end': if (toolRunningCount > 0) toolRunningCount--; if (toolRunningCount <= 0) stopToolTick(); addToolEnd(payload.success, payload.output, payload.error, payload.code);
+          // 宠物即时反馈：工具失败 → error 表情 + 提示；成功不打扰（等整轮结束的 attention）
+          if (payload.success === false) {
+            flashPet('error');
+            petBubble('出错了，点开看看', false, 3600);
+            petMood('error');
+          }
           // 工具结束不等于任务结束，但也不等于"仍在生成"：
           // 还有工具在跑 → 工具运行中；否则等模型产生下一轮输出（task-idle / 流式事件会接管）。
           // 原先无条件置 busy 会在收尾事件丢失时把状态永久钉在运行态。

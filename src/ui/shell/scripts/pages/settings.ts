@@ -159,7 +159,7 @@ document.getElementById('st-reset')?.addEventListener('click', async () => {
     }
     // 3) 纯净模式字号回默认（1.0）+ 子代理宠物重置
     if (typeof anyApi.setUiPrefs === 'function') {
-      try { await anyApi.setUiPrefs({ harnessZoom: 1.0 }); } catch (_) { /* ignore */ }
+      try { await anyApi.setUiPrefs({ harnessZoom: 1.0, petEnabled: true, petSize: 96, petDesktopSize: 160 }); } catch (_) { /* ignore */ }
       loadUiPrefs(); // 刷新 UI
     }
     // 4) 活动栏图标全部显示
@@ -310,8 +310,10 @@ document.querySelectorAll<HTMLElement>('.ck-collapse-head[data-collapse]').forEa
   });
 });
 
-// ===== 外观：纯净模式字号 =====
+// ===== 外观：纯净模式字号 / 宠物 =====
 const zoomSelect = document.getElementById('st-harness-zoom') as any;
+const petEnabledEl = document.getElementById('st-pet-enabled') as any;
+/** 宠物开关（同时控制纯净模式与桌面宠物）；大小由宠物上的滚轮调整，无需滑块 */
 
 /** 重新读取设置（刷新按钮也会调用） */
 export function loadUiPrefs(): void {
@@ -322,6 +324,7 @@ export function loadUiPrefs(): void {
         if (typeof r.data.harnessZoom === 'number' && zoomSelect) {
           zoomSelect.value = String(r.data.harnessZoom);
         }
+        if (petEnabledEl) petEnabledEl.checked = r.data.petEnabled !== false;
       }
     }).catch(() => {});
   }
@@ -336,6 +339,15 @@ if (zoomSelect) {
     if (!Number.isFinite(z)) return;
     if (typeof anyApi.setUiPrefs === 'function') {
       anyApi.setUiPrefs({ harnessZoom: z }).catch(() => {});
+    }
+  });
+}
+
+if (petEnabledEl) {
+  petEnabledEl.addEventListener('change', () => {
+    const anyApi = api as any;
+    if (typeof anyApi.setUiPrefs === 'function') {
+      anyApi.setUiPrefs({ petEnabled: !!petEnabledEl.checked }).catch(() => {});
     }
   });
 }

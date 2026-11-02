@@ -18,6 +18,8 @@ const harnessAPI = {
   /** 列出可用技能与工具 */
   listTools: () => ipcRenderer.invoke('harness-list-tools'),
   getUiPrefs: () => ipcRenderer.invoke('get-ui-prefs'),
+  /** 写 UI 偏好（宠物拖动位置等）；主进程统一做规整 + 广播 */
+  setUiPrefs: (data: any) => ipcRenderer.invoke('set-ui-prefs', { data }),
   /** 上传附件（{ name, mime, data(base64) }[]） */
   attach: (files: any) => ipcRenderer.invoke('harness-attach', { files }),
   /** 重载 harness 页面（加载最新 HTML） */
@@ -52,6 +54,10 @@ const harnessAPI = {
   onEvent: (cb: (payload: any) => void) => {
     ipcRenderer.on('harness-event', (_e: any, payload: any) => cb(payload));
   },
+  /** 订阅宠物偏好变化（设置页改开关/大小时即时生效，无需重载） */
+  onPetPrefs: (cb: (prefs: any) => void) => {
+    ipcRenderer.on('harness-pet-prefs', (_e: any, prefs: any) => cb(prefs));
+  },
   /** 取消指定子代理（纯净模式 runAgent 卡片上的「停止」按钮） */
   cancelSubagent: (windowId: number) => ipcRenderer.invoke('subagent-cancel', { windowId }),
   /** 追加文本到输入框末尾；autoSend=true 时回显后直接发送——供壳页面"最近"快捷项 */
@@ -60,6 +66,8 @@ const harnessAPI = {
   },
   /** 忙状态通知（生成中= true，用于禁用侧栏对话切换） */
   setBusy: (busy: boolean) => ipcRenderer.send('harness-set-busy', { busy: !!busy }),
+  /** 宠物状态同步给桌面宠物窗口（{ state, text, sticky }） */
+  setPetState: (payload: any) => ipcRenderer.send('harness-pet-state', payload || {}),
   /** 页面就绪通知（可选，用于同步初始状态） */
   ready: () => ipcRenderer.send('harness-ready'),
   // ========== 窗口组切换 ==========

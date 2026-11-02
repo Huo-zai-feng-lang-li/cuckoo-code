@@ -16,6 +16,8 @@ import { resolveAsset, resolveSrc } from '../infra/paths.js';
 import { applyHarnessZoom } from './harness-zoom.js';
 import { showSwitchAlert } from './alert-window.js';
 import { showSystemNotification } from './notification-window.js';
+import { showPetWindow, hidePetWindow, destroyPetWindow, registerPetWindowIpc } from './pet-window.js';
+import { readPrefs } from './ui-prefs.js';
 
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, nativeTheme, ipcMain: ipcMainForProfile, Notification } = require('electron');
@@ -196,6 +198,28 @@ function createWindow(profile: any) {
     },
   });
   mainWindow.contentView.addChildView(view);
+
+  // ========== 桌面宠物浮窗（最小化后独立展示） ==========
+  // 与插件覆盖层相反：那个跟随主窗口、最小化时隐藏；这个只在最小化时出现。
+  // 只在主窗口（非子代理）上挂，且读用户偏好决定是否启用。
+  if (!profileData.isSubagent) {
+    const syncPetWindow = () => {
+      // 开关统一为 petEnabled（同时控制纯净模式与桌面宠物），尺寸独立
+      let enabled = false;
+      let size = 160;
+      try {
+        const p = readPrefs();
+        enabled = p.petEnabled !== false;
+        size = p.petDesktopSize || 160;
+      } catch (_) { /* ignore */ }
+      if (!enabled) { destroyPetWindow(); return; }
+      showPetWindow(size);
+    };
+    mainWindow.on('minimize', () => { syncPetWindow(); });
+    mainWindow.on('restore', () => { hidePetWindow(); });
+    mainWindow.on('show', () => { hidePetWindow(); });
+    mainWindow.on('closed', () => { destroyPetWindow(); });
+  }
 
   // ========== 插件覆盖层窗口（透明、置顶、鼠标穿透） ==========
   // 用独立 BrowserWindow（而非 WebContentsView）——因为只有 BrowserWindow 支持
@@ -1683,6 +1707,8 @@ if (!gotSingleInstanceLock) {
         updater.clearUpdatePending();
       }
     } catch (_) { /* ignore */ }
+    // 桌面宠物 IPC（拖动结束/关闭）；模块加载时只注册一次
+    try { registerPetWindowIpc(); } catch (_) { /* ignore */ }
     setupAppMenu();
     // 首次启动写入默认全局规则（用户已有规则则不覆盖）
     try { seedDefaultRules(); } catch (_) { /* ignore */ }

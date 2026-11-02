@@ -40,6 +40,13 @@ import { onHarnessReady } from './window-groups.js';
 import { readPrefs, writePrefs, type PromptEnhancerConfig } from '../ui-prefs.js';
 import { enhancePrompt } from '../prompt-enhancer.js';
 import { cancelSubagentsByParent } from '../subagent.js';
+import { setPetState } from '../pet-window.js';
+
+/**
+ * 桌面宠物当前的「驱动窗口」id。
+ * 多窗口并发时，忙的窗口抢到驱动权；它转空闲后交还给活跃窗口（null = 未锁定）。
+ */
+let petDriverWinId: number | null = null;
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -660,12 +667,55 @@ function registerHarnessIpc(): void {
   });
 
   // harness 忙状态（生成中）→ 通知壳页面禁用对话切换
+  // harness 页面把宠物状态推给桌面宠物（同源文案：生成中 / 工具运行中 Ns / 这轮做完了）
+  ipcMain.on('harness-pet-state', (event: any, payload: any) => {
+    const ctx = findContext(event.sender);
+    if (!ctx) return;
+    // 自愈：驱动窗口已被销毁 → 立即释放驱动权。
+    // 否则新窗口推 idle 会命中下面「非活跃 + 驱动权不是自己」两道 return，
+    // 宠物永久停在旧窗口最后的忙态（僵尸文案）。
+    if (petDriverWinId !== null && !windowState.getWindowContext(petDriverWinId)) petDriverWinId = null;
+    // 多窗口：桌面宠物只有一个，多个窗口同时上报会互相覆盖。
+    // 规则（与用户直觉一致）：
+    //  - 正在忙的窗口 → 永远优先显示（谁在跑就显示谁）
+    //  - 空闲窗口 → 只代表「当前活跃窗口」，避免后台窗口把前台状态刷掉
+    const active = windowState.getMainContext();
+    const isActive = !!(active && ctx.win && active.win && active.win.id === ctx.win.id);
+    const incomingBusy = !!(payload && payload.state && payload.state !== 'idle');
+    if (!incomingBusy && !isActive) return;
+    // 忙窗口出现时，记下它是「当前驱动者」；它一旦转空闲，交还活跃窗口
+    if (incomingBusy) petDriverWinId = ctx.win ? ctx.win.id : null;
+    else if (petDriverWinId !== null && petDriverWinId !== (ctx.win && ctx.win.id)) return;
+    try {
+      setPetState(
+        (payload && payload.state) || 'idle',
+        (payload && payload.text) || '',
+        !!(payload && payload.sticky),
+        !!(payload && payload.html),
+        typeof (payload && payload.hint) === 'string' ? payload.hint : undefined,
+        ctx.win && !ctx.win.isDestroyed() ? ctx.win.id : undefined,
+      );
+    } catch (_) { /* ignore */ }
+  });
+
   ipcMain.on('harness-set-busy', (event: any, payload: any) => {
     const busy = !!(payload && payload.busy);
     const ctx = findContext(event.sender);
     if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
     (ctx.win as any).__ckHarnessBusy = busy;
     try { ctx.win.webContents.send('shell-harness-busy', { busy: busy }); } catch (_) { /* ignore */ }
+    // 桌面宠物：忙闲变化 → working / idle（气泡文案由 harness 的 pet-state 事件细化）
+    // 多窗口：只有拿到驱动权的窗口才能改宠物的忙闲，避免后台窗口把前台刷成 idle。
+    const winId = ctx.win.id;
+    if (petDriverWinId !== null && !windowState.getWindowContext(petDriverWinId)) petDriverWinId = null;
+    if (busy) {
+      petDriverWinId = winId;
+    } else if (petDriverWinId !== null && petDriverWinId !== winId) {
+      return;
+    } else {
+      petDriverWinId = null;
+    }
+    try { setPetState(busy ? 'working' : 'idle', '', true); } catch (_) { /* ignore */ }
   });
 
   // 查询当前状态（首页且未选项目目录 → 需初始化）
