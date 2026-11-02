@@ -20,6 +20,16 @@ const require = createRequire(import.meta.url);
 const { WebSocketServer } = require('ws');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+/** 宠物资源回退目录（真源 src/ui/pets）。
+ *  构建时 copy-remote-pwa 会把它们拷进 PWA_DIR/pets（生产/打包路径）；
+ *  开发期 vitest 直接跑源码目录，那里没有 pets/，回退到真源，避免测试依赖构建产物。 */
+const PETS_FALLBACK_DIR = (() => {
+  // 源码运行：__dirname = src/remote → ../ui/pets
+  const nearDir = path.resolve(__dirname, '..', 'ui', 'pets');
+  if (fs.existsSync(nearDir)) return nearDir;
+  // 编译后运行：__dirname = out/src/remote → ../../../src/ui/pets
+  return path.resolve(__dirname, '../../../src/ui/pets');
+})();
 const PWA_DIR = (() => {
   const outDir = path.join(__dirname, 'pwa');
   if (fs.existsSync(outDir)) return outDir;
@@ -138,7 +148,18 @@ function cacheControlFor(rel: string): string {
  *  背景：CF 会把 `immutable` 的响应缓存一年，即使源站后来改了内容，
  *  边缘仍返回旧缓存（`cf-cache-status: HIT` + `age` 数万秒）——实测踩过：
  *  发版后手机端一直跑旧 app.js，因为 CF 边缘命中了几天前的缓存。 */
-const VERSIONED_ASSETS = ['app.js', 'style.css', 'marked.umd.js'];
+const VERSIONED_ASSETS = [
+  'app.js',
+  'style.css',
+  'marked.umd.js',
+  // 手机端宠物（复用桌面端 pet.js / pet.css / pets.generated.js）。
+  // 必须纳入版本化：否则 CF 边缘会长期缓存旧 pet.js，改完宠物手机端仍是旧行为。
+  'mobile-pet.js',
+  'mobile-pet.css',
+  'pets/pet.js',
+  'pets/pet.css',
+  'pets/pets.generated.js',
+];
 
 /** 资源名 → mtime 版本号缓存（避免每次请求都 stat 三个文件） */
 const assetVersionCache = new Map<string, { mtime: number; size: number; v: number }>();
@@ -181,9 +202,16 @@ async function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, 
   let decoded = pathname;
   try { decoded = decodeURIComponent(pathname); } catch (_) {}
   const rel = decoded === '/' ? 'index.html' : decoded.replace(/^\//, '');
-  const abs = path.resolve(PWA_DIR, rel);
-  const prefix = PWA_DIR.endsWith(path.sep) ? PWA_DIR : PWA_DIR + path.sep;
-  if (abs !== PWA_DIR && !abs.startsWith(prefix)) { res.writeHead(403); res.end('forbidden'); return; }
+  // pets/* 可能只存在于真源（开发期）或只存在于 PWA_DIR（生产）：先按 PWA_DIR 解析，
+  // 不存在再回退到 src/ui/pets。两个根都做同一套路径穿越校验，不得只校验其中一个。
+  let rootDir = PWA_DIR;
+  let abs = path.resolve(rootDir, rel);
+  if (!fs.existsSync(abs) && rel.startsWith('pets/')) {
+    rootDir = PETS_FALLBACK_DIR;
+    abs = path.resolve(rootDir, rel.slice('pets/'.length));
+  }
+  const prefix = rootDir.endsWith(path.sep) ? rootDir : rootDir + path.sep;
+  if (abs !== rootDir && !abs.startsWith(prefix)) { res.writeHead(403); res.end('forbidden'); return; }
   let st: fs.Stats | null = null;
   try { st = await fs.promises.stat(abs); } catch (_) { st = null; }
   if (!st || !st.isFile()) { res.writeHead(404); res.end('not found'); return; }

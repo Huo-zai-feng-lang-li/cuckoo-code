@@ -559,6 +559,7 @@
         if (streamingEl) { try { streamingEl.remove(); } catch {} }
         showExec('生成中…');
         setExecuting(true);
+        petEvent('thinking');
         streamingText = '';
         STREAM_MD_INTERVAL = 120; // 新一轮对话，重置渲染节流间隔
         streamingEl = null;
@@ -581,6 +582,7 @@
         }
         if (msg.thinkDelta) appendThink(msg.thinkDelta);
         if (msg.textDelta) appendStreaming(msg.textDelta);
+        petEvent('thinking');
         break;
       case 'ai-reply': {
         if (!isMyProfile(msg.profileId)) break;
@@ -588,6 +590,7 @@
         finishStreaming(msg.text || '');
         hideExec();
         setExecuting(false);
+        petEvent('waiting');
         // 更新本地缓存，确保刷新后能秒出最新记录
         const cache = loadHistoryCache(currentProfileId) || [];
         cache.push({ t: 'assistant', text: msg.text || '' });
@@ -605,6 +608,7 @@
         stopSendTick(); stopToolTick();
         hideExec();
         setExecuting(false);
+        petEvent('done');
         // 整个任务结束（工具循环退出）才提醒一次
         if (document.visibilityState === 'hidden') {
           notifyReply(msg.text || '');
@@ -616,6 +620,7 @@
         stopSendTick(); stopToolTick();
         finishStreaming(streamingText);
         setExecuting(false);
+        petEvent('idle');
         // reason === 'watchdog' 是电脑端的兜底收尾（网页已停、静默超阈值，
         // 常见于「最后一轮只调工具、没输出正文」的正常结束），并不是用户停止。
         // 这种收尾只做状态复位，不弹「已停止生成」，避免正常任务结束时的误报。
@@ -636,6 +641,7 @@
         hideExec();
         setExecuting(false);
         if (msg.error) addSystem('生成失败: ' + msg.error);
+        petEvent('error');
         break;
       case 'tool':
         if (!isMyProfile(msg.profileId)) break;
@@ -656,6 +662,16 @@
         }
         break;
     }
+  }
+
+  /** 转发一个对话事件给手机端宠物（纯装饰：宠物未加载 / 出错都静默忽略）。
+   *  只传状态类型，不传文案——功能状态文案由 exec-status 胶囊负责，
+   *  宠物这边只做动画与情绪文案，避免同屏重复。 */
+  function petEvent(kind, workers) {
+    try {
+      const p = window.CuckooMobilePet;
+      if (p && typeof p.apply === 'function') p.apply(kind, workers);
+    } catch { /* 宠物是纯装饰，任何异常都不影响对话 */ }
   }
 
   function isMyProfile(pid) {
@@ -1234,6 +1250,7 @@
       showExec('工具运行中 0s…');
       setExecuting(true);
       startToolTick();
+      petEvent('working');
     } else if (phase === 'sending') {
       // 最后一个工具跑完 → 进入拟人化延迟窗口
       stopToolTick();

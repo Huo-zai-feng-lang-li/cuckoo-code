@@ -122,7 +122,71 @@ Cuckoo 纯净模式（harness）是产品默认入口，输入框上方留白较
 - `npm run typecheck` / `npm test` / `npm run lint` / `npm run compile` 全绿。
 - 真机（开发版实例）：宠物显示、三态切换、结束表情、设置开关即时生效。
 
+## 第四轮：手机端（远程 PWA / APK）
+
+桌面端宠物完整复用到手机端远程页面，**不重写渲染引擎**。
+
+### 方案
+
+| 环节 | 做法 |
+|---|---|
+| 资源 | `scripts/copy-remote-pwa.mjs` 构建时把 `src/ui/pets/` 拷进 `out/src/remote/pwa/pets/`；Capacitor `webDir` 就是该目录，APK 打包自动带上 |
+| 适配层 | 新增 `src/remote/pwa/mobile-pet.js`：`window.CuckooMobilePet = { apply, destroy, getState }`，把对话事件翻译成 pet.js 状态调用 |
+| 样式 | 新增 `src/remote/pwa/mobile-pet.css`：`.composer-inner{position:relative}`、`.ck-pet{touch-action:pan-y}`、气泡容器显式宽度 |
+| 事件 | `app.js` 新增 `petEvent(kind, workers)` 单点转发，在 ai-start / ai-stream / ai-reply / task-done / ai-stop / ai-error / tool(start) 分支**末尾**各加一行 |
+| 缓存 | `server.ts` 的 `VERSIONED_ASSETS` 增加 5 个新文件，避免 CF 边缘缓存旧 pet.js |
+| 开发期 | `server.ts` 加 `PETS_FALLBACK_DIR`：源码目录没有 pets/ 时回退 `src/ui/pets`，与 PWA_DIR 同一套穿越校验 |
+
+### 关键设计决策（含踩坑记录）
+
+1. **不冒功能状态气泡**：手机端已有 `exec-status` 浮动胶囊（"生成中…" / "工具运行中 Ns…"），宠物再冒一遍是同屏重复、窄屏噪音。宠物只做动画 + 情绪文案（随机、4s 节流）。
+2. **手势不用 JS 劫持**：`pet.css` 的 `touch-action:none` 会吃掉页面滚动（手指从宠物上划过，消息列表纹丝不动）。改成 CSS `pan-y`，浏览器自己分流——竖向滚页面、横向拖宠物，零手势劫持代码。
+   - 曾尝试「长按 180ms 才激活拖动」的 JS 方案，**已放弃**：pet.js 的 pointerdown 绑在自身冒泡阶段，无法"先扣住再放行"，强行拦截会连轻触彩蛋一起废掉。
+3. **钳位按宠物实际宽度**：pet.js 的固定 6%~94% 不知道宠物多宽，窄屏 308px 下 6% 会让半个身子出屏（实测 `petL=0.3px`）。
+   给 pet.js 加**可选** `opts.clampX` 回调（不传 = 原逻辑完全不变，桌面端零影响），手机端传入 `clampXForHost` 后拖动全程钳位，DOM 与内部 `xRatio` 天然一致。
+   - 反例：最初只在 `onMove` 里改 DOM，但 pet.js 每帧 `pointermove` 都会覆写 `style.left`，纠正值只在松手一帧生效，且内部 `xRatio` 停在旧值 → 已废弃。
+4. **【踩坑】气泡容器必须有确定宽度**：`.ck-pet-bubbles` 是 `position:absolute; left:50%` 却没设宽度，绝对定位元素按 shrink-to-fit 算出的可用宽度只有半个宠物宽（约 31px）。桌面端靠 `.ck-pet-bubble` 的 `white-space:nowrap` 撑开容器所以没事；手机端一旦改成 `normal` 允许换行，就在 31px 的盒子里**逐字竖排**。
+   修法：容器 `width:max-content; max-width:min(200px, calc(100vw - 24px))`，换行才发生在正确宽度上。
+
+### 涉及文件（第四轮）
+
+| 文件 | 改动 |
+|---|---|
+| `scripts/copy-remote-pwa.mjs` | 增：拷 `src/ui/pets` → `out/src/remote/pwa/pets`（失败只告警） |
+| `src/remote/pwa/mobile-pet.js` | 新增：事件翻译 + 钳位 + 延迟创建 + 全异常吞噬 |
+| `src/remote/pwa/mobile-pet.css` | 新增：移动端覆盖样式 |
+| `src/remote/pwa/index.html` | 增：3 个 link + 3 个 script（pets.generated → pet.js → mobile-pet.js → app.js） |
+| `src/remote/pwa/app.js` | 增：`petEvent()` helper + 8 处调用（均在既有逻辑末尾） |
+| `src/remote/server.ts` | 增：`VERSIONED_ASSETS` 5 项 + `PETS_FALLBACK_DIR` 回退 |
+| `src/ui/pets/pet.js` | 增：可选 `opts.clampX` 钩子（默认分支行为不变） |
+| `test/remote/server.test.js` | 增：宠物资源托管 / ?v= 版本化 / 路径穿越 / 404 四类用例 |
+
+### 真机验证（第四轮）
+
+开发版实例 CDP + 独立浏览器窗口（388px / 308px 两档宽度）：
+
+| 项 | 结果 |
+|---|---|
+| 引擎加载（CuckooPet / CUCKOO_PETS / CuckooMobilePet） | ✅ |
+| 宠物挂载、贴输入框顶边、不遮挡输入框与发送按钮 | ✅ |
+| 状态切换（thinking / working(2,3) / done→happy / error） | ✅ 动画文件与档位全部正确 |
+| 情绪气泡（随机、4s 节流、pointer-events:none） | ✅ |
+| 气泡长文案换行（200px 两行，不竖排、不溢出） | ✅ 竖排 bug 已修 |
+| 点击彩蛋（6 次点击 6 个不同动画） | ✅ |
+| 横向拖动 + 位置持久化 + 刷新恢复 | ✅ 0.06 / 0.94 两端均能正确恢复 |
+| 窄屏 308px 边界钳位 | ✅ 6%→11.5%、94%→88.5%，宠物完整在屏内 |
+| 拖动起点不跳变（DOM 与内部状态一致） | ✅ |
+| 宿主不存在（登录页）时 apply 不崩 | ✅ |
+| 宠物实例幂等（重复 create 不泄漏 DOM） | ✅ |
+| 桌面端回归（纯净模式 + 桌面浮窗） | ✅ 渲染正常、拖动仍 6%~94%、无 JS 异常 |
+
+### 验证
+
+- `npm run typecheck` / `npm test`（1320 passed）/ `npm run lint` / `npm run compile` 全绿。
+- 子代理审计：code-reviewer 提 2 条【必须修复】——#1 `creating` 未复位经复核为**误报已撤回**（复位在 L108，两条路径都覆盖）；#2 `onMove` 改 DOM 与 `xRatio` 失同步为**真问题已修**（改用 `opts.clampX` 钩子根治）。
+- arch-guard 结论：合规，无反向依赖、无生成物手改、路径穿越防护未被削弱、测试符合项目哲学。
+
 ## 后续
 
-- 手机端 PWA 复用 `pet.js`（响应式尺寸 + 触控），建议只在任务进行时显示。
-- 可选：拖动换位、气泡提醒、App 外悬浮（dsh-Go 的 `PetOverlay` 部分），本需求不做。
+- APK 发包前需 `npx cap sync android` 把 `out/src/remote/pwa` 同步进 `android/app/src/main/assets/public`（本轮未执行，避免污染产物目录）。
+- 可选：拖动换位、App 外悬浮（dsh-Go 的 `PetOverlay` 部分），本需求不做。

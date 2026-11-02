@@ -125,6 +125,11 @@
     opts = opts || {};
     var xRatio = (typeof opts.x === 'number' && isFinite(opts.x)) ? opts.x : 0.18;
     var onMove = typeof opts.onMove === 'function' ? opts.onMove : null;
+    // 可选：把「比例 → 比例」的钳位策略交给调用方。
+    // 桌面端的固定 6%~94% 对宽窗口够用，但手机端宿主只有 ~280px，宠物 64px 宽，
+    // 6% 会让半个身子探出屏幕。传了 clampX 就在拖动全程用它，保证 DOM 与
+    // 内部 xRatio 永远一致（否则松手后纠正 DOM 会造成下次拖动起点跳变）。
+    var clampX = typeof opts.clampX === 'function' ? opts.clampX : null;
     // 点击彩蛋池（动画名数组）：点一下按顺序轮播，播完一圈重新洗牌。
     // 为空时回退 pack.reactions 的 tapLeft / tapRight。
     var clickPool = Array.isArray(opts.clickAnimations) ? opts.clickAnimations.filter(function (n) {
@@ -465,7 +470,7 @@
       var box = host.getBoundingClientRect();
       if (!box.width) return;
       var ratio = (ev.clientX - box.left) / box.width;
-      ratio = Math.max(0.06, Math.min(0.94, ratio));
+      ratio = clampX ? clampX(ratio) : Math.max(0.06, Math.min(0.94, ratio));
       xRatio = ratio;
       el.style.left = (ratio * 100) + '%';
     });

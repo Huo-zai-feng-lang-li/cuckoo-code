@@ -1,0 +1,63 @@
+/* ==========================================================================
+   手机端宠物（复用 src/ui/pets/pet.css，这里只做移动端覆盖）
+   --------------------------------------------------------------------------
+   真源引擎是桌面端同一份 pet.js，故下面每条都必须「只覆盖、不改语义」。
+   ========================================================================== */
+
+/* 宿主补 relative：pet.css 靠 bottom:100% 贴输入框顶边，宿主必须定位。
+   .composer-inner 原本没有绝对定位子元素，加 relative 不改变现有排版。 */
+.composer-inner {
+  position: relative;
+}
+
+/* ===== 手势：竖向滚动穿透 =====
+   pet.css 里 .ck-pet 是 touch-action:none（桌面端防止拖拽时选中文字）。
+   手机上这会让宠物整块吃掉页面滚动 —— 手指从宠物上划过去，消息列表纹丝不动。
+   改成 pan-y：竖向手势交给浏览器滚动（同时给 pet.js 发 pointercancel 收尾），
+   横向手势留给宠物拖拽。 */
+.ck-pet {
+  touch-action: pan-y;
+}
+
+/* ===== 气泡：窄屏收敛 =====
+   桌面端 max-width 280px + nowrap，在 360px 屏上会顶到边缘。
+   收敛到 200px、允许换行、缩小字号与内边距。 */
+.ck-pet-bubble {
+  max-width: 200px;
+  padding: 6px 12px;
+  font-size: 11px;
+  border-radius: 12px;
+  /* 允许长文案换行（桌面端是 nowrap）。换行必须发生在「有确定宽度的容器」里，
+     否则会退化成逐字竖排 —— 见下面 .ck-pet-bubbles 的宽度修复。 */
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.ck-pet-bubble-hint {
+  font-size: 10.5px;
+  padding: 5px 11px;
+}
+
+.ck-pet-bubble b {
+  font-size: 11.5px;
+  padding: 0 4px;
+  margin: 0 1px;
+}
+
+/* 两层气泡间距收紧：窄屏上 8px 显得松散（贴宠物距离由 pet.js 的 anchorBottom 控制，
+   与 gap 无关）。 */
+.ck-pet-bubbles {
+  gap: 6px;
+}
+
+/* ===== 【关键】气泡容器必须有确定宽度 =====
+   pet.css 里 .ck-pet-bubbles 是 position:absolute + left:50%，没有设 width。
+   绝对定位元素的 shrink-to-fit 宽度 = min(max-content, 可用空间)，
+   而「可用空间」= 包含块右边界 - left = 半个宠物宽（约 31px）。
+   桌面端靠 .ck-pet-bubble 的 white-space:nowrap 让 max-content 撑开它；
+   手机端一旦允许换行，就会在这个 31px 宽的盒子里逐字竖排。
+   显式给 width:max-content 后再用 max-width 收口，换行才发生在正确宽度上。 */
+.ck-pet-bubbles {
+  width: max-content;
+  max-width: min(200px, calc(100vw - 24px));
+}

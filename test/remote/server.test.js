@@ -322,4 +322,54 @@ describe('remote server', () => {
     assert.strictEqual(r2.ok, true);
     await stopServer();
   });
+
+  test('宠物资源可被托管：pet.js / 精灵图 / 生成物 / 手机端适配层', async () => {
+    const port = ++portCounter;
+    await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
+
+    const petJs = await httpGet(port, '/pets/pet.js');
+    assert.strictEqual(petJs.statusCode, 200, '/pets/pet.js 应可访问');
+    assert.ok(petJs.headers['content-type'].includes('javascript'), 'pet.js 应为 JS MIME');
+
+    const png = await httpGet(port, '/pets/deepy-whale/idle.png');
+    assert.strictEqual(png.statusCode, 200, '精灵图应可访问');
+    assert.strictEqual(png.headers['content-type'], 'image/png');
+
+    const gen = await httpGet(port, '/pets/pets.generated.js');
+    assert.strictEqual(gen.statusCode, 200, '宠物数据产物应可访问');
+
+    const mobJs = await httpGet(port, '/mobile-pet.js');
+    assert.strictEqual(mobJs.statusCode, 200, '手机端适配层应可访问');
+
+    const mobCss = await httpGet(port, '/mobile-pet.css');
+    assert.strictEqual(mobCss.statusCode, 200, '手机端宠物样式应可访问');
+  });
+
+  test('index.html 引用宠物资源并带 ?v= 版本号（绕开 CDN 边缘缓存）', async () => {
+    const port = ++portCounter;
+    await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
+
+    const res = await httpGet(port, '/');
+    assert.strictEqual(res.statusCode, 200);
+    const names = ['mobile-pet.js', 'mobile-pet.css', 'pets/pet.js', 'pets/pet.css', 'pets/pets.generated.js'];
+    for (const name of names) {
+      const hit = res.body.match(new RegExp('(src|href)="/' + name.replace(/[./]/g, '\\$&') + '[^"]*"'));
+      assert.ok(hit, name + ' 应出现在 index.html 中');
+      assert.ok(/[?]v=\d+/.test(hit[0]), name + ' 应带 ?v=<数字>（实际：' + hit[0] + '）');
+    }
+  });
+
+  test('宠物资源不存在时返回 404（不吞成 500，也不误降级到别的目录）', async () => {
+    const port = ++portCounter;
+    await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
+    const res = await httpGet(port, '/pets/definitely-not-here.js');
+    assert.strictEqual(res.statusCode, 404);
+  });
+
+  test('路径穿越：pets 子目录同样被拦截 (403)', async () => {
+    const port = ++portCounter;
+    await startServer({ onUserMessage: () => {} }, port, TEST_TOKEN);
+    const res = await httpGet(port, '/pets/..%2f..%2fpackage.json');
+    assert.strictEqual(res.statusCode, 403);
+  });
 });
