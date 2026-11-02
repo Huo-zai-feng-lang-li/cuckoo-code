@@ -241,6 +241,15 @@ function applyResultTransform(text: string, provider: any): string {
   }
   return text;
 }
+// 回传前缀随机化：真人不会每轮都说同一句话，固定文案本身就是机器特征。
+// 注意：前缀本身不能省 —— 真机验证过裸 <path> 结果会让 AI 认不出是工具返回而停止工作。
+const SINGLE_PREFIXES = ['跑完了，结果：', '执行结果：', '好了：', '搞定：', '结果出来了：'];
+const MULTI_PREFIXES = ['跑完了，结果如下：', '执行完了，结果是这样：', '好了，结果如下：', '搞定，结果如下：', '结果出来了：'];
+function pickPrefix(multi: boolean): string {
+  const arr = multi ? MULTI_PREFIXES : SINGLE_PREFIXES;
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
 /**
  * 将 JS 工具脚本执行结果发送回 DeepSeek 聊天，让 AI 看到结果并继续工作
  */
@@ -250,21 +259,27 @@ async function sendCombinedJsResultsToChat(results: any, onSent?: () => void): P
   const MAX_OUTPUT = 15000;
   const sep = String.fromCharCode(10);
 
-  let msg = '【JS 执行结果汇总】(共 ' + results.length + ' 个脚本)' + sep + sep;
+  // 前缀不能省：真机验证过「单段直接给 <path> 裸结果」会让 AI 认不出这是工具返回，
+  // 直接停止不再继续工作。故保留前缀，但每次随机选，避免几十轮形成稳定句式。
+  const multi = results.length > 1;
+  let msg = pickPrefix(multi) + sep + sep;
 
   for (let i = 0; i < results.length; i++) {
     const item = results[i];
-    msg += '—— 脚本 ' + (i + 1) + ' ——' + sep;
+    if (multi) msg += '第 ' + (i + 1) + ' 段：' + sep;
     if (item && item.result && item.result.success) {
       let out = (item.result.output || '').trim();
       if (out.length > MAX_OUTPUT) {
         out = out.slice(0, MAX_OUTPUT) + sep + '...[输出过长已截断]...';
       }
-      msg += '✅ 成功' + sep + (out || '(脚本执行完成，无输出)');
+      // 多段必须保留「成功」锚点：失败段有「失败了」兜底，成功段若无标记则结构不对称，
+      // AI 得靠输出首字符推断。单段不需要（前缀已表明这是结果）。
+      if (multi) msg += '成功' + sep;
+      msg += (out || '（没有输出）');
     } else {
-      msg += '❌ 失败' + sep + '错误原因: ' + ((item && item.result && item.result.error) || '未知错误') + sep;
-      msg += '本次实际执行的代码(前300字符):' + sep + String((item && item.code) || '').slice(0, 300) + sep;
-      msg += '请修正 JavaScript 代码后重新输出完整的 ' + BT + BT + BT + 'cuckoo 代码块。';
+      msg += '失败了' + sep + '报错：' + ((item && item.result && item.result.error) || '未知错误') + sep;
+      msg += '跑的是这段代码：' + sep + String((item && item.code) || '').slice(0, 300) + sep;
+      msg += '代码有问题，请修正后重新输出完整的 ' + BT + BT + BT + 'cuckoo 代码块。';
     }
     msg += sep + sep;
   }

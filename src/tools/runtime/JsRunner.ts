@@ -273,7 +273,7 @@ class JsRunner {
             output = output.slice(0, OUTPUT_LIMIT) + '\n...[输出过长已截断]...';
           }
           logRun(code, toolFailures, null, { projectDir: projectDir || '(未设置)', windowId: windowId, 耗时ms: Date.now() - startTime });
-          finish({ success: true, output: output || '(脚本执行完成，无输出)\n如需输出请使用 log() 方法' }, 'done', logs);
+          finish({ success: true, output: output || '（没有输出）\n如需输出请使用 log() 方法' }, 'done', logs);
         } else if (msg.type === 'error') {
           const errMsg = msg.message || '未知错误';
           const fromTool = toolFailures.length > 0 && toolFailures.some((f) => errMsg.indexOf(f.error) !== -1);
