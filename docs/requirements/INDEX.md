@@ -96,5 +96,6 @@
 | 100 | fix | [浏览器指纹一致性加固（降低账号风控风险）](./100-fingerprint-hardening.md) | done | fix/100-fingerprint-hardening | 2026-10-31 |
 | 101 | fix | [手机端执行胶囊遮挡输入框 + 后台回来计时秒数爆炸](./101-remote-exec-pill-timer.md) | done | fix/101-remote-exec-pill-timer | 2026-10-31 |
 | 102 | feature | [纯净模式输入框宠物（气泡互动 + 可拖动）](./102-harness-pet.md) | done | (直接主分支，用户要求先做最优端且不提交) | 2026-11-02 |
+| 103 | fix | [工具结果回传文案拟人化（降低服务端内容特征识别）](./103-tool-result-humanize.md) | done | fix/103-tool-result-humanize | 2026-11-02 |
 
-共 91 个需求。
+共 92 个需求。
