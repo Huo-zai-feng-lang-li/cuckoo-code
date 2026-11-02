@@ -434,8 +434,9 @@
 
     // ---- 点击反应 + 横向拖动 ----
     // 拖动超过 4px 视为"拖"，不触发点击反应；松手后吸附到 6%~94% 并回调记忆。
-    // windowDrag：桌面宠物窗口里传 { start(), move(dx,dy), end() }，
+    // windowDrag：桌面宠物窗口里传 { move(dx,dy), click() }，
     // 拖动宠物本体 = 移动整个窗口（而不是改横向站位）。
+    // 左键单击 = 播互动动画；右键 = 恢复主窗口（click 回调）。
     var windowDrag = opts.windowDrag || null;
     var drag = null;
     el.addEventListener('pointerdown', function (ev) {
@@ -480,10 +481,8 @@
         return;
       }
       if (windowDrag) {
-        // 桌面宠物：点击（非拖动）→ 回到主窗口，不做点击彩蛋
+        // 桌面宠物：左键单击（非拖动）→ 播互动动画；回主窗口改由右键触发
         try { if (windowDrag.end) windowDrag.end(); } catch { /* ignore */ }
-        try { if (windowDrag.click) windowDrag.click(); } catch { /* ignore */ }
-        return;
       }
       var pick = nextClickAnim();
       if (pick) {
@@ -495,6 +494,11 @@
     }
     el.addEventListener('pointerup', endDrag);
     el.addEventListener('pointercancel', endDrag);
+    // 右键 → 恢复主窗口（仅桌面宠物窗口启用；纯净模式不绑 windowDrag，无副作用）
+    el.addEventListener('contextmenu', function (ev) {
+      ev.preventDefault();
+      if (windowDrag && windowDrag.click) { try { windowDrag.click(); } catch { /* ignore */ } }
+    });
 
     // ---- hover 滚轮缩放（可选，由 opts.onResize 开启）----
     // 只有调用方给了 onResize 才接管滚轮，避免影响纯净模式页面本身滚动。

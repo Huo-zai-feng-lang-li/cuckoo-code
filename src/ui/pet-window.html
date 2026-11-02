@@ -92,7 +92,7 @@
           move: function (dx, dy) {
             try { if (api.dragBy) api.dragBy(dx, dy); } catch (e) { /* ignore */ }
           },
-          // 点击（未拖动）宠物 → 恢复主窗口
+          // 右键宠物 → 恢复主窗口（左键留给互动动画）
           click: function () {
             try { if (api.activate) api.activate(); } catch (e) { /* ignore */ }
           },
