@@ -217,7 +217,13 @@ function createWindow(profile: any) {
     };
     mainWindow.on('minimize', () => { syncPetWindow(); });
     mainWindow.on('restore', () => { hidePetWindow(); });
-    mainWindow.on('show', () => { hidePetWindow(); });
+    // show 也要藏，但必须排除"最小化后仍触发的 show"：
+    // Windows 上主窗口最小化后再 show 会把刚弹出的桌面宠物立刻藏掉，
+    // 用户看到的是"最小化了但桌面没有宠物"。仅在窗口确实可见时藏。
+    mainWindow.on('show', () => {
+      try { if (mainWindow.isMinimized()) return; } catch (_) { /* ignore */ }
+      hidePetWindow();
+    });
     mainWindow.on('closed', () => { destroyPetWindow(); });
   }
 

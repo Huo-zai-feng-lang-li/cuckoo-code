@@ -26,6 +26,11 @@ const petWindowAPI = {
   dragBy: (dx: number, dy: number) => ipcRenderer.send('pet-window-drag-by', { dx, dy }),
   /** 点击宠物 → 恢复主窗口（多窗口时回到最近活跃的那个） */
   activate: () => ipcRenderer.send('pet-window-activate'),
+  /** 上报宠物本体命中矩形（窗口内 CSS 像素）：主进程据此决定是否让鼠标穿透 */
+  setHitRect: (r: { x: number; y: number; w: number; h: number } | null) =>
+    ipcRenderer.send('pet-window-hit-rect', r),
+  /** 拖动开始/结束（true=锁定接收鼠标事件，防止指针捕获被穿透打断） */
+  dragLock: (locked: boolean) => ipcRenderer.send('pet-window-drag-lock', !!locked),
   /** 关闭桌面宠物（保留通道：由设置开关控制显隐，窗口内不再暴露按钮） */
   close: () => ipcRenderer.send('pet-window-close'),
 };

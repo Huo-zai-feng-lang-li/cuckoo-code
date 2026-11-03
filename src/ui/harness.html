@@ -3122,6 +3122,17 @@
   var sendStartAt = 0;
   var sendExecSec = 0;
   function escapeSecHtml(sec) { return '<b>' + sec + 's</b>'; }
+  // 「结果待发送」期间的动画轮换：听音乐 / 抱着结果 / 比心 / 搭积木，每 SEND_ANIM_SWAP_SEC 秒换一次。
+  // 这段是拟人化延迟（AI 页面并没有在生成），若沿用 thinking 的动画，
+  // 用户看到的就是"生成中"和"等待发送"长得一模一样、且一动不动。
+  var SEND_ANIM_SWAP_SEC = 4;
+  // 池子混合两类动画：
+  //  - 循环动画（juggling / carrying）走 setState，常驻播；
+  //  - 一次性动画（react-double / building，pack 里 loop:false）必须走 react，
+  //    否则 setState 会让它定格在最后一帧不动。
+  var SEND_ANIM_POOL = ['juggling', 'carrying', 'react-double', 'building'];
+  var SEND_ONESHOT = { 'react-double': 1, 'building': 1 };
+  var lastSendAnim = null;   // 已播动画名，防同一动画被每秒重复触发
   function renderSendTick() {
     if (!statusText) { stopSendTick(); return; }
     if (statusEl) statusEl.classList.add('sending');
@@ -3129,11 +3140,25 @@
     statusText.innerHTML = '结果待发送（工具 ' + escapeSecHtml(sendExecSec) + ' · 延迟 ' + escapeSecHtml(sendSec) + '）';
     petBubble('等待发送 ' + petSec(sendSec), true, 0, true);
     petMood('waiting');
+    // 动画由这里接管（syncPet 在 sendTickTimer 活跃时会主动让路）。
+    // 注意：不使用 attention（happy）——那是「一轮任务真正结束」的完成态表情，等待发送时用会误导。
+    if (pet) {
+      var animName = SEND_ANIM_POOL[Math.floor(sendSec / SEND_ANIM_SWAP_SEC) % SEND_ANIM_POOL.length];
+      if (animName !== lastSendAnim) {
+        lastSendAnim = animName;
+        try {
+          if (SEND_ONESHOT[animName]) pet.react(animName);   // 一次性：播完回落到 base
+          else pet.setState(animName);                        // 循环：直接切 base
+        } catch (e) { /* ignore */ }
+      }
+    }
   }
   function startSendTick(execSec) {
     stopSendTick();
+    stopThinkTick();   // 交给 renderSendTick 的 SEND_ANIM_POOL 轮换，两者互斥
     sendExecSec = execSec > 0 ? execSec : 0;
     sendStartAt = Date.now();
+    lastSendAnim = null;   // 新一轮等待从池子第一个重新起播
     renderSendTick();
     sendTickTimer = setInterval(function () {
       // 自停判据用业务态而非 DOM class：DOM class 是渲染结果，不该充当状态机。
@@ -3144,6 +3169,7 @@
   }
   function stopSendTick() {
     if (sendTickTimer) { clearInterval(sendTickTimer); sendTickTimer = null; }
+    lastSendAnim = null;
     // 退出「结果待发送」态：去掉专用配色类，回到 busy 的琥珀整体色
     if (statusEl) statusEl.classList.remove('sending');
   }
@@ -3168,6 +3194,7 @@
     toolRunningCount = 0;
     stopToolTick(); // 立即停表：否则新工具 start 会沿用旧 toolStartAt，秒数跨中止错显
     stopSendTick(); // 同理：中止后不得再显示「结果待发送」
+    stopThinkTick(); // 生成中轮换同理：中止后必须停
     abortEpoch++;
     abortStamp = abortEpoch;
   }
@@ -3194,18 +3221,55 @@
     if (pet) statusEl.classList.add('sr-only');
     else statusEl.classList.remove('sr-only');
   }
+  // 生成中阶段的动画轮换：模型出字耗时最长，若一直播 thinking 会显得"卡住不动"。
+  // 池子只用"思考系"动画（idle-look 东张西望 / idle-spout 喷水），不侵占等待发送的
+  // SEND_ANIM_POOL —— 那是"结果待发送"的视觉信号，混用会让用户分不清阶段。
+  // 节奏：thinking 为主，每满 9s 插播一次小动作（约 3.2~3.4s），播完自动回退到 thinking。
+  var THINK_ANIM_POOL = ['idle-look', 'idle-spout'];
+  var THINK_ANIM_SWAP_SEC = 9;
+  var thinkTickTimer = null;
+  var thinkStartAt = 0;
+  var thinkSeq = 0;    // 已插播次数，用于轮换池内取模
+  function startThinkTick() {
+    if (thinkTickTimer) return;
+    thinkStartAt = Date.now();
+    thinkSeq = 0;
+    thinkTickTimer = setInterval(function () {
+      // 自停判据用业务态：退出生成或进入等待发送，轮换就该让位
+      if (!generating || sendTickTimer) { stopThinkTick(); return; }
+      var sec = Math.floor((Date.now() - thinkStartAt) / 1000);
+      // 基于周期计数判定：避免每秒都调 react，同时免疫 setInterval 偶发漂移跳过整秒
+      var cycle = Math.floor(sec / THINK_ANIM_SWAP_SEC);
+      if (cycle <= thinkSeq) return;
+      thinkSeq = cycle;
+      var anim = THINK_ANIM_POOL[(cycle - 1) % THINK_ANIM_POOL.length];
+      // 用 react 而非 flash：flash 只查 pack.states（idle-look / idle-spout 不在其中），
+      // react 可直接按动画名播，时长取 anim.ms，播完自动回退到 base(thinking)。
+      if (pet) { try { pet.react(anim); } catch (e) { /* ignore */ } }
+    }, 1000);
+  }
+  function stopThinkTick() {
+    if (thinkTickTimer) { clearInterval(thinkTickTimer); thinkTickTimer = null; }
+  }
   function syncPet() {
     if (!pet) return;
+    // 「结果待发送」期间动画由 renderSendTick 轮换（SEND_ANIM_POOL）。
+    // 这里必须让路：syncBusyIndicators / setStatus 会在等待窗口内被触发，
+    // 一旦执行下面的 setState 就会把轮换动画按回 thinking，用户又看到"一动不动"。
+    if (sendTickTimer) return;
     if (toolRunningCount > 0) {
+      stopThinkTick();
       pet.setState('working', toolRunningCount);
       // 工具刚起跑：占位文案，秒数由 startToolTick 每秒刷新
       petBubble((toolRunningCount > 1 ? '工具执行中 ×' + toolRunningCount : '工具执行中') + ' ' + petSec(0), true, 0, true);
       petMood('working');
     } else if (generating) {
       pet.setState('thinking');
+      startThinkTick();          // 生成中：隔一会儿插播思考系小动作
       petBubble('生成中…', true);
       petMood('writing');
     } else {
+      stopThinkTick();           // 退出生成态，轮换必须停（防泄漏）
       pet.setState('idle');
       // 空闲时不挂常驻气泡（"就绪"没有信息量，宠物本身已表达）
       try { pet.clearBubble(); } catch (e) { /* ignore */ }

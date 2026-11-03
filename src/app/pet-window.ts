@@ -26,6 +26,18 @@ let lastSourceWinId: number | null = null;
 let lastState: { state: string; text: string; sticky: boolean; html: boolean; hint: string } =
   { state: 'idle', text: '', sticky: true, html: false, hint: '' };
 
+/**
+ * 宠物本体命中矩形（窗口内 CSS 像素）。由渲染进程上报——只有渲染层知道
+ * 当前动画帧的绘制框（每帧都在变），主进程无法自行推算。
+ */
+let hitRect: { x: number; y: number; w: number; h: number } | null = null;
+/** 拖动中锁：穿透会让指针捕获失效，pointerup 丢失 → 拖动粘死 */
+let dragLock = false;
+/** 当前穿透状态（幂等缓存，避免每帧重复调 setIgnoreMouseEvents） */
+let ignoreState: boolean | null = null;
+/** 光标命中检测定时器 */
+let hoverTimer: ReturnType<typeof setInterval> | null = null;
+
 /** 窗口尺寸跟随宠物大小：宽度给足，高度留出头顶气泡空间 */
 function boundsFor(petPx: number): { width: number; height: number } {
   const px = Math.max(48, Math.min(256, petPx || 96));
@@ -62,6 +74,59 @@ function computeBounds(petPx: number): { x: number; y: number; width: number; he
   };
 }
 
+/**
+ * 切换窗口鼠标穿透。
+ * @param ignore true = 穿透（点击落到下面窗口）；false = 接收（可拖宠物）
+ */
+function setIgnore(ignore: boolean): void {
+  if (!petWin || petWin.isDestroyed()) return;
+  if (ignoreState === ignore) return;
+  try {
+    // forward:true 让穿透时仍能收到 mousemove（Electron 的转发语义），
+    // 供后续若改用事件驱动时复用；当前用轮询，不依赖它。
+    petWin.setIgnoreMouseEvents(ignore, { forward: true });
+    ignoreState = ignore;
+  } catch (_) { /* ignore */ }
+}
+
+/**
+ * 按当前光标位置裁决穿透与否。
+ *
+ * 必须在主进程做：窗口一旦穿透，渲染进程收不到任何鼠标事件，
+ * 无法"自己发现自己被悬停"。
+ */
+function updateMousePassthrough(): void {
+  if (!petWin || petWin.isDestroyed() || !petWin.isVisible()) return;
+  // 拖动期间强制接收：穿透会让指针捕获失效，pointerup 丢失 → 拖动粘死
+  if (dragLock) { setIgnore(false); return; }
+  if (!hitRect || !(hitRect.w > 0) || !(hitRect.h > 0)) { setIgnore(true); return; }
+  let inside = false;
+  try {
+    const pt = screen.getCursorScreenPoint();
+    const b = petWin.getBounds();
+    // 光标换算成窗口内坐标（与渲染层的 CSS 像素一致：本窗口无 zoom）
+    const cx = pt.x - b.x;
+    const cy = pt.y - b.y;
+    // 命中区外扩 4px：像素画边缘带抗锯齿渐隐，严格贴矩形会"看得到点不到"
+    const pad = 4;
+    inside = cx >= hitRect.x - pad && cx <= hitRect.x + hitRect.w + pad
+      && cy >= hitRect.y - pad && cy <= hitRect.y + hitRect.h + pad;
+  } catch (_) { /* ignore */ }
+  setIgnore(!inside);
+}
+
+/** 启动/停止光标轮询（窗口显示时开、隐藏/销毁时关，避免空转） */
+function startHoverWatch(): void {
+  if (hoverTimer) return;
+  // 32ms 轮询（约 31 FPS）：足够灵敏跟手，且比 16ms 降低一半唤醒开销，节约电池与 CPU
+  hoverTimer = setInterval(updateMousePassthrough, 32);
+}
+function stopHoverWatch(): void {
+  if (!hoverTimer) return;
+  clearInterval(hoverTimer);
+  hoverTimer = null;
+}
+
 function pushState(): void {
   if (!petWin || petWin.isDestroyed()) return;
   try {
@@ -77,6 +142,9 @@ function showPetWindow(size: number): void {
     // 用户改完大小再最小化会看到旧尺寸（幂等安全）。
     setPetWindowSize(size);
     try { petWin.showInactive(); } catch (_) { /* ignore */ }
+    // 重新显示：恢复光标轮询（隐藏时停过）
+    setIgnore(true);
+    startHoverWatch();
     pushState();
     return;
   }
@@ -116,18 +184,41 @@ function showPetWindow(size: number): void {
   try { petWin.setAlwaysOnTop(true, 'floating'); } catch (_) { /* ignore */ }
   try { petWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false }); } catch (_) { /* ignore */ }
 
+  // 默认整窗鼠标穿透：本窗口 220x316 只有宠物与气泡是可见像素，其余透明。
+  // Windows 上透明像素不会自动穿透，不开这个会把下面整片桌面/程序挡住（需求 105）。
+  ignoreState = null;
+  hitRect = null;
+  dragLock = false;
+  setIgnore(true);
+
   petWin.webContents.on('did-finish-load', () => {
     try {
       petWin.webContents.send('pet-window-init', { size: size || 96 });
       pushState();
     } catch (_) { /* ignore */ }
     try { petWin.showInactive(); } catch (_) { /* ignore */ }
+    startHoverWatch();
   });
   petWin.webContents.on('did-fail-load', (_e: any, code: any, desc: any) => {
     console.error('[PetWindow] 页面加载失败: ' + code + ' ' + desc);
     hidePetWindow();
   });
-  petWin.on('closed', () => { petWin = null; });
+  petWin.on('blur', () => {
+    // 窗口失焦（如用户按 Alt+Tab、Win+D 或系统弹窗夺焦）：
+    // 若此前正在拖动，解除拖动锁定，防止 pointerup 丢失导致 dragLock 永久置 true，
+    // 进而导致整窗永久不穿透（遮挡底层桌面图标）。
+    if (dragLock) {
+      dragLock = false;
+      updateMousePassthrough();
+    }
+  });
+  petWin.on('closed', () => {
+    stopHoverWatch();
+    petWin = null;
+    hitRect = null;
+    dragLock = false;
+    ignoreState = null;
+  });
 
   petWin.loadFile(resolveSrc('ui/pet-window.html'));
 }
@@ -157,6 +248,8 @@ function setPetWindowSize(size: number): void {
 function hidePetWindow(): void {
   if (!petWin || petWin.isDestroyed()) return;
   try { petWin.hide(); } catch (_) { /* ignore */ }
+  // 隐藏后光标轮询没有意义（且会白白唤醒定时器），停掉
+  stopHoverWatch();
 }
 
 /** 彻底关闭（设置里关掉开关、或窗口重建时用） */
@@ -165,6 +258,10 @@ function destroyPetWindow(): void {
   // 下次重建会把上一个窗口的"工具执行中"原样补发，用户误以为任务还在跑。
   lastState = { state: 'idle', text: '', sticky: true, html: false, hint: '' };
   lastSourceWinId = null;
+  stopHoverWatch();
+  hitRect = null;
+  dragLock = false;
+  ignoreState = null;
   if (!petWin || petWin.isDestroyed()) { petWin = null; return; }
   try { petWin.destroy(); } catch (_) { /* ignore */ }
   petWin = null;
@@ -205,6 +302,21 @@ function registerPetWindowIpc(): void {
   ipcReady = true;
   // 窗口内拖动结束/关闭：预留给后续「记住桌面位置」，当前只处理关闭
   ipcMain.on('pet-window-close', () => { destroyPetWindow(); });
+  // 渲染层上报宠物本体命中矩形（窗口内 CSS 像素）→ 主进程据此裁决鼠标穿透。
+  // 矩形随动画帧变化，渲染层在上报前自行节流；这里只做钳位与落地。
+  ipcMain.on('pet-window-hit-rect', (_e: any, r: any) => {
+    if (!r || typeof r !== 'object') return;
+    const num = (v: any) => (typeof v === 'number' && isFinite(v) ? v : 0);
+    const w = Math.max(0, num(r.w));
+    const h = Math.max(0, num(r.h));
+    // 空矩形 = 当前无可点区域（如宠物未就绪），退化为全穿透
+    hitRect = (w > 0 && h > 0) ? { x: num(r.x), y: num(r.y), w, h } : null;
+  });
+  // 拖动开始/结束：拖动期间强制接收鼠标事件，防止指针捕获被穿透打断
+  ipcMain.on('pet-window-drag-lock', (_e: any, locked: any) => {
+    dragLock = !!locked;
+    updateMousePassthrough();
+  });
   // 点击宠物 → 恢复主窗口。多窗口时优先恢复「正在驱动宠物的那个」，
   // 它可能已经关闭，则退回最近活跃的主窗口。
   ipcMain.on('pet-window-activate', () => {
@@ -218,7 +330,7 @@ function registerPetWindowIpc(): void {
     } catch (_) { /* ignore */ }
   });
   // 拖动宠物本体 → 移动窗口。用 getBounds/setBounds 逐帧跟手；
-  // 限制在屏幕工作区内，避免拖到看不见的地方。
+  // 限制在所有显示器联合可视区内，支持跨屏拖动同时避免拖到看不见的地方。
   ipcMain.on('pet-window-drag-by', (_e: any, d: any) => {
     if (!petWin || petWin.isDestroyed()) return;
     const dx = Math.round(Number(d && d.dx) || 0);
@@ -226,16 +338,25 @@ function registerPetWindowIpc(): void {
     if (!dx && !dy) return;
     try {
       const b = petWin.getBounds();
-      let area = { x: 0, y: 0, width: 1920, height: 1080 };
-      try {
-        const disp = screen.getDisplayMatching(b);
-        if (disp) area = disp.workArea || disp.bounds || area;
-      } catch (_) { /* ignore */ }
-      // 允许部分露出屏幕（留 40px 可抓取），但不能整个拖出去
-      const minX = area.x - b.width + 40;
-      const maxX = area.x + area.width - 40;
-      const minY = area.y - b.height + 40;
-      const maxY = area.y + area.height - 40;
+      const displays = screen.getAllDisplays();
+      let minX = -10000, maxX = 10000, minY = -10000, maxY = 10000;
+      if (displays.length) {
+        minX = 10000;
+        maxX = -10000;
+        minY = 10000;
+        maxY = -10000;
+        for (let i = 0; i < displays.length; i++) {
+          const a = displays[i].workArea || displays[i].bounds;
+          if (a.x < minX) minX = a.x;
+          if (a.x + a.width > maxX) maxX = a.x + a.width;
+          if (a.y < minY) minY = a.y;
+          if (a.y + a.height > maxY) maxY = a.y + a.height;
+        }
+        minX = minX - b.width + 40;
+        maxX = maxX - 40;
+        minY = minY - b.height + 40;
+        maxY = maxY - 40;
+      }
       petWin.setBounds({
         x: Math.max(minX, Math.min(maxX, b.x + dx)),
         y: Math.max(minY, Math.min(maxY, b.y + dy)),

@@ -20,17 +20,15 @@
     user-select: none; -webkit-user-select: none;
     font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
   }
-  /* 可拖动区域：整块透明底都能拖；宠物本体留给点击彩蛋 */
+  /* 桌面舞台：全屏绝对定位 */
   #stage {
     position: absolute; inset: 0;
-    -webkit-app-region: drag;
   }
   /* 桌面版宠物：贴窗口底部居中。
      left / margin-left 由 pet.js 统一算（left:50% + 负半宽），
      这里不能再叠加 flex 居中，否则会双重偏移。 */
   #stage .ck-pet {
     bottom: 6px;
-    -webkit-app-region: no-drag;
   }
   /* 桌面版气泡：容器由 JS 定位在宠物上方。
      窗口只有 200px 宽，气泡必须能溢出窗口（窗口本身透明无边框），
@@ -89,17 +87,35 @@
         clickAnimations: ['idle-spout', 'react-double', 'roam-hop', 'music', 'conducting', 'carrying', 'waking', 'idle-look'],
         // 桌面窗口：拖动宠物本体 = 移动整个窗口（整屏可拖，不用找空白处）
         windowDrag: {
+          // 拖动开始 → 锁定窗口接收鼠标事件。
+          // 本窗口默认整窗穿透，只在光标压到宠物时才接收；拖动过程中光标可能
+          // 移出宠物矩形，若此时恢复穿透，指针捕获会失效、pointerup 收不到 → 拖动粘死。
+          start: function () {
+            try { if (api.dragLock) api.dragLock(true); } catch (e) { /* ignore */ }
+          },
           move: function (dx, dy) {
             try { if (api.dragBy) api.dragBy(dx, dy); } catch (e) { /* ignore */ }
+          },
+          end: function () {
+            try { if (api.dragLock) api.dragLock(false); } catch (e) { /* ignore */ }
           },
           // 右键宠物 → 恢复主窗口（左键留给互动动画）
           click: function () {
             try { if (api.activate) api.activate(); } catch (e) { /* ignore */ }
           },
         },
+        // 上报宠物本体命中矩形：主进程据此裁决鼠标穿透（窗口透明区不挡桌面图标）
+        onHitRect: function (r) {
+          try { if (api.setHitRect) api.setHitRect(r); } catch (e) { /* ignore */ }
+        },
       });
     } catch (e) { pet = null; }
   }
+
+  // 窗口失焦安全兜底：若拖动中途失去焦点，主动解除锁定
+  window.addEventListener('blur', function () {
+    try { if (api.dragLock) api.dragLock(false); } catch (e) { /* ignore */ }
+  });
 
   /** 切尺寸：已建好宠物时走 setSize（不重建，保留动画/状态），否则建新的 */
   function applySize(size) {

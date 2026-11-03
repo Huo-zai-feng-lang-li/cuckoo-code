@@ -130,6 +130,11 @@
     // 6% 会让半个身子探出屏幕。传了 clampX 就在拖动全程用它，保证 DOM 与
     // 内部 xRatio 永远一致（否则松手后纠正 DOM 会造成下次拖动起点跳变）。
     var clampX = typeof opts.clampX === 'function' ? opts.clampX : null;
+    // 可选：上报「宠物本体命中矩形」（host 内坐标）。
+    // 桌面宠物窗口用它裁决鼠标穿透：整窗默认穿透，只在光标压到本体时才接收事件。
+    // 矩形依赖当前动画帧的绘制框，只有渲染层知道，故在此回调。
+    var onHitRect = typeof opts.onHitRect === 'function' ? opts.onHitRect : null;
+    var lastHitKey = '';
     // 气泡底边与宠物绘制框顶部的间距（px）。
     // 不传则保持桌面端既有值 16；手机端宠物小，传更小的值让气泡贴回来。
     var bubbleGap = (typeof opts.bubbleGap === 'number' && isFinite(opts.bubbleGap))
@@ -289,6 +294,32 @@
       // 气泡锚点跟随当前动画的顶部（+6px 呼吸位）：各动画高度差很大，
       // 用固定 contentBox 会把 thinking/typing 这类"高个"动画的头顶盖住。
       bubblesEl.style.bottom = anchorBottom({ x: b[0], y: b[1], w: b[2], h: b[3] }) + 'px';
+      emitHitRect();
+    }
+
+    /**
+     * 上报宠物本体的命中矩形（host 内坐标）。
+     * 只在矩形真变化时才回调，避免每帧重复 IPC。
+     * 元素尚未入文档（getBoundingClientRect 全 0）时跳过，下次 paint 再报。
+     */
+    function emitHitRect() {
+      if (!onHitRect) return;
+      var hostRect, imgRect;
+      try {
+        hostRect = host.getBoundingClientRect();
+        imgRect = img.getBoundingClientRect();
+      } catch (e) { return; }
+      if (!hostRect.width || !imgRect.width || !imgRect.height) return;
+      var r = {
+        x: imgRect.left - hostRect.left,
+        y: imgRect.top - hostRect.top,
+        w: imgRect.width,
+        h: imgRect.height,
+      };
+      var key = Math.round(r.x) + ',' + Math.round(r.y) + ',' + Math.round(r.w) + ',' + Math.round(r.h);
+      if (key === lastHitKey) return;
+      lastHitKey = key;
+      try { onHitRect(r); } catch (e) { /* ignore */ }
     }
 
     function pickAnim() {
