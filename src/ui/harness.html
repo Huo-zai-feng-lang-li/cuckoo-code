@@ -3138,12 +3138,16 @@
     if (statusEl) statusEl.classList.add('sending');
     var sendSec = Math.floor((Date.now() - sendStartAt) / 1000);
     statusText.innerHTML = '结果待发送（工具 ' + escapeSecHtml(sendExecSec) + ' · 延迟 ' + escapeSecHtml(sendSec) + '）';
-    petBubble('等待发送 ' + petSec(sendSec), true, 0, true);
+    // 先算出本轮动画名，再冒泡：桌面宠物浮窗（独立 BrowserWindow，无法共享 pet 实例）
+    // 需要同一动画名才能与纯净模式逐帧同步。经 petBubble 的 hint 通道下发，
+    // 分派方式（react: / state:）直接复用下面的 SEND_ONESHOT，保持单一真相源。
+    var animName = SEND_ANIM_POOL[Math.floor(sendSec / SEND_ANIM_SWAP_SEC) % SEND_ANIM_POOL.length];
+    petBubble('等待发送 ' + petSec(sendSec), true, 0, true,
+      (SEND_ONESHOT[animName] ? 'react:' : 'state:') + animName);
     petMood('waiting');
     // 动画由这里接管（syncPet 在 sendTickTimer 活跃时会主动让路）。
     // 注意：不使用 attention（happy）——那是「一轮任务真正结束」的完成态表情，等待发送时用会误导。
     if (pet) {
-      var animName = SEND_ANIM_POOL[Math.floor(sendSec / SEND_ANIM_SWAP_SEC) % SEND_ANIM_POOL.length];
       if (animName !== lastSendAnim) {
         lastSendAnim = animName;
         try {
@@ -3305,9 +3309,12 @@
     try { pet.randomMood(petMoodGroup); } catch (e) { /* ignore */ }
   }
 
-  function petBubble(text, sticky, ms, html) {
+  function petBubble(text, sticky, ms, html, animHint) {
     // 桌面宠物窗口（主窗口最小化后独立显示）：文案与纯净模式同源。
     // 下层 = 功能状态（含耗时），上层 = 情绪文案，两层一起下发。
+    // animHint：仅「结果待发送」轮播用，格式 'state:<动画名>' / 'react:<动画名>'，
+    // 让浮窗按与这里完全相同的方式播（setState vs react）。不传则清空，
+    // 否则主进程会沿用上一条 hint（pet-window.ts 的 lastState.hint 记忆语义）。
     try {
       if (api.setPetState) {
         api.setPetState({
@@ -3315,7 +3322,7 @@
           text: text || '',
           sticky: !!sticky,
           html: !!html,
-          hint: sticky ? '' : undefined,
+          hint: animHint || '',
         });
       }
     } catch (e) { /* ignore */ }

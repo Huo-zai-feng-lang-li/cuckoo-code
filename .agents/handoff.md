@@ -1,10 +1,29 @@
-# 最新接续状态 (2026-11-03 01:25)
+# 最新接续状态 (2026-11-04)
 
 ## 核心进展
 
-**待提交/待发布 `v0.10.207`**（前一版 `v0.10.206` 为纯净模式右上角状态条显隐裁决）。
+**`v0.10.208`：桌面宠物浮窗在「结果待发送」阶段动画卡死（需求 106）**。
 
-本版（0.10.207）包含：
+- **根因**：同一份 `pet.js` 渲染引擎，两套业务调度。纯净模式的 `renderSendTick()` 每 4s 轮换 `SEND_ANIM_POOL` 动画，但只操作本窗口实例，**从不通知独立的桌面浮窗**；浮窗只按主进程推来的 `state` 映射，等待发送期间 `state` 恒为 `thinking` → 动画恒定。
+- **修法**：启用早已存在但**从未被消费**的 `hint` 通道（`setPetState` 的 hint 参数 → `lastState.hint` → `pushState` → preload `onState` → 浮窗 `applyState`，最后一环一直没读它），把动画指令编码成 `state:<名>` / `react:<名>` 下发，浮窗只做翻译。
+- **为什么编码前缀而非裸动画名**：`juggling` 在 `pack.states` 里但 `pack.animations` 里没有（经 tiers 解析成 music）；`react-double` / `building` 反之。裸名无法判断走 `setState` 还是 `react`，浮窗再抄一份清单又变两处真相源。
+- **两个自查发现并修掉的坑**：
+  1. `react:` 分支只 `react` 不立 `base` → `base` 停在 `'idle'`，`pet.js` 的 `idlePool` 在 90s 后会随机插播 idle-look 打断轮播。改为先 `setState(msg.state)` 再 `react`。
+  2. `applySize` 重建宠物实例后 `lastAnimHint` 未重置 → 去重跳过播放，新宠物停在初始 idle（最长 4s 空窗）。已补 `lastAnimHint = null`。
+  3. （arch-guard 指出）`harness-set-busy` 调 `setPetState` 不传 hint → 按「未传则沿用 `lastState.hint`」语义会拿到上一轮残留指令。已显式传 `hint: ''`。
+- **顺带修好**：等待发送期间浮窗情绪文案此前按 `thinking` 组取（“脑子在煮咖啡”），与纯净模式的 `waiting` 组（“模型在喝水”）不一致，现统一为 `waiting`。
+- **影响面**：纯净模式内嵌宠物零影响；手机端 PWA 零影响（`mobile-pet.js` 走独立 WebSocket 链路）；`whale-pet-*.test.js` 测的是 `pet.js`，本次未改。
+- **四项校验全绿**：typecheck / lint（0 errors，67 warnings 基线持平）/ compile / test（131 文件 1320 用例）。
+- **arch-guard 合规**：生成物禁手改（`build-shell.mjs` 的 `OUT` 只指向 `shell.html`）/ 依赖方向 / D12 / IPC 契约向后兼容（`hint` 字段早已贯通，只是从“传空”变“传值”）。
+- **真机验证**：由用户自行执行（CDP 实例已关）。
+- **需求档案**：`docs/requirements/106-desktop-pet-send-anim.md`
+
+### 遗留（非本次引入，已记入需求 106 第 7 节）
+
+- `juggling` 的 tiers 解析两边可能不同：纯净模式 `workers` 保持进入等待前的值（可能 ≥2 → `conducting`），浮窗 `workers` 恒为 0 → `music`。属既有 tiers 语义差异，与“卡死不动”无关。
+- 情绪文案节流起点不同（两边各自 4s 节流），可能短暂不一致，属可接受差异。
+
+`v0.10.207` 包含：
 - **需求 105：桌面宠物浮窗透明区域拦截鼠标点击**：
   - Windows 上透明浮窗（220×316px）透明区域不穿透导致底层桌面图标被挡死。
   - 主进程 `pet-window.ts` 开启默认整窗穿透（`setIgnoreMouseEvents(true, { forward: true })`）；

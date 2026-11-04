@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.10.208] - 2026-11-04
+
+### 修复
+- **桌面宠物浮窗在「结果待发送」阶段动画卡死不动（需求 106）**：纯净模式内嵌宠物在等待发送阶段由 `renderSendTick()` 每 4s 轮换动画（听音乐 / 抱着结果 / 比心 / 搭积木），但该逻辑只操作本窗口的 pet 实例，**从不通知主窗口最小化后的独立桌面浮窗**。浮窗只按主进程推来的 `state` 映射，而等待发送期间 `state` 恒为 `thinking` → 动画恒定，用户只看到气泡秒数在跳。修复不新增 IPC 契约，而是启用早已存在但**从未被消费**的 `hint` 通道：
+  - `harness.html` 的 `petBubble` 新增第 5 参 `animHint`，透传为 `setPetState({... hint: animHint || ''})`（原为 `sticky ? '' : undefined`——sticky 时无条件清空、非 sticky 时让主进程沿用旧值，两头都不可用）；
+  - `renderSendTick` 把动画名计算上移到冒泡之前，用 `(SEND_ONESHOT[名] ? 'react:' : 'state:') + 名` 编码下发，**分派规则复用已有常量**，浮窗不维护动画清单（单一真相源）；
+  - `pet-window.html` 的 `applyState` 解析 `/^(react|state):(.+)$/`，命中且非空闲时由 hint 全权接管动画。
+  - **为什么必须编码前缀而不是裸动画名**：`juggling` 在 `pack.states` 里但 `pack.animations` 里没有（经 tiers 解析成 music）；`react-double` / `building` 反之。裸名无法判断该走 `setState` 还是 `react`。
+  - **为什么命中 hint 要跳过 `setState(msg.state)`**：`pet.js` 的 `setState` 在 `state !== 'idle'` 时会清空 `transient`，会把 `react()` 播的一次性动画在下一帧（每秒刷新）掐断。
+  - **`react:` 分支为什么先 `setState` 再 `react`**：只 react 不立 base 的话 `base` 停在 `'idle'`，`pet.js` 的 `idlePool` 在 90s 后会随机插播 idle-look / idle-spout 打断轮播。先立 base 再播一次性动画，同一帧两次 pickAnim，用户看不到中间帧。
+  - 顺带修好：等待发送期间浮窗的情绪文案此前按 `thinking` 组取（“脑子在煮咖啡”），与纯净模式的 `waiting` 组（“模型在喝水”）不一致，现统一为 `waiting`。
+- **浮窗重建后动画去重未重置**：`applySize` 重建宠物实例后补 `lastAnimHint = null`，否则 `lastState.hint` 与之一致会跳过播放，新宠物停在初始 idle（最长 4s 空窗）。
+- **忙闲兜底信号携带残留动画指令**：`harness-set-busy` 的 `setPetState` 此前不传 hint，按主进程「未传则沿用 `lastState.hint`」语义会拿到上一轮的 `state:carrying` 之类残留，与 `petBubble` 的推送产生毫秒级错位。现显式传 `hint: ''` 清空。
+
+### 验证
+- `npm run typecheck` / `npm run lint`（0 errors，67 warnings 基线持平）/ `npm run compile` / `npm test`（131 文件 1320 用例）全绿。
+- 子代理 `arch-guard` 架构合规审查：生成物禁手改（`build-shell.mjs` 的 `OUT` 只指向 `shell.html`）/ 依赖方向 / D12 工具契约 / IPC 契约向后兼容（`hint` 字段早已在链路上贯通，只是从“传空”变成“传值”）—— 全部合规。
+- 影响面：纯净模式内嵌宠物零影响；手机端 PWA 零影响（`mobile-pet.js` 走独立 WebSocket 链路）；现有宠物测试（`whale-pet-*.test.js`）测的是 `pet.js` 渲染引擎，本次未改动。
+- 真机验证由用户自行执行（CDP 实例已关闭）。
+
 ## [0.10.207] - 2026-11-03
 
 ### 修复

@@ -55,18 +55,51 @@
   var pet = null;
   var curSize = 96;   // 当前显示边长（px）
   var lastState = null;   // 最近一次状态：重建宠物（换尺寸）后补发，避免气泡闪空
+  var lastAnimHint = null;   // 已播的动画指令，防每秒刷新重复触发同一动画
 
   // 状态映射：桌面宠物只做视觉表达，具体文案由主进程推来（与纯净模式同源）
   function applyState(msg) {
     if (!msg) return;
     lastState = msg;
     if (!pet) return;
-    if (msg.state === 'working') pet.setState('working', 1);
-    else if (msg.state === 'thinking') pet.setState('thinking');
-    else pet.setState('idle');
-    // 上层：情绪文案（本地按状态随机挑，带节流）；下层：功能状态（来自 harness）
-    var group = msg.state === 'working' ? 'working' : (msg.state === 'thinking' ? 'thinking' : 'idle');
-    try { pet.randomMood(group); } catch (e) { /* ignore */ }
+    // 动画指令通道（仅「结果待发送」轮播使用）：
+    //   'state:<名>' → pet.setState（循环动画，如 juggling / carrying）
+    //   'react:<名>' → pet.react（一次性动画，如 react-double / building）
+    // 分派方式由 harness 决定，这里不维护动画清单，避免两处真相源。
+    var hint = typeof msg.hint === 'string' ? msg.hint : '';
+    var m = /^(react|state):(.+)$/.exec(hint);
+    // 命中且非空闲：由 hint 全权接管动画，必须跳过下面的 setState ——
+    // pet.js 的 setState 在 state!=='idle' 时会清空 transient，
+    // 会把 react 播的一次性动画在下一帧（每秒刷新）掐断。
+    if (m && msg.state !== 'idle') {
+      if (hint !== lastAnimHint) {
+        lastAnimHint = hint;
+        try {
+          if (m[1] === 'react') {
+            // 先立 base（thinking / working），再播一次性动画。
+            // 不能只 react 不立 base：base 会一直停在 'idle'，pet.js 的 idlePool
+            // 在 90s 后（base==='idle' && t>=idleAt）会随机插播 idle-look / idle-spout，
+            // 打断 SEND_ANIM_POOL 轮播，与纯净模式不一致。
+            // 顺序必须 setState → react：setState 会清 transient，react 再设新的，
+            // 同一帧内两次 pickAnim，用户看不到中间帧。
+            pet.setState(msg.state);
+            pet.react(m[2]);
+          } else {
+            pet.setState(m[2]);
+          }
+        } catch (e) { /* ignore */ }
+      }
+      // 等待发送是独立阶段：情绪用 waiting 组（与纯净模式的 petMood('waiting') 一致）
+      try { pet.randomMood('waiting'); } catch (e) { /* ignore */ }
+    } else {
+      lastAnimHint = null;
+      if (msg.state === 'working') pet.setState('working', 1);
+      else if (msg.state === 'thinking') pet.setState('thinking');
+      else pet.setState('idle');
+      // 上层：情绪文案（本地按状态随机挑，带节流）；下层：功能状态（来自 harness）
+      var group = msg.state === 'working' ? 'working' : (msg.state === 'thinking' ? 'thinking' : 'idle');
+      try { pet.randomMood(group); } catch (e) { /* ignore */ }
+    }
     // html 仅用于我们自产的 <b> 秒数强调（harness 侧保证内容可控）
     if (msg.text) pet.bubble(msg.text, !!msg.sticky, msg.sticky ? 0 : 2600, msg.html ? { html: true } : null);
     else pet.bubble('', true);
@@ -126,6 +159,10 @@
       try { pet.setSize(s); return; } catch (e) { /* 回退重建 */ }
     }
     boot(s);
+    // 重建后是新宠物实例，动画指令去重必须同步重置：
+    // 否则 lastState.hint 与 lastAnimHint 相同 → applyState 去重跳过播放，
+    // 新宠物会一直停在初始 idle，直到下一次动画切换（最长 4s 的空窗）。
+    lastAnimHint = null;
     if (lastState) applyState(lastState);
   }
 

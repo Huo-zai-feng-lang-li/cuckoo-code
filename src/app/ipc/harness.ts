@@ -706,6 +706,9 @@ function registerHarnessIpc(): void {
     try { ctx.win.webContents.send('shell-harness-busy', { busy: busy }); } catch (_) { /* ignore */ }
     // 桌面宠物：忙闲变化 → working / idle（气泡文案由 harness 的 pet-state 事件细化）
     // 多窗口：只有拿到驱动权的窗口才能改宠物的忙闲，避免后台窗口把前台刷成 idle。
+    // 注意：忙闲是粗粒度兜底信号，不携带动画指令 —— 必须显式传 hint: '' 清空。
+    // 否则 setPetState 的「未传则沿用 lastState.hint」语义会让浮窗拿到上一轮的
+    // 'state:carrying' 之类残留指令，在与 petBubble 的推送之间产生毫秒级错位。
     const winId = ctx.win.id;
     if (petDriverWinId !== null && !windowState.getWindowContext(petDriverWinId)) petDriverWinId = null;
     if (busy) {
@@ -715,7 +718,7 @@ function registerHarnessIpc(): void {
     } else {
       petDriverWinId = null;
     }
-    try { setPetState(busy ? 'working' : 'idle', '', true); } catch (_) { /* ignore */ }
+    try { setPetState(busy ? 'working' : 'idle', '', true, false, ''); } catch (_) { /* ignore */ }
   });
 
   // 查询当前状态（首页且未选项目目录 → 需初始化）
