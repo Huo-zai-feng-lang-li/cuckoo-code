@@ -85,7 +85,18 @@ jobs:
           cd android
           chmod +x gradlew
           set -o pipefail
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle-build.log
+          MAX_RETRIES=3
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "=== Gradle build attempt $i/$MAX_RETRIES ==="
+            if ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle-build.log; then
+              echo "=== Gradle build succeeded on attempt $i ==="
+              exit 0
+            fi
+            echo "=== Gradle build failed on attempt $i, retrying in 10s... ==="
+            sleep 10
+          done
+          echo "=== Gradle build failed after $MAX_RETRIES attempts ==="
+          exit 1
 
       - name: Show Gradle Log
         if: always()
