@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.10.209] - 2026-11-08
+
+### 修复
+- **DeepSeek 官方 SSE 协议升级导致频繁误判为请求失败与自动重试（需求 107）**：DeepSeek 网页端正常对话未被限流，但 Cuckoo Code 频繁弹出 Toast 报「请求失败，17 秒后自动重试…」。经逆向官方生产环境 JS 确认，官方通信协议发生实质性变更：
+  - **完成事件升级**：弃用在 JSON 数据体内带 `response/status = FINISHED` 的旧暗号，改用标准 SSE 事件 `event: finish` / `event: close`。
+  - **多行事件解析**：`src/providers/hooks/shared/sse.ts` 新增 `parseSseBlock`，完整按行提取 `event:` 与 `data:` 并安全解析 JSON，空块/注释块安全跳过；保持 `extractData` / `parseBlock` 既有接口 100% 向后兼容。
+  - **Stateful Delta 继承与 BATCH 路径级联**：新增 `src/providers/hooks/shared/deepseek-protocol.ts` 纯函数模块，`flattenDelta` 完整实现官方 `class xY` 的状态继承（缺省 `p`/`o` 延续上一帧）与 `BATCH` 深度级联拼接父路径（解决因未拼父路径导致正文长度算作 0 的问题）。
+  - **终态判定收敛**：`decideDeepSeekStreamExit` 纯函数统一仲裁（主动中止 > 服务端截断 > 流内 Toast 限流 > 完成事件终态 > 自然结束正文兜底），圈复杂度严格受控。
+  - **限流提示与片段重置补全**：`deepseek.ts` 拦截器支持监听 `event: toast` / `event: hint` 捕获流内限流（兼容 JSON 与纯文本）；`isFragmentsPatch` 全面支持 `o: "SET"` 与 `o: "APPEND"`。
+
+### 验证
+- `npm run typecheck` / `npm run lint`（0 errors，67 warnings 基线持平）/ `npm run compile` / `npm test`（132 文件 1336 用例）全绿。
+- 本地开发环境真机实测验证通过，正常问答生成完毕后立即平稳收尾，不再误报 17 秒倒计时重试。
+- 需求档案 `docs/requirements/107-deepseek-sse-protocol-adapt.md` 已同步归档。
+
 ## [0.10.208] - 2026-11-04
 
 ### 修复

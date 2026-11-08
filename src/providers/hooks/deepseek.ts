@@ -5,10 +5,11 @@
  * 运行时仍是单个字符串，故可自由 import 共享模块（打包时内联）。
  * 共享 SSE 解码见 ./shared/sse.js。
  */
-import { createFrameDecoder, parseBlock } from './shared/sse.js';
+import { createFrameDecoder, parseBlock, parseSseBlock } from './shared/sse.js';
 import { matchProviderEndpoint } from './shared/url-match.js';
 import { createIdleWatchdog } from './shared/idle-watchdog.js';
 import { maskAsNative } from './shared/native-mask.js';
+import { flattenDelta, decideDeepSeekStreamExit } from './shared/deepseek-protocol.js';
 
 // 幂等标记放模块作用域（不是 install 内部！放函数内每次调用都会重置，等于没有）。
 // 也不用 window 属性：那等于给页面留了可枚举的 "本页被 Cuckoo 改过" 标签
@@ -57,34 +58,17 @@ function install(): void {
     } catch (e) { return null; }
   }
 
-  // 终态判定：'finished' 正常完成 / 'stopped' 用户主动停止 / 'error' 失败或服务端截断
-  //
-  // 判定优先级（自上而下）：
-  //  1) 用户主动停止（拦截到 stop_stream 请求）→ 'stopped'
-  //  2) 服务端截断（SSE INCOMPLETE 且非用户停止）→ 'error'（触发重试）
-  //  3) 收到 FINISHED 且正文非空 → 'finished'
-  //  4) 收到 FINISHED 但正文为空、只有思考 → 'error'（思考被中断、正文未生成，触发重试）
-  //  5) 未收到 FINISHED，但流已正常结束（stream-end）且有正文 → 'finished'
-  //     ⚠️ 实测 DeepSeek 有时不发 FINISHED 帧，正文却已完整生成。
-  //     此前这种情况会被判为 'error'，导致"摘要成功却报失败"（压缩流程等不到完成而超时）。
-  //     故：无截断标记、无用户停止、且有正文时，视为正常完成。
-  //  6) 以上都不满足（无正文、无 FINISHED）→ 'error'
+  // 终态判定：委托给 deepseek-protocol 纯函数
   function resolveStatus(extractor) {
-    // 1) 用户主动停止
-    if (userStopped) return 'stopped';
-    // 2) 服务端截断（无 stop_stream 的 INCOMPLETE）
-    if (extractor.incomplete) return 'error';
-    // 3/4) 收到 FINISHED 帧
-    if (extractor.finished) {
-      // 正文为空（哪怕有思考）→ 视为空回复，触发普通失败重试
-      if (extractor.textLen === 0) return 'error';
-      return 'finished';
-    }
-    // 5) 未收到 FINISHED，但有正文（流已正常结束）→ 视为完成
-    if (extractor.textLen > 0) return 'finished';
-    // 6) 兜底
-    return 'error';
+    return decideDeepSeekStreamExit({
+      userStopped: userStopped,
+      incomplete: extractor.incomplete,
+      streamRateLimit: extractor.streamRateLimit,
+      finished: extractor.finished,
+      textLen: extractor.textLen
+    });
   }
+
 
   // 流式增量事件（供纯净模式实时渲染；节流 ~40ms）
   var lastStreamAt = 0;
@@ -138,12 +122,16 @@ function install(): void {
     var finished = false;
     // 用户主动停止：服务端下发 response/status = INCOMPLETE
     var incomplete = false;
+    // 流内明确命中限流（event: toast/hint）
+    var streamRateLimit = false;
     // 服务端权威 token 统计（accumulated_token_usage 含 prompt/context + 输出）
     var tokenUsage = null;
     // 本条回复的消息 id：requestMessageId（用户提问）+ responseMessageId（AI 回复）
     var msgIds = null;
-    // 诊断：记录收到的所有 status 帧（response/status、quasi_status）
+    // 诊断：记录收到的所有 status 帧与事件（response/status、quasi_status、event:finish 等）
     var statusFrames = [];
+    // 状态化 Delta 上下文（对齐官方 class xY 的 op/path 继承机制）
+    var deltaState = { op: 'SET', path: '' };
 
     // 从对象里捕获消息 id 字段
     function captureMsgIds(src) {
@@ -189,9 +177,8 @@ function install(): void {
       var s = lastSeg(p);
       return s === 'reasoning_content' || s === 'thinking_content';
     }
-    function isFragmentsAppend(p) {
-      return p && typeof p.p === 'string' && p.p.slice(-10) === '/fragments' &&
-        p.o === 'APPEND' && Array.isArray(p.v);
+    function isFragmentsPatch(p) {
+      return p && typeof p.p === 'string' && p.p.slice(-10) === '/fragments' && Array.isArray(p.v);
     }
     function snapshotFragments(p) {
       if (!p || p.p !== undefined || !p.v || typeof p.v !== 'object') return null;
@@ -221,40 +208,62 @@ function install(): void {
       }
     }
 
-    function consume(parsed) {
-      if (!parsed || typeof parsed !== 'object') return;
-      if (parsed.o === 'BATCH' && Array.isArray(parsed.v)) {
-        for (var i = 0; i < parsed.v.length; i++) consume(parsed.v[i]);
-        return;
-      }
-      // ---- 消息 id 捕获 ----
-      // 顶层帧：{"request_message_id":668,"response_message_id":669,...}
-      captureMsgIds(parsed);
-      // ---- token 字段捕获 ----
-      // 1) 消息快照：{"v":{"response":{"accumulated_token_usage":...}}}
-      if (parsed.v && typeof parsed.v === 'object' && parsed.v.response && typeof parsed.v.response === 'object') {
-        captureTokenUsage(parsed.v.response);
-        captureMsgIds(parsed.v.response);
-      }
-      // 2) 独立帧：{"p":"accumulated_token_usage","v":123}
-      if (typeof parsed.p === 'string' && lastSeg(parsed.p) === 'accumulated_token_usage' && typeof parsed.v === 'number') {
-        captureTokenUsage({ accumulated_token_usage: parsed.v });
-      }
-      // 3) 顶层 updated_at：{"updated_at":1789351765.04}
-      if (parsed.updated_at !== undefined) {
-        captureTokenUsage(parsed);
-      }
-      if (isFragmentsAppend(parsed)) {
-        var types = [];
-        for (var j = 0; j < parsed.v.length; j++) {
-          types.push(String((parsed.v[j] && parsed.v[j].type) || 'RESPONSE'));
+    function consumeSingleDelta(atom) {
+      if (!atom || typeof atom !== 'object') return;
+      var p = atom.p;
+      var v = atom.v;
+      if (p === 'response/message_id' || p === 'response/id') {
+        if (typeof v === 'number') {
+          if (!msgIds) msgIds = {};
+          msgIds.responseMessageId = v;
         }
-        for (var ti = 0; ti < types.length; ti++) fragmentTypes.push(types[ti]);
+      }
+      if (typeof p === 'string' && lastSeg(p) === 'accumulated_token_usage' && typeof v === 'number') {
+        captureTokenUsage({ accumulated_token_usage: v });
+      }
+      if (isFragmentsPatch(atom)) {
+        var types = [];
+        for (var j = 0; j < v.length; j++) {
+          types.push(String((v[j] && v[j].type) || 'RESPONSE'));
+        }
+        if (atom.o === 'SET') {
+          fragmentTypes = types;
+        } else {
+          for (var ti = 0; ti < types.length; ti++) fragmentTypes.push(types[ti]);
+        }
         currentIndex = fragmentTypes.length - 1;
         observed = true;
-        consumeFragmentContent(parsed.v, types);
+        consumeFragmentContent(v, types);
         return;
       }
+      if (isThinkingPatch(p) && typeof v === 'string') {
+        thinkText += v;
+        return;
+      }
+      if (typeof p === 'string' && isResponseTextPatch(p) && typeof v === 'string') {
+        var m = /^response\/fragments\/(-?\d+)\//.exec(p);
+        var idx = m ? Number(m[1]) : -1;
+        if (isThink(typeAt(idx))) thinkText += v;
+        else text += v;
+        return;
+      }
+      if ((p === undefined || p === '') && typeof v === 'string') {
+        if (isThink(typeAt(currentIndex))) thinkText += v;
+        else text += v;
+        return;
+      }
+      if (p === 'response/status' || p === 'quasi_status') {
+        statusFrames.push(p + '=' + v);
+        if (statusFrames.length > 20) statusFrames.shift();
+        if (v === 'FINISHED') finished = true;
+        else if (v === 'INCOMPLETE') incomplete = true;
+      }
+    }
+
+    function consumeJson(parsed) {
+      if (!parsed || typeof parsed !== 'object') return;
+      captureMsgIds(parsed);
+      if (parsed.updated_at !== undefined) captureTokenUsage(parsed);
       var snap = snapshotFragments(parsed);
       if (snap) {
         var first = !observed;
@@ -268,25 +277,36 @@ function install(): void {
         if (first) consumeFragmentContent(snap, stypes);
         return;
       }
-      if (isThinkingPatch(parsed.p) && typeof parsed.v === 'string') return;
-      if (typeof parsed.p === 'string' && isResponseTextPatch(parsed.p) && typeof parsed.v === 'string') {
-        var m = /^response\/fragments\/(-?\d+)\//.exec(parsed.p);
-        var idx = m ? Number(m[1]) : -1;
-        if (isThink(typeAt(idx))) thinkText += parsed.v;
-        else text += parsed.v;
+      if (parsed.v && typeof parsed.v === 'object' && parsed.v.response && typeof parsed.v.response === 'object') {
+        captureTokenUsage(parsed.v.response);
+        captureMsgIds(parsed.v.response);
+      }
+      var deltas = flattenDelta(parsed, '', deltaState);
+      for (var di = 0; di < deltas.length; di++) {
+        consumeSingleDelta(deltas[di]);
+      }
+    }
+
+    function consume(input) {
+      if (!input) return;
+      if (typeof input === 'object' && ('event' in input || 'data' in input)) {
+        var ev = input.event;
+        if (ev === 'finish' || ev === 'close') {
+          finished = true;
+          statusFrames.push('event:' + ev);
+        } else if (ev === 'ready') {
+          if (input.json) {
+            captureMsgIds(input.json);
+            captureTokenUsage(input.json);
+          }
+        } else if (ev === 'toast' || ev === 'hint') {
+          var toastPayload = input.json ? JSON.stringify(input.json) : String(input.data || '');
+          if (isRateLimitText(toastPayload)) streamRateLimit = true;
+        }
+        if (input.json) consumeJson(input.json);
         return;
       }
-      if (parsed.p === undefined && typeof parsed.v === 'string') {
-        if (isThink(typeAt(currentIndex))) thinkText += parsed.v;
-        else text += parsed.v;
-        return;
-      }
-      if (parsed.p === 'response/status' || parsed.p === 'quasi_status') {
-        statusFrames.push(parsed.p + '=' + parsed.v);
-        if (statusFrames.length > 20) statusFrames.shift();
-        if (parsed.v === 'FINISHED') finished = true;
-        else if (parsed.v === 'INCOMPLETE') incomplete = true;
-      }
+      consumeJson(input);
     }
 
     return {
@@ -295,6 +315,7 @@ function install(): void {
       get think() { return thinkText; },
       get finished() { return finished; },
       get incomplete() { return incomplete; },
+      get streamRateLimit() { return streamRateLimit; },
       get tokenUsage() { return tokenUsage; },
       get msgIds() { return msgIds; },
       get thinkLen() { return thinkText.length; },
@@ -303,6 +324,7 @@ function install(): void {
         return {
           finished: finished,
           incomplete: incomplete,
+          streamRateLimit: streamRateLimit,
           userStopped: userStopped,
           thinkLen: thinkText.length,
           textLen: text.length,
@@ -355,8 +377,8 @@ function install(): void {
     function feed(chunk) {
       var frames = frameDecoder.push(chunk);
       for (var i = 0; i < frames.length; i++) {
-        var parsed = parseBlock(frames[i]);
-        if (parsed) extractor.consume(parsed);
+        var sse = parseSseBlock(frames[i]);
+        if (sse) extractor.consume(sse);
       }
       dispatchStream(extractor.think, extractor.text, extractor.finished, extractor.tokenUsage ? extractor.tokenUsage.accumulatedTokens : null, sessionId);
       if (extractor.finished && !dispatched) {
@@ -373,8 +395,8 @@ function install(): void {
           if (tail) feed(tail);
           var rest = frameDecoder.finish();
           for (var i = 0; i < rest.length; i++) {
-            var parsed = parseBlock(rest[i]);
-            if (parsed) extractor.consume(parsed);
+            var sse = parseSseBlock(rest[i]);
+            if (sse) extractor.consume(sse);
           }
           if (!dispatched) {
             dispatched = true;
@@ -570,8 +592,8 @@ function install(): void {
       lastLen = raw.length;
       var frames = frameDecoder.push(chunk);
       for (var i = 0; i < frames.length; i++) {
-        var parsed = parseBlock(frames[i]);
-        if (parsed) extractor.consume(parsed);
+        var sse = parseSseBlock(frames[i]);
+        if (sse) extractor.consume(sse);
       }
       dispatchStream(extractor.think, extractor.text, extractor.finished, extractor.tokenUsage ? extractor.tokenUsage.accumulatedTokens : null, reqSessionId);
       if (extractor.finished && !dispatched) {
@@ -588,18 +610,18 @@ function install(): void {
         wd.stop();
         var rest = frameDecoder.finish();
         for (var i = 0; i < rest.length; i++) {
-          var parsed = parseBlock(rest[i]);
-          if (parsed) extractor.consume(parsed);
+          var sse = parseSseBlock(rest[i]);
+          if (sse) extractor.consume(sse);
         }
         dispatched = true;
         var st = resolveStatus(extractor);
         if (st === 'error') {
-          // 限流检测：HTTP 429 或响应体命中限流文案（DeepSeek 可能用普通状态码 + 中文提示）
-          var xhrRL = xhr.status === 429;
+          // 限流检测：HTTP 429 或响应体命中限流文案（DeepSeek 可能用普通状态码 + 中文提示）或流内 toast/hint
+          var xhrRL = xhr.status === 429 || extractor.streamRateLimit;
           if (!xhrRL) {
             try { xhrRL = isRateLimitText(String(xhr.responseText || '').slice(0, 2000)); } catch (e) { /* ignore */ }
           }
-          if (xhrRL) console.log('[Cuckoo Code][hook] XHR 命中限流（status=' + xhr.status + '）');
+          if (xhrRL) console.log('[Cuckoo Code][hook] XHR 命中限流（status=' + xhr.status + ', streamRL=' + extractor.streamRateLimit + '）');
           dispatch(extractor.text, 'error', extractor.tokenUsage, extractor.msgIds, { reason: xhrRL ? 'rate_limit' : 'xhr', httpStatus: xhr.status, sessionId: reqSessionId }, Object.assign({ path: 'xhr-error', httpStatus: xhr.status }, extractor.snapshot()));
         } else {
           dispatch(extractor.text, st, extractor.tokenUsage, extractor.msgIds, null, Object.assign({ path: 'xhr-end' }, extractor.snapshot()));

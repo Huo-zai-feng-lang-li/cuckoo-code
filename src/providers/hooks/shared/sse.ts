@@ -52,4 +52,34 @@ function parseBlock(block: string) {
   try { return JSON.parse(data); } catch (e) { return null; }
 }
 
-export { createFrameDecoder, extractData, parseBlock };
+export interface ParsedSseFrame {
+  event?: string;
+  data?: string | null;
+  json?: any;
+}
+
+/** 提取 SSE 块的完整信息（event、data、json），无有效内容返回 null */
+function parseSseBlock(block: string): ParsedSseFrame | null {
+  if (!block || !block.trim()) return null;
+  var event: string | undefined = undefined;
+  var data: string | null = null;
+  var lines = block.split(/\r\n|\r|\n/);
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (line.indexOf('event:') === 0) {
+      event = line.slice(6).trim();
+    } else if (line.indexOf('data:') === 0) {
+      var d = line.slice(5).trim();
+      data = data == null ? d : data + '\n' + d;
+    }
+  }
+  if (event === undefined && data === null) return null;
+  var json: any = null;
+  if (data !== null && data !== '') {
+    try { json = JSON.parse(data); } catch (e) { json = null; }
+  }
+  return { event: event, data: data, json: json };
+}
+
+export { createFrameDecoder, extractData, parseBlock, parseSseBlock };
+

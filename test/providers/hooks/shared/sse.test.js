@@ -1,7 +1,7 @@
 'use strict';
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { createFrameDecoder, extractData, parseBlock } from '../../../../src/providers/hooks/shared/sse.js';
+import { createFrameDecoder, extractData, parseBlock, parseSseBlock } from '../../../../src/providers/hooks/shared/sse.js';
 
 // ===== createFrameDecoder =====
 
@@ -117,3 +117,49 @@ test('parseBlock 多行 data 拼接后解析', () => {
 test('parseBlock [DONE] 非法 JSON 返回 null', () => {
   assert.strictEqual(parseBlock('data: [DONE]'), null);
 });
+
+// ===== parseSseBlock =====
+
+test('parseSseBlock 解析包含 event 与 data 的块', () => {
+  const res = parseSseBlock('event: finish\ndata: {"status":"ok"}');
+  assert.deepStrictEqual(res, {
+    event: 'finish',
+    data: '{"status":"ok"}',
+    json: { status: 'ok' }
+  });
+});
+
+test('parseSseBlock 仅有 event 行无 data 行', () => {
+  const res = parseSseBlock('event: close');
+  assert.deepStrictEqual(res, {
+    event: 'close',
+    data: null,
+    json: null
+  });
+});
+
+test('parseSseBlock 仅有 data 行无 event 行', () => {
+  const res = parseSseBlock('data: {"p":"response/status","v":"FINISHED"}');
+  assert.deepStrictEqual(res, {
+    event: undefined,
+    data: '{"p":"response/status","v":"FINISHED"}',
+    json: { p: 'response/status', v: 'FINISHED' }
+  });
+});
+
+test('parseSseBlock 空白或无效块返回 null', () => {
+  assert.strictEqual(parseSseBlock(''), null);
+  assert.strictEqual(parseSseBlock('   \n  '), null);
+  assert.strictEqual(parseSseBlock(null), null);
+  assert.strictEqual(parseSseBlock(': comment only'), null);
+});
+
+test('parseSseBlock 多行 data 拼接并解析 JSON', () => {
+  const res = parseSseBlock('event: delta\ndata: {"v":\ndata: "test"}');
+  assert.deepStrictEqual(res, {
+    event: 'delta',
+    data: '{"v":\n"test"}',
+    json: { v: 'test' }
+  });
+});
+

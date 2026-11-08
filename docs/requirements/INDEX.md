@@ -100,5 +100,6 @@
 | 104 | fix | [手机端「延迟发送」永久卡死（终态事件被窗口过滤丢弃）+ 手机宠物气泡间距过高](./104-remote-terminal-reset.md) | done | (直接主分支，用户要求先真机验证，不提交) | 2026-11-02 |
 | 105 | fix | [桌面宠物窗口透明区域拦截鼠标点击（未开 setIgnoreMouseEvents）](./105-desktop-pet-mouse-passthrough.md) | done | fix/105-desktop-pet-mouse-passthrough | 2026-11-03 |
 | 106 | fix | [桌面宠物浮窗在「结果待发送」阶段动画卡死不动](./106-desktop-pet-send-anim.md) | done | fix/106-desktop-pet-send-anim | 2026-11-04 |
+| 107 | fix | [DeepSeek 官方 SSE 协议升级导致频繁误判为请求失败与自动重试](./107-deepseek-sse-protocol-adapt.md) | completed | fix/107-deepseek-sse-protocol-adapt | 2026-11-08 |
 
-共 95 个需求。
+共 96 个需求。
