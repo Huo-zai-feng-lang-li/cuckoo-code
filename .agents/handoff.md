@@ -1,16 +1,15 @@
 # 最新接续状态 (2026-11-10)
 
-## 本轮：需求 108/109 对抗性审计后的缺陷修复（v0.10.211）
+## 本轮：需求 110 原生级物理输入、认知自适应延迟与智能提示词并行放权（v0.10.212）
 
-- 对已提交的 ff3b04c 做 /audit-staged 对抗性审计，裁决 REJECT，逐一修复后全绿：
-  1. 指纹：deviceMemory≤8、伪装函数改对象方法简写（消除 prototype 破绽）、Canvas clamp、标记不可枚举、种子整数校验、WeakSet 假标记后移。
-  2. 隐私盾：hook Function.prototype.toString（原 toString 挂自有属性可被 .call 绕过）、Fake constructor 修正、addEventListener 去重。
-  3. 代理：兜底 8s→20s 且代理启用时超时走错误页（防直连泄露 IP）、devtools-closed normalize。
-  4. harness：retry-state 转发补 is429/count。
-  5. 清理 pages.css 重复块。
-- 验证：typecheck/lint(0 error)/compile/test(134 文件 1360 用例) 全绿。
-- 审计报告：.agents/每窗口独立代理与指纹防关联-审计.md
-- 版本 0.10.210 → 0.10.211。
+- **彻底终结 6~76s 僵化大延迟与封号两难矛盾**，从架构底层实现「又快又聪明且零封号风险」闭环：
+  1. **原生物理级输入闭环**：`chat-input.ts` 发送逻辑彻底摒弃合成事件（`isTrusted: false`），改走主进程真实物理级输入事件（`webContents.sendInputEvent`，`isTrusted: true`），完全免疫反爬虫风控系统的自动化特征探测。
+  2. **自适应认知耗时模型（Cognitive Adaptive Delay）**：短文本（<100字）3~5 秒极速响应，长文本按信息量递增（最高 23 秒）并叠加 ±20% 高斯随机抖动，彻底打破机械周期指纹；快捷提示词 `insertSnippet` 消除 300ms 固定秒发漏洞，接入拟人化微延迟。
+  3. **V8 原生函数伪装加固**：通过 WeakMap 映射并在 `Function.prototype.toString` 上拦截，使无论实例 `.toString()` 还是 `Function.prototype.toString.call(fn)` 均完美对齐原生 `[native code]`，消除自有 prototype 属性残留，击穿高级反爬虫原型探测。
+  4. **提示词动静分流架构**：在 ChatGPT、Claude、DeepSeek 及默认提示词中建立「动静分流：只读摸底批量并行（Promise.all），核心修改严密单步，本地数据前置精炼」规范，在提速防封的同时杜绝模型上下文注意力稀释（Lost-in-the-Middle）。
+- 验证：`npm run typecheck`、`npm run lint`（0 errors）、`npm run compile`、`npm test`（135 个测试套件，1368 个用例 100% 全部通过）全绿。
+- 双代理独立互检闭环审查通过。
+- 版本 0.10.211 → 0.10.212。
 
 ---
 

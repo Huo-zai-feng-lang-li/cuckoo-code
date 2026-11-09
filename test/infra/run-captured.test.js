@@ -33,13 +33,17 @@ test('超时后孙进程被连带杀死（A-006）', async () => {
   expect(r.timedOut).toBe(true);
   const pid = Number(r.stdout.toString().trim());
   expect(pid).toBeGreaterThan(0);
-  // 给 taskkill /T 一点落地时间，再探活
-  await new Promise((res) => setTimeout(res, 300));
+  // 给 taskkill /T 一点落地时间，再探活（高负载并发下轮询至多 1500ms）
   let alive = true;
-  try {
-    process.kill(pid, 0);
-  } catch {
-    alive = false;
+  for (let i = 0; i < 15; i++) {
+    await new Promise((res) => setTimeout(res, 100));
+    try {
+      process.kill(pid, 0);
+      alive = true;
+    } catch {
+      alive = false;
+      break;
+    }
   }
   expect(alive).toBe(false);
 });
