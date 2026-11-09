@@ -153,7 +153,7 @@ function sleep(ms: number): Promise<void> {
  * 只作用于工具结果回传路径，不改 chat-input 任何函数签名 → Harness 零影响。
  * @returns 是否最终发送成功
  */
-async function sendToolResultWithRetry(results: any, onSent?: () => void): Promise<boolean> {
+async function sendToolResultWithRetry(results: any, onSent?: () => void, contextLen?: number): Promise<boolean> {
   const MAX_ATTEMPTS = 3;     // 常规发送最多 3 次
   const RETRY_DELAY_MS = 600; // 重试间隔
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -162,7 +162,7 @@ async function sendToolResultWithRetry(results: any, onSent?: () => void): Promi
       console.log('[Cuckoo Code][拦截] 重试期间已请求中止，放弃工具结果回传');
       return false;
     }
-    const sent = await sendCombinedJsResultsToChat(results, onSent).catch(() => false);
+    const sent = await sendCombinedJsResultsToChat(results, onSent, contextLen).catch(() => false);
     if (sent) return true;
     console.warn('[Cuckoo Code][拦截] 工具结果回传失败（第 ' + attempt + '/' + MAX_ATTEMPTS + ' 次）');
     if (attempt < MAX_ATTEMPTS) await sleep(RETRY_DELAY_MS);
@@ -276,7 +276,7 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
     }, true, '正在回传结果');
     if (abortRequested) { abortRequested = false; hideToolMask(); console.log('[Cuckoo Code][拦截] 已请求中止，不回传工具结果'); return; }
     // afterSent 在"结果已发出"时触发隐藏；发送失败（找不到输入框等）则立即隐藏兜底
-    const sent = await sendToolResultWithRetry(results, hideToolMask);
+    const sent = await sendToolResultWithRetry(results, hideToolMask, raw.length);
     if (cancelled) return; // 用户已取消，不再处理
     if (!sent) {
       // 重试后仍失败：隐藏遮罩 + 提示用户（避免"模型莫名停下"无从察觉）

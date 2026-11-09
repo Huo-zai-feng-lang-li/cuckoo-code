@@ -51,6 +51,9 @@ let electronAPI: any = {
   sendEnterToChat: () => {
     return ipcRenderer.invoke('chat-send-enter');
   },
+  insertTextToChat: (text: string) => {
+    return ipcRenderer.invoke('chat-insert-text', { text });
+  },
   simulateMouse: (action: any, x: any, y: any) => {
     return ipcRenderer.invoke('simulate-mouse', { action, x, y });
   },

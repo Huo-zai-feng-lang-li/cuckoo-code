@@ -47,7 +47,7 @@ export interface AgentSettings {
  * 防封优化后的默认值（相比旧默认收紧了节奏）：
  *  - retryCount: 10 → 3          失败连发从 10 次降到 3 次
  *  - retryDelay: 4~10s → 15~30s  重发间隔更像人
- *  - sendDelay: 1~10s → 6~16s    工具循环节奏降低（旧真值是 1~10s，见 LEGACY_DEFAULTS 注）
+ *  - sendDelay: 1~10s → 6~36s    工具循环节奏降低（旧真值是 1~10s，见 LEGACY_DEFAULTS 注）
  *  - 其余（429/看门狗）保持原值，已合理
  */
 export const AGENT_SETTINGS_DEFAULTS: AgentSettings = {
@@ -62,7 +62,7 @@ export const AGENT_SETTINGS_DEFAULTS: AgentSettings = {
   watchdogPrompt: '请继续',
   watchdogCount: 1,
   sendDelayMin: 6,
-  sendDelayMax: 16,
+  sendDelayMax: 36,
   goalMaxIterations: 50,
   ssrfGuard: false,
   maxConcurrentAgents: 3,

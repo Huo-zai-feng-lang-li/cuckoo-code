@@ -35,9 +35,51 @@ function randomDelay(msg?: string): number {
   // 随机抖动 Jitter：在 ±20% 范围内波动
   const jitter = (Math.random() * 0.4 - 0.2) * cognitiveBase;
   const target = Math.round(cognitiveBase + jitter);
-
-  return Math.max(min, Math.min(max, target));
+  const clamped = Math.max(min, Math.min(max, target));
+  // 钳制后若恰好落在边界，认知抖动会被抹平（短文本永远精确等于 min）——固定节拍即机器特征。
+  // 在「对应边界附近」补一段均匀抖动，既保持每次不同，又不破坏「内容越长越慢」的语义：
+  //   - 命中 min：在 [min, min+25%区间] 抖动（短文本仍快）
+  //   - 命中 max：在 [max-25%区间, max] 抖动（长文本仍慢，绝不反转到最快）
+  const span = (max - min) * 0.25;
+  if (clamped === min) return Math.round(min + Math.random() * span);
+  if (clamped === max) return Math.round(max - Math.random() * span);
+  return clamped;
 }
+
+/**
+ * 计算本次发送的拟人化时序：总延迟严格遵守 state.sendDelayMin/Max 配置区间，
+ * 拆成 R（填充前反应停顿）+ S（填充后犹豫停顿）两段。
+ * - 总延迟由 randomDelay(msg) 产出，已 clamp 到用户配置的 [min, max]；
+ * - R 占比与「上一条 AI 回复长度」相关：回复越长，人读得越久，R 占比越高（0.3~0.55）；
+ * - 两段之和 = 总延迟，绝不突破用户配置区间。
+ * @param msg 要发送的内容（用于 randomDelay 的认知模型）
+ * @param prevReplyLen 上一条 AI 回复的字符长度
+ */
+function planSendTiming(msg: string, prevReplyLen: number): { reactionMs: number; hesitationMs: number } {
+  const total = randomDelay(msg);
+  const len = Number.isFinite(prevReplyLen) && prevReplyLen > 0 ? prevReplyLen : 0;
+  const ratio = Math.min(0.55, 0.3 + len / 8000);
+  const reactionMs = Math.round(total * ratio);
+  return { reactionMs, hesitationMs: total - reactionMs };
+}
+
+/**
+ * 可被 cancelPendingSend 打断的等待。
+ * @returns true=正常等待结束；false=被取消
+ */
+function interruptibleWait(ms: number, token: PendingSend): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    if (token.cancelled) { resolve(false); return; }
+    token.wake = resolve;
+    const t = setTimeout(() => {
+      if (token.wake === resolve) token.wake = null;
+      if (token.timer === t) token.timer = null;
+      resolve(!token.cancelled);
+    }, ms);
+    token.timer = t;
+  });
+}
+
 /**
  * 将文本填入输入框（React 兼容：使用原生 value setter）
  * @param input - 输入框元素
@@ -57,17 +99,68 @@ async function setInputContent(input: any, msg: string): Promise<boolean> {
     } catch (err: any) {
       console.warn('[Cuckoo Code] provider.fillInput 失败，回退通用逻辑:', err && err.message);
     }
-    if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
+
+    const api = (window as any).electronAPI;
+    const isTextareaOrInput = input.tagName === 'TEXTAREA' || input.tagName === 'INPUT';
+    const isContentEdit = !!input.isContentEditable || (typeof input.getAttribute === 'function' && input.getAttribute('contenteditable') === 'true');
+
+    // 优先尝试 Chromium 原生物理级文本输入管线（isTrusted=true）
+    if (api && typeof api.insertTextToChat === 'function') {
+      try {
+        input.focus();
+        if (isTextareaOrInput) {
+          const desc = Object.getOwnPropertyDescriptor(
+            input.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
+            'value'
+          );
+          if (desc && typeof desc.set === 'function') {
+            desc.set.call(input, '');
+          } else {
+            input.value = '';
+          }
+          // 清空后补 input 事件：React 受控组件靠它同步 state，否则内部 state 残留旧值
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        } else if (isContentEdit) {
+          document.execCommand('selectAll', false, undefined);
+          document.execCommand('delete', false, undefined);
+        }
+        // 分段注入，每段 4000 字符，避免巨型文本瞬间溢出。
+        // 任一段失败 → 整体判定失败（nativeOk=false），由下方 DOM 填充兜底，杜绝残缺内容。
+        const CHUNK_SIZE = 4000;
+        let nativeOk = true;
+        for (let i = 0; i < msg.length; i += CHUNK_SIZE) {
+          const chunk = msg.slice(i, i + CHUNK_SIZE);
+          const ok = await api.insertTextToChat(chunk);
+          if (!ok) { nativeOk = false; break; }
+        }
+        if (nativeOk) {
+          // 校验完整性：注入后文本长度不得少于原消息长度（允许站点归一化空白导致少量偏差）
+          const currentText = getInputText(input);
+          if (currentText && currentText.length >= msg.length - 16) {
+            return true;
+          }
+          console.warn('[Cuckoo Code] 原生注入后长度不符（期望 ' + msg.length + '，实际 ' + (currentText ? currentText.length : 0) + '），回退 DOM 填充');
+        }
+      } catch (err: any) {
+        console.warn('[Cuckoo Code] 原生 insertTextToChat 异常，回退 DOM 填充:', err && err.message);
+      }
+    }
+
+    if (isTextareaOrInput) {
       input.focus();
-      const nativeSetter = Object.getOwnPropertyDescriptor(
+      const desc = Object.getOwnPropertyDescriptor(
         input.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
         'value'
-      )!.set;
-      nativeSetter!.call(input, msg);
+      );
+      if (desc && typeof desc.set === 'function') {
+        desc.set.call(input, msg);
+      } else {
+        input.value = msg;
+      }
       input.dispatchEvent(new Event('input', { bubbles: true }));
       return true;
     }
-    if (input.isContentEditable || input.getAttribute('contenteditable') === 'true') {
+    if (isContentEdit) {
       input.focus();
       document.execCommand('selectAll', false, undefined);
       document.execCommand('delete', false, undefined);
@@ -106,7 +199,7 @@ async function setInputContent(input: any, msg: string): Promise<boolean> {
  * @returns 是否成功
  */
 // 当前待发送的消息（可被 cancelPendingSend 取消）
-interface PendingSend { timer: any; input: any; cancelled: boolean; tag?: string; resolve?: (v: boolean) => void; }
+interface PendingSend { timer: any; input: any; cancelled: boolean; tag?: string; resolve?: (v: boolean) => void; wake?: ((v: boolean) => void) | null; }
 let pendingSend: PendingSend | null = null;
 
 // 发送串行链：确保同一时刻只有一条消息处于"填充→等待→发送"流程，
@@ -153,14 +246,14 @@ function emitMessageDelivered(text: string, tag?: string): void {
  * 发送消息（对外入口）：挂到串行链上，前一条发送完成后才执行下一条。
  * 避免并发覆盖输入框内容（实测 Bug：两条并发只发出后者，前者丢失）。
  */
-function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterSent?: () => void): Promise<boolean> {
-  const run = sendChain.then(() => doSendToChat(msg, tag, fixedDelay, afterSent));
+function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterSent?: () => void, contextLen?: number): Promise<boolean> {
+  const run = sendChain.then(() => doSendToChat(msg, tag, fixedDelay, afterSent, contextLen));
   // 链上无论成败都继续，避免一次失败卡死后续发送
   sendChain = run.then(() => undefined, () => undefined);
   return run;
 }
 
-async function doSendToChat(msg: string, tag?: string, fixedDelay?: number, afterSent?: () => void): Promise<boolean> {
+async function doSendToChat(msg: string, tag?: string, fixedDelay?: number, afterSent?: () => void, contextLen?: number): Promise<boolean> {
   const input = findInputArea();
   if (!input) {
     console.log('[Cuckoo Code] 找不到输入框，无法发送消息');
@@ -168,6 +261,29 @@ async function doSendToChat(msg: string, tag?: string, fixedDelay?: number, afte
   }
   const token: PendingSend = { timer: null, input: input, cancelled: false, tag: tag };
   pendingSend = token;
+
+  // 时序规划：总延迟严格遵守 state.sendDelayMin/Max，拆成 R（填之前）+ S（填之后）。
+  // fixedDelay 显式传入（格式纠正等系统即时指令传 0）→ 不拆分，仅填充后一次性等，保持旧行为。
+  let reactionMs = 0;
+  let hesitationMs = 0;
+  if (fixedDelay !== undefined) {
+    hesitationMs = fixedDelay;
+  } else {
+    const timing = planSendTiming(msg, contextLen || 0);
+    reactionMs = timing.reactionMs;
+    hesitationMs = timing.hesitationMs;
+  }
+
+  // R：填充前的反应停顿（真人先看完回复才动手输入）
+  if (reactionMs > 0) {
+    console.log('[Cuckoo Code] 反应停顿 ' + reactionMs + 'ms（读完回复再输入）...');
+    if (!(await interruptibleWait(reactionMs, token))) {
+      if (pendingSend === token) pendingSend = null;
+      return false;
+    }
+  }
+
+  // T：填充内容（原生分块注入，自带自然耗时）
   if (!(await setInputContent(input, msg))) {
     if (pendingSend === token) pendingSend = null;
     return false;
@@ -176,8 +292,9 @@ async function doSendToChat(msg: string, tag?: string, fixedDelay?: number, afte
   if (token.cancelled) {
     return false;
   }
-  const sendDelay = fixedDelay !== undefined ? fixedDelay : randomDelay(msg);
-  console.log('[Cuckoo Code] 消息已填入输入框，等待 ' + sendDelay + 'ms 后发送...');
+
+  // S：填充后的犹豫停顿，然后触发发送
+  console.log('[Cuckoo Code] 消息已填入输入框，等待 ' + hesitationMs + 'ms 后发送...');
   return new Promise<boolean>((resolve) => {
     token.resolve = resolve;
     const timer = setTimeout(function() {
@@ -201,7 +318,7 @@ async function doSendToChat(msg: string, tag?: string, fixedDelay?: number, afte
         if (typeof afterSent === 'function') afterSent();
         resolve(false);
       });
-    }, sendDelay);
+    }, hesitationMs);
     token.timer = timer;
   });
 }
@@ -216,6 +333,8 @@ function cancelPendingSend(clearSystemTagOnly = true): boolean {
   const t = pendingSend;
   t.cancelled = true;
   if (t.timer) clearTimeout(t.timer);
+  // 唤醒正卡在 R（反应）延迟 interruptibleWait 里的等待，立即返回 false
+  if (t.wake) { try { t.wake(false); } catch (_) {} t.wake = null; }
   // 释放串行链：取消后必须 resolve，否则 sendChain 永久挂起、后续消息全部卡死
   if (t.resolve) { try { t.resolve(false); } catch (_) {} }
   // 系统内部消息（工具结果/看门狗/重试）：取消时必须清空输入框，防止工具结果残留/回显
@@ -237,8 +356,8 @@ async function clearInputArea(): Promise<boolean> {
  * 将消息填入 DeepSeek 聊天输入框并触发发送（工具结果回传的公共实现）
  * @param fixedDelay 固定延迟（ms）；缺省走拟人化随机延迟。格式纠正等系统提示应传 0 立即发出。
  */
-function sendMessageToChat(msg: string, tag?: string, afterSent?: () => void, fixedDelay?: number): Promise<boolean> {
-  return sendToChat(msg, tag, fixedDelay, afterSent);
+function sendMessageToChat(msg: string, tag?: string, afterSent?: () => void, fixedDelay?: number, contextLen?: number): Promise<boolean> {
+  return sendToChat(msg, tag, fixedDelay, afterSent, contextLen);
 }
 /**
  * 应用 provider 的工具结果格式转换（若提供）。
@@ -268,7 +387,7 @@ function pickPrefix(multi: boolean): string {
 /**
  * 将 JS 工具脚本执行结果发送回 DeepSeek 聊天，让 AI 看到结果并继续工作
  */
-async function sendCombinedJsResultsToChat(results: any, onSent?: () => void): Promise<boolean> {
+async function sendCombinedJsResultsToChat(results: any, onSent?: () => void, contextLen?: number): Promise<boolean> {
   if (!Array.isArray(results) || results.length === 0) return false;
 
   const MAX_OUTPUT = 15000;
@@ -311,8 +430,8 @@ async function sendCombinedJsResultsToChat(results: any, onSent?: () => void): P
       console.log('[Cuckoo Code] 工具结果追加在用户已输入内容之后（保留 ' + current.length + ' 字符）');
     }
   }
-  console.log('[Cuckoo Code] 回传 JS 汇总执行结果, 消息长度=' + msg.length);
-  return sendMessageToChat(msg, 'JS汇总', onSent);
+  console.log('[Cuckoo Code] 回传 JS 汇总执行结果, 消息长度=' + msg.length + ', 上一条回复长度=' + (contextLen || 0));
+  return sendMessageToChat(msg, 'JS汇总', onSent, undefined, contextLen);
 }
 /**
  * 查找 DeepSeek 的输入框元素
@@ -371,10 +490,17 @@ async function sendInitialPromptToInput(): Promise<boolean> {
     }
   } catch (_) { /* ignore */ }
 
-  // 初始提示：无延迟秒发（用户要求）
-  console.log('[Cuckoo Code] 初始提示已填入，立即发送...');
-  triggerSend(input);
-  state.pendingInitialPrompt = false;
+  // 初始提示：延迟同样遵守 state.sendDelayMin/Max 配置区间（randomDelay 已 clamp）。
+  // 用提示词自身长度算认知负荷——用户打开新会话后读完页面/系统提示再动手。
+  const initialDelay = randomDelay(state.initialPromptContent);
+  console.log('[Cuckoo Code] 初始提示已填入，等待 ' + initialDelay + 'ms 后发送...');
+  await new Promise(resolve => setTimeout(resolve, initialDelay));
+  try {
+    await triggerSend(input);
+  } finally {
+    // 无论 triggerSend 是否抛异常都必须清除标志，否则重试逻辑会卡死
+    state.pendingInitialPrompt = false;
+  }
   // 纯净模式：系统提示词投递也要有运行态反馈（内容不显示）
   emitMessageDelivered(state.initialPromptContent || '', '系统提示词');
 
@@ -500,10 +626,12 @@ async function insertSnippet(content: string, autoSend?: boolean): Promise<boole
   }
   moveCaretToEnd(input);
   if (autoSend) {
-    // 拟人化微延迟（至少 600ms，按长度比例并带随机抖动，杜绝固定机械秒发触发风控）
-    const snippetDelay = Math.max(600, Math.round(randomDelay(content) * 0.35));
-    setTimeout(function () { triggerSend(input); }, snippetDelay);
-    console.log('[Cuckoo Code] 提示词已追加并等待 ' + snippetDelay + 'ms 后触发发送, 长度=' + content.length);
+    // 快捷提示词是用户手动点按钮触发的：与 harness 手动发送同理，0ms 立即发出。
+    // 真人手动操作本身是最强的人类证据，加随机延迟反而制造「每次都落在固定区间」的机器特征。
+    triggerSend(input).catch((err: any) => {
+      console.warn('[Cuckoo Code] 提示词发送异常:', err && err.message);
+    });
+    console.log('[Cuckoo Code] 提示词已追加并立即触发发送, 长度=' + content.length);
   } else {
     console.log('[Cuckoo Code] 提示词已追加（未发送）, 长度=' + content.length);
   }
@@ -628,6 +756,7 @@ ipcRenderer.on('initial-prompt', (_event: any, content: string) => {
 
 export {
   randomDelay,
+  planSendTiming,
   setInputContent,
   insertSnippet,
   appendTextToInput,

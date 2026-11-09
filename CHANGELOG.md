@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.10.213] - 2026-11-10
+
+### 新增与优化
+- **认知节奏发送管线（需求 111）**：彻底重构发送延迟架构，从「瞬间填满输入框 → 干等 N 秒」改为真人三段节奏：
+  - **R 反应停顿**（填充前）：AI 回复越长，人读得越久，R 占比越高（0.3~0.55）。回复 5000 字时先停约一半总延迟再动手。
+  - **T 输入耗时**：原生 insertText 分块注入（4000 字/块）自带自然节奏。
+  - **S 犹豫停顿**（填充后）：点发送前的最后确认，与发送内容长度弱相关。
+  - **总延迟严格遵守用户配置区间**，R+S 恒等于 `randomDelay(msg)`，绝不突破 `sendDelayMin/Max`。
+  - 修复需求 110 的硬编码延迟（0.8~3.5s / 0.3~1.5s / 1.2~2s）完全绕过用户配置的缺陷。
+- **默认发送延迟 6~16 秒 → 6~36 秒**：给长上下文留足拟人化反应时间，同时短文本经边界抖动仍可快速响应。
+- **`randomDelay` 边界抖动**：短文本钳制到 min 时原先恒等于 min（固定节拍指纹）。现命中 min 在 [min, min+25%区间] 抖动、命中 max 在 [max-25%区间, max] 抖动，保持「内容越长越慢」语义的同时消除固定周期。
+- **手动操作回归 0ms**：纯净模式用户手动发送、快捷提示词 `insertSnippet(autoSend)`、手机远程发送均为真人手动触发，加随机延迟反而制造「每次落在固定区间」的机器特征，统一改 0ms 立即发出。
+- **原生 insertText 完整性加固**：分段注入原先只在首段失败时回退，长消息（>4000 字）中途失败会静默丢内容。改为任一段失败即整体回退 DOM 填充，并校验注入后长度（容差 16 字符）。textarea 清空后补 `dispatchEvent(input)`，修复 React 受控组件 state 残留。
+- **可打断的反应等待**：R 阶段等待可被停止信号立即唤醒（`interruptibleWait` + `PendingSend.wake`），用户点停止不再需要等满延迟。
+- **初始提示延迟接入配置**：原硬编码 1200~2000ms 改为 `randomDelay(initialPromptContent)`，并用 try/finally 保证 `pendingInitialPrompt` 一定被清除（防重试逻辑卡死）。
+
+### 修复
+- **`navigator.languages` 单元素反常特征（实测确认）**：CDP `setUserAgentOverride` 原先传 `acceptLanguage: locale`（单元素），实测 `navigator.languages = ["en-US"]`。真实 Chrome 至少两个元素（中文用户 `["zh-CN","zh","en-US","en"]`）。新增 `buildAcceptLanguageList()` 生成完整偏好列表，并兜底保证永不为单元素。这是成熟风控检测站的必查项。
+- **`ensureDebugger` 并发保护**：新增 `attachingPromises` WeakMap 防止同一 webContents 并发 attach 抛异常；attach 后做 `Runtime.evaluate` 存活验证（1.5s 超时），失败则 detach 回退，避免"假 attached"导致后续 CDP 命令全部超时。
+- **远程调试端口默认彻底关闭**：`start.js` 原默认开 9333（CDP 暴露可被风控探针检测为自动化），改为仅显式设置 `CUCKOO_DEBUG_PORT` 时开启；`--dev` 不再自动开 9444。修正相关注释（原注释与代码不一致）。
+- **`net-identity` debugger 复用注释**：明确"复用他人 attach 的 debugger"的归属与释放语义。
+
+### 验证
+- `npm run typecheck` / `npm run lint`（0 errors）/ `npm run compile` / `npm test`（135 文件 1377 用例）全绿。
+- 真机 CDP 探针实测（开发版 9444，DeepSeek 页面）：`plugins=5`、`webdriver=false`、`chrome` 对象齐全、WebGL 渲染器自洽、`hardwareConcurrency=8`、`deviceMemory=8`、`screen=1920x1080`。
+- 待用户真机验证：发送时序、长消息完整性、`navigator.languages` 修复效果。
+
 ## [0.10.212] - 2026-11-10
 
 ### 新增与优化

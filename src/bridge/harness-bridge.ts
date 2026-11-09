@@ -199,7 +199,8 @@ export function initHarnessBridge(): void {
     if (!text) return;
     clearAbort(); // 新消息：清除中止标志
     try { setWatchdogSuspended(false); } catch (_) { /* ignore */ } // 新任务：恢复看门狗
-    // 用户手动在纯净模式发送：无需 4-12s 自动化防风控延时，直接 0ms 秒发
+    // 用户手动在纯净模式发送：0ms 立即发出——真人手动操作本身是最强的人类证据，
+    // 加随机延迟反而制造「每次都落在固定区间」的机器特征。
     sendToChat(text, 'harness', 0).then((ok) => {
       if (!ok) {
         report({ type: 'status', text: '网页未找到输入框（可能在分享页或页面加载中）', busy: false });

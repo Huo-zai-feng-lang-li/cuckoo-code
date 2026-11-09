@@ -100,6 +100,41 @@ function countryToLocale(cc: string): string {
 }
 
 /**
+ * 语言标签 → 符合真实 Chrome 习惯的 Accept-Language 偏好列表（逗号分隔）。
+ * 真实 Chrome 不会只声明一个语言：中文用户是 "zh-CN,zh,en-US,en"，英文用户是 "en-US,en"。
+ * 若只给单元素，CDP setUserAgentOverride 会让 navigator.languages 变成单元素数组
+ * ——这是成熟风控检测站必查的反常特征。故按主语言补齐「母语 + 主语言 + 英语」链。
+ */
+function buildAcceptLanguageList(locale: string): string {
+  const raw = String(locale || '').trim();
+  if (!raw) return '';
+  const parts = raw.split('-');
+  const primary = (parts[0] || '').toLowerCase();
+  const out: string[] = [raw];
+  if (primary && primary !== raw.toLowerCase()) out.push(primary);
+  // 补英语链（真实 Chrome 默认都带 en-US / en）。
+  // 注意：即便主语言是 en，也必须补到 ≥2 元素——单元素数组本身就是反常特征。
+  // 规则：① 主语言非 en → 追加 en-US、en；② 主语言是 en → 追加 "en"（若还没有）。
+  // 例：zh-CN → zh-CN,zh,en-US,en；en-GB → en-GB,en；en → en,en-US；ja-JP → ja-JP,ja,en-US,en
+  if (primary !== 'en') {
+    if (!out.includes('en-US')) out.push('en-US');
+    if (!out.includes('en')) out.push('en');
+  } else if (!out.includes('en')) {
+    out.push('en');
+  }
+  // 最终兜底：无论如何 navigator.languages 不得为单元素（真实 Chrome 至少两个）。
+  if (out.length < 2) out.push('en-US');
+  // 去重（大小写不敏感）
+  const seen = new Set<string>();
+  return out.filter((v) => {
+    const k = v.toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  }).join(',');
+}
+
+/**
  * 将用户配置的代理规则转换为 Chromium 接受的格式。
  * 核心：Chromium 底层网络协议栈不识别 socks5h:// 协议头，直接传会导致 ERR_NO_SUPPORTED_PROXIES 或规则失效。
  * Chromium 的 socks5:// 原生即向代理发送域名进行远程 DNS 解析，
@@ -522,26 +557,58 @@ interface CdpState {
 }
 const cdpStates = new WeakMap<any, CdpState>();
 
+const attachingPromises = new WeakMap<any, Promise<CdpState | null>>();
+
 async function ensureDebugger(wc: any): Promise<CdpState | null> {
   if (!wc || wc.isDestroyed()) return null;
-  let st = cdpStates.get(wc);
-  if (!st) { st = { attached: false, scriptId: null }; cdpStates.set(wc, st); }
-  // 首次创建的 WebContentsView 处于未导航状态，Chromium 的 RenderFrameHost 尚未激活，
-  // 会导致后续 Page.enable 与 addScript 挂起超时。先轻量导航到 about:blank 唤醒渲染管线。
-  try {
-    const curUrl = typeof wc.getURL === 'function' ? wc.getURL() : '';
-    if (!curUrl || curUrl === '') {
-      await wc.loadURL('about:blank');
-    }
-  } catch (_) {}
+  const existing = attachingPromises.get(wc);
+  if (existing) return existing;
 
+  const p = (async () => {
+    let st = cdpStates.get(wc);
+    if (!st) { st = { attached: false, scriptId: null }; cdpStates.set(wc, st); }
+
+    try {
+      const curUrl = typeof wc.getURL === 'function' ? wc.getURL() : '';
+      if (!curUrl || curUrl === '') {
+        await wc.loadURL('about:blank');
+      }
+    } catch (_) {}
+
+    try {
+      if (wc.debugger && wc.debugger.isAttached()) {
+        st.attached = true;
+        return st;
+      }
+      wc.debugger.attach('1.3');
+      st.attached = true;
+      try {
+        await withTimeout(wc.debugger.sendCommand('Runtime.evaluate', { expression: '1' }), 1500, 'debugger-verify');
+      } catch (_) {
+        if (wc.debugger && wc.debugger.isAttached()) {
+          try { wc.debugger.detach(); } catch (_) {}
+        }
+        st.attached = false;
+        console.warn('[NetIdentity] debugger attach 存活验证超时，已回退');
+        return null;
+      }
+      return st;
+    } catch (err: any) {
+      if (wc.debugger && wc.debugger.isAttached()) {
+        st.attached = true;
+        return st;
+      }
+      console.warn('[NetIdentity] debugger.attach 失败:', err && err.message);
+      st.attached = false;
+      return null;
+    }
+  })();
+
+  attachingPromises.set(wc, p);
   try {
-    wc.debugger.attach('1.3');
-    st.attached = true;
-    return st;
-  } catch (err: any) {
-    console.warn('[NetIdentity] debugger.attach 失败:', err && err.message);
-    return null;
+    return await p;
+  } finally {
+    attachingPromises.delete(wc);
   }
 }
 
@@ -628,15 +695,20 @@ async function applyNetIdentity(view: any, cfg: ProxyConfig, fpCfg?: Fingerprint
   }
 
   // 4b. navigator.language / languages + HTTP Accept-Language：
+  // 注意：acceptLanguage 必须是"完整语言偏好列表"（逗号分隔），不能只给单元素。
+  // 真实 Chrome 中文用户是 "zh-CN,zh,en-US,en"；若只给 "zh-CN"，navigator.languages 会变成
+  // 单元素数组——这是成熟检测站必查的反常特征。locale 为空时不传该字段，让浏览器用原生值。
   try {
     const meta = buildUserAgentMetadata();
     const platMap: Record<string, string> = { Windows: 'Win32', macOS: 'MacIntel', Linux: 'Linux x86_64' };
     const uaPayload: any = {
       userAgent: buildChromeUserAgent(),
-      acceptLanguage: cfg.locale || '',
       platform: platMap[meta.platform] || 'Win32',
     };
-    if (cfg.locale) uaPayload.userAgentMetadata = meta;
+    if (cfg.locale) {
+      uaPayload.acceptLanguage = buildAcceptLanguageList(cfg.locale);
+      uaPayload.userAgentMetadata = meta;
+    }
     await withTimeout(dbg.sendCommand('Emulation.setUserAgentOverride', uaPayload), 3000, 'setUserAgentOverride');
     if (cfg.locale) console.log('[NetIdentity] 语言(Accept-Language):', cfg.locale);
   } catch (err: any) { console.warn('[NetIdentity] setUserAgentOverride 失败:', err && err.message); }
@@ -700,6 +772,7 @@ export {
   releaseDebugger,
   detectExitGeo,
   countryToLocale,
+  buildAcceptLanguageList,
 };
 
 

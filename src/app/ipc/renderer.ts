@@ -109,6 +109,26 @@ function registerRendererIpc(): void {
     }
   });
 
+  // 原生物理文字输入：通过 Chromium 原生 IME 输入管线将文本注入聚焦元素（isTrusted=true）
+  ipcMain.handle('chat-insert-text', async (event: any, { text }: any = {}) => {
+    if (!assertSenderOk(event).ok) return false;
+    const sender = event.sender;
+    if (!sender || sender.isDestroyed()) return false;
+    try {
+      if (typeof text === 'string' && typeof sender.insertText === 'function') {
+        if (typeof sender.isFocused === 'function' && !sender.isFocused()) {
+          try { sender.focus(); } catch (_) {}
+        }
+        await sender.insertText(text);
+        return true;
+      }
+      return false;
+    } catch (err: any) {
+      console.error('[Cuckoo Code] ❌ 原生 insertText 失败:', err.message);
+      return false;
+    }
+  });
+
   // 模拟真实鼠标事件（isTrusted=true），用于需要原生点击的站点
   // action: 'move' | 'click'；x/y 为相对视口的 CSS 像素坐标
   ipcMain.handle('simulate-mouse', async (event: any, { action, x, y }: any = {}) => {

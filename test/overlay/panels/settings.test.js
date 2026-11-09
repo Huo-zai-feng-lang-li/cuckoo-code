@@ -180,7 +180,7 @@ test('getSettingsData 默认值符合反风控安全配置', () => {
   assert.strictEqual(data.retryDelayMin, 15, '普通失败间隔最小默认应为 15s（防封）');
   assert.strictEqual(data.retryDelayMax, 30, '普通失败间隔最大默认应为 30s（防封）');
   assert.strictEqual(data.sendDelayMin, 6, '发送延迟最小默认应为 6s');
-  assert.strictEqual(data.sendDelayMax, 16, '发送延迟最大默认应为 16s');
+  assert.strictEqual(data.sendDelayMax, 36, '发送延迟最大默认应为 36s');
 });
 
 test('resetSettingsData 必须清空全部设置键（含子代理 3 个，回归 v0.10.162）', () => {
@@ -207,6 +207,6 @@ test('resetSettingsData 必须清空全部设置键（含子代理 3 个，回�
   assert.strictEqual(localStorage.getItem('cuckoo-ssrf-guard'), null, 'ssrf-guard 应被清');
   // state 重置到默认
   assert.strictEqual(data.sendDelayMin, 6, 'state.sendDelayMin 应重置为 6');
-  assert.strictEqual(data.sendDelayMax, 16, 'state.sendDelayMax 应重置为 16');
+  assert.strictEqual(data.sendDelayMax, 36, 'state.sendDelayMax 应重置为 36');
 });
 
