@@ -403,22 +403,33 @@ export function buildFingerprintScript(fp: FingerprintConfig): string {
     if (typeof AudioBuffer !== 'undefined' && AudioBuffer.prototype.getChannelData) {
       var origGetChannelData = AudioBuffer.prototype.getChannelData;
       var noisedBuffers = typeof WeakSet !== 'undefined' ? new WeakSet() : null;
+      var cachedChannels = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
       var fakeGetChannelData = ({
         getChannelData(ch) {
           var data = origGetChannelData.apply(this, arguments);
-          if (data && data.length) {
-            if (noisedBuffers) {
-              if (noisedBuffers.has(data)) return data;
-              noisedBuffers.add(data);
-            }
-            var aSeed = FP.audioSeed || 12345;
-            var step = Math.max(1, Math.floor(data.length / 100));
-            for (var i = 0; i < data.length; i += step) {
-              var noise = (((i * 17 + aSeed) % 10) - 5) * 1e-7;
-              data[i] += noise;
-            }
+          if (!data || !data.length) return data;
+          var channelIndex = typeof ch === 'number' ? ch : 0;
+          if (cachedChannels) {
+            var bufMap = cachedChannels.get(this);
+            if (bufMap && bufMap.has(channelIndex)) return bufMap.get(channelIndex);
           }
-          return data;
+          if (noisedBuffers) {
+            if (noisedBuffers.has(data)) return data;
+            noisedBuffers.add(data);
+          }
+          var aSeed = FP.audioSeed || 12345;
+          var step = Math.max(1, Math.floor(data.length / 100));
+          var copy = new Float32Array(data);
+          for (var i = 0; i < copy.length; i += step) {
+            var noise = (((i * 17 + aSeed) % 10) - 5) * 1e-7;
+            copy[i] += noise;
+          }
+          if (cachedChannels) {
+            var map = cachedChannels.get(this);
+            if (!map) { map = new Map(); cachedChannels.set(this, map); }
+            map.set(channelIndex, copy);
+          }
+          return copy;
         }
       }).getChannelData;
       markNative(fakeGetChannelData, 'getChannelData');
