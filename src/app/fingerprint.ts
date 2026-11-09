@@ -297,6 +297,46 @@ export function buildFingerprintScript(fp: FingerprintConfig): string {
     } else {
       patchProtoGetter(window, 'devicePixelRatio', FP.devicePixelRatio);
     }
+    // 关键：部分环境（如本应用主窗口）window 实例上存在自有 devicePixelRatio，
+    // 会遮蔽原型链上的伪装 getter。必须删除自有属性让原型伪装生效；
+    // 若不可删除，则直接在实例上覆盖为伪造 getter。
+    try {
+      if (typeof window !== 'undefined' && Object.prototype.hasOwnProperty.call(window, 'devicePixelRatio')) {
+        var ownDprDesc = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio');
+        if (ownDprDesc && ownDprDesc.configurable) {
+          delete window.devicePixelRatio;
+        }
+        if (Object.prototype.hasOwnProperty.call(window, 'devicePixelRatio')) {
+          var ownDprGetter = ({ ['get devicePixelRatio']() { return FP.devicePixelRatio; } })['get devicePixelRatio'];
+          markNative(ownDprGetter, 'get devicePixelRatio');
+          Object.defineProperty(window, 'devicePixelRatio', {
+            configurable: true,
+            enumerable: true,
+            get: ownDprGetter
+          });
+        }
+      }
+    } catch (_) {}
+    // 关键：部分环境（如本应用主窗口）window 实例上存在自有 devicePixelRatio，
+    // 会遮蔽原型链上的伪装 getter。必须删除自有属性让原型伪装生效；
+    // 若不可删除，则直接在实例上覆盖为伪造 getter。
+    try {
+      if (typeof window !== 'undefined' && Object.prototype.hasOwnProperty.call(window, 'devicePixelRatio')) {
+        var ownDprDesc = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio');
+        if (ownDprDesc && ownDprDesc.configurable) {
+          delete window.devicePixelRatio;
+        }
+        if (Object.prototype.hasOwnProperty.call(window, 'devicePixelRatio')) {
+          var ownDprGetter = ({ ['get devicePixelRatio']() { return FP.devicePixelRatio; } })['get devicePixelRatio'];
+          markNative(ownDprGetter, 'get devicePixelRatio');
+          Object.defineProperty(window, 'devicePixelRatio', {
+            configurable: true,
+            enumerable: true,
+            get: ownDprGetter
+          });
+        }
+      }
+    } catch (_) {}
 
     // ========== 3. WebGL 厂商与渲染器伪装 ==========
     function patchWebGL(glProto) {

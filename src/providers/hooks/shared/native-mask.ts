@@ -14,14 +14,39 @@
  */
 
 /**
- * @param fn 被包装后的函数（会就地修改其 toString / name / length）
+ * @param fn 被包装后的函数（会就地修改其 toString / name / length 并移除 prototype）
  * @param name 伪装成的方法名；缺省取 fn.name
  * @param nativeLength 原生函数的 length（arity），用于对齐；缺省不改
  * @returns 原函数（便于链式使用）
  */
+var nativeStringMap = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+var isToStringPatched = false;
+
+function ensureToStringPatched(): void {
+  if (isToStringPatched || !nativeStringMap) return;
+  isToStringPatched = true;
+  try {
+    var origToString = Function.prototype.toString;
+    var patchedToString = function (this: any) {
+      if (nativeStringMap && nativeStringMap.has(this)) {
+        return nativeStringMap.get(this);
+      }
+      return origToString.apply(this, arguments as any);
+    };
+    try { Object.defineProperty(patchedToString, 'name', { value: 'toString', configurable: true }); } catch (_) {}
+    try { delete (patchedToString as any).prototype; } catch (_) {}
+    Function.prototype.toString = patchedToString;
+    nativeStringMap.set(patchedToString, 'function toString() { [native code] }');
+  } catch (_) {}
+}
+
 function maskAsNative(fn: any, name?: string, nativeLength?: number): any {
   if (typeof fn !== 'function') return fn;
   var fname = name || fn.name || '';
+  ensureToStringPatched();
+  try {
+    delete fn.prototype;
+  } catch (_) { /* ignore */ }
   try {
     Object.defineProperty(fn, 'name', { value: fname, configurable: true });
   } catch (e) { /* ignore */ }
@@ -30,10 +55,16 @@ function maskAsNative(fn: any, name?: string, nativeLength?: number): any {
       Object.defineProperty(fn, 'length', { value: nativeLength, configurable: true });
     } catch (e) { /* ignore */ }
   }
+  var nativeStr = 'function ' + fname + '() { [native code] }';
+  if (nativeStringMap) {
+    try {
+      nativeStringMap.set(fn, nativeStr);
+    } catch (_) {}
+  }
   try {
     Object.defineProperty(fn, 'toString', {
       value: function () {
-        return 'function ' + fname + '() { [native code] }';
+        return nativeStr;
       },
       configurable: true,
       writable: true,

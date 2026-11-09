@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.10.212] - 2026-11-10
+
+### 新增与优化
+- **原生物理级输入与防封闭环（需求 110）**：
+  - **原生 Enter 事件派发**：回显/消息发送兜底优先通过主进程 `webContents.sendInputEvent`（`isTrusted=true`）与物理级鼠标点击触发，彻底杜绝 DOM 合成事件触发的反爬虫与风控封号。
+  - **自适应认知延迟（Cognitive Adaptive Delay）**：彻底废弃僵化机械的固定大延迟（6~76秒），基于人类认知负荷模型自适应计算：短文本（<100字）3~5 秒急速响应，长文本与代码块按信息量弹性延展至 15~23 秒并叠加高斯随机抖动，既大幅加速编码心流，又完全消除自动化周期指纹。
+  - **快捷提示词拟人化延迟**：修复 `insertSnippet(autoSend=true)` 硬编码 300ms 漏洞，统一接入拟人化自适应微延迟与随机扰动。
+  - **V8 原生函数伪装加固**：通过 WeakMap 映射并在 `Function.prototype.toString` 上拦截，使无论实例 `.toString()` 还是 `Function.prototype.toString.call(fn)` 均完美对齐原生 `[native code]`，消除自有 prototype 属性残留，击穿高级反爬虫原型探测。
+  - **提示词动静分流架构**：在 ChatGPT、Claude、DeepSeek 及默认提示词中建立「动静分流：只读摸底批量并行（Promise.all），核心修改严密单步，本地数据前置精炼」规范，在提速防封的同时杜绝模型上下文注意力稀释（Lost-in-the-Middle）。
+
+### 验证
+- `npm run typecheck` / `npm run lint`（0 errors）/ `npm run compile` / `npm test`（135 文件 1368 用例）全绿。
+- 双代理独立互检闭环审查通过。
+
 ## [0.10.211] - 2026-11-10
 
 ### 修复

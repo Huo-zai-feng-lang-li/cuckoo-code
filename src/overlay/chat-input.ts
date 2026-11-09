@@ -19,14 +19,24 @@ function getCurrentProvider(): any {
 }
 
 /**
- * 生成随机等待时间（ms），范围由 state 配置（state 默认 6-16 秒拟人化节奏；
- * 此处 1000/10000 仅为 state 未就绪时的兜底，正常路径不会用到）。
+ * 生成自适应拟人化等待时间（ms）：
+ * 1. 结合回传内容长度计算认知负荷（短文本 3~6s，长文本 12~25s）；
+ * 2. 附加轻量随机抖动（Jitter），破坏机械周期特征；
+ * 3. 严格在 state 配置的 [min, max] 范围内钳制，兼顾防风控安全与丝滑流畅体验。
  */
-function randomDelay(): number {
+function randomDelay(msg?: string): number {
   const min = typeof state.sendDelayMin === 'number' ? state.sendDelayMin : 1000;
   const max = typeof state.sendDelayMax === 'number' ? state.sendDelayMax : 10000;
   if (min >= max) return min;
-  return Math.floor(Math.random() * (max - min)) + min;
+
+  const len = typeof msg === 'string' ? msg.length : 0;
+  // 认知耗时模型：短文本（<100字）基准 3000ms；长文本递增最高至 23000ms
+  const cognitiveBase = 3000 + Math.min(20000, Math.floor(len / 100) * 800);
+  // 随机抖动 Jitter：在 ±20% 范围内波动
+  const jitter = (Math.random() * 0.4 - 0.2) * cognitiveBase;
+  const target = Math.round(cognitiveBase + jitter);
+
+  return Math.max(min, Math.min(max, target));
 }
 /**
  * 将文本填入输入框（React 兼容：使用原生 value setter）
@@ -166,7 +176,7 @@ async function doSendToChat(msg: string, tag?: string, fixedDelay?: number, afte
   if (token.cancelled) {
     return false;
   }
-  const sendDelay = fixedDelay !== undefined ? fixedDelay : randomDelay();
+  const sendDelay = fixedDelay !== undefined ? fixedDelay : randomDelay(msg);
   console.log('[Cuckoo Code] 消息已填入输入框，等待 ' + sendDelay + 'ms 后发送...');
   return new Promise<boolean>((resolve) => {
     token.resolve = resolve;
@@ -174,18 +184,23 @@ async function doSendToChat(msg: string, tag?: string, fixedDelay?: number, afte
       if (pendingSend === token) pendingSend = null;
       if (token.cancelled) { resolve(false); return; }
       console.log('[Cuckoo Code] 等待结束，开始触发发送');
-      triggerSend(input);
-      console.log('[Cuckoo Code] 已触发发送, ' + (tag || '') + ', 长度=' + msg.length);
-      // 通知监听者（远程等）；系统内部消息（工具结果/看门狗/重试等）不上报
-      if (!isSystemTag(tag)) {
-        for (const cb of userMessageSentListeners) {
-          try { cb(msg, tag); } catch (_) { /* ignore */ }
+      Promise.resolve(triggerSend(input)).then(() => {
+        console.log('[Cuckoo Code] 已触发发送, ' + (tag || '') + ', 长度=' + msg.length);
+        // 通知监听者（远程等）；系统内部消息（工具结果/看门狗/重试等）不上报
+        if (!isSystemTag(tag)) {
+          for (const cb of userMessageSentListeners) {
+            try { cb(msg, tag); } catch (_) { /* ignore */ }
+          }
         }
-      }
-      // 纯净模式：任何投递（含框架内部消息）都派发一次，用于显示"框架正在驱动"运行态
-      emitMessageDelivered(msg, tag);
-      if (typeof afterSent === 'function') afterSent();
-      resolve(true);
+        // 纯净模式：任何投递（含框架内部消息）都派发一次，用于显示"框架正在驱动"运行态
+        emitMessageDelivered(msg, tag);
+        if (typeof afterSent === 'function') afterSent();
+        resolve(true);
+      }).catch((err) => {
+        console.warn('[Cuckoo Code] triggerSend 执行异常:', err && err.message);
+        if (typeof afterSent === 'function') afterSent();
+        resolve(false);
+      });
     }, sendDelay);
     token.timer = timer;
   });
@@ -485,9 +500,10 @@ async function insertSnippet(content: string, autoSend?: boolean): Promise<boole
   }
   moveCaretToEnd(input);
   if (autoSend) {
-    // 稍等片刻，让输入框内容稳定后再触发发送
-    setTimeout(function () { triggerSend(input); }, 300);
-    console.log('[Cuckoo Code] 提示词已追加并触发发送, 长度=' + content.length);
+    // 拟人化微延迟（至少 600ms，按长度比例并带随机抖动，杜绝固定机械秒发触发风控）
+    const snippetDelay = Math.max(600, Math.round(randomDelay(content) * 0.35));
+    setTimeout(function () { triggerSend(input); }, snippetDelay);
+    console.log('[Cuckoo Code] 提示词已追加并等待 ' + snippetDelay + 'ms 后触发发送, 长度=' + content.length);
   } else {
     console.log('[Cuckoo Code] 提示词已追加（未发送）, 长度=' + content.length);
   }
@@ -497,21 +513,22 @@ async function insertSnippet(content: string, autoSend?: boolean): Promise<boole
 /**
  * 触发发送消息
  */
-function triggerSend(input: any): void {
+async function triggerSend(input: any): Promise<void> {
   const provider = getCurrentProvider();
 
-  // 方法 0: 站点原生发送（智谱等免疫合成事件的平台，经主进程注入真实级输入）
+  // 方法 0: 站点原生发送（若平台有针对特定输入组件的定制发送逻辑）
   if (provider && typeof provider.triggerSend === 'function') {
     let result: any = null;
     try { result = provider.triggerSend(input); } catch (_) { /* 站点实现异常时回退通用逻辑 */ }
     if (result && typeof result.then === 'function') {
-      result.then(function (ok: boolean) {
+      try {
+        const ok = await result;
         if (ok) {
           console.log('[Cuckoo Code] 已通过站点原生发送触发');
-        } else {
-          fallbackSend(provider, input);
+          return;
         }
-      }).catch(function () { fallbackSend(provider, input); });
+      } catch (_) { /* ignore */ }
+      await fallbackSend(provider, input);
       return;
     }
     if (result) {
@@ -520,30 +537,68 @@ function triggerSend(input: any): void {
     }
   }
 
-  fallbackSend(provider, input);
+  await fallbackSend(provider, input);
 }
 
 /**
- * 通用发送兜底：查找发送按钮点击，或模拟 Enter 按键序列
+ * 通用发送兜底：
+ * 优先走主进程物理级原生输入（isTrusted=true），彻底杜绝合成事件触发的反爬虫与风控封号
  */
-function fallbackSend(provider: any, input: any): void {
-  // 方法 1: 调用平台 Provider 查找发送按钮
-  if (provider && typeof provider.findSendButton === 'function') {
-    const btn = provider.findSendButton();
-    if (btn) {
-      btn.click();
-      console.log('[Cuckoo Code] 已点击发送按钮');
-      return;
-    }
+async function fallbackSend(provider: any, input: any): Promise<void> {
+  // 1. 确保输入框聚焦
+  if (input && typeof input.focus === 'function') {
+    try { input.focus(); } catch (_) {}
   }
 
-  // 方法 2: 在输入框上模拟完整 Enter 按键序列（keydown + keypress + keyup）
+  // 2. 原生 Enter 按键（通过主进程 sendInputEvent 派发 C++ 内核事件，isTrusted=true）
+  try {
+    const api = (window as any).electronAPI;
+    if (api && typeof api.sendEnterToChat === 'function') {
+      const ok = await api.sendEnterToChat();
+      if (ok) {
+        console.log('[Cuckoo Code] 已通过原生 Enter 触发发送 (isTrusted=true)');
+        return;
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Cuckoo Code] 原生 Enter 发送异常，尝试备用发送:', err && err.message);
+  }
+
+  // 3. 尝试平台发送按钮（优先原生物理鼠标点击）
+  if (provider && typeof provider.findSendButton === 'function') {
+    try {
+      const btn = provider.findSendButton();
+      if (btn) {
+        // 优先尝试主进程物理鼠标点击（isTrusted=true）
+        try {
+          const rect = btn.getBoundingClientRect();
+          const api = (window as any).electronAPI;
+          if (rect && rect.width > 0 && rect.height > 0 && api && typeof api.simulateMouse === 'function') {
+            const cx = Math.round(rect.left + rect.width / 2);
+            const cy = Math.round(rect.top + rect.height / 2);
+            const ok = await api.simulateMouse('click', cx, cy);
+            if (ok) {
+              console.log('[Cuckoo Code] 已通过原生物理鼠标点击发送按钮 (isTrusted=true)');
+              return;
+            }
+          }
+        } catch (_) {}
+
+        // 若主进程鼠标模拟不可用，降级为 DOM click
+        btn.click();
+        console.log('[Cuckoo Code] 已通过 DOM click 点击发送按钮 (降级)');
+        return;
+      }
+    } catch (_) {}
+  }
+
+  // 4. 兜底合成 Enter 按键序列（最后防线）
   if (input) {
     const opts = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, isComposing: false };
     input.dispatchEvent(new KeyboardEvent('keydown', opts));
     input.dispatchEvent(new KeyboardEvent('keypress', opts));
     input.dispatchEvent(new KeyboardEvent('keyup', opts));
-    console.log('[Cuckoo Code] 已通过 Enter 键触发发送 (未找到发送按钮)');
+    console.log('[Cuckoo Code] 已通过合成 Enter 触发发送 (兜底)');
   }
 }
 /**
