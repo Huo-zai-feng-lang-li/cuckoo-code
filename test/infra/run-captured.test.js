@@ -17,7 +17,9 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  fs.rmSync(TMP, { recursive: true, force: true });
+  try {
+    fs.rmSync(TMP, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  } catch (_) {}
 });
 
 test('正常命令：返回 stdout 与退出码', async () => {

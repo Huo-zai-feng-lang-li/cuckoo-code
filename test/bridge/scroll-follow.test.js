@@ -6,7 +6,7 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { shouldFollowToBottom, startScrollFollow, resetScrollFollow, scheduleInitialScrollToBottom } from '../../src/bridge/scroll-follow.js';
+import { shouldFollowToBottom, startScrollFollow, resetScrollFollow, scheduleInitialScrollToBottom, isAiSessionPage } from '../../src/bridge/scroll-follow.js';
 
 // ===== shouldFollowToBottom 决策（纯函数）=====
 
@@ -327,3 +327,73 @@ test('scheduleInitialScrollToBottom: cancel 后终止后续重试', async () => 
     dom.restore();
   }
 });
+
+// ===== isAiSessionPage 决策判定 =====
+
+test('isAiSessionPage: 普通外部网页与空 URL 一律返回 false', () => {
+  assert.strictEqual(isAiSessionPage(''), false);
+  assert.strictEqual(isAiSessionPage(null), false);
+  assert.strictEqual(isAiSessionPage('https://ipip.la/disguise.html'), false);
+  assert.strictEqual(isAiSessionPage('https://github.com/trending'), false);
+  assert.strictEqual(isAiSessionPage('https://www.google.com/'), false);
+});
+
+test('isAiSessionPage: AI 平台首页/新建对话一律返回 false（防止刚进入首页就滚底）', () => {
+  assert.strictEqual(isAiSessionPage('https://chat.deepseek.com'), false);
+  assert.strictEqual(isAiSessionPage('https://chat.deepseek.com/'), false);
+  assert.strictEqual(isAiSessionPage('https://chatgpt.com'), false);
+  assert.strictEqual(isAiSessionPage('https://chatgpt.com/'), false);
+  assert.strictEqual(isAiSessionPage('https://claude.ai/new'), false);
+});
+
+test('isAiSessionPage: 具备合法 session id 的历史会话详情页返回 true', () => {
+  assert.strictEqual(isAiSessionPage('https://chat.deepseek.com/a/chat/s/01234567-89ab-cdef-0123-456789abcdef'), true);
+  assert.strictEqual(isAiSessionPage('https://chatgpt.com/c/12345678-1234-1234-1234-123456789abc'), true);
+  assert.strictEqual(isAiSessionPage('https://claude.ai/chat/conv_123456'), true);
+});
+
+// ===== scheduleInitialScrollToBottom 守卫与交互中断 =====
+
+test('scheduleInitialScrollToBottom: 普通外部网页或平台首页不触发任何滚动', async () => {
+  const el = makeScroller({ scrollTop: 0, scrollHeight: 2000, clientHeight: 500 });
+  const dom = installDom(el);
+  try {
+    // 模拟普通外部测试页
+    scheduleInitialScrollToBottom('https://ipip.la/disguise.html');
+    // 模拟 DeepSeek 首页
+    scheduleInitialScrollToBottom('https://chat.deepseek.com/');
+    await new Promise((r) => setTimeout(r, 200));
+    assert.strictEqual(el.scrollToCalls.length, 0, '外部网页与首页严禁产生滚动调用');
+  } finally {
+    dom.restore();
+  }
+});
+
+test('scheduleInitialScrollToBottom: AI 会话页面正常触发滚底', async () => {
+  const el = makeScroller({ scrollTop: 0, scrollHeight: 2000, clientHeight: 500 });
+  const dom = installDom(el);
+  try {
+    const cancel = scheduleInitialScrollToBottom('https://chat.deepseek.com/a/chat/s/01234567-89ab-cdef-0123-456789abcdef');
+    await new Promise((r) => setTimeout(r, 200));
+    cancel();
+    assert.ok(el.scrollToCalls.length >= 1, '有效 AI 会话页应触发滚底');
+    assert.strictEqual(el.scrollToCalls[0].top, 2000);
+  } finally {
+    dom.restore();
+  }
+});
+
+test('scheduleInitialScrollToBottom: 用户触发 wheel 滚动后立即中止后续重试', async () => {
+  const el = makeScroller({ scrollTop: 0, scrollHeight: 2000, clientHeight: 500 });
+  const dom = installDom(el);
+  try {
+    scheduleInitialScrollToBottom('https://chat.deepseek.com/a/chat/s/01234567-89ab-cdef-0123-456789abcdef');
+    // 用户在 50ms 触发鼠标滚轮
+    dom.fireWin('wheel');
+    await new Promise((r) => setTimeout(r, 250));
+    assert.strictEqual(el.scrollToCalls.length, 0, '用户主动交互后定时器应被 cancel，不产生滚动');
+  } finally {
+    dom.restore();
+  }
+});
+

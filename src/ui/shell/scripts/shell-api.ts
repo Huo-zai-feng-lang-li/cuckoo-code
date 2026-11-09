@@ -182,6 +182,9 @@ export interface ShellAPI {
   deleteProfileWindow?: (id: string) => Promise<any>;
   setProfileAutoOpen?: (id: string, on: boolean) => Promise<any>;
   renameProfile?: (id: string, name: string) => Promise<any>;
+  // 窗口代理/指纹
+  getProfileProxy?: (id: string) => Promise<any>;
+  setProfileProxy?: (id: string, proxy: any) => Promise<any>;
   // 窗口名（状态栏显示）
   getWindowName?: () => Promise<any>;
   onWindowNameUpdated?: (cb: (name: string) => void) => void;

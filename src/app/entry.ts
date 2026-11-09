@@ -18,15 +18,23 @@ import { showSwitchAlert } from './alert-window.js';
 import { showSystemNotification } from './notification-window.js';
 import { showPetWindow, hidePetWindow, destroyPetWindow, registerPetWindowIpc } from './pet-window.js';
 import { readPrefs } from './ui-prefs.js';
+import { buildChromeUserAgent, ensureClientHints } from '../infra/user-agent.js';
 
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, nativeTheme, ipcMain: ipcMainForProfile, Notification } = require('electron');
 
 // 抹除 Blink 引擎自动化控制特征（关键：使 navigator.webdriver 原生返回 false，消除登录拦截与反爬标记）
+// 同时禁用后台 DNS 预取、预连接与 DoH，防止后台探测绕过代理向本地 ISP 发起 DNS 查询（根除 DNS 泄露）
 try {
   app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
+  app.commandLine.appendSwitch('dns-prefetch-disable');
+  app.commandLine.appendSwitch('disable-dns-prefetch');
+  app.commandLine.appendSwitch('disable-features', 'DnsOverHttps');
+  app.commandLine.appendSwitch('disable-preconnect');
+  // 全局覆盖 Electron 默认 UA，彻底抹除 Electron/cuckoo-code 痕迹，杜绝风控封禁
+  app.userAgentFallback = buildChromeUserAgent();
 } catch (err: any) {
-  console.warn('[Cuckoo Code] 禁用 AutomationControlled 失败:', err && err.message);
+  console.warn('[Cuckoo Code] 初始化命令行开关失败:', err && err.message);
 }
 
 // ========== 持久化会话配置 ==========
@@ -62,7 +70,6 @@ import { registerIpcHandlers } from './ipc/index.js';
 import * as globalSettings from './global-settings.js';
 import { injectSemaphoreConfig } from './agent-semaphore.js';
 import * as taskManager from '../infra/task-manager.js';
-import { buildChromeUserAgent, ensureClientHints } from '../infra/user-agent.js';
 import { initRemote, stopRemote } from '../remote/manager.js';
 import { injectSubagentDeps, runAgent as runAgentImpl, runGatewayQuery as runGatewayQueryImpl } from './subagent.js';
 import { injectAgentRunner, injectSubagentChecker } from '../tools/impl/run-agent.js';
@@ -80,6 +87,7 @@ import { injectWindowGroupDeps, requestShareFromWindow, requestHarnessExport, st
 import { seedDefaultRules } from '../rules/index.js';
 import { initProject } from '../session/project-context.js';
 import * as windowGroups from './window-groups.js';
+import { normalizeProxyConfig, toChromiumProxyRules, applyNetIdentity, releaseDebugger, detectExitGeo, checkProxyReachable } from './net-identity.js';
 
 // 退出前需要 flush 的 sessions
 const sessionsToFlush = new Set<any>();
@@ -198,6 +206,10 @@ function createWindow(profile: any) {
     },
   });
   mainWindow.contentView.addChildView(view);
+  try {
+    view.webContents.setUserAgent(buildChromeUserAgent());
+    mainWindow.webContents.setUserAgent(buildChromeUserAgent());
+  } catch (_) {}
 
   // ========== 桌面宠物浮窗（最小化后独立展示） ==========
   // 与插件覆盖层相反：那个跟随主窗口、最小化时隐藏；这个只在最小化时出现。
@@ -617,16 +629,49 @@ function createWindow(profile: any) {
   // 优先恢复上次关闭时的 URL（仅 http/https，且平台已确定）
   const lastUrl = profileData.lastUrl;
   console.log('[Cuckoo Code] 创建窗口: profile=' + profileData.id + ' providerChosen=' + providerChosen + ' lastUrl=' + (lastUrl || '(无)'));
-  if (providerChosen && provider && lastUrl && /^https?:\/\//i.test(lastUrl)) {
-    view.webContents.loadURL(lastUrl);
-  } else if (providerChosen && provider) {
-    // 平台已确定且存在，直接进入平台首页
-    view.webContents.loadURL(provider.homeUrl);
-  } else {
-    // 平台未确定（或对应 provider 已缺失），显示平台选择页
-    const selectPage = resolveSrc('ui/platform-select.html');
-    view.webContents.loadFile(selectPage);
-  }
+
+  // 加载页面（抽成函数，供网络身份应用完成后调用）
+  const loadPage = () => {
+    if (providerChosen && provider && lastUrl && /^https?:\/\//i.test(lastUrl)) {
+      view.webContents.loadURL(lastUrl);
+    } else if (providerChosen && provider) {
+      view.webContents.loadURL(provider.homeUrl);
+    } else {
+      const selectPage = resolveSrc('ui/platform-select.html');
+      view.webContents.loadFile(selectPage);
+    }
+  };
+
+  // 应用网络身份（代理 + Emulation + WebRTC 注入）→ 再加载页面。
+  // 顺序要求：
+  //  - setProxy 必须在 loadURL 之前（首请求就要走代理）
+  //  - Page.addScriptToEvaluateOnNewDocument 必须在 loadURL 之前（首帧生效）
+  //  - Emulation.* 可随时调用（立即生效）
+  //
+  // ⚠️ 总兜底：applyNetIdentity 内部每步都有超时，但这里再加一层「8 秒后强制 loadPage」，
+  // 绝不让窗口因网络身份应用失败/挂起而白屏（url: ""）。
+  const proxyCfg = normalizeProxyConfig(profileData.proxy);
+  const fpCfg = profileManager.getProfileFingerprint(profileData.id);
+  let pageLoadStarted = false;
+  const safeLoadPage = () => {
+    if (pageLoadStarted) return;
+    pageLoadStarted = true;
+    try { loadPage(); } catch (err: any) {
+      console.error('[Cuckoo Code] loadPage 异常:', err && err.message);
+    }
+  };
+  const netIdentityTimer = setTimeout(() => {
+    console.warn('[Cuckoo Code] 网络身份应用超时(8s)，强制加载页面');
+    safeLoadPage();
+  }, 8000);
+  applyNetIdentity(view, proxyCfg, fpCfg).then(() => {
+    clearTimeout(netIdentityTimer);
+    safeLoadPage();
+  }).catch((err: any) => {
+    clearTimeout(netIdentityTimer);
+    console.error('[Cuckoo Code] 应用网络身份失败:', err && err.message);
+    safeLoadPage();
+  });
 
   // 项目目录确定后，异步自动连该项目的 MCP（不阻塞导航/窗口）
   const autoConnectMcp = () => {
@@ -638,6 +683,12 @@ function createWindow(profile: any) {
 
   view.webContents.on('did-finish-load', () => {
     if (view.webContents && !view.webContents.isDestroyed()) {
+      // 代理/网络错误页：不是真实网页，跳过会话恢复与 URL 同步
+      //（否则 handleUrlChange 会把 currentSessionId 与项目目录清空）
+      try {
+        const cur = view.webContents.getURL();
+        if (cur && cur.indexOf('proxy-error.html') >= 0) return;
+      } catch (_) { /* ignore */ }
       // 统一设置：主进程权威源 → 本窗口 AI 页面 localStorage（运行时缓存）。
       // 文件已存在：直接下发。文件不存在（首次升级）：主动触发迁移（读本页 localStorage
       // → 写全局文件 → 回写本页），确保老用户即使从不打开设置页也能应用防封新默认。
@@ -651,6 +702,17 @@ function createWindow(profile: any) {
       view.webContents.send('page-loaded');
       sessionStore.tryRestoreSessionFromUrl(view);
       pushUrlState(view);
+      // 网络身份与硬件指纹兜底补一次：确保 reload/页面跳转后 Emulation 与指纹始终生效。
+      let liveCfg: any = proxyCfg;
+      let liveFp: any = fpCfg;
+      try {
+        const liveProfile = profileManager.getProfileById(profileData.id);
+        if (liveProfile) {
+          if (liveProfile.proxy) liveCfg = normalizeProxyConfig(liveProfile.proxy);
+          if (liveProfile.fingerprint) liveFp = liveProfile.fingerprint;
+        }
+      } catch (_) { /* ignore */ }
+      applyNetIdentity(view, liveCfg, liveFp).catch(() => { /* ignore */ });
       autoConnectMcp();
       // AI 内容就绪后重排一次（view 首帧渲染需要正确 bounds，修偶发空白）
       try { (mainWindow as any).__ckLayout && (mainWindow as any).__ckLayout(); } catch (_) {}
@@ -658,6 +720,7 @@ function createWindow(profile: any) {
   });
 
   view.webContents.on('did-navigate', (_event: any, url: string) => {
+    if (url && url.indexOf('proxy-error.html') >= 0) return;
     sessionStore.handleUrlChange(url, view);
     pushUrlState(view);
     // 通知 AI 页面（overlay/看门狗）URL 已变，替代原先的渲染进程轮询
@@ -671,6 +734,7 @@ function createWindow(profile: any) {
   });
 
   view.webContents.on('did-navigate-in-page', (_event: any, url: string) => {
+    if (url && url.indexOf('proxy-error.html') >= 0) return;
     sessionStore.handleUrlChange(url, view);
     pushUrlState(view);
     // SPA 路由（pushState）变化也在此触发，替代轮询
@@ -680,6 +744,28 @@ function createWindow(profile: any) {
     // 通知 harness 页面刷新"需初始化项目"状态（首页 ↔ 会话页）
     try { pushHarnessState(windowState.getContextByWebContents(view.webContents)); } catch (_) {}
     autoConnectMcp();
+  });
+
+  // 加载失败兜底：代理不可达 / 网络异常时，Electron 默认渲染 chrome-error 白屏，
+  // 用户无法判断是代理挂了还是网络问题。改用本地错误页，展示错误码+目标网址+重试按钮。
+  // 防循环：错误页本身是 file://，下面的 http(s) 过滤天然拦截，不会二次触发。
+  view.webContents.on('did-fail-load', (_event: any, errorCode: number, errorDescription: string, validatedURL: string, isMainFrame: boolean) => {
+    if (!isMainFrame) return;
+    if (errorCode === -3 /* ERR_ABORTED：用户主动中断/重定向，非错误 */) return;
+    if (!validatedURL || !/^https?:\/\//i.test(validatedURL)) return;
+    // 纯净模式（harness）可见时不打扰用户；用户主动切回网页模式再看错误页
+    if ((mainWindow as any).__ckHarnessVisible) return;
+    try {
+      console.warn('[Cuckoo Code] 页面加载失败:', errorCode, errorDescription, validatedURL);
+      const query: Record<string, string> = {
+        code: String(errorCode),
+        desc: String(errorDescription || ''),
+        url: validatedURL,
+      };
+      view.webContents.loadFile(resolveSrc('ui/proxy-error.html'), { query });
+    } catch (err: any) {
+      console.error('[Cuckoo Code] 加载错误页失败:', err && err.message);
+    }
   });
 
   view.webContents.on('before-input-event', (event: any, input: any) => {
@@ -694,9 +780,31 @@ function createWindow(profile: any) {
       // 独立窗口：docked DevTools 与 layoutView 的 setBounds 冲突，必须 detach。
       const wc = view.webContents;
       if (wc.isDevToolsOpened()) wc.closeDevTools();
-      else wc.openDevTools({ mode: 'detach' });
+      else {
+        // 代理启用时 debugger 被 CDP 占用，与 DevTools 互斥；先释放再开。
+        try { releaseDebugger(wc); } catch (_) {}
+        wc.openDevTools({ mode: 'detach' });
+      }
     }
   });
+
+  // DevTools 关闭后自动恢复 CDP 隐私盾与硬件指纹防护（防封号关键闭环）
+  view.webContents.on('devtools-closed', () => {
+    setTimeout(async () => {
+      try {
+        if (!view || !view.webContents || view.webContents.isDestroyed()) return;
+        const liveP = profileManager.getProfileById(profileData.id);
+        const liveCfg = (liveP && liveP.proxy) || profileData.proxy;
+        const liveFp = (liveP && liveP.fingerprint) || profileData.fingerprint;
+        await applyNetIdentity(view, liveCfg, liveFp);
+        console.log('[NetIdentity] DevTools 已关闭，隐私盾与硬件指纹已自动重新挂载');
+      } catch (err: any) {
+        console.warn('[NetIdentity] DevTools 关闭后重挂失败:', err && err.message);
+      }
+    }, 300);
+  });
+
+
 
   // 关闭前记录窗口大小/位置（用 getNormalBounds 取"还原后"尺寸；closed 时窗口已销毁取不到）
   mainWindow.on('close', () => {
@@ -712,8 +820,14 @@ function createWindow(profile: any) {
       // 记录最后 URL（仅 http/https；view 可能已销毁）
       if (view && view.webContents && !view.webContents.isDestroyed()) {
         const curUrl = view.webContents.getURL();
-        console.log('[Cuckoo Code] 关闭窗口记录 lastUrl: profile=' + profileData.id + ' url=' + curUrl);
-        profileManager.setLastUrl(profileData.id, curUrl);
+        // 错误页/非 http(s)（如 proxy-error.html）绝不写入 lastUrl，
+        // 否则下次启动会直接加载错误页
+        if (curUrl && curUrl.indexOf('proxy-error.html') < 0) {
+          console.log('[Cuckoo Code] 关闭窗口记录 lastUrl: profile=' + profileData.id + ' url=' + curUrl);
+          profileManager.setLastUrl(profileData.id, curUrl);
+        } else {
+          console.log('[Cuckoo Code] 关闭窗口：当前为错误页，保留原 lastUrl (profile=' + profileData.id + ')');
+        }
       } else {
         console.log('[Cuckoo Code] 关闭窗口：view 已销毁，跳过记录 URL (profile=' + profileData.id + ')');
       }
@@ -1571,6 +1685,95 @@ ipcMainForProfile.handle('rename-profile', async (event: any, { profileId, name 
     }
   } catch (_) { /* ignore */ }
   return { success: true, name: updated.name };
+});
+
+// 读取某 profile 的代理/指纹配置（仅本窗口可读自己）
+ipcMainForProfile.handle('get-profile-proxy', async (event: any, { profileId }: any) => {
+  const ctx = windowState.getContextByWebContents(event.sender);
+  if (!ctx) return { success: false, error: '非法来源' };
+  if (ctx.profileId !== profileId) return { success: false, error: '非法来源（不允许读其他窗口）' };
+  const p = profileManager.getProfileById(profileId);
+  if (!p) return { success: false, error: '窗口不存在' };
+  return { success: true, proxy: p.proxy || null };
+});
+
+// 设置某 profile 的代理/指纹（仅本窗口可改；保存后自动应用到 partition + reload）
+ipcMainForProfile.handle('set-profile-proxy', async (event: any, { profileId, proxy }: any) => {
+  const ctx = windowState.getContextByWebContents(event.sender);
+  if (!ctx) return { success: false, error: '非法来源' };
+  if (ctx.profileId !== profileId) return { success: false, error: '非法来源（不允许改其他窗口）' };
+  // 存储前 normalize（防脏数据：字符串 latitude、非法 webrtc 值等）
+  const cleanProxy = normalizeProxyConfig(proxy);
+  // 启用代理时先做端口可达性探测（2 秒超时）：代理客户端没启动/端口填错时，
+  // 直接拒绝保存并给出明确原因，避免用户保存后对着 chrome-error 白屏干猜。
+  if (cleanProxy.enabled && cleanProxy.rules) {
+    const ok = await checkProxyReachable(cleanProxy.rules);
+    if (!ok) {
+      return {
+        success: false,
+        error: '代理 ' + cleanProxy.rules + ' 无法连接，请检查代理客户端是否已启动、端口是否正确',
+      };
+    }
+  }
+  const p = profileManager.setProfileProxy(profileId, cleanProxy);
+  if (!p) return { success: false, error: '窗口不存在' };
+  // 立即应用到该 profile 的全部窗口（主 + 子代理），并 reload 使 WebRTC 注入生效。
+  // Emulation 时区/语言会立即生效；WebRTC 脚本需 reload 才作用于新文档。
+  const cfg = normalizeProxyConfig(p.proxy);
+  const targets = windowState.getAllWindowsByProfileId(profileId);
+  for (const c of targets) {
+    if (!c || !c.view || c.view.webContents.isDestroyed()) continue;
+    try {
+      // 关键顺序：先完整应用网络身份与专属指纹，全部注入就绪后，再触发 reload
+      const fpCfg = profileManager.getProfileFingerprint(profileId);
+      await applyNetIdentity(c.view, cfg, fpCfg);
+      try { c.view.webContents.reload(); } catch (_) {}
+    } catch (err: any) {
+      console.warn('[Cuckoo Code] 应用代理配置失败:', err && err.message);
+    }
+  }
+  // 自动跟随出口 IP：勾了 autoGeo 且启用了代理 → 后台探测（不阻塞返回）。
+  // 流程：点保存立即返回 → 页面先加载（无伪装）→ 探测完成自动更新配置 + reload（伪装生效）。
+  if (cfg.autoGeo && cfg.enabled && cfg.rules) {
+    const first = targets.find((c: any) => c && c.view && !c.view.webContents.isDestroyed());
+    const ses = first && first.view && first.view.webContents && first.view.webContents.session;
+    if (ses) {
+      (async () => {
+        try {
+          const geo = await detectExitGeo(ses);
+          if (!geo) {
+            console.warn('[Cuckoo Code] 自动跟随出口 IP 失败：未获取到地理信息');
+            return;
+          }
+          // 重新读（期间用户可能改了其他字段）
+          const cur = profileManager.getProfileById(profileId);
+          if (!cur || !cur.proxy) return;
+          const merged = normalizeProxyConfig({
+            ...cur.proxy,
+            timezone: geo.timezone || cur.proxy.timezone,
+            locale: geo.locale || cur.proxy.locale,
+            latitude: typeof geo.latitude === 'number' ? geo.latitude : cur.proxy.latitude,
+            longitude: typeof geo.longitude === 'number' ? geo.longitude : cur.proxy.longitude,
+            autoGeo: true,
+          });
+          profileManager.setProfileProxy(profileId, merged);
+          const wcTargets = windowState.getAllWindowsByProfileId(profileId);
+          const liveFp = profileManager.getProfileFingerprint(profileId);
+          for (const c of wcTargets) {
+            if (!c || !c.view || c.view.webContents.isDestroyed()) continue;
+            try {
+              await applyNetIdentity(c.view, merged, liveFp);
+              try { c.view.webContents.reload(); } catch (_) {}
+            } catch (_) { /* ignore */ }
+          }
+          console.log('[Cuckoo Code] 自动跟随出口 IP 完成:', geo.ip, geo.timezone, geo.locale);
+        } catch (err: any) {
+          console.warn('[Cuckoo Code] 自动跟随出口 IP 异常:', err && err.message);
+        }
+      })();
+    }
+  }
+  return { success: true, proxy: p.proxy || null };
 });
 
 // 打开指定 profile 的窗口（若已存在则聚焦）

@@ -175,7 +175,7 @@ let handleError = function handleError(detail: any): void {
     if (cfg.count429 >= 0 && count429 >= cfg.count429) {
       showToast('操作频繁重试已达上限（' + cfg.count429 + ' 次），停止自动重试', 4000);
       clearPending();
-      emitRetryState('exhausted');
+      emitRetryState('exhausted', { is429: true, count: cfg.count429 });
       return;
     }
     count429++;
@@ -183,7 +183,7 @@ let handleError = function handleError(detail: any): void {
     if (cfg.count >= 0 && normalCount >= cfg.count) {
       showToast('自动重试已达上限（' + cfg.count + ' 次），停止自动重试', 4000);
       clearPending();
-      emitRetryState('exhausted');
+      emitRetryState('exhausted', { is429: false, count: cfg.count });
       return;
     }
     normalCount++;

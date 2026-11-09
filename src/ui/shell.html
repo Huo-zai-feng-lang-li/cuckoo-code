@@ -2052,6 +2052,48 @@
 body[data-ck-dark] .ck-stat-item-hl { background: linear-gradient(90deg, rgba(251, 191, 36, 0.14), transparent 70%); }
 body[data-ck-dark] .ck-stat-item-hl .ck-stat-val { color: #fbbf24; }
 
+
+/* 窗口代理按钮（卡片底部小图标） */
+.ck-win-proxy {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ck-text-dim);
+  padding: 0 4px;
+  user-select: none;
+}
+.ck-win-proxy:hover { color: var(--ck-accent); }
+
+
+/* 窗口代理按钮（卡片底部小图标） */
+.ck-win-proxy {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ck-text-dim);
+  padding: 0 4px;
+  user-select: none;
+}
+.ck-win-proxy:hover { color: var(--ck-accent); }
+
+
+/* 窗口代理弹窗的高级折叠区 */
+.ck-proxy-advanced {
+  margin: 4px 0 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--ck-border, rgba(255,255,255,0.08));
+  border-radius: 6px;
+  font-size: 12px;
+}
+.ck-proxy-advanced > summary {
+  cursor: pointer;
+  color: var(--ck-text-dim);
+  user-select: none;
+  padding: 2px 0;
+}
+.ck-proxy-advanced > summary:hover { color: var(--ck-text); }
+.ck-proxy-advanced[open] > summary { margin-bottom: 6px; }
+.ck-proxy-advanced .ck-field { margin-bottom: 6px; }
+.ck-proxy-advanced .ck-field:last-child { margin-bottom: 0; }
+
 </style>
 </head>
 <body data-ck-dark>
@@ -2237,6 +2279,65 @@ body[data-ck-dark] .ck-stat-item-hl .ck-stat-val { color: #fbbf24; }
               </div>
             </div>
           </div>
+          <!-- 窗口代理/指纹弹窗 -->
+          <div class="ck-modal-mask cuckoo-hidden" id="proxy-modal">
+            <div class="ck-modal">
+              <span class="ck-modal-title">窗口网络身份</span>
+              <div class="ck-field">
+                <span class="ck-field-label">启用</span>
+                <label class="ck-switch">
+                  <input type="checkbox" id="proxy-enabled" />
+                  <span class="ck-switch-track"></span>
+                </label>
+              </div>
+              <div class="ck-field">
+                <span class="ck-field-label">代理地址</span>
+                <input class="ck-input" id="proxy-rules" placeholder="http://127.0.0.1:41576 或 socks5h://127.0.0.1:1080" />
+              </div>
+              <div class="ck-field">
+                <span class="ck-field-label">绕过规则（逗号分隔）</span>
+                <input class="ck-input" id="proxy-bypass" placeholder="<local>,localhost,127.0.0.1" />
+              </div>
+              <div class="ck-auto-head">
+                <span class="ck-field-label">自动跟随出口 IP（时区/语言/经纬度）</span>
+                <label class="ck-switch">
+                  <input type="checkbox" id="proxy-autogeo" checked />
+                  <span class="ck-switch-track"></span>
+                </label>
+              </div>
+              <div class="ck-field">
+                <span class="ck-field-label">WebRTC 策略</span>
+                <select class="ck-input" id="proxy-webrtc">
+                  <option value="spoof">伪装（推荐，只暴露 mDNS 虚拟地址，防 DNS/IP 泄露）</option>
+                  <option value="disable">彻底禁用（阻止所有 WebRTC 通信）</option>
+                  <option value="off">关闭（保留原生，可能泄露真实 IP）</option>
+                </select>
+              </div>
+              <details class="ck-proxy-advanced">
+                <summary>高级（手动覆盖自动探测值，留空则用探测结果）</summary>
+                <div class="ck-field">
+                  <span class="ck-field-label">时区（IANA，如 America/Los_Angeles）</span>
+                  <input class="ck-input" id="proxy-timezone" placeholder="America/Los_Angeles" />
+                </div>
+                <div class="ck-field">
+                  <span class="ck-field-label">语言（BCP47，如 en-US）</span>
+                  <input class="ck-input" id="proxy-locale" placeholder="en-US" />
+                </div>
+                <div class="ck-field">
+                  <span class="ck-field-label">纬度</span>
+                  <input class="ck-input" id="proxy-latitude" placeholder="34.0522" />
+                </div>
+                <div class="ck-field">
+                  <span class="ck-field-label">经度</span>
+                  <input class="ck-input" id="proxy-longitude" placeholder="-118.2437" />
+                </div>
+              </details>
+              <div class="ck-modal-foot">
+                <button class="ck-btn ck-btn-secondary" id="proxy-modal-cancel">取消</button>
+                <button class="ck-btn ck-btn-primary" id="proxy-modal-save">保存</button>
+              </div>
+            </div>
+          </div>
           <!-- 通用输入弹窗（重命名会话等） -->
           <div class="ck-modal-mask cuckoo-hidden" id="input-modal">
             <div class="ck-modal">
@@ -2275,6 +2376,7 @@ body[data-ck-dark] .ck-stat-item-hl .ck-stat-val { color: #fbbf24; }
               </div>
             </div>
           </div>
+
 
           <div class="ck-panel-body">
             <!-- ===== 工作区（会话） ===== -->
@@ -8715,7 +8817,7 @@ paths:            # 可选；省略 = 始终生效
     const checked = p.autoOpen === true ? " checked" : "";
     const initial = (p.name || "?").trim().charAt(0).toUpperCase();
     const avatarStyle = providerAvatarStyle(p.providerId);
-    return '<div class="ck-win-item" data-profile-id="' + escapeHtml(p.id) + '"><div class="ck-win-top"><span class="ck-win-avatar"' + (avatarStyle ? ' style="background:' + avatarStyle + '"' : "") + ">" + escapeHtml(initial) + '</span><span class="ck-win-name">' + escapeHtml(p.name) + '</span><span class="ck-win-edit" data-profile-id="' + escapeHtml(p.id) + '" data-name="' + escapeAttr(p.name || "") + '" title="\u91CD\u547D\u540D">\u270E</span><span class="ck-win-del" data-profile-id="' + escapeHtml(p.id) + '" title="\u5220\u9664\u7A97\u53E3">\u2715</span></div><div class="ck-win-bottom"><span class="ck-win-provider">' + escapeHtml(pname) + '</span><label class="ck-win-check' + (p.autoOpen === true ? " ck-win-check-on" : "") + '" title="\u542F\u52A8\u65F6\u9ED8\u8BA4\u6253\u5F00"><input type="checkbox" data-profile-id="' + escapeHtml(p.id) + '"' + checked + " />\u9ED8\u8BA4\u6253\u5F00</label></div></div>";
+    return '<div class="ck-win-item" data-profile-id="' + escapeHtml(p.id) + '"><div class="ck-win-top"><span class="ck-win-avatar"' + (avatarStyle ? ' style="background:' + avatarStyle + '"' : "") + ">" + escapeHtml(initial) + '</span><span class="ck-win-name">' + escapeHtml(p.name) + '</span><span class="ck-win-edit" data-profile-id="' + escapeHtml(p.id) + '" data-name="' + escapeAttr(p.name || "") + '" title="\u91CD\u547D\u540D">\u270E</span><span class="ck-win-del" data-profile-id="' + escapeHtml(p.id) + '" title="\u5220\u9664\u7A97\u53E3">\u2715</span></div><div class="ck-win-bottom"><span class="ck-win-provider">' + escapeHtml(pname) + '</span><span class="ck-win-proxy" data-profile-id="' + escapeHtml(p.id) + '" title="\u8BBE\u7F6E\u4EE3\u7406/\u6307\u7EB9">' + (p.proxy && p.proxy.enabled ? "\u{1F310} \u4EE3\u7406" : "\u{1F310}") + '</span><label class="ck-win-check' + (p.autoOpen === true ? " ck-win-check-on" : "") + '" title="\u542F\u52A8\u65F6\u9ED8\u8BA4\u6253\u5F00"><input type="checkbox" data-profile-id="' + escapeHtml(p.id) + '"' + checked + " />\u9ED8\u8BA4\u6253\u5F00</label></div></div>";
   }
   async function renderWindowList() {
     const listEl2 = document.getElementById("win-list");
@@ -8786,10 +8888,17 @@ paths:            # 可选；省略 = 始终生效
           if (e.target.classList.contains("ck-win-del")) return;
           if (e.target.classList.contains("ck-win-edit")) return;
           if (e.target.closest(".ck-win-check")) return;
+          if (e.target.closest(".ck-win-proxy")) return;
           try {
             await api.openProfileWindow?.(el2.dataset.profileId);
           } catch (_) {
           }
+        });
+      });
+      listEl2.querySelectorAll(".ck-win-proxy").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openProxyModal(btn.dataset.profileId);
         });
       });
       const onRename = async (item) => {
@@ -8981,6 +9090,97 @@ paths:            # 可选；省略 = 始终生效
     } catch (_) {
     }
   });
+  async function openProxyModal(profileId) {
+    const mask = document.getElementById("proxy-modal");
+    if (!mask) return;
+    const enabledEl = document.getElementById("proxy-enabled");
+    const rulesEl = document.getElementById("proxy-rules");
+    const bypassEl = document.getElementById("proxy-bypass");
+    const tzEl = document.getElementById("proxy-timezone");
+    const localeEl = document.getElementById("proxy-locale");
+    const latEl = document.getElementById("proxy-latitude");
+    const lngEl = document.getElementById("proxy-longitude");
+    const webrtcEl = document.getElementById("proxy-webrtc");
+    const autogeoEl = document.getElementById("proxy-autogeo");
+    const cancelBtn = document.getElementById("proxy-modal-cancel");
+    const saveBtn = document.getElementById("proxy-modal-save");
+    let cur = null;
+    try {
+      const r = await api.getProfileProxy?.(profileId);
+      if (r && r.success) cur = r.proxy;
+    } catch (_) {
+    }
+    enabledEl.checked = !!(cur && cur.enabled);
+    rulesEl.value = cur && cur.rules || "";
+    bypassEl.value = cur && cur.bypass || "<local>,localhost,127.0.0.1";
+    autogeoEl.checked = cur && cur.autoGeo !== false ? true : cur ? !!cur.autoGeo : true;
+    tzEl.value = cur && cur.timezone || "";
+    localeEl.value = cur && cur.locale || "";
+    latEl.value = cur && typeof cur.latitude === "number" ? String(cur.latitude) : "";
+    lngEl.value = cur && typeof cur.longitude === "number" ? String(cur.longitude) : "";
+    webrtcEl.value = cur && cur.webrtc || "spoof";
+    const prevAc = mask.__proxyAc;
+    if (prevAc) {
+      try {
+        prevAc.abort();
+      } catch (_) {
+      }
+    }
+    const ac = new AbortController();
+    mask.__proxyAc = ac;
+    const close = () => {
+      mask.classList.add("cuckoo-hidden");
+      try {
+        ac.abort();
+      } catch (_) {
+      }
+      mask.__proxyAc = null;
+    };
+    mask.classList.remove("cuckoo-hidden");
+    cancelBtn?.addEventListener("click", close, { signal: ac.signal });
+    saveBtn?.addEventListener("click", async () => {
+      const payload = {
+        enabled: enabledEl.checked,
+        rules: rulesEl.value.trim(),
+        bypass: bypassEl.value.trim(),
+        webrtc: webrtcEl.value,
+        autoGeo: autogeoEl.checked
+      };
+      if (tzEl.value.trim()) payload.timezone = tzEl.value.trim();
+      if (localeEl.value.trim()) payload.locale = localeEl.value.trim();
+      const lat = parseFloat(latEl.value);
+      const lng = parseFloat(lngEl.value);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        payload.latitude = lat;
+        payload.longitude = lng;
+      }
+      if (payload.enabled && !payload.rules) {
+        await ckAlert("\u5DF2\u542F\u7528\u4EE3\u7406\u4F46\u672A\u586B\u5199\u4EE3\u7406\u5730\u5740");
+        return;
+      }
+      const btn = saveBtn;
+      const originalText = btn ? btn.textContent : "";
+      if (btn) {
+        btn.disabled = true;
+        if (payload.enabled && payload.rules) btn.textContent = "\u68C0\u6D4B\u4E2D\u2026";
+      }
+      let r = null;
+      try {
+        r = await api.setProfileProxy?.(profileId, payload);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = originalText;
+        }
+      }
+      if (!r || !r.success) {
+        await ckAlert("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (r && r.error || "\u672A\u77E5\u9519\u8BEF"));
+        return;
+      }
+      close();
+      renderWindowList();
+    }, { signal: ac.signal });
+  }
 
   // src/ui/shell/scripts/pages/settings.ts
   init_shared();

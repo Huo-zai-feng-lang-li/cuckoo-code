@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { writeJsonAtomicSync, readJsonRobustSync } from '../infra/atomic-json.js';
+import { generateFingerprint, normalizeFingerprintConfig, type FingerprintConfig } from './fingerprint.js';
 
 const require = createRequire(import.meta.url);
 const { app } = require('electron');
@@ -61,7 +62,19 @@ function getLastActiveProfileId(): string | null {
 function readProfiles(): any[] {
   // C-002：损坏回退 .bak，不再静默返回 []（避免崩溃后全部 profile 丢失）
   const arr = readJsonRobustSync<any[]>(getProfileFile(), []);
-  return Array.isArray(arr) ? arr : [];
+  if (!Array.isArray(arr)) return [];
+  // 自动为旧 profile 补齐硬件指纹并持久化
+  let dirty = false;
+  for (const p of arr) {
+    if (p && p.id && !p.fingerprint) {
+      p.fingerprint = generateFingerprint(p.id);
+      dirty = true;
+    }
+  }
+  if (dirty) {
+    writeProfiles(arr);
+  }
+  return arr;
 }
 
 function writeProfiles(profiles: any[]): void {
@@ -87,10 +100,11 @@ function createProfile(name: string, providerId: string): any {
     partition: 'persist:' + (pid ? pid + ':' : '') + id,
     createdAt: new Date().toISOString(),
     autoOpen: false,
+    fingerprint: generateFingerprint(id),
   };
   profiles.push(profile);
   writeProfiles(profiles);
-  console.log('[Profile] 已创建:', profile.id, profile.name, 'provider=' + (pid || '(未确定)'));
+  console.log('[Profile] 已创建:', profile.id, profile.name, 'provider=' + (pid || '(未确定)'), 'fp=' + profile.fingerprint.presetId);
   return profile;
 }
 
@@ -179,6 +193,24 @@ function cleanupSubagentStores(): void {
   }
 }
 
+/** 设置某 profile 的网络身份（代理 + 时区/语言/位置 + WebRTC） */
+function setProfileProxy(id: string, proxy: any): any {
+  if (!id) return null;
+  const profiles = readProfiles();
+  const p = profiles.find(x => x.id === id);
+  if (!p) return null;
+  p.proxy = proxy || null;
+  writeProfiles(profiles);
+  console.log('[Profile] 已更新代理配置:', id, proxy ? JSON.stringify(proxy) : '(null)');
+  return p;
+}
+
+/** 读取某 profile 的网络身份配置（无则 null） */
+function getProfileProxy(id: string): any {
+  const p = getProfileById(id);
+  return (p && p.proxy) || null;
+}
+
 /** 设置某 profile 是否"启动时默认打开" */
 function setAutoOpen(id: string, on: boolean): any {
   const profiles = readProfiles();
@@ -245,6 +277,34 @@ function updateProfileName(id: string, name: string): any {
   return p;
 }
 
+/** 读取某 profile 的硬件指纹配置（无则自动生成并持久化） */
+function getProfileFingerprint(id: string): FingerprintConfig | null {
+  const p = getProfileById(id);
+  if (!p) return null;
+  if (!p.fingerprint) {
+    p.fingerprint = generateFingerprint(id);
+    const profiles = readProfiles();
+    const target = profiles.find(x => x.id === id);
+    if (target) {
+      target.fingerprint = p.fingerprint;
+      writeProfiles(profiles);
+    }
+  }
+  return normalizeFingerprintConfig(p.fingerprint, id);
+}
+
+/** 设置某 profile 的硬件指纹配置 */
+function setProfileFingerprint(id: string, fp: any): any {
+  if (!id) return null;
+  const profiles = readProfiles();
+  const p = profiles.find(x => x.id === id);
+  if (!p) return null;
+  p.fingerprint = normalizeFingerprintConfig(fp, id);
+  writeProfiles(profiles);
+  console.log('[Profile] 已更新指纹配置:', id, p.fingerprint.presetId);
+  return p;
+}
+
 export {
   readProfiles,
   writeProfiles,
@@ -263,4 +323,9 @@ export {
   setLastUrl,
   clearLastUrl,
   cleanupSubagentStores,
+  setProfileProxy,
+  getProfileProxy,
+  getProfileFingerprint,
+  setProfileFingerprint,
 };
+

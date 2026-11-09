@@ -101,5 +101,6 @@
 | 105 | fix | [桌面宠物窗口透明区域拦截鼠标点击（未开 setIgnoreMouseEvents）](./105-desktop-pet-mouse-passthrough.md) | done | fix/105-desktop-pet-mouse-passthrough | 2026-11-03 |
 | 106 | fix | [桌面宠物浮窗在「结果待发送」阶段动画卡死不动](./106-desktop-pet-send-anim.md) | done | fix/106-desktop-pet-send-anim | 2026-11-04 |
 | 107 | fix | [DeepSeek 官方 SSE 协议升级导致频繁误判为请求失败与自动重试](./107-deepseek-sse-protocol-adapt.md) | completed | fix/107-deepseek-sse-protocol-adapt | 2026-11-08 |
+| 108 | feature | [每窗口独立代理与浏览器指纹伪装（代理 + 时区/语言/位置 + WebRTC）](./108-per-window-proxy.md) | completed | feat/108-per-window-proxy | 2026-11-09 |
 
-共 96 个需求。
+共 97 个需求。

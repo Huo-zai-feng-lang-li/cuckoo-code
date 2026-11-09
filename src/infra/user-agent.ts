@@ -301,5 +301,41 @@ function ensureClientHints(ses: any): void {
   }
 }
 
-export { buildChromeUserAgent, chromeMajor, buildClientHintsHeaders, buildUserAgentDataFix, ensureClientHints };
+/**
+ * 生成 CDP Emulation.setUserAgentOverride 用的 userAgentMetadata。
+ * 必须与 buildClientHintsHeaders 的品牌/平台保持一致，否则 HTTP 头与
+ * navigator.userAgentData 自相矛盾，反而更容易被识别。
+ * （需求 108 语言伪装：setUserAgentOverride 是唯一能同时改 navigator.language
+ *  与 Accept-Language 的接口；setLocaleOverride 只影响 Intl。）
+ */
+function buildUserAgentMetadata(): Record<string, any> {
+  const m = chromeMajor();
+  const full = chromeFullVersion();
+  const k = platformKind();
+  const plat = k === 'mac' ? 'macOS' : (k === 'linux' ? 'Linux' : 'Windows');
+  const brands = [
+    { brand: 'Google Chrome', version: m },
+    { brand: 'Chromium', version: m },
+    { brand: 'Not_A Brand', version: '24' },
+  ];
+  const fullVersionList = [
+    { brand: 'Google Chrome', version: full },
+    { brand: 'Chromium', version: full },
+    { brand: 'Not_A Brand', version: '24.0.0.0' },
+  ];
+  return {
+    brands,
+    fullVersionList,
+    fullVersion: full,
+    platform: plat,
+    platformVersion: k === 'mac' ? '10.15.7' : (k === 'linux' ? '6.0.0' : '10.0.0'),
+    architecture: 'x86',
+    model: '',
+    mobile: false,
+    bitness: '64',
+    wow64: false,
+  };
+}
+
+export { buildChromeUserAgent, chromeMajor, buildClientHintsHeaders, buildUserAgentDataFix, ensureClientHints, buildUserAgentMetadata };
 

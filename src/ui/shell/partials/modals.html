@@ -67,6 +67,65 @@
               </div>
             </div>
           </div>
+          <!-- 窗口代理/指纹弹窗 -->
+          <div class="ck-modal-mask cuckoo-hidden" id="proxy-modal">
+            <div class="ck-modal">
+              <span class="ck-modal-title">窗口网络身份</span>
+              <div class="ck-field">
+                <span class="ck-field-label">启用</span>
+                <label class="ck-switch">
+                  <input type="checkbox" id="proxy-enabled" />
+                  <span class="ck-switch-track"></span>
+                </label>
+              </div>
+              <div class="ck-field">
+                <span class="ck-field-label">代理地址</span>
+                <input class="ck-input" id="proxy-rules" placeholder="http://127.0.0.1:41576 或 socks5h://127.0.0.1:1080" />
+              </div>
+              <div class="ck-field">
+                <span class="ck-field-label">绕过规则（逗号分隔）</span>
+                <input class="ck-input" id="proxy-bypass" placeholder="<local>,localhost,127.0.0.1" />
+              </div>
+              <div class="ck-auto-head">
+                <span class="ck-field-label">自动跟随出口 IP（时区/语言/经纬度）</span>
+                <label class="ck-switch">
+                  <input type="checkbox" id="proxy-autogeo" checked />
+                  <span class="ck-switch-track"></span>
+                </label>
+              </div>
+              <div class="ck-field">
+                <span class="ck-field-label">WebRTC 策略</span>
+                <select class="ck-input" id="proxy-webrtc">
+                  <option value="spoof">伪装（推荐，只暴露 mDNS 虚拟地址，防 DNS/IP 泄露）</option>
+                  <option value="disable">彻底禁用（阻止所有 WebRTC 通信）</option>
+                  <option value="off">关闭（保留原生，可能泄露真实 IP）</option>
+                </select>
+              </div>
+              <details class="ck-proxy-advanced">
+                <summary>高级（手动覆盖自动探测值，留空则用探测结果）</summary>
+                <div class="ck-field">
+                  <span class="ck-field-label">时区（IANA，如 America/Los_Angeles）</span>
+                  <input class="ck-input" id="proxy-timezone" placeholder="America/Los_Angeles" />
+                </div>
+                <div class="ck-field">
+                  <span class="ck-field-label">语言（BCP47，如 en-US）</span>
+                  <input class="ck-input" id="proxy-locale" placeholder="en-US" />
+                </div>
+                <div class="ck-field">
+                  <span class="ck-field-label">纬度</span>
+                  <input class="ck-input" id="proxy-latitude" placeholder="34.0522" />
+                </div>
+                <div class="ck-field">
+                  <span class="ck-field-label">经度</span>
+                  <input class="ck-input" id="proxy-longitude" placeholder="-118.2437" />
+                </div>
+              </details>
+              <div class="ck-modal-foot">
+                <button class="ck-btn ck-btn-secondary" id="proxy-modal-cancel">取消</button>
+                <button class="ck-btn ck-btn-primary" id="proxy-modal-save">保存</button>
+              </div>
+            </div>
+          </div>
           <!-- 通用输入弹窗（重命名会话等） -->
           <div class="ck-modal-mask cuckoo-hidden" id="input-modal">
             <div class="ck-modal">
@@ -105,3 +164,4 @@
               </div>
             </div>
           </div>
+

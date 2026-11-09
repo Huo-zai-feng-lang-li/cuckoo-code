@@ -28,6 +28,9 @@ function renderWindowItem(p: any, providerMap: Record<string, string>): string {
     '</div>' +
     '<div class="ck-win-bottom">' +
       '<span class="ck-win-provider">' + escapeHtml(pname) + '</span>' +
+      '<span class="ck-win-proxy" data-profile-id="' + escapeHtml(p.id) + '" title="设置代理/指纹">' +
+        (p.proxy && p.proxy.enabled ? '🌐 代理' : '🌐') +
+      '</span>' +
       '<label class="ck-win-check' + (p.autoOpen === true ? ' ck-win-check-on' : '') + '" title="启动时默认打开">' +
         '<input type="checkbox" data-profile-id="' + escapeHtml(p.id) + '"' + checked + ' />默认打开' +
       '</label>' +
@@ -121,7 +124,15 @@ export async function renderWindowList(): Promise<void> {
         if (e.target.classList.contains('ck-win-del')) return;
         if (e.target.classList.contains('ck-win-edit')) return;
         if (e.target.closest('.ck-win-check')) return;
+        if (e.target.closest('.ck-win-proxy')) return;
         try { await api.openProfileWindow?.(el.dataset.profileId); } catch (_) { /* ignore */ }
+      });
+    });
+    // 代理按钮：打开弹窗
+    listEl.querySelectorAll('.ck-win-proxy').forEach((btn: any) => {
+      btn.addEventListener('click', (e: any) => {
+        e.stopPropagation();
+        openProxyModal(btn.dataset.profileId);
       });
     });
     // 重命名：仅点铅笔编辑图标
@@ -300,3 +311,91 @@ document.getElementById('wg-new')?.addEventListener('click', async () => {
     renderWindowList();
   } catch (_) { /* ignore */ }
 });
+
+
+/** 打开"窗口网络身份"弹窗：代理 + 时区/语言/位置 + WebRTC */
+async function openProxyModal(profileId: string): Promise<void> {
+  const mask = document.getElementById('proxy-modal');
+  if (!mask) return;
+  const enabledEl = document.getElementById('proxy-enabled') as HTMLInputElement;
+  const rulesEl = document.getElementById('proxy-rules') as HTMLInputElement;
+  const bypassEl = document.getElementById('proxy-bypass') as HTMLInputElement;
+  const tzEl = document.getElementById('proxy-timezone') as HTMLInputElement;
+  const localeEl = document.getElementById('proxy-locale') as HTMLInputElement;
+  const latEl = document.getElementById('proxy-latitude') as HTMLInputElement;
+  const lngEl = document.getElementById('proxy-longitude') as HTMLInputElement;
+  const webrtcEl = document.getElementById('proxy-webrtc') as HTMLSelectElement;
+  const autogeoEl = document.getElementById('proxy-autogeo') as HTMLInputElement;
+  const cancelBtn = document.getElementById('proxy-modal-cancel');
+  const saveBtn = document.getElementById('proxy-modal-save');
+
+  // 读当前值
+  let cur: any = null;
+  try {
+    const r = await api.getProfileProxy?.(profileId);
+    if (r && r.success) cur = r.proxy;
+  } catch (_) { /* ignore */ }
+  enabledEl.checked = !!(cur && cur.enabled);
+  rulesEl.value = (cur && cur.rules) || '';
+  bypassEl.value = (cur && cur.bypass) || '<local>,localhost,127.0.0.1';
+  autogeoEl.checked = (cur && cur.autoGeo !== false) ? true : (cur ? !!cur.autoGeo : true);
+  tzEl.value = (cur && cur.timezone) || '';
+  localeEl.value = (cur && cur.locale) || '';
+  latEl.value = (cur && typeof cur.latitude === 'number') ? String(cur.latitude) : '';
+  lngEl.value = (cur && typeof cur.longitude === 'number') ? String(cur.longitude) : '';
+  webrtcEl.value = (cur && cur.webrtc) || 'spoof';
+
+  // 用 AbortController 管理监听器生命周期：每次打开弹窗先清理上一次残留，
+  // 避免 once:true 在校验失败提前 return 时被"偷掉"，导致用户改好后再点没反应。
+  const prevAc = (mask as any).__proxyAc;
+  if (prevAc) { try { prevAc.abort(); } catch (_) {} }
+  const ac = new AbortController();
+  (mask as any).__proxyAc = ac;
+
+  const close = () => {
+    mask.classList.add('cuckoo-hidden');
+    try { ac.abort(); } catch (_) {}
+    (mask as any).__proxyAc = null;
+  };
+  mask.classList.remove('cuckoo-hidden');
+
+  cancelBtn?.addEventListener('click', close, { signal: ac.signal });
+  saveBtn?.addEventListener('click', async () => {
+    const payload: any = {
+      enabled: enabledEl.checked,
+      rules: rulesEl.value.trim(),
+      bypass: bypassEl.value.trim(),
+      webrtc: webrtcEl.value,
+      autoGeo: autogeoEl.checked,
+    };
+    if (tzEl.value.trim()) payload.timezone = tzEl.value.trim();
+    if (localeEl.value.trim()) payload.locale = localeEl.value.trim();
+    const lat = parseFloat(latEl.value);
+    const lng = parseFloat(lngEl.value);
+    if (!isNaN(lat) && !isNaN(lng)) {
+      payload.latitude = lat;
+      payload.longitude = lng;
+    }
+    if (payload.enabled && !payload.rules) {
+      await ckAlert('已启用代理但未填写代理地址');
+      return;
+    }
+    // 启用代理时主进程会先做端口可达性探测（最多 2 秒），期间禁用按钮防连点
+    const btn = saveBtn as HTMLButtonElement | null;
+    const originalText = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; if (payload.enabled && payload.rules) btn.textContent = '检测中…'; }
+    let r: any = null;
+    try {
+      r = await api.setProfileProxy?.(profileId, payload);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = originalText; }
+    }
+    if (!r || !r.success) {
+      await ckAlert('保存失败：' + ((r && r.error) || '未知错误'));
+      return;
+    }
+    close();
+    // 刷新列表（代理状态可能变化，卡片图标会更新）
+    renderWindowList();
+  }, { signal: ac.signal });
+}

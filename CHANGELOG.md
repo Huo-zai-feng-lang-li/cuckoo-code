@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.10.210] - 2026-11-09
+
+### 新增
+- **每窗口独立代理与浏览器指纹伪装（需求 108）**：Cuckoo Code 多窗口架构下，用户需要让某些窗口走代理（如 `http://127.0.0.1:51081`）、其他窗口直连。本次从零内置能力，**无需安装浏览器扩展**：
+  - **代理**（partition 级硬隔离）：`session.setProxy` → 该窗口 profile 下所有请求走代理，其他窗口不受影响；子代理窗口复用父 partition 自动继承。
+  - **时区伪装**：CDP `Emulation.setTimezoneOverride` —— Chromium 原生，零 JS 指纹风险（`Date`/`Intl` 完全原样）。
+  - **语言伪装**：CDP `Emulation.setLocaleOverride`。
+  - **地理位置伪装**：CDP `Emulation.setGeolocationOverride`。
+  - **WebRTC 防护**：CDP `Page.addScriptToEvaluateOnNewDocument` 主世界注入伪造 `RTCPeerConnection`，三档策略：
+    - `spoof`（推荐）：清空 iceServers（断 STUN）+ 只返回一条 mDNS `.local` host 候选，构造器 name 与 toString 均伪装 `[native code]`。
+    - `disable`：构造即抛错（最严格，但有少数派特征）。
+    - `off`（默认）：不注入，保留原生 WebRTC（直连窗口的视频通话正常，如国内腾讯会议/飞书）。
+  - **UI**：窗口卡片底部新增 `🌐` 按钮 → 弹窗配置代理地址/绕过规则/时区/语言/经纬度/WebRTC 策略，保存后自动 reload 生效。
+  - **安全**：`get/set-profile-proxy` 两条 IPC 均限制"仅本窗口可读写自己"（`ctx.profileId !== profileId` 拒绝），存储前 `normalizeProxyConfig` 防脏数据。
+  - **代理连通性检查**：保存配置时先 TCP 探测代理端口（2s 超时），连不上直接提示「代理 xxx 无法连接，请检查代理客户端是否已启动、端口是否正确」，不让用户保存后对着白屏猜；探测期间保存按钮显示「检测中…」并禁用。
+- **加载失败兜底页**：`did-fail-load`（非 iframe、非 ERR_ABORTED、非纯净模式）时展示本地错误页（错误码 + 目标网址 + 重试按钮），替代 Electron 默认的 chrome-error 白屏；错误页不写 `lastUrl`、不触发会话恢复/URL 同步。
+- **纯净模式重试倒计时修复**：原 `onRetryState` 只在 pending 时算一次秒数就定住，秒数不动、文案与 AI 页面浮层（「请求失败，N 秒后自动重试」）不一致。现改为每秒刷新的 ticker（宠物浮窗同步秒数），中止时一并清理。
+- **已知限制（非 bug）**：启用代理后按 F12 打开 DevTools 会先 detach CDP（debugger 与 DevTools 互斥，Emulation 暂失效）。
+
+### 验证
+- `npm run typecheck` / `npm run lint`（0 errors，67 warnings 基线持平）/ `npm run compile` / `npm test`（132 文件 1336 用例）全绿。
+- 生成物 `src/ui/shell.html`（538401 字节）中 `#proxy-modal` 仅一份，无重复引入。
+- 需求档案 `docs/requirements/108-per-window-proxy.md` 已归档。
+- 真机验证由用户自行执行（自测步骤：窗口卡片 → 🌐 → 填 `http://127.0.0.1:51081` + `America/Los_Angeles` + `en-US` → 保存 → 打开 `https://ipip.la/disguise.html` 预期综合得分 >90）。
+
 ## [0.10.209] - 2026-11-08
 
 ### 修复

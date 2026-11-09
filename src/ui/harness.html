@@ -3199,6 +3199,7 @@
     stopToolTick(); // 立即停表：否则新工具 start 会沿用旧 toolStartAt，秒数跨中止错显
     stopSendTick(); // 同理：中止后不得再显示「结果待发送」
     stopThinkTick(); // 生成中轮换同理：中止后必须停
+    stopRetryTick(); // 自动重试倒计时同理：中止后必须停（否则秒数在后台空转）
     abortEpoch++;
     abortStamp = abortEpoch;
   }
@@ -3477,7 +3478,35 @@
   // 不能套用 6s 静默判据，否则倒计时刚开始界面就"就绪"了。
   // 由 bridge 的 retry 引擎经主进程转发（retry-state: pending / exhausted / cancelled / success）。
   var retryUntil = 0;
-  function onRetryState(state, delayMs) {
+  // 重试倒计时：AI 页面有独立浮层，纯净模式需自己维护每秒刷新（否则秒数定住不动）
+  var retryEndAt = 0;
+  var retryTickTimer = null;
+  function stopRetryTick() {
+    if (retryTickTimer) { clearInterval(retryTickTimer); retryTickTimer = null; }
+  }
+  function renderRetryTick() {
+    var remain = Math.ceil((retryEndAt - Date.now()) / 1000);
+    if (remain <= 0) {
+      stopRetryTick();
+      if (!aborted()) setStatus('正在自动重试…', 'busy');
+      return;
+    }
+    if (aborted()) { stopRetryTick(); return; }
+    // 轻量刷新：只改状态条文案与宠物气泡，不重走 setStatus。
+    // 走 setStatus 会每秒重置 lastActivityAt / 重写 className / 触发 syncBusyIndicators
+    // 与一次多余的 setPetState IPC —— 白白让静默兜底永久失效且增加无谓开销。
+    if (statusText) statusText.textContent = '请求失败，' + remain + ' 秒后自动重试...';
+    petBubble('请求失败 ' + petSec(remain) + ' 后重试', true, 0, true);
+  }
+  function startRetryTick(totalMs) {
+    stopRetryTick();
+    retryEndAt = Date.now() + totalMs;
+    // 进入忙态只做一次（文案与 AI 页面倒计时浮层完全一致）
+    var total = Math.ceil(totalMs / 1000);
+    setStatus('请求失败，' + total + ' 秒后自动重试...', 'busy');
+    retryTickTimer = setInterval(renderRetryTick, 1000);
+  }
+  function onRetryState(state, delayMs, extra) {
     if (state === 'pending') {
       var d = Number(delayMs);
       if (!Number.isFinite(d) || d <= 0) d = 120000;
@@ -3486,27 +3515,47 @@
       retryUntil = Date.now() + d + 120000;
       lastActivityAt = Date.now();
       if (!aborted()) {
-        setStatus('等待自动重试…', 'busy');
-        // 冷却倒计时期间气泡会停在「生成中…」上，补一条更准确的说明
-        petBubble('被限流 ' + petSec(Math.round(d / 1000)) + ' 后重试', true, 0, true);
-        petMood('thinking');
+        // 每秒刷新倒计时（文案与 AI 页面浮层一致：请求失败，N 秒后自动重试）
+        startRetryTick(d);
       }
       return;
     }
     retryUntil = 0;
+    stopRetryTick();
     if (state === 'exhausted') {
       // 达上限：AI 页面不会再有任何终态事件（没有回复、没有工具、没有 task-idle），
       // 必须立即收尾，否则界面永久卡在运行中，只能手动点停止解套。
+      // 文案与 AI 页面 toast 对齐（区分限流/普通，带次数）：
+      //   retry.ts  '操作频繁重试已达上限（N 次），停止自动重试'
+      //             '自动重试已达上限（N 次），停止自动重试'
       stopSendTick();
       toolRunningCount = 0;
       frameworkDriveUntil = 0;
       setStatus('重试已达上限', 'ready');
-      petBubble('重试到头了，手动再试一次？', false, 4200);
+      var exCount = Number(extra && extra.count);
+      var exText = (extra && extra.is429 ? '操作频繁重试已达上限' : '自动重试已达上限')
+        + (Number.isFinite(exCount) && exCount > 0 ? '（' + exCount + ' 次）' : '')
+        + '，停止自动重试';
+      petBubble(exText, false, 4200);
       flashPet('error');
       clearPendingBubble();
       return;
     }
-    // cancelled / success：不改运行态，交还给真实事件（success 后 AI 会开始生成）
+    if (state === 'cancelled') {
+      // 取消（用户点取消 / 会话已切换 / 输入框有内容）：本轮不会再重试，
+      // AI 页面也已停止生成 → 不会再有 task-idle / ai-state(false) 等终态事件。
+      // 必须立即收尾，否则界面永久卡在「请求失败，N 秒后自动重试」的忙态，
+      // 只能等 60s 静默兜底才解套。
+      // 文案与 AI 页面的 toast（retry.ts 的 '已取消自动重试'）对齐。
+      stopSendTick();
+      toolRunningCount = 0;
+      frameworkDriveUntil = 0;
+      setStatus('已取消自动重试', 'ready');
+      petBubble('已取消自动重试', false, 2600);
+      clearPendingBubble();
+      return;
+    }
+    // success：不改运行态，交还给真实事件（AI 会开始生成）
     lastActivityAt = Date.now();
   }
   function onAiState(generating) {
@@ -4280,7 +4329,7 @@
         // AI 页面权威生成状态（每 2 秒心跳）→ 校正运行态，解套"卡在运行中"
         case 'ai-state': onAiState(!!payload.generating); break;
         // 自动重试状态（等待 / 耗尽 / 取消）：纯净模式看不到 AI 页面的倒计时浮层，需显式同步
-        case 'retry-state': onRetryState(payload.state, payload.delayMs); break;
+        case 'retry-state': onRetryState(payload.state, payload.delayMs, payload); break;
         case 'assistant': {
           var aText = (payload.text || '').trim();
           onAssistantDone(payload.text, payload.hasTool);

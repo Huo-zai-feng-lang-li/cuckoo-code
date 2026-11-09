@@ -81,8 +81,11 @@ const debugPort = (envPort === 'off' || envPort === '0') ? '' : (envPort || '933
 const debugArg = debugPort ? ' --remote-debugging-port=' + debugPort : '';
 if (debugPort) console.log('[start.js] 开启远程调试端口: ' + debugPort + '（CDP；CUCKOO_DEBUG_PORT=off 可关）');
 // 开关必须在应用路径（.）之前，否则会被当成应用参数
-const cmd = isWin ? ('chcp 65001 > nul && electron' + debugArg + ' .') : ('electron' + debugArg + ' .');
+const localElectron = path.join(import.meta.dirname, 'node_modules', '.bin', isWin ? 'electron.cmd' : 'electron');
+const electronBin = fs.existsSync(localElectron) ? `"${localElectron}"` : 'npx electron';
+const cmd = isWin ? ('chcp 65001 > nul && ' + electronBin + debugArg + ' .') : (electronBin + debugArg + ' .');
 const child = spawn(cmd, { shell: true, stdio: ['inherit', 'pipe', 'pipe'] });
+
 
 child.stdout.pipe(logStream);
 child.stderr.pipe(logStream);

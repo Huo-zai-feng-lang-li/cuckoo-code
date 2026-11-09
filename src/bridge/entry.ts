@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Cuckoo Code preload 入口
  * 原 preload.js 的全部逻辑拆分为本目录下的模块，此处负责组装与初始化，
  * 初始化时序与原文件保持一致。
@@ -123,7 +123,7 @@ let lastUserNameKey = '';
  */
 function handleUrlChanged(): void {
   // URL/会话切换：清空滚动跟随缓存，避免指向旧会话容器（旧节点可能以 visibility:hidden 保留）
-  try { resetScrollFollow(); } catch (_) {}
+  try { resetScrollFollow(window.location.href); } catch (_) {}
   try { ui.updateHomeMode(); } catch (_) {}
   try { checkSessionChange(); } catch (_) {}
   try { refreshTokenForCurrentSession(); } catch (_) {}

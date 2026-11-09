@@ -81,7 +81,15 @@ test('自动重试状态接入：等待期间保持忙、耗尽立即收尾', ()
   const nextFn = script.indexOf('\n  function ', idx + 10);
   const body = script.slice(idx, nextFn > 0 ? nextFn : idx + 2000);
   // 等待期间：必须置忙（否则倒计时开始界面就"就绪"了）
-  assert.ok(body.includes("setStatus('等待自动重试…', 'busy')"), 'pending 应置忙');
+  // 实现：pending 启动每秒刷新的倒计时 tick，由 tick 置忙并逐秒更新文案
+  assert.ok(body.includes('startRetryTick(d)'), 'pending 应启动倒计时');
+  const startIdx = script.indexOf('function startRetryTick');
+  const startBody = script.slice(startIdx, startIdx + 800);
+  // 进入忙态只做一次（在 startRetryTick 里），tick 内只做轻量文案刷新
+  assert.ok(/setStatus\([^)]*'busy'\)/.test(startBody), '倒计时启动必须进入忙态');
+  const tickIdx = script.indexOf('function renderRetryTick');
+  const tickBody = script.slice(tickIdx, tickIdx + 1200);
+  assert.ok(tickBody.includes('stopRetryTick'), '倒计时结束必须自停（防泄漏）');
   // 耗尽：必须立即收尾，不能等超时
   assert.ok(body.includes("setStatus('重试已达上限', 'ready')"), 'exhausted 应收尾');
   // 等待窗口内静默判据要被豁免（onAiState 与 1.5s 兜底两处都必须）

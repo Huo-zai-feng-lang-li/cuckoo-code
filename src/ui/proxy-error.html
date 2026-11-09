@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<title>网页加载失败</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #1e1e1e; color: #d4d4d4;
+    display: flex; align-items: center; justify-content: center;
+    height: 100vh; -webkit-font-smoothing: antialiased;
+  }
+  .card { max-width: 560px; padding: 40px 32px; text-align: center; }
+  .icon { font-size: 64px; margin-bottom: 20px; color: #e5a83b; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 14px; color: #e8e8e8; }
+  .desc { font-size: 14px; line-height: 1.7; color: #a0a0a0; margin: 0 0 20px; }
+  .hint { font-size: 12px; color: #808080; margin: 0 0 28px; line-height: 1.7; white-space: pre-line; word-break: break-all; }
+  button {
+    padding: 10px 28px; font-size: 14px; border: none; border-radius: 6px;
+    cursor: pointer; transition: background 0.15s; background: #0e639c; color: #fff;
+  }
+  button:hover { background: #1177bb; }
+  button:active { transform: scale(0.98); }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">&#9888;</div>
+    <h1>网页加载失败</h1>
+    <p class="desc">代理连接失败或网络异常。<br>请检查代理客户端是否已启动、端口是否正确。</p>
+    <p class="hint" id="ck-pe-hint"></p>
+    <button id="ck-pe-retry">重试</button>
+  </div>
+<script>
+(function () {
+  var p = new URLSearchParams(location.search);
+  var code = p.get('code') || '';
+  var desc = p.get('desc') || '';
+  var targetUrl = p.get('url') || '';
+  var hint = document.getElementById('ck-pe-hint');
+  var lines = [];
+  if (code) lines.push('错误代码 ' + code + (desc ? '：' + desc : ''));
+  if (targetUrl) lines.push('目标网址 ' + targetUrl);
+  hint.textContent = lines.join('\n');
+  document.getElementById('ck-pe-retry').addEventListener('click', function () {
+    if (targetUrl) { location.href = targetUrl; } else { location.reload(); }
+  });
+})();
+</script>
+</body>
+</html>

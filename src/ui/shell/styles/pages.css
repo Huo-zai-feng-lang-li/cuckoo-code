@@ -507,3 +507,45 @@
 }
 body[data-ck-dark] .ck-stat-item-hl { background: linear-gradient(90deg, rgba(251, 191, 36, 0.14), transparent 70%); }
 body[data-ck-dark] .ck-stat-item-hl .ck-stat-val { color: #fbbf24; }
+
+
+/* 窗口代理按钮（卡片底部小图标） */
+.ck-win-proxy {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ck-text-dim);
+  padding: 0 4px;
+  user-select: none;
+}
+.ck-win-proxy:hover { color: var(--ck-accent); }
+
+
+/* 窗口代理按钮（卡片底部小图标） */
+.ck-win-proxy {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ck-text-dim);
+  padding: 0 4px;
+  user-select: none;
+}
+.ck-win-proxy:hover { color: var(--ck-accent); }
+
+
+/* 窗口代理弹窗的高级折叠区 */
+.ck-proxy-advanced {
+  margin: 4px 0 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--ck-border, rgba(255,255,255,0.08));
+  border-radius: 6px;
+  font-size: 12px;
+}
+.ck-proxy-advanced > summary {
+  cursor: pointer;
+  color: var(--ck-text-dim);
+  user-select: none;
+  padding: 2px 0;
+}
+.ck-proxy-advanced > summary:hover { color: var(--ck-text); }
+.ck-proxy-advanced[open] > summary { margin-bottom: 6px; }
+.ck-proxy-advanced .ck-field { margin-bottom: 6px; }
+.ck-proxy-advanced .ck-field:last-child { margin-bottom: 0; }
