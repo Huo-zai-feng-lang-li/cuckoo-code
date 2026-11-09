@@ -76,6 +76,38 @@ test('randomDelay: 认知自适应按文本长度动态伸缩且不突破配置'
   assert.ok(longDelay > shortDelay, '长文本延迟通常大于短文本');
 });
 
+test('planSendTiming: 总延迟严格遵守配置区间，R+S 恰好等于总延迟', () => {
+  state.sendDelayMin = 6000;
+  state.sendDelayMax = 36000;
+  for (let i = 0; i < 50; i++) {
+    const t = chat.planSendTiming('一段回传给 AI 的工具结果', 0);
+    const total = t.reactionMs + t.hesitationMs;
+    assert.ok(total >= 6000 && total <= 36000, '总延迟必须落在配置区间: ' + total);
+    assert.ok(t.reactionMs >= 0 && t.hesitationMs >= 0, '两段均不应为负');
+  }
+});
+
+test('planSendTiming: 上一条回复越长，R（反应）占比越高', () => {
+  state.sendDelayMin = 6000;
+  state.sendDelayMax = 6000; // 固定总时长，只观察 R/S 比例
+  const shortReply = chat.planSendTiming('x', 10);
+  const longReply = chat.planSendTiming('x', 5000);
+  const shortRatio = shortReply.reactionMs / 6000;
+  const longRatio = longReply.reactionMs / 6000;
+  assert.ok(longRatio > shortRatio, '长回复应有更长反应停顿: ' + longRatio + ' vs ' + shortRatio);
+  assert.ok(shortRatio >= 0.29 && shortRatio <= 0.56, 'R 占比下限约 0.3');
+  assert.ok(longRatio >= 0.29 && longRatio <= 0.56, 'R 占比上限约 0.55');
+});
+
+test('randomDelay 短文本钳制到 min 时仍有抖动（不做固定节拍）', () => {
+  state.sendDelayMin = 6000;
+  state.sendDelayMax = 36000;
+  const seen = new Set();
+  for (let i = 0; i < 30; i++) seen.add(chat.randomDelay('ok'));
+  assert.ok(seen.size > 5, '短文本延迟不应恒等于 min（固定节拍指纹）: 不同取值数=' + seen.size);
+  for (const d of seen) assert.ok(d >= 6000 && d <= 36000, '抖动后仍须在配置区间: ' + d);
+});
+
 test('randomDelay min >= max 时返回 min', () => {
   state.sendDelayMin = 3000;
   state.sendDelayMax = 1000;
@@ -150,9 +182,10 @@ test('triggerSend: 优先调用 electronAPI.sendEnterToChat 原生按键', async
   assert.strictEqual(enterCalled, true, '应优先调用原生 Enter 发送');
 });
 
-test('insertSnippet: autoSend 走拟人化微延迟而非固定机械 300ms', async () => {
+test('insertSnippet: autoSend 是用户手动触发，0ms 立即发送（不排延迟）', async () => {
   const origSetTimeout = globalThis.setTimeout;
   let scheduledDelay = 0;
+  let sendTriggered = false;
   globalThis.setTimeout = ((fn, delay) => {
     scheduledDelay = delay;
     return 1;
@@ -168,7 +201,7 @@ test('insertSnippet: autoSend 走拟人化微延迟而非固定机械 300ms', as
       focus() {},
       setSelectionRange() {},
       getAttribute: () => null,
-      dispatchEvent: () => true,
+      dispatchEvent: () => { sendTriggered = true; return true; },
       __style: { display: 'block', visibility: 'visible', opacity: '1' },
     };
     globalThis.document.querySelector = () => input;
@@ -176,7 +209,10 @@ test('insertSnippet: autoSend 走拟人化微延迟而非固定机械 300ms', as
 
     const ok = await chat.insertSnippet('请继续编写代码并运行测试', true);
     assert.strictEqual(ok, true, 'insertSnippet 应执行成功');
-    assert.ok(scheduledDelay >= 600, '自动发送应设置至少 600ms 的拟人化延迟: ' + scheduledDelay);
+    assert.strictEqual(scheduledDelay, 0, '手动触发不应排延迟（真人操作本身是人类证据）');
+    // 等待 triggerSend 的微任务链完成后再断言发送已发生
+    await new Promise((r) => origSetTimeout(r, 0));
+    assert.strictEqual(sendTriggered, true, '应立即触发发送');
   } finally {
     globalThis.setTimeout = origSetTimeout;
   }

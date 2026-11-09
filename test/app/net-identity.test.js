@@ -5,8 +5,40 @@ import {
   toChromiumProxyRules,
   normalizeProxyConfig,
   applyNetIdentity,
+  buildAcceptLanguageList,
   DEFAULT_PROXY,
 } from '../../src/app/net-identity.js';
+
+describe('buildAcceptLanguageList：Accept-Language 必须是多元素偏好列表', () => {
+  test('zh-CN → 母语 + 主语言 + 英语链（真实 Chrome 习惯）', () => {
+    assert.strictEqual(buildAcceptLanguageList('zh-CN'), 'zh-CN,zh,en-US,en');
+  });
+
+  test('en-US → 至少两个元素（绝不能是单元素数组）', () => {
+    const v = buildAcceptLanguageList('en-US');
+    assert.strictEqual(v, 'en-US,en');
+    assert.ok(v.split(',').length >= 2, 'navigator.languages 不得为单元素');
+  });
+
+  test('en-GB 保留地区变体再补 en', () => {
+    assert.strictEqual(buildAcceptLanguageList('en-GB'), 'en-GB,en');
+  });
+
+  test('ja-JP 补英语链', () => {
+    assert.strictEqual(buildAcceptLanguageList('ja-JP'), 'ja-JP,ja,en-US,en');
+  });
+
+  test('空/非法 locale 返回空串（让浏览器用原生值，不伪造）', () => {
+    assert.strictEqual(buildAcceptLanguageList(''), '');
+    assert.strictEqual(buildAcceptLanguageList(null), '');
+    assert.strictEqual(buildAcceptLanguageList(undefined), '');
+  });
+
+  test('纯主语言（无地区）不重复', () => {
+    assert.strictEqual(buildAcceptLanguageList('en'), 'en,en-US');
+    assert.strictEqual(buildAcceptLanguageList('zh'), 'zh,en-US,en');
+  });
+});
 
 describe('toChromiumProxyRules 映射转换', () => {
   test('将 socks5h:// 转换为 Chromium 规范的 socks5://', () => {

@@ -1,11 +1,14 @@
 import { test } from 'vitest';
 import assert from 'node:assert';
 
-test('randomDelay 返回默认发送延迟区间（6-16 秒，防封节奏）', async () => {
+test('randomDelay 返回默认发送延迟区间（6-36 秒，防封节奏）', async () => {
   const { randomDelay } = await import('../../src/overlay/chat-input.js');
-  for (let i = 0; i < 10; i++) {
+  const { state } = await import('../../src/overlay/state.js');
+  assert.strictEqual(state.sendDelayMin, 6000, '默认下限应为 6s');
+  assert.strictEqual(state.sendDelayMax, 36000, '默认上限应为 36s');
+  for (let i = 0; i < 30; i++) {
     const d = randomDelay();
-    assert.ok(d >= 6000 && d <= 16000, '实际返回 ' + d + ' 超出 6000-16000');
+    assert.ok(d >= 6000 && d <= 36000, '实际返回 ' + d + ' 超出 6000-36000');
   }
 });
 

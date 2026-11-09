@@ -4,8 +4,9 @@
  * 2) 启动 Electron（读取 package.json main = out/src/main/index.js）
  * 3) 捕获 stdout/stderr 写入日志文件
  *
- * `--dev`：用独立 userData（CUCKOO_SESSION_DIR=cuckoo-dev-verify）+ 独立调试端口 9444 启动，
+ * `--dev`：用独立 userData（CUCKOO_SESSION_DIR=cuckoo-dev-verify）启动，
  * 与正在用的打包版（占单实例锁）隔离，可同时运行。npm run dev。
+ * 远程调试端口默认关闭（防 CDP 暴露被风控检测）；需要调试时显式设 CUCKOO_DEBUG_PORT。
  */
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -13,12 +14,11 @@ import path from 'node:path';
 
 const isWin = process.platform === 'win32';
 
-// ========== 0. --dev：开发实例（独立 userData + 调试端口）==========
+// ========== 0. --dev：开发实例（独立 userData）==========
 // 用户常同时开着打包版（占单实例锁）；独立 userData 可绕开锁，与打包版互不影响。
 if (process.argv.includes('--dev')) {
   if (!process.env.CUCKOO_SESSION_DIR) process.env.CUCKOO_SESSION_DIR = 'cuckoo-dev-verify';
-  if (!process.env.CUCKOO_DEBUG_PORT) process.env.CUCKOO_DEBUG_PORT = '9444';
-  console.log('[start.js] dev 模式：userData=' + process.env.CUCKOO_SESSION_DIR + '，调试端口=' + process.env.CUCKOO_DEBUG_PORT);
+  console.log('[start.js] dev 模式：userData=' + process.env.CUCKOO_SESSION_DIR);
 }
 
 // ========== 1. 编译 ==========
@@ -74,12 +74,12 @@ const logFile = path.join(logDir, 'electron.log');
 const logStream = fs.createWriteStream(logFile, { flags: 'a' });
 
 // ========== 3. 启动 Electron ==========
-// 远程调试端口（供 Playwright/CDP 连接，仅开发用）。
-// 默认 9333；设 CUCKOO_DEBUG_PORT=off（或 0）可关闭。
+// 远程调试端口：默认彻底关闭，杜绝 CDP 端口暴露导致的风控检测与封号风险。
 const envPort = process.env.CUCKOO_DEBUG_PORT;
-const debugPort = (envPort === 'off' || envPort === '0') ? '' : (envPort || '9333');
+const rawPort = envPort ? parseInt(envPort, 10) : NaN;
+const debugPort = Number.isFinite(rawPort) && rawPort > 0 && rawPort <= 65535 ? String(rawPort) : '';
 const debugArg = debugPort ? ' --remote-debugging-port=' + debugPort : '';
-if (debugPort) console.log('[start.js] 开启远程调试端口: ' + debugPort + '（CDP；CUCKOO_DEBUG_PORT=off 可关）');
+if (debugPort) console.log('[start.js] 开启远程调试端口: ' + debugPort + '（仅供自动化测试）');
 // 开关必须在应用路径（.）之前，否则会被当成应用参数
 const localElectron = path.join(import.meta.dirname, 'node_modules', '.bin', isWin ? 'electron.cmd' : 'electron');
 const electronBin = fs.existsSync(localElectron) ? `"${localElectron}"` : 'npx electron';
