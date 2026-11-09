@@ -258,6 +258,9 @@ describe('applyNetIdentity WebRTC 底层防 DNS 泄露策略', () => {
       document: { head: { appendChild: () => {} }, querySelectorAll: () => [] },
       navigator: {},
     };
+    // 脚本会 hook 全局 Function.prototype.toString；本 test 为文件末尾最后一个，
+    // 在断言 7（toString 伪装验证）之后统一恢复即可（见末尾），避免提前恢复导致该断言失效。
+    const origFnToString = Function.prototype.toString;
     const exec = new Function('window', 'document', 'RTCPeerConnection', 'RTCIceCandidate', script);
     exec(sandboxWindow, sandboxWindow.document, MockNativePC, MockRTCIceCandidate);
 
@@ -313,6 +316,25 @@ describe('applyNetIdentity WebRTC 底层防 DNS 泄露策略', () => {
     pc._fire('icecandidate', realEvent);
     assert.strictEqual(countA, 1, 'listenerA 应收到候选');
     assert.strictEqual(countB, 1, 'listenerB 也必须独立收到候选，绝不能因全局共享标记被饥饿静音');
+
+    // 5. 同一 listener 重复 addEventListener 必须按原生语义去重（否则旧 wrapped 孤儿化泄漏）
+    let dupCount = 0;
+    const dupListener = () => { dupCount++; };
+    pc.addEventListener('icecandidate', dupListener);
+    pc.addEventListener('icecandidate', dupListener);
+    pc._fire('icecandidate', realEvent);
+    assert.strictEqual(dupCount, 1, '重复 add 同一 listener 只应触发一次（原生去重语义）');
+
+    // 6. 实例 constructor 必须指向被替换的 RTCPeerConnection（否则 new X().constructor === X 探测得 false）
+    assert.strictEqual(pc.constructor, WrappedPC, 'pc.constructor 必须指向包装后的构造函数');
+
+    // 7. toString 伪装：Function.prototype.toString.call 不可泄露伪造源码（本次关键修复）
+    const fakeSrc = Function.prototype.toString.call(WrappedPC);
+    assert.strictEqual(fakeSrc, 'function RTCPeerConnection() { [native code] }', '构造函数 toString 必须伪装为 native code');
+    assert.strictEqual(fakeSrc.includes('iceServers'), false, '绝不可通过 toString 泄露伪造逻辑');
+
+    // 恢复被 hook 的 Function.prototype.toString（脚本执行时已 hook 真实全局）
+    Function.prototype.toString = origFnToString;
   });
 });
 

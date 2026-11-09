@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.10.211] - 2026-11-10
+
+### 修复
+- **指纹伪装可被反爬脚本识破（需求 109 加固）**：对抗性审计发现多处伪装痕迹，逐一修复：
+  - **deviceMemory 超上限**：预设 16/32 GiB 超出浏览器规范上限 8（真实 Chrome 永不上报），改为一律 ≤8 并在 normalize 夹紧。
+  - **伪装函数带自有 prototype**：被替换的 getParameter/toDataURL/toBlob/getImageData/getChannelData 与属性 getter 原为 function 表达式（有自有 prototype、可 new），一行 `hasOwnProperty('prototype')` 即可识破。改为「对象方法简写」创建，天然无 prototype、不可构造，已验证 `new` 抛 TypeError。
+  - **Canvas 噪点 & 255 回绕**：位掩码使 0↔255 翻转（黑像素变白），改为显式 clamp 到 [0,255]。
+  - **注入标记可枚举**：`__cuckooFpInjected`/`__cuckooShieldInjected` 改为不可枚举，避免 Object.keys/Reflect.ownKeys 枚举暴露。
+  - **种子校验**：canvasSeed/audioSeed 改整数且 >0 校验，拒绝负数/浮点。
+  - **WeakSet 假标记**：Canvas 噪点登记后移到 getContext('2d') 成功之后，避免 WebGL canvas 被"假标记已处理"而永久失去加噪。
+- **隐私盾 toString 伪装无效（需求 108 加固）**：原仅给函数对象挂自有 toString，页面用 `Function.prototype.toString.call()` 可绕过直读伪造源码全文。现于 shield 脚本内 hook `Function.prototype.toString`（WeakMap 登记），彻底隐藏伪造逻辑。
+- **WebRTC 包装可探测**：Fake 返回实例的 `constructor` 现指向 Fake（浅拷贝原型，不污染原生），避免 `new RTCPeerConnection().constructor === RTCPeerConnection` 探测得 false；同一 listener 重复 addEventListener 改为原生去重语义，杜绝旧 wrapped 孤儿化泄漏。
+- **代理启用时超时可能直连泄露真实 IP**：网络身份兜底超时从 8s 提到 20s（覆盖内部最坏预算），且代理启用时超时改加载错误页而非直连真实站点（防封号核心）；DevTools 关闭重挂统一 normalize 代理配置。
+- **纯净模式重试耗尽文案错误**：`harness-retry-state` 经 IPC 转发时补透传 is429/count，修复 harness 无法区分限流/普通失败、不显示次数的问题。
+
+### 其他
+- 清理 `pages.css` 中重复的 `.ck-win-proxy` 规则块。
+- 测试：deviceMemory 断言 64→8（旧断言本身违反浏览器规范）。
+
+### 验证
+- `npm run typecheck` / `npm run lint`（0 errors）/ `npm run compile` / `npm test`（134 文件 1360 用例）全绿。
+- 对抗性审计报告：`.agents/每窗口独立代理与指纹防关联-审计.md`。
+
 ## [0.10.210] - 2026-11-09
 
 ### 新增

@@ -1,4 +1,18 @@
-# 最新接续状态 (2026-11-09 20:25)
+# 最新接续状态 (2026-11-10)
+
+## 本轮：需求 108/109 对抗性审计后的缺陷修复（v0.10.211）
+
+- 对已提交的 ff3b04c 做 /audit-staged 对抗性审计，裁决 REJECT，逐一修复后全绿：
+  1. 指纹：deviceMemory≤8、伪装函数改对象方法简写（消除 prototype 破绽）、Canvas clamp、标记不可枚举、种子整数校验、WeakSet 假标记后移。
+  2. 隐私盾：hook Function.prototype.toString（原 toString 挂自有属性可被 .call 绕过）、Fake constructor 修正、addEventListener 去重。
+  3. 代理：兜底 8s→20s 且代理启用时超时走错误页（防直连泄露 IP）、devtools-closed normalize。
+  4. harness：retry-state 转发补 is429/count。
+  5. 清理 pages.css 重复块。
+- 验证：typecheck/lint(0 error)/compile/test(134 文件 1360 用例) 全绿。
+- 审计报告：.agents/每窗口独立代理与指纹防关联-审计.md
+- 版本 0.10.210 → 0.10.211。
+
+---
 
 ## 核心进展
 

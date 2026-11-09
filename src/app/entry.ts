@@ -648,8 +648,9 @@ function createWindow(profile: any) {
   //  - Page.addScriptToEvaluateOnNewDocument 必须在 loadURL 之前（首帧生效）
   //  - Emulation.* 可随时调用（立即生效）
   //
-  // ⚠️ 总兜底：applyNetIdentity 内部每步都有超时，但这里再加一层「8 秒后强制 loadPage」，
-  // 绝不让窗口因网络身份应用失败/挂起而白屏（url: ""）。
+  // ⚠️ 总兜底：applyNetIdentity 内部每步都有超时（最坏累计约 26s），这里加一层 20s 兜底。
+  // 关键安全约束：代理启用时，若超时仍直连真实站点会泄露真实 IP（封号风险），
+  // 因此超时改加载错误页让用户重试；未启用代理时正常加载（仅损失指纹伪装，无 IP 泄露）。
   const proxyCfg = normalizeProxyConfig(profileData.proxy);
   const fpCfg = profileManager.getProfileFingerprint(profileData.id);
   let pageLoadStarted = false;
@@ -660,10 +661,23 @@ function createWindow(profile: any) {
       console.error('[Cuckoo Code] loadPage 异常:', err && err.message);
     }
   };
+  const showNetIdentityError = () => {
+    if (pageLoadStarted) return;
+    pageLoadStarted = true;
+    try {
+      view.webContents.loadFile(resolveSrc('ui/proxy-error.html'), {
+        query: { code: 'NET_IDENTITY_TIMEOUT', desc: '网络身份初始化超时（代理可能未就绪）', url: '' },
+      });
+    } catch (err: any) {
+      console.error('[Cuckoo Code] 加载错误页失败，回退直连:', err && err.message);
+      safeLoadPage();
+    }
+  };
   const netIdentityTimer = setTimeout(() => {
-    console.warn('[Cuckoo Code] 网络身份应用超时(8s)，强制加载页面');
-    safeLoadPage();
-  }, 8000);
+    console.warn('[Cuckoo Code] 网络身份应用超时(20s)');
+    if (proxyCfg.enabled && proxyCfg.rules) showNetIdentityError();
+    else safeLoadPage();
+  }, 20000);
   applyNetIdentity(view, proxyCfg, fpCfg).then(() => {
     clearTimeout(netIdentityTimer);
     safeLoadPage();
@@ -794,7 +808,7 @@ function createWindow(profile: any) {
       try {
         if (!view || !view.webContents || view.webContents.isDestroyed()) return;
         const liveP = profileManager.getProfileById(profileData.id);
-        const liveCfg = (liveP && liveP.proxy) || profileData.proxy;
+        const liveCfg = normalizeProxyConfig((liveP && liveP.proxy) || profileData.proxy);
         const liveFp = (liveP && liveP.fingerprint) || profileData.fingerprint;
         await applyNetIdentity(view, liveCfg, liveFp);
         console.log('[NetIdentity] DevTools 已关闭，隐私盾与硬件指纹已自动重新挂载');

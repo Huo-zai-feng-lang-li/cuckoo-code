@@ -466,6 +466,9 @@ function registerHarnessIpc(): void {
         type: 'retry-state',
         state: payload && payload.state,
         delayMs: payload && payload.delayMs,
+        // 透传 exhausted 的细分信息，否则 harness 无法区分限流/普通失败、无法带次数
+        is429: payload && payload.is429,
+        count: payload && payload.count,
       });
     }
     return { success: true };

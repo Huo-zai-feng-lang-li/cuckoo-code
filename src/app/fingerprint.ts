@@ -43,7 +43,7 @@ export const HARDWARE_PRESETS: readonly FingerprintPreset[] = [
     id: 'win-intel-uhd630',
     name: '商务主流机 (Intel UHD 630)',
     hardwareConcurrency: 8,
-    deviceMemory: 16,
+    deviceMemory: 8,
     screenWidth: 1920,
     screenHeight: 1080,
     devicePixelRatio: 1.0,
@@ -54,7 +54,7 @@ export const HARDWARE_PRESETS: readonly FingerprintPreset[] = [
     id: 'win-intel-iris-xe',
     name: '主流轻薄本 (Intel Iris Xe)',
     hardwareConcurrency: 8,
-    deviceMemory: 16,
+    deviceMemory: 8,
     screenWidth: 1920,
     screenHeight: 1080,
     devicePixelRatio: 1.25,
@@ -65,7 +65,7 @@ export const HARDWARE_PRESETS: readonly FingerprintPreset[] = [
     id: 'win-nvidia-rtx3060',
     name: '主流游戏/性能本 (NVIDIA RTX 3060)',
     hardwareConcurrency: 12,
-    deviceMemory: 16,
+    deviceMemory: 8,
     screenWidth: 1920,
     screenHeight: 1080,
     devicePixelRatio: 1.0,
@@ -76,7 +76,7 @@ export const HARDWARE_PRESETS: readonly FingerprintPreset[] = [
     id: 'win-nvidia-rtx4070',
     name: '高性能台式机 (NVIDIA RTX 4070)',
     hardwareConcurrency: 16,
-    deviceMemory: 32,
+    deviceMemory: 8,
     screenWidth: 2560,
     screenHeight: 1440,
     devicePixelRatio: 1.25,
@@ -87,7 +87,7 @@ export const HARDWARE_PRESETS: readonly FingerprintPreset[] = [
     id: 'win-amd-rx6600',
     name: 'AMD 独显台式机 (Radeon RX 6600)',
     hardwareConcurrency: 8,
-    deviceMemory: 16,
+    deviceMemory: 8,
     screenWidth: 1920,
     screenHeight: 1080,
     devicePixelRatio: 1.0,
@@ -98,7 +98,7 @@ export const HARDWARE_PRESETS: readonly FingerprintPreset[] = [
     id: 'win-intel-uhd770',
     name: '新一代台式机 (Intel UHD 770)',
     hardwareConcurrency: 12,
-    deviceMemory: 16,
+    deviceMemory: 8,
     screenWidth: 1920,
     screenHeight: 1080,
     devicePixelRatio: 1.0,
@@ -160,9 +160,10 @@ export function normalizeFingerprintConfig(input: any, profileId?: string): Fing
     ? input.hardwareConcurrency
     : base.hardwareConcurrency;
 
+  // navigator.deviceMemory 规范上限 8（>8 一律上报 8），超上限值是现实不可能的组合，必须夹紧
   const devMemory = (typeof input.deviceMemory === 'number' && input.deviceMemory > 0)
-    ? input.deviceMemory
-    : base.deviceMemory;
+    ? Math.min(8, input.deviceMemory)
+    : Math.min(8, base.deviceMemory);
 
   const sWidth = (typeof input.screenWidth === 'number' && input.screenWidth > 0)
     ? input.screenWidth
@@ -184,11 +185,11 @@ export function normalizeFingerprintConfig(input: any, profileId?: string): Fing
     ? input.webglRenderer.trim()
     : base.webglRenderer;
 
-  const canvasSeed = (typeof input.canvasSeed === 'number' && isFinite(input.canvasSeed))
+  const canvasSeed = (typeof input.canvasSeed === 'number' && Number.isInteger(input.canvasSeed) && input.canvasSeed > 0)
     ? input.canvasSeed
     : fallback.canvasSeed;
 
-  const audioSeed = (typeof input.audioSeed === 'number' && isFinite(input.audioSeed))
+  const audioSeed = (typeof input.audioSeed === 'number' && Number.isInteger(input.audioSeed) && input.audioSeed > 0)
     ? input.audioSeed
     : fallback.audioSeed;
 
@@ -229,7 +230,10 @@ export function buildFingerprintScript(fp: FingerprintConfig): string {
 (function() {
   try {
     if (window.__cuckooFpInjected) return;
-    window.__cuckooFpInjected = true;
+    // 不可枚举，避免 Reflect.ownKeys/Object.keys(window) 枚举到伪装标记
+    try {
+      Object.defineProperty(window, '__cuckooFpInjected', { value: true, enumerable: false, configurable: true, writable: true });
+    } catch (_) { window.__cuckooFpInjected = true; }
 
     var FP = ${cfgJson};
 
@@ -237,32 +241,31 @@ export function buildFingerprintScript(fp: FingerprintConfig): string {
     var nativeToString = Function.prototype.toString;
     var customToStrings = new WeakMap();
 
+    // 伪装函数一律以「对象方法简写」创建（无自有 prototype、不可 new，与原生内置方法一致）。
     function markNative(fn, name) {
       if (typeof fn !== 'function') return fn;
       if (name) {
-        try {
-          Object.defineProperty(fn, 'name', { value: name, configurable: true });
-        } catch (_) {}
+        try { Object.defineProperty(fn, 'name', { value: name, configurable: true }); } catch (_) {}
       }
       customToStrings.set(fn, 'function ' + (name || '') + '() { [native code] }');
       return fn;
     }
 
-    var hookedToString = function toString() {
-      if (customToStrings.has(this)) return customToStrings.get(this);
-      return nativeToString.apply(this, arguments);
-    };
+    var hookedToString = ({
+      toString() {
+        if (customToStrings.has(this)) return customToStrings.get(this);
+        return nativeToString.apply(this, arguments);
+      }
+    }).toString;
     markNative(hookedToString, 'toString');
-    try {
-      Function.prototype.toString = hookedToString;
-    } catch (_) {}
+    try { Function.prototype.toString = hookedToString; } catch (_) {}
 
     // ========== 2. Navigator 与 Screen 属性伪装 ==========
     function patchProtoGetter(proto, prop, val) {
       if (!proto) return;
       try {
         var origDesc = Object.getOwnPropertyDescriptor(proto, prop);
-        var getter = function() { return val; };
+        var getter = ({ ['get ' + prop]() { return val; } })['get ' + prop];
         markNative(getter, 'get ' + prop);
         Object.defineProperty(proto, prop, {
           configurable: true,
@@ -275,7 +278,6 @@ export function buildFingerprintScript(fp: FingerprintConfig): string {
     if (typeof Navigator !== 'undefined' && Navigator.prototype) {
       patchProtoGetter(Navigator.prototype, 'hardwareConcurrency', FP.hardwareConcurrency);
       patchProtoGetter(Navigator.prototype, 'deviceMemory', FP.deviceMemory);
-      // 彻底抹除自动化标记，杜绝任何风控脚本判定为 Headless/Bot
       patchProtoGetter(Navigator.prototype, 'webdriver', false);
       try {
         if (typeof navigator !== 'undefined' && Object.prototype.hasOwnProperty.call(navigator, 'webdriver')) {
@@ -284,7 +286,6 @@ export function buildFingerprintScript(fp: FingerprintConfig): string {
       } catch (_) {}
     }
 
-    // 屏幕指标与设备像素比原生伪装（纯 JS 属性级，绝不使用 CDP 强制缩放视口破坏页面排版与居中）
     if (typeof Screen !== 'undefined' && Screen.prototype) {
       patchProtoGetter(Screen.prototype, 'width', FP.screenWidth);
       patchProtoGetter(Screen.prototype, 'height', FP.screenHeight);
@@ -297,133 +298,111 @@ export function buildFingerprintScript(fp: FingerprintConfig): string {
       patchProtoGetter(window, 'devicePixelRatio', FP.devicePixelRatio);
     }
 
-    // ========== 3. WebGL 厂商与渲染器伪装 (WEBGL_debug_renderer_info) ==========
+    // ========== 3. WebGL 厂商与渲染器伪装 ==========
     function patchWebGL(glProto) {
       if (!glProto || !glProto.getParameter) return;
       var origGetParam = glProto.getParameter;
-      var fakeGetParam = function getParameter(param) {
-        // 37445: UNMASKED_VENDOR_WEBGL
-        if (param === 37445) return FP.webglVendor;
-        // 37446: UNMASKED_RENDERER_WEBGL
-        if (param === 37446) return FP.webglRenderer;
-        return origGetParam.apply(this, arguments);
-      };
+      var fakeGetParam = ({
+        getParameter(param) {
+          if (param === 37445) return FP.webglVendor;
+          if (param === 37446) return FP.webglRenderer;
+          return origGetParam.apply(this, arguments);
+        }
+      }).getParameter;
       markNative(fakeGetParam, 'getParameter');
-      try {
-        glProto.getParameter = fakeGetParam;
-      } catch (_) {}
+      try { glProto.getParameter = fakeGetParam; } catch (_) {}
     }
+    if (typeof WebGLRenderingContext !== 'undefined') patchWebGL(WebGLRenderingContext.prototype);
+    if (typeof WebGL2RenderingContext !== 'undefined') patchWebGL(WebGL2RenderingContext.prototype);
 
-    if (typeof WebGLRenderingContext !== 'undefined') {
-      patchWebGL(WebGLRenderingContext.prototype);
-    }
-    if (typeof WebGL2RenderingContext !== 'undefined') {
-      patchWebGL(WebGL2RenderingContext.prototype);
-    }
-
-    // ========== 4. Canvas 2D 确定性全画布重入幂等微扰 ==========
+    // ========== 4. Canvas 2D 确定性微扰 ==========
     if (typeof HTMLCanvasElement !== 'undefined') {
       var origToDataURL = HTMLCanvasElement.prototype.toDataURL;
       var origToBlob = HTMLCanvasElement.prototype.toBlob;
       var origGetImageData = (typeof CanvasRenderingContext2D !== 'undefined') ? CanvasRenderingContext2D.prototype.getImageData : null;
-
       var noisedCanvases = typeof WeakSet !== 'undefined' ? new WeakSet() : null;
 
       function applyCanvasNoise(canvas) {
         try {
           if (!canvas || canvas.width <= 0 || canvas.height <= 0) return;
-          if (noisedCanvases) {
-            if (noisedCanvases.has(canvas)) return;
-            noisedCanvases.add(canvas);
-          }
+          if (noisedCanvases && noisedCanvases.has(canvas)) return;
           var ctx = canvas.getContext('2d');
           if (!ctx) return;
+          if (noisedCanvases) noisedCanvases.add(canvas);
 
-          var w = canvas.width;
-          var h = canvas.height;
-          // 防止极端超大画布引起性能抖动，限制采样单次最大范围，日常画布 100% 覆盖
-          var sampleW = Math.min(w, 800);
-          var sampleH = Math.min(h, 800);
+          var w = canvas.width, h = canvas.height;
+          var sampleW = Math.min(w, 800), sampleH = Math.min(h, 800);
           var imgData = origGetImageData ? origGetImageData.call(ctx, 0, 0, sampleW, sampleH) : ctx.getImageData(0, 0, sampleW, sampleH);
           var d = imgData.data;
           var seed = FP.canvasSeed;
           var totalPixels = sampleW * sampleH;
-          // 自适应计算步长，使采样点恒定在 ~2000 个（计算耗时 < 0.05ms，零卡顿）
           var step = Math.max(1, Math.floor(totalPixels / 2048));
 
           for (var p = 0; p < totalPixels; p += step) {
             var i = p * 4;
-            if (d[i + 3] > 10) { // 仅对可见有效内容进行自然微扰
+            if (d[i + 3] > 10) {
               var deltaR = (((p * 17 + seed) % 3) - 1);
               var deltaG = (((p * 31 + seed) % 3) - 1);
               var deltaB = (((p * 47 + seed) % 3) - 1);
-              d[i] = (d[i] + deltaR) & 255;
-              d[i + 1] = (d[i + 1] + deltaG) & 255;
-              d[i + 2] = (d[i + 2] + deltaB) & 255;
+              var nr = d[i] + deltaR; d[i] = nr < 0 ? 0 : (nr > 255 ? 255 : nr);
+              var ng = d[i + 1] + deltaG; d[i + 1] = ng < 0 ? 0 : (ng > 255 ? 255 : ng);
+              var nb = d[i + 2] + deltaB; d[i + 2] = nb < 0 ? 0 : (nb > 255 ? 255 : nb);
             }
           }
           ctx.putImageData(imgData, 0, 0);
         } catch (_) {}
       }
 
-      var fakeToDataURL = function toDataURL() {
-        applyCanvasNoise(this);
-        return origToDataURL.apply(this, arguments);
-      };
+      var fakeToDataURL = ({
+        toDataURL() { applyCanvasNoise(this); return origToDataURL.apply(this, arguments); }
+      }).toDataURL;
       markNative(fakeToDataURL, 'toDataURL');
-      try {
-        HTMLCanvasElement.prototype.toDataURL = fakeToDataURL;
-      } catch (_) {}
+      try { HTMLCanvasElement.prototype.toDataURL = fakeToDataURL; } catch (_) {}
 
       if (origToBlob) {
-        var fakeToBlob = function toBlob(cb) {
-          applyCanvasNoise(this);
-          return origToBlob.apply(this, arguments);
-        };
+        var fakeToBlob = ({
+          toBlob(cb) { applyCanvasNoise(this); return origToBlob.apply(this, arguments); }
+        }).toBlob;
         markNative(fakeToBlob, 'toBlob');
-        try {
-          HTMLCanvasElement.prototype.toBlob = fakeToBlob;
-        } catch (_) {}
+        try { HTMLCanvasElement.prototype.toBlob = fakeToBlob; } catch (_) {}
       }
 
       if (origGetImageData) {
-        var fakeGetImageData = function getImageData(sx, sy, sw, sh) {
-          if (this && this.canvas) applyCanvasNoise(this.canvas);
-          return origGetImageData.apply(this, arguments);
-        };
+        var fakeGetImageData = ({
+          getImageData(sx, sy, sw, sh) {
+            if (this && this.canvas) applyCanvasNoise(this.canvas);
+            return origGetImageData.apply(this, arguments);
+          }
+        }).getImageData;
         markNative(fakeGetImageData, 'getImageData');
-        try {
-          CanvasRenderingContext2D.prototype.getImageData = fakeGetImageData;
-        } catch (_) {}
+        try { CanvasRenderingContext2D.prototype.getImageData = fakeGetImageData; } catch (_) {}
       }
     }
-
 
     // ========== 5. AudioContext 确定性微扰 ==========
     if (typeof AudioBuffer !== 'undefined' && AudioBuffer.prototype.getChannelData) {
       var origGetChannelData = AudioBuffer.prototype.getChannelData;
       var noisedBuffers = typeof WeakSet !== 'undefined' ? new WeakSet() : null;
-      var fakeGetChannelData = function getChannelData(ch) {
-        var data = origGetChannelData.apply(this, arguments);
-        if (data && data.length) {
-          // 单次注入守卫（采用闭包 WeakSet，绝不在 Float32Array 挂任何 ownProperty，杜绝 Reflect.ownKeys 反爬探测特征）
-          if (noisedBuffers) {
-            if (noisedBuffers.has(data)) return data;
-            noisedBuffers.add(data);
+      var fakeGetChannelData = ({
+        getChannelData(ch) {
+          var data = origGetChannelData.apply(this, arguments);
+          if (data && data.length) {
+            if (noisedBuffers) {
+              if (noisedBuffers.has(data)) return data;
+              noisedBuffers.add(data);
+            }
+            var aSeed = FP.audioSeed || 12345;
+            var step = Math.max(1, Math.floor(data.length / 100));
+            for (var i = 0; i < data.length; i += step) {
+              var noise = (((i * 17 + aSeed) % 10) - 5) * 1e-7;
+              data[i] += noise;
+            }
           }
-          var aSeed = FP.audioSeed || 12345;
-          var step = Math.max(1, Math.floor(data.length / 100));
-          for (var i = 0; i < data.length; i += step) {
-            var noise = (((i * 17 + aSeed) % 10) - 5) * 1e-7;
-            data[i] += noise;
-          }
+          return data;
         }
-        return data;
-      };
+      }).getChannelData;
       markNative(fakeGetChannelData, 'getChannelData');
-      try {
-        AudioBuffer.prototype.getChannelData = fakeGetChannelData;
-      } catch (_) {}
+      try { AudioBuffer.prototype.getChannelData = fakeGetChannelData; } catch (_) {}
     }
   } catch (_) {}
 })();

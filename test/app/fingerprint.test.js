@@ -42,7 +42,8 @@ test('normalizeFingerprintConfig: 防御脏数据并正确纠错与回退', () =
     deviceMemory: 64,
   }, 'test-id');
   assert.strictEqual(partial.hardwareConcurrency, 32);
-  assert.strictEqual(partial.deviceMemory, 64);
+  // deviceMemory 规范上限 8（GiB），超上限夹紧到 8，避免现实不可能值被风控识别
+  assert.strictEqual(partial.deviceMemory, 8);
   assert.ok(partial.webglRenderer.includes('ANGLE'));
 });
 

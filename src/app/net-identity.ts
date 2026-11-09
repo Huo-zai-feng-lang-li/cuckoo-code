@@ -363,8 +363,7 @@ function buildShieldScript(cfg: ProxyConfig, fp?: FingerprintConfig): string {
       function Disabled() { throw new Error('WebRTC is not supported'); }
       var Native = window.RTCPeerConnection;
       if (Native) Disabled.prototype = Native.prototype;
-      try { Object.defineProperty(Disabled, 'name', { value: 'RTCPeerConnection', configurable: true }); } catch (e) {}
-      try { Disabled.toString = function() { return 'function RTCPeerConnection() { [native code] }'; }; } catch (e) {}
+      markNative(Disabled, 'RTCPeerConnection');
       window.RTCPeerConnection = Disabled;
       window.webkitRTCPeerConnection = Disabled;
     `;
@@ -396,6 +395,8 @@ function buildShieldScript(cfg: ProxyConfig, fp?: FingerprintConfig): string {
 
           pc.addEventListener = function(type, listener, opts) {
             if (type === 'icecandidate' && typeof listener === 'function') {
+              // 原生按 (type,listener,capture) 去重：已登记则不再包装（否则旧 wrapped 孤儿化、无法解绑）
+              if (listenerMap.has(listener)) return;
               var listenerHandled = false;
               var wrapped = function(ev) {
                 if (!ev || !ev.candidate) {
@@ -462,13 +463,23 @@ function buildShieldScript(cfg: ProxyConfig, fp?: FingerprintConfig): string {
               return origSetConf(mod);
             };
           } catch (e) {}
+          // 让实例的 constructor 指向 Fake（与 window.RTCPeerConnection 一致），否则
+          // new RTCPeerConnection().constructor === RTCPeerConnection 探测得 false
+          try { Object.defineProperty(pc, 'constructor', { value: Fake, configurable: true }); } catch (e) {}
           return pc;
         }
-        Fake.prototype = Native.prototype;
-        try { Object.defineProperty(Fake, 'name', { value: 'RTCPeerConnection', configurable: true }); } catch (e) {}
+        // 浅拷贝原型再改 constructor，避免污染原生 Native.prototype
         try {
-          Fake.toString = function() { return 'function RTCPeerConnection() { [native code] }'; };
-        } catch (e) {}
+          var clonedProto = Object.create(Object.getPrototypeOf(Native.prototype) || Object.prototype);
+          var ownKeys = Object.getOwnPropertyNames(Native.prototype);
+          for (var oi = 0; oi < ownKeys.length; oi++) {
+            if (ownKeys[oi] === 'constructor') continue;
+            try { Object.defineProperty(clonedProto, ownKeys[oi], Object.getOwnPropertyDescriptor(Native.prototype, ownKeys[oi])); } catch (e) {}
+          }
+          Object.defineProperty(clonedProto, 'constructor', { value: Fake, configurable: true, writable: true });
+          Fake.prototype = clonedProto;
+        } catch (e) { try { Fake.prototype = Native.prototype; } catch (e2) {} }
+        markNative(Fake, 'RTCPeerConnection');
         window.RTCPeerConnection = Fake;
         window.webkitRTCPeerConnection = Fake;
       }
@@ -478,7 +489,25 @@ function buildShieldScript(cfg: ProxyConfig, fp?: FingerprintConfig): string {
   return `(function(){
     try {
       if (window.__cuckooShieldInjected) return;
-      window.__cuckooShieldInjected = true;
+      try { Object.defineProperty(window, '__cuckooShieldInjected', { value: true, enumerable: false, configurable: true, writable: true }); } catch (_) { window.__cuckooShieldInjected = true; }
+
+      // ===== Native Cloaking 引擎：让被替换的构造函数 toString 返回 [native code]。
+      // 否则页面用 Function.prototype.toString.call(RTCPeerConnection) 可直读伪造源码全文。=====
+      var nativeToString = Function.prototype.toString;
+      var customToStrings = new WeakMap();
+      function markNative(fn, name) {
+        if (typeof fn !== 'function') return fn;
+        if (name) { try { Object.defineProperty(fn, 'name', { value: name, configurable: true }); } catch (_) {} }
+        customToStrings.set(fn, 'function ' + (name || '') + '() { [native code] }');
+        return fn;
+      }
+      var hookedToString = ({ toString() {
+        if (customToStrings.has(this)) return customToStrings.get(this);
+        return nativeToString.apply(this, arguments);
+      } }).toString;
+      markNative(hookedToString, 'toString');
+      try { Function.prototype.toString = hookedToString; } catch (_) {}
+
       ${dnsShield}
       ${rtcPart}
     } catch (e) {}
