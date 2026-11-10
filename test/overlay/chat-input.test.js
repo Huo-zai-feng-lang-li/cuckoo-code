@@ -72,9 +72,11 @@ test('randomDelay: 认知自适应按文本长度动态伸缩且不突破配置'
     assert.ok(d >= 1000 && d <= 1000 + span + 1, '短文本延迟应迅速: ' + d);
   }
 
-  // 极长文本（4000 字 = ratio 1）：必须能逼近配置上限 max，
+  // 极长文本（16000 字 = ratio 1）：必须能逼近配置上限 max。
   // 旧实现固定上限 23000ms，配置 max=36000 时永远够不着（用户实测分布偏低即此因）。
-  const longText = 'a'.repeat(4000);
+  // 需求 114 后阈值提到 16000 并改用 sqrt 压缩：4000 字只到 ratio 0.5，
+  // 故此处必须用 16000 字才能真正命中上限。
+  const longText = 'a'.repeat(16000);
   let maxSeen = 0;
   for (let i = 0; i < 20; i++) {
     const d = chat.randomDelay(longText);
@@ -82,6 +84,31 @@ test('randomDelay: 认知自适应按文本长度动态伸缩且不突破配置'
     if (d > maxSeen) maxSeen = d;
   }
   assert.ok(maxSeen > 40000, '极长文本必须能逼近配置上限: ' + maxSeen);
+});
+
+test('randomDelay: 中等长度内容不再贴死上限（需求 114 回归）', () => {
+  // 痛点：工具回传动辄数千字符，旧实现 len/4000 直接 ratio=1，
+  // 延迟永远贴死在配置上限（20 轮工具循环 = 10 分钟纯等待）。
+  // 新实现 sqrt(len/16000)：4000 字只到 ratio 0.5，必须明显低于上限。
+  state.sendDelayMin = 4000;
+  state.sendDelayMax = 30000;
+  const midText = 'a'.repeat(4000);
+  const seen = [];
+  for (let i = 0; i < 40; i++) seen.push(chat.randomDelay(midText));
+  const avg = seen.reduce((a, b) => a + b, 0) / seen.length;
+  assert.ok(avg < 22000, '4000 字内容的平均延迟应明显低于上限 30s: ' + Math.round(avg));
+  assert.ok(avg > 9000, '也不应低到脱离认知模型: ' + Math.round(avg));
+});
+
+test('randomDelay: 短内容走快速通道（需求 114 回归）', () => {
+  // 20 字的消息不该让用户等 12 秒。默认 4~30 下应落在 4~7 秒区间。
+  state.sendDelayMin = 4000;
+  state.sendDelayMax = 30000;
+  for (let i = 0; i < 30; i++) {
+    const d = chat.randomDelay('好的，继续');
+    assert.ok(d <= 8000, '短消息延迟应贴近下限（≤8s），实际=' + d);
+    assert.ok(d >= 4000, '不得低于配置下限: ' + d);
+  }
 });
 
 test('planSendTiming: 总延迟严格遵守配置区间，R+S 恰好等于总延迟', () => {

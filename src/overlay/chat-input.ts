@@ -30,23 +30,31 @@ function randomDelay(msg?: string): number {
   if (min >= max) return min;
 
   const len = typeof msg === 'string' ? msg.length : 0;
-  // 认知耗时模型：按文本长度在用户配置区间内线性映射。
-  // 旧实现用固定上限 23000ms，配置 max=36000 时永远达不到上限，
-  // 延迟分布全部挤在 [min, 23s] —— 用户实测「大都停留在 6~15s」即此因。
-  // 现以 4000 字符为「极长」阈值：短文本落在 min 附近，长文本可逼近 max。
-  const ratio = Math.min(1, len / 4000);
+  // 认知耗时模型：按文本长度映射到用户配置区间。
+  // 需求 114 改造（用户痛点：工具循环每轮 30~36 秒，20 轮要 10 分钟）：
+  //  - 旧阈值 4000 对 Cuckoo 毫无意义 —— 工具回传动辄数千到上万字符，
+  //    ratio 恒等于 1，延迟永远贴死在配置上限。
+  //  - 现用 sqrt 压缩 + 阈值提到 16000：前段上升快（短内容能立刻区分），
+  //    后段趋平（超长内容不会无限逼近 max），分布整体左移约 60%。
+  //  - 宁可让「中等长度」多等一下，也不要让「所有长度」都等最久。
+  const ratio = Math.min(1, Math.sqrt(len / 16000));
   const cognitiveBase = min + ratio * (max - min);
-  // 随机抖动 Jitter：在 ±20% 范围内波动
-  const jitter = (Math.random() * 0.4 - 0.2) * cognitiveBase;
+  // 随机抖动 Jitter：±35%（原 ±20%）。恒定节拍比「慢」更像机器特征，
+  // 加大抖动让每次间隔差异明显，分散度比单纯拉长更有价值。
+  const jitter = (Math.random() * 0.7 - 0.35) * cognitiveBase;
   const target = Math.round(cognitiveBase + jitter);
   const clamped = Math.max(min, Math.min(max, target));
   // 钳制后若恰好落在边界，认知抖动会被抹平（短文本永远精确等于 min）——固定节拍即机器特征。
   // 在「对应边界附近」补一段均匀抖动，既保持每次不同，又不破坏「内容越长越慢」的语义：
   //   - 命中 min：在 [min, min+25%区间] 抖动（短文本仍快）
   //   - 命中 max：在 [max-25%区间, max] 抖动（长文本仍慢，绝不反转到最快）
-  const span = (max - min) * 0.25;
-  if (clamped === min) return Math.round(min + Math.random() * span);
-  if (clamped === max) return Math.round(max - Math.random() * span);
+  // 命中下限时的抖动幅度必须按 min 自身比例算，不能按整个区间跨度算：
+  // 默认 4~30s 时跨度 26s，25% 就是 6.5s —— 短消息会被抖到 10.5s，
+  // 与「短内容快速响应」的目标直接冲突。改为 min 的 60%（4s → 4~6.4s）。
+  const spanLow = Math.min((max - min) * 0.25, min * 0.6);
+  const spanHigh = (max - min) * 0.25;
+  if (clamped === min) return Math.round(min + Math.random() * spanLow);
+  if (clamped === max) return Math.round(max - Math.random() * spanHigh);
   return clamped;
 }
 

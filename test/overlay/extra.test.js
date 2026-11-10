@@ -1,14 +1,16 @@
 import { test } from 'vitest';
 import assert from 'node:assert';
 
-test('randomDelay 返回默认发送延迟区间（12-36 秒，防封节奏）', async () => {
+test('randomDelay 返回默认发送延迟区间（4-30 秒，需求 114）', async () => {
   const { randomDelay } = await import('../../src/overlay/chat-input.js');
   const { state } = await import('../../src/overlay/state.js');
-  assert.strictEqual(state.sendDelayMin, 12000, '默认下限应为 12s');
-  assert.strictEqual(state.sendDelayMax, 36000, '默认上限应为 36s');
+  // 需求 114：旧默认 12/36 对短消息太重（20 字也要等 12 秒），
+  // 且超长工具回传总贴死上限。改为 4/30 并配合 sqrt 分布压缩。
+  assert.strictEqual(state.sendDelayMin, 4000, '默认下限应为 4s');
+  assert.strictEqual(state.sendDelayMax, 30000, '默认上限应为 30s');
   for (let i = 0; i < 30; i++) {
     const d = randomDelay();
-    assert.ok(d >= 12000 && d <= 36000, '实际返回 ' + d + ' 超出 12000-36000');
+    assert.ok(d >= 4000 && d <= 30000, '实际返回 ' + d + ' 超出 4000-30000');
   }
 });
 
