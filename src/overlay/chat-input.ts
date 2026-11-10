@@ -30,8 +30,12 @@ function randomDelay(msg?: string): number {
   if (min >= max) return min;
 
   const len = typeof msg === 'string' ? msg.length : 0;
-  // 认知耗时模型：短文本（<100字）基准 3000ms；长文本递增最高至 23000ms
-  const cognitiveBase = 3000 + Math.min(20000, Math.floor(len / 100) * 800);
+  // 认知耗时模型：按文本长度在用户配置区间内线性映射。
+  // 旧实现用固定上限 23000ms，配置 max=36000 时永远达不到上限，
+  // 延迟分布全部挤在 [min, 23s] —— 用户实测「大都停留在 6~15s」即此因。
+  // 现以 4000 字符为「极长」阈值：短文本落在 min 附近，长文本可逼近 max。
+  const ratio = Math.min(1, len / 4000);
+  const cognitiveBase = min + ratio * (max - min);
   // 随机抖动 Jitter：在 ±20% 范围内波动
   const jitter = (Math.random() * 0.4 - 0.2) * cognitiveBase;
   const target = Math.round(cognitiveBase + jitter);
@@ -490,11 +494,10 @@ async function sendInitialPromptToInput(): Promise<boolean> {
     }
   } catch (_) { /* ignore */ }
 
-  // 初始提示：延迟同样遵守 state.sendDelayMin/Max 配置区间（randomDelay 已 clamp）。
-  // 用提示词自身长度算认知负荷——用户打开新会话后读完页面/系统提示再动手。
-  const initialDelay = randomDelay(state.initialPromptContent);
-  console.log('[Cuckoo Code] 初始提示已填入，等待 ' + initialDelay + 'ms 后发送...');
-  await new Promise(resolve => setTimeout(resolve, initialDelay));
+  // 初始提示是框架驱动的系统指令（非"用户回复 AI"），与 insertSnippet / 格式纠正同类：
+  // 必须 0ms 立即发出。旧实现走 randomDelay(提示词自身长度) —— 系统提示词数万字符，
+  // 按认知模型会算到配置上限（默认 36s），用户看到"填进输入框却半天不发"以为坏了。
+  console.log('[Cuckoo Code] 初始提示已填入，立即发送...');
   try {
     await triggerSend(input);
   } finally {

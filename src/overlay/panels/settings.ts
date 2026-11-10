@@ -104,6 +104,36 @@ function saveSettings() {
   } catch (_) {}
   state.sendDelayMin = smin;
   state.sendDelayMax = smax;
+
+  // 必须同步到主进程（agent-settings.json 是唯一真相源）。
+  // 只写 localStorage 的话，主进程任何一次 cuckoo-sync-settings 广播（其他窗口加载、
+  // 壳页面保存、AI 页面 did-finish-load）都会把文件里的旧值写回来，覆盖用户刚改的配置。
+  // 实测表现：「设置过一会儿自己恢复成默认 6s」。
+  // 传 UI 单位（秒），与壳页面 saveSettings 的 delta 格式一致。
+  const api = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+  if (api && typeof api.saveSettingsGlobal === 'function') {
+    api.saveSettingsGlobal({
+      retryEnabled: !!(enEl && (enEl as any).checked),
+      retryDelayMin: dmin / 1000,
+      retryDelayMax: dmax / 1000,
+      retryCount: cnt,
+      retry429Delay: d429 / 1000,
+      retry429Count: c429,
+      retryPrompt: prompt,
+      xhrIdleTimeout: idleTimeout / 1000,
+      watchdogPrompt: watchdogPrompt,
+      watchdogCount: watchdogCount,
+      sendDelayMin: smin / 1000,
+      sendDelayMax: smax / 1000,
+    }).then((res: any) => {
+      if (res && res.success === false) {
+        showToast('设置同步失败: ' + (res.error || '未知错误'), 4000);
+      }
+    }).catch((err: any) => {
+      showToast('设置同步失败: ' + ((err && err.message) || err), 4000);
+    });
+  }
+
   showToast('设置已保存', 2500);
   closeSettings();
 }

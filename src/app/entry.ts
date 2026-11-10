@@ -684,7 +684,13 @@ function createWindow(profile: any) {
   }).catch((err: any) => {
     clearTimeout(netIdentityTimer);
     console.error('[Cuckoo Code] 应用网络身份失败:', err && err.message);
-    safeLoadPage();
+    // 代理启用但应用失败：绝不能直连加载目标站点（真实 IP 泄露）。
+    // 加载错误页让用户重试；直连模式才正常加载。
+    if (proxyCfg.enabled && proxyCfg.rules) {
+      showNetIdentityError();
+    } else {
+      safeLoadPage();
+    }
   });
 
   // 项目目录确定后，异步自动连该项目的 MCP（不阻塞导航/窗口）
@@ -726,7 +732,10 @@ function createWindow(profile: any) {
           if (liveProfile.fingerprint) liveFp = liveProfile.fingerprint;
         }
       } catch (_) { /* ignore */ }
-      applyNetIdentity(view, liveCfg, liveFp).catch(() => { /* ignore */ });
+      applyNetIdentity(view, liveCfg, liveFp).catch((err: any) => {
+        // 刷新后重应用失败：页面已加载，不强制错误页；但必须留痕，不能静默吞掉
+        console.warn('[Cuckoo Code] 刷新后重应用网络身份失败:', err && err.message);
+      });
       autoConnectMcp();
       // AI 内容就绪后重排一次（view 首帧渲染需要正确 bounds，修偶发空白）
       try { (mainWindow as any).__ckLayout && (mainWindow as any).__ckLayout(); } catch (_) {}
@@ -1735,16 +1744,25 @@ ipcMainForProfile.handle('set-profile-proxy', async (event: any, { profileId, pr
   // Emulation 时区/语言会立即生效；WebRTC 脚本需 reload 才作用于新文档。
   const cfg = normalizeProxyConfig(p.proxy);
   const targets = windowState.getAllWindowsByProfileId(profileId);
+  let appliedCount = 0;
+  const applyFailures: string[] = [];
   for (const c of targets) {
     if (!c || !c.view || c.view.webContents.isDestroyed()) continue;
     try {
       // 关键顺序：先完整应用网络身份与专属指纹，全部注入就绪后，再触发 reload
       const fpCfg = profileManager.getProfileFingerprint(profileId);
       await applyNetIdentity(c.view, cfg, fpCfg);
+      // 仅在网络身份应用成功后才 reload；失败时保持当前页面，绝不直连加载目标站点
       try { c.view.webContents.reload(); } catch (_) {}
+      appliedCount++;
     } catch (err: any) {
+      applyFailures.push(err && err.message ? err.message : String(err));
       console.warn('[Cuckoo Code] 应用代理配置失败:', err && err.message);
     }
+  }
+  // 全部窗口都失败：如实返回失败（配置已持久化，下次启动会重试），不谎报成功
+  if (applyFailures.length > 0 && appliedCount === 0) {
+    return { success: false, error: '应用代理失败: ' + applyFailures[0] };
   }
   // 自动跟随出口 IP：勾了 autoGeo 且启用了代理 → 后台探测（不阻塞返回）。
   // 流程：点保存立即返回 → 页面先加载（无伪装）→ 探测完成自动更新配置 + reload（伪装生效）。
@@ -1778,7 +1796,10 @@ ipcMainForProfile.handle('set-profile-proxy', async (event: any, { profileId, pr
             try {
               await applyNetIdentity(c.view, merged, liveFp);
               try { c.view.webContents.reload(); } catch (_) {}
-            } catch (_) { /* ignore */ }
+            } catch (err: any) {
+              // 自动跟随失败：保持当前页面，不 reload（避免直连泄露）；留痕便于排查
+              console.warn('[Cuckoo Code] 自动跟随出口 IP 应用失败:', err && err.message);
+            }
           }
           console.log('[Cuckoo Code] 自动跟随出口 IP 完成:', geo.ip, geo.timezone, geo.locale);
         } catch (err: any) {

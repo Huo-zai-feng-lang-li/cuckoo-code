@@ -45,6 +45,63 @@ export function flattenDelta(item: any, parentPath: string, state: DeltaState): 
   return [{ p: fullPath, o: op, v: item.v, raw: item }];
 }
 
+/**
+ * 判定 `response/fragments` 更新帧的语义：全量快照（需重置累积文本）还是增量（追加）。
+ *
+ * 背景（真机问题）：DeepSeek 的增量帧会重复下发整组 fragments（含已输出过的内容），
+ * 若一律按增量 `text += c / thinkText += c` 累加，思考内容与正文会被重复叠加
+ * （纯净模式下表现为思考过程出现两份、三份）。
+ *
+ * 旧判据的缺陷：只看 `op === 'SET'`。但 `flattenDelta` 展开 `BATCH` 批量帧时，
+ * 子项的 o 会**继承 'BATCH'**（见本文件 BATCH 分支），于是整组重放的 BATCH 帧
+ * 被当成增量 → 内容叠加成两份、三份。协议用哪个 op 是服务端实现细节，
+ * 靠它判语义是脆弱假设（已实测翻车）。
+ *
+ * 现判据（与 op 无关，只看内容）：本帧 fragments 重建出的思考/正文，若以已累积的
+ * 思考/正文为**前缀**（含完全相等），即为全量快照重放 → 重置；否则是真实增量块 → 追加。
+ *   - 重放帧：内容相等或更长且前缀一致 → 重置重建，不会重复；
+ *   - 增量帧：内容是全新的下一段，前缀必然不符 → 追加，不会丢已输出内容。
+ * 无内容信息时（首帧前 / 纯类型调用）退回类型判定，保持向后兼容。
+ *
+ * @param prevTypes 已累积的 fragment 类型列表
+ * @param nextTypes 本帧下发的 fragment 类型列表
+ * @param op 本帧操作符（仅作无内容信息时的兜底判据）
+ * @param prevText 已累积正文
+ * @param prevThink 已累积思考
+ * @param nextText 本帧 fragments 重建出的正文
+ * @param nextThink 本帧 fragments 重建出的思考
+ * @returns reset=true 时必须重置累积文本后再消费本帧内容
+ */
+export function planFragmentsUpdate(
+  prevTypes: string[],
+  nextTypes: string[],
+  op?: string,
+  prevText?: string,
+  prevThink?: string,
+  nextText?: string,
+  nextThink?: string
+): { reset: boolean; types: string[] } {
+  const prev = Array.isArray(prevTypes) ? prevTypes : [];
+  const next = Array.isArray(nextTypes) ? nextTypes : [];
+  const pT = typeof prevText === 'string' ? prevText : '';
+  const pK = typeof prevThink === 'string' ? prevThink : '';
+  const nT = typeof nextText === 'string' ? nextText : '';
+  const nK = typeof nextThink === 'string' ? nextThink : '';
+
+  // 有内容信息 → 按内容前缀判定（BATCH / SET / append 一视同仁）
+  if (pT || pK || nT || nK) {
+    const thinkReplay = nK === pK || nK.indexOf(pK) === 0;
+    const textReplay = nT === pT || nT.indexOf(pT) === 0;
+    if (thinkReplay && textReplay) return { reset: true, types: next };
+    return { reset: false, types: prev.concat(next) };
+  }
+
+  // 无内容信息 → 退回类型判定（兼容旧调用与单测）
+  const isSet = op === undefined || op === null || op === '' || String(op).toUpperCase() === 'SET';
+  if (isSet && next.length >= prev.length) return { reset: true, types: next };
+  return { reset: false, types: prev.concat(next) };
+}
+
 export type DeepSeekStreamStatus = 'finished' | 'stopped' | 'error';
 
 /**

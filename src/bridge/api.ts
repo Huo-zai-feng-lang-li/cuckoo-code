@@ -1,14 +1,13 @@
 /**
- * 暴露给渲染进程的 API（contextBridge + window 兜底）
- * 由原 preload.js 拆分而来，行为保持不变。
+ * 暴露给 Cuckoo preload/overlay 隔离世界的 API。
+ * 由原 preload.js 拆分而来；页面主世界不应获得这些 IPC 能力。
  */
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { contextBridge, ipcRenderer } = require('electron');
+const { ipcRenderer, contextBridge } = require('electron');
 
-// ========== 暴露给渲染进程的 API ==========
-// 尝试 contextBridge，如果失败则直接挂载到 window（作为 fallback）
+// ========== 暴露给 preload/overlay 隔离世界的 API ==========
 let electronAPI: any = {
   executeCommand: (command: any, id: any) => {
     return ipcRenderer.invoke('execute-command', { command, id });
@@ -246,16 +245,27 @@ let electronAPI: any = {
   replaceProvider: (providerId: any) => {
     return ipcRenderer.invoke('replace-provider', { providerId });
   },
+  // ========== 全局设置 ==========
+  // overlay 设置面板保存后必须同步到主进程（agent-settings.json 是唯一真相源）。
+  // 只写 localStorage 的话，主进程任何一次 cuckoo-sync-settings 广播都会把
+  // 它自己的旧值（默认 6/36）写回来，覆盖用户刚改的值 —— 实测「设置过会自己恢复」。
+  saveSettingsGlobal: (data: any) => {
+    return ipcRenderer.invoke('save-settings', { data });
+  },
 };
 
-try {
-  contextBridge.exposeInMainWorld('electronAPI', electronAPI);
-} catch (err) {
-  console.error('[Cuckoo Code] contextBridge.exposeInMainWorld 失败:', err);
-}
-
-// 无论 contextBridge 是否成功，都直接挂载到 window 作为备选
-// X-001：本应用 contextIsolation:true，contextBridge.exposeInMainWorld 已把 electronAPI
-// 隔离在隔离世界；下面这行兜底赋值仅落在隔离世界的 window，不泄漏到 AI 页面主世界，
-// 保留作 contextBridge 失败时的降级（安全闸在主进程 host 白名单，不在此）。
+// contextIsolation=true 时，这个赋值只存在于 preload 的隔离世界（供 overlay / bridge 内部用）。
 (window as any).electronAPI = electronAPI;
+
+// 主世界暴露：**仅限本地页面**（file:// 协议）。
+//  - platform-select.html / proxy-error.html 等应用自带页面运行在主世界，脚本直接读
+//    window.electronAPI；没有这层桥接，页面会报「API 未就绪」（实测踩过）。
+//  - 远程 AI 页面（https://）一律不暴露：它们是不可信内容，拿到 execute-command /
+//    execute-js / execute-tool 等于把本机命令执行能力交给外部站点。
+// 判据用协议而非域名白名单：新增本地页面无需维护名单，也不会误放行远程页面。
+const isLocalPage = (() => {
+  try { return window.location.protocol === 'file:'; } catch (_) { return false; }
+})();
+if (isLocalPage) {
+  try { contextBridge.exposeInMainWorld('electronAPI', electronAPI); } catch (_) { /* 已存在或环境不支持 */ }
+}

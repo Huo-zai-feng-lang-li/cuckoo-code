@@ -65,15 +65,23 @@ test('randomDelay 在 [min, max] 范围内', () => {
 test('randomDelay: 认知自适应按文本长度动态伸缩且不突破配置', () => {
   state.sendDelayMin = 1000;
   state.sendDelayMax = 60000;
-  // 短文本快速响应（<5000ms）
-  const shortDelay = chat.randomDelay('ok');
-  assert.ok(shortDelay >= 1000 && shortDelay <= 5000, '短文本延迟应迅速: ' + shortDelay);
+  const span = (60000 - 1000) * 0.25;
+  // 短文本：命中 min 后只在 [min, min+25%区间] 抖动（保持「短文本快」语义）
+  for (let i = 0; i < 20; i++) {
+    const d = chat.randomDelay('ok');
+    assert.ok(d >= 1000 && d <= 1000 + span + 1, '短文本延迟应迅速: ' + d);
+  }
 
-  // 超长文本自动延展模拟阅读思考（加上抖动在 8000ms ~ 30000ms 之间）
-  const longText = 'a'.repeat(3000);
-  const longDelay = chat.randomDelay(longText);
-  assert.ok(longDelay >= 8000 && longDelay <= 30000, '长文本延迟应具有充足阅读思考时间: ' + longDelay);
-  assert.ok(longDelay > shortDelay, '长文本延迟通常大于短文本');
+  // 极长文本（4000 字 = ratio 1）：必须能逼近配置上限 max，
+  // 旧实现固定上限 23000ms，配置 max=36000 时永远够不着（用户实测分布偏低即此因）。
+  const longText = 'a'.repeat(4000);
+  let maxSeen = 0;
+  for (let i = 0; i < 20; i++) {
+    const d = chat.randomDelay(longText);
+    assert.ok(d >= 1000 && d <= 60000, '不得突破配置区间: ' + d);
+    if (d > maxSeen) maxSeen = d;
+  }
+  assert.ok(maxSeen > 40000, '极长文本必须能逼近配置上限: ' + maxSeen);
 });
 
 test('planSendTiming: 总延迟严格遵守配置区间，R+S 恰好等于总延迟', () => {
@@ -180,6 +188,60 @@ test('triggerSend: 优先调用 electronAPI.sendEnterToChat 原生按键', async
   const mockInput = { focus() {} };
   await chat.triggerSend(mockInput);
   assert.strictEqual(enterCalled, true, '应优先调用原生 Enter 发送');
+});
+
+test('sendInitialPromptToInput: 系统提示词必须立即发送（不排随机延迟）', async () => {
+  // 回归：旧实现走 randomDelay(提示词自身长度)，数万字的系统提示词会算到配置上限（默认 36s），
+  // 表现为「提示词只回显到输入框、迟迟不发送」。
+  const origSetTimeout = globalThis.setTimeout;
+  const delays = [];
+  let sendTriggered = false;
+  globalThis.setTimeout = ((fn, delay) => {
+    delays.push(delay);
+    return 1;
+  });
+  try {
+    Object.defineProperty(globalThis.window.HTMLTextAreaElement.prototype, 'value', {
+      set(v) { this._val = v; },
+      configurable: true,
+    });
+    // 注意：不能自带 value 自有属性，否则会遮蔽原型访问器，写入后读回为空
+    const input = {
+      tagName: 'TEXTAREA',
+      focus() {},
+      setSelectionRange() {},
+      getAttribute: () => null,
+      dispatchEvent: () => true,
+      __style: { display: 'block', visibility: 'visible', opacity: '1' },
+    };
+    // 原型级 value 存取器：setInputContent 走 HTMLTextAreaElement.prototype 的 desc.set，
+    // 必须在原型上定义访问器才能让它与 getInputText 的读回保持一致。
+    Object.defineProperty(globalThis.window.HTMLTextAreaElement.prototype, 'value', {
+      get() { return this._val || ''; },
+      set(v) { this._val = String(v); },
+      configurable: true,
+    });
+    // 普通对象字面量的原型是 Object.prototype，必须显式接上 textarea 原型，
+    // 否则上面定义的 value 访问器对 input.value 的读写都不生效。
+    Object.setPrototypeOf(input, globalThis.window.HTMLTextAreaElement.prototype);
+    globalThis.document.querySelector = () => input;
+    globalThis.document.querySelectorAll = () => [input];
+    globalThis.window.electronAPI = {
+      sendEnterToChat: async () => { sendTriggered = true; return true; },
+    };
+    state.initialPromptContent = '系统提示词'.repeat(2000);
+    state.pendingInitialPrompt = true;
+
+    const ok = await chat.sendInitialPromptToInput();
+
+    assert.strictEqual(ok, true, '初始提示应发送成功');
+    assert.ok(delays.every((d) => d < 1000), '初始提示不得排随机延迟，实际延迟=' + JSON.stringify(delays));
+    await new Promise((r) => origSetTimeout(r, 0));
+    assert.strictEqual(sendTriggered, true, '应立即触发发送');
+    assert.strictEqual(state.pendingInitialPrompt, false, '发送后必须清标志，否则重试逻辑卡死');
+  } finally {
+    globalThis.setTimeout = origSetTimeout;
+  }
 });
 
 test('insertSnippet: autoSend 是用户手动触发，0ms 立即发送（不排延迟）', async () => {
