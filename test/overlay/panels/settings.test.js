@@ -179,8 +179,9 @@ test('getSettingsData 默认值符合反风控安全配置', () => {
   assert.strictEqual(data.retryCount, 3, '普通失败重试默认应为 3 次（防封）');
   assert.strictEqual(data.retryDelayMin, 15, '普通失败间隔最小默认应为 15s（防封）');
   assert.strictEqual(data.retryDelayMax, 30, '普通失败间隔最大默认应为 30s（防封）');
-  assert.strictEqual(data.sendDelayMin, 6, '发送延迟最小默认应为 6s');
-  assert.strictEqual(data.sendDelayMax, 36, '发送延迟最大默认应为 36s');
+  // 需求 114：统一到 4/30，与主进程 global-settings 的默认值对齐
+  assert.strictEqual(data.sendDelayMin, 4, '发送延迟最小默认应为 4s');
+  assert.strictEqual(data.sendDelayMax, 30, '发送延迟最大默认应为 30s');
 });
 
 test('resetSettingsData 必须清空全部设置键（含子代理 3 个，回归 v0.10.162）', () => {
@@ -206,7 +207,7 @@ test('resetSettingsData 必须清空全部设置键（含子代理 3 个，回�
   assert.strictEqual(localStorage.getItem('cuckoo-send-delay-min'), null, 'send-delay-min 应被清');
   assert.strictEqual(localStorage.getItem('cuckoo-ssrf-guard'), null, 'ssrf-guard 应被清');
   // state 重置到默认
-  assert.strictEqual(data.sendDelayMin, 6, 'state.sendDelayMin 应重置为 6');
-  assert.strictEqual(data.sendDelayMax, 36, 'state.sendDelayMax 应重置为 36');
+  assert.strictEqual(data.sendDelayMin, 4, 'state.sendDelayMin 应重置为 4');
+  assert.strictEqual(data.sendDelayMax, 30, 'state.sendDelayMax 应重置为 30');
 });
 

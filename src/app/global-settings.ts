@@ -47,7 +47,9 @@ export interface AgentSettings {
  * 防封优化后的默认值（相比旧默认收紧了节奏）：
  *  - retryCount: 10 → 3          失败连发从 10 次降到 3 次
  *  - retryDelay: 4~10s → 15~30s  重发间隔更像人
- *  - sendDelay: 1~10s → 6~36s    工具循环节奏降低（旧真值是 1~10s，见 LEGACY_DEFAULTS 注）
+ *  - sendDelay: 1~10s → 12~36s → 4~30s
+ *      需求 114：12~36 的下限对短消息太重（20 字也要等 12 秒），上限又常被
+ *      超长工具回传顶死。改为 4~30 并配合 sqrt 压缩分布，等待时长减半且更分散。
  *  - 其余（429/看门狗）保持原值，已合理
  */
 export const AGENT_SETTINGS_DEFAULTS: AgentSettings = {
@@ -61,8 +63,8 @@ export const AGENT_SETTINGS_DEFAULTS: AgentSettings = {
   xhrIdleTimeout: 300,
   watchdogPrompt: '请继续',
   watchdogCount: 1,
-  sendDelayMin: 12,
-  sendDelayMax: 36,
+  sendDelayMin: 4,
+  sendDelayMax: 30,
   goalMaxIterations: 50,
   ssrfGuard: false,
   maxConcurrentAgents: 3,
@@ -184,17 +186,25 @@ const LEGACY_DEFAULTS = {
   retryDelayMin: 4,
   retryDelayMax: 10,
   retryCount: 10,
-  // 注意：旧版 state.ts / getSettingsData 的 sendDelay 默认是 1000/10000 **毫秒**，
-  // 换算为 SettingsData 的秒单位即 1 / 10 秒。需求文档里写的「4-12」是目标值，
-  // 不是旧默认；若此处误写成 4/12，老用户（localStorage 存 1000/10000 → 1/10 秒）
-  // 将不被 migrateLegacy 命中，防封新默认对其完全失效。
-  sendDelayMin: 1,
-  sendDelayMax: 10,
   // 子代理启动间隔的旧默认是 0/0（= 完全不打散）。恰好等于旧默认的视为"从未自定义"，
   // 迁移到新的 2/5（需求 100）。
   agentStartIntervalMin: 0,
   agentStartIntervalMax: 0,
 };
+
+/**
+ * sendDelay 的历史默认区间（按时间顺序），命中任一组即视为"从未自定义"：
+ *  - [1, 10]   ：一代。旧版 state.ts / getSettingsData 存的是 1000/10000 **毫秒**，
+ *                换算为秒单位即 1/10 秒。若误写成 4/12（那是文档目标值而非代码真值），
+ *                老用户（localStorage 存 1000/10000）将不被迁移命中。
+ *  - [12, 36]  ：二代。0.10.216 ~ 0.10.217 的防封默认。
+ * 需求 114 把默认改为 4~30 后，两代旧默认都必须能迁移过去，否则老用户
+ * 会被永久钉在 12/36 上，享受不到新默认。
+ */
+const LEGACY_SEND_DELAY_RANGES: Array<[number, number]> = [
+  [1, 10],
+  [12, 36],
+];
 
 /**
  * 首次从 AI 页面 localStorage 迁移时的兼容处理。
@@ -210,7 +220,7 @@ export function migrateLegacy(raw: any): AgentSettings {
     n.retryDelayMax = AGENT_SETTINGS_DEFAULTS.retryDelayMax;
   }
   if (same(n.retryCount, LEGACY_DEFAULTS.retryCount)) n.retryCount = AGENT_SETTINGS_DEFAULTS.retryCount;
-  if (same(n.sendDelayMin, LEGACY_DEFAULTS.sendDelayMin) && same(n.sendDelayMax, LEGACY_DEFAULTS.sendDelayMax)) {
+  if (LEGACY_SEND_DELAY_RANGES.some(([lo, hi]) => same(n.sendDelayMin, lo) && same(n.sendDelayMax, hi))) {
     n.sendDelayMin = AGENT_SETTINGS_DEFAULTS.sendDelayMin;
     n.sendDelayMax = AGENT_SETTINGS_DEFAULTS.sendDelayMax;
   }

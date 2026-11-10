@@ -53,8 +53,8 @@ function resetSettings() {
   try {
     for (const k of KEYS) localStorage.removeItem(k);
   } catch (_) {}
-  state.sendDelayMin = 6000;
-  state.sendDelayMax = 36000;
+  state.sendDelayMin = 4000;
+  state.sendDelayMax = 30000;
   showToast('已恢复默认设置', 2500);
   openSettings(); // 重新加载默认值到输入框
 }
@@ -193,8 +193,8 @@ function getSettingsData(): SettingsData {
     xhrIdleTimeout: sec(lsGet('cuckoo-xhr-idle-timeout'), 300),
     watchdogPrompt: lsGet('cuckoo-watchdog-prompt') || '请继续',
     watchdogCount: int(lsGet('cuckoo-watchdog-count'), 1),
-    sendDelayMin: sec(lsGet('cuckoo-send-delay-min'), 6),
-    sendDelayMax: sec(lsGet('cuckoo-send-delay-max'), 36),
+    sendDelayMin: sec(lsGet('cuckoo-send-delay-min'), 4),
+    sendDelayMax: sec(lsGet('cuckoo-send-delay-max'), 30),
     goalMaxIterations: int(lsGet('cuckoo-goal-max-iterations'), 50),
     ssrfGuard: lsGet('cuckoo-ssrf-guard') === '1',
     // 子代理并发/间隔：主进程权威源，AI 页面 localStorage 仅作回显缓存
@@ -307,8 +307,8 @@ function resetSettingsData(): SettingsData {
     'cuckoo-agent-start-interval-max',
   ];
   try { for (const k of KEYS) localStorage.removeItem(k); } catch (_) {}
-  state.sendDelayMin = 6000;
-  state.sendDelayMax = 36000;
+  state.sendDelayMin = 4000;
+  state.sendDelayMax = 30000;
   return getSettingsData();
 }
 

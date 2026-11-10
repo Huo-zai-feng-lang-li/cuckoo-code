@@ -27,8 +27,8 @@ test('文件不存在时 readAgentSettings 返回防封默认值', () => {
   assert.strictEqual(s.retryCount, 3);
   assert.strictEqual(s.retryDelayMin, 15);
   assert.strictEqual(s.retryDelayMax, 30);
-  assert.strictEqual(s.sendDelayMin, 12);
-  assert.strictEqual(s.sendDelayMax, 36);
+  assert.strictEqual(s.sendDelayMin, 4);
+  assert.strictEqual(s.sendDelayMax, 30);
   assert.strictEqual(s.retryEnabled, true);
   assert.strictEqual(s.retry429Count, 1);
   assert.strictEqual(s.watchdogCount, 1);
@@ -119,8 +119,8 @@ test('migrateLegacy：恰好等于旧默认的字段替换为新默认', () => {
   assert.strictEqual(s.retryCount, 3);
   assert.strictEqual(s.retryDelayMin, 15);
   assert.strictEqual(s.retryDelayMax, 30);
-  assert.strictEqual(s.sendDelayMin, 12);
-  assert.strictEqual(s.sendDelayMax, 36);
+  assert.strictEqual(s.sendDelayMin, 4);
+  assert.strictEqual(s.sendDelayMax, 30);
 });
 
 test('migrateLegacy：用户真实自定义的值原样保留', () => {
@@ -149,18 +149,26 @@ test('migrateLegacy：子代理启动间隔用户自定义值原样保留', () =
 });
 
 test('migrateLegacy：旧真值 sendDelay 1/10 秒必须命中迁移（防回归）', () => {
-  // 回归点：曾把 LEGACY_DEFAULTS.sendDelay 误写成 4/12（那是需求文档的目标值，
+  // 回归点：曾把旧 sendDelay 默认误写成 4/12（那是需求文档的目标值，
   // 不是旧代码真值 1000/10000ms）。一旦写错，老用户 1/10 秒的配置不会被迁移，
-  // 防封新默认（12/36）对其完全失效 —— 本用例锁死这个语义。
+  // 新默认对其完全失效 —— 本用例锁死这个语义。
   const s = gs.migrateLegacy({ sendDelayMin: 1, sendDelayMax: 10 });
-  assert.strictEqual(s.sendDelayMin, 12, '旧真值 1s 必须被迁移到 12s');
-  assert.strictEqual(s.sendDelayMax, 36, '旧真值 10s 必须被迁移到 36s');
+  assert.strictEqual(s.sendDelayMin, 4, '旧真值 1s 必须被迁移到 4s');
+  assert.strictEqual(s.sendDelayMax, 30, '旧真值 10s 必须被迁移到 30s');
+});
+
+test('migrateLegacy：二代旧默认 12/36 也必须迁移（需求 114）', () => {
+  // 0.10.216~0.10.217 的防封默认是 12/36。需求 114 把默认改为 4/30 后，
+  // 若只认一代旧默认（1/10），老用户会被永久钉在 12/36 上，享受不到新默认。
+  const s = gs.migrateLegacy({ sendDelayMin: 12, sendDelayMax: 36 });
+  assert.strictEqual(s.sendDelayMin, 4, '二代旧默认 12s 必须迁移到 4s');
+  assert.strictEqual(s.sendDelayMax, 30, '二代旧默认 36s 必须迁移到 30s');
 });
 
 test('migrateLegacy：空对象 → 全默认', () => {
   const s = gs.migrateLegacy({});
   assert.strictEqual(s.retryCount, 3);
-  assert.strictEqual(s.sendDelayMin, 12);
+  assert.strictEqual(s.sendDelayMin, 4);
 });
 
 // ===== applyDelta：多窗口并发保存不同字段不能互相覆盖 =====

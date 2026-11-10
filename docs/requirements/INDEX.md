@@ -106,5 +106,6 @@
 | 111 | fix | [认知节奏发送管线与延迟配置合规加固](./111-cognitive-delay-pipeline.md) | done | feat/111-cognitive-delay-pipeline | 2026-11-10 |
 | 112 | fix | [编辑恢复、显示几何与代理切换一致性](./112-runtime-consistency.md) | done | fix/112-runtime-consistency | 2026-11-10 |
 | 113 | feature | [停止双向同步、新会话开关预设与指纹字段清理](./113-stop-sync-and-session-preset.md) | done | feat/113-stop-sync-and-session-preset | 2026-11-10 |
+| 114 | fix | [发送延迟分布改造与默认值统一](./114-send-delay-distribution.md) | done | feat/114-send-delay-distribution | 2026-11-10 |
 
-共 101 个需求。
+共 102 个需求。
