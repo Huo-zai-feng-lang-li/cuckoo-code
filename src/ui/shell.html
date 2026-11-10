@@ -9416,8 +9416,16 @@ paths:            # 可选；省略 = 始终生效
   var dirty2 = /* @__PURE__ */ new Set();
   function collectSettings() {
     const num = (id) => {
-      const n = parseFloat(getVal(id));
-      return Number.isFinite(n) ? n : 0;
+      const v = getVal(id).trim();
+      if (!v) return void 0;
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : void 0;
+    };
+    const intNum = (id) => {
+      const v = getVal(id).trim();
+      if (!v) return void 0;
+      const n = parseInt(v, 10);
+      return Number.isFinite(n) ? n : void 0;
     };
     const enEl = document.getElementById("st-retry-enabled");
     const ssrfEl = document.getElementById("st-ssrf-guard");
@@ -9426,16 +9434,16 @@ paths:            # 可选；省略 = 始终生效
       ssrfGuard: !!(ssrfEl && ssrfEl.checked),
       retryDelayMin: num("retry-delay-min"),
       retryDelayMax: num("retry-delay-max"),
-      retryCount: parseInt(getVal("retry-count"), 10) || 0,
+      retryCount: intNum("retry-count"),
       retry429Delay: num("retry-429-delay"),
-      retry429Count: parseInt(getVal("retry-429-count"), 10) || 0,
+      retry429Count: intNum("retry-429-count"),
       retryPrompt: getVal("retry-prompt"),
       xhrIdleTimeout: num("xhr-idle-timeout"),
       watchdogPrompt: getVal("watchdog-prompt"),
-      watchdogCount: parseInt(getVal("watchdog-count"), 10) || 0,
+      watchdogCount: intNum("watchdog-count"),
       sendDelayMin: num("send-delay-min"),
       sendDelayMax: num("send-delay-max"),
-      maxConcurrentAgents: parseInt(getVal("max-concurrent-agents"), 10) || 0,
+      maxConcurrentAgents: intNum("max-concurrent-agents"),
       agentStartIntervalMin: num("agent-start-interval-min"),
       agentStartIntervalMax: num("agent-start-interval-max")
     };

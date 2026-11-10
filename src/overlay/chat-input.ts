@@ -408,7 +408,7 @@ async function sendCombinedJsResultsToChat(results: any, onSent?: () => void, co
     if (item && item.result && item.result.success) {
       let out = (item.result.output || '').trim();
       if (out.length > MAX_OUTPUT) {
-        out = out.slice(0, MAX_OUTPUT) + sep + '...[输出过长已截断]...';
+        out = out.slice(0, MAX_OUTPUT) + sep + '...[输出过长已截断]...\n⚠️ 警告：回传内容超出长度上限被系统截断。严禁再次尝试输出全量内容，请立即改用 read 的 offset/limit 分段读取，或在 JS 脚本中使用 slice/filter 提取关键片段后再 log。';
       }
       // 多段必须保留「成功」锚点：失败段有「失败了」兜底，成功段若无标记则结构不对称，
       // AI 得靠输出首字符推断。单段不需要（前缀已表明这是结果）。
@@ -450,11 +450,16 @@ function findInputArea(): any {
   // 通用兜底：找所有可见 textarea
   const allTextareas = document.querySelectorAll('textarea');
   for (const ta of allTextareas) {
+    // 【幽灵发送防御】必须过滤纯净模式(harness)的输入框，否则框架内部消息会串台填入用户的草稿框
+    if (ta.id === 'input' || (ta as any).placeholder?.includes('输入消息')) continue;
     if (isInputVisible(ta)) return ta;
   }
   // 再找 contenteditable 或 textbox
-  const editable = document.querySelector('div[contenteditable="true"], [role="textbox"]');
-  if (editable && isInputVisible(editable)) return editable;
+  const editables = document.querySelectorAll('div[contenteditable="true"], [role="textbox"]');
+  for (const ed of editables) {
+    if (ed.id === 'input') continue;
+    if (isInputVisible(ed)) return ed;
+  }
 
   return null;
 }

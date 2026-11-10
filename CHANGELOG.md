@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.10.216] - 2026-11-10
+
+### 修复
+
+- **纯净模式「幽灵发送」**：`findInputArea()` 的兜底逻辑按 `document.querySelectorAll('textarea')` 抓第一个可见 textarea，纯净模式的 `<textarea id="input">` 也在 DOM 树里 → 框架内部工具结果被填进用户草稿框并触发发送，用户没点发送的半截话被当成消息发出去。现过滤 `id === 'input'` 与占位符含「输入消息」的 textarea，contenteditable 同样过滤。
+- **子代理并发数被莫名改回 3**：壳页面 `collectSettings()` 用 `parseInt(...) || 0` 收集配置，空值变 0 后提交，主进程 `toConcurrency(0, 3)` 按兜底规则改回默认值 3，覆盖用户设定的 2。现全字段改为「空值返回 undefined」，不再提交空 delta。
+- **默认发送延迟下限 6s → 12s**：配合风控节奏，一分钟内最多约 5 次请求。
+
+### 新增与优化
+
+- **截断自救（防模型降质）**：工具输出被截断时，原提示只有 `...[输出过长已截断]...`，AI 不知道该换策略，可能原地打转或反复索要全量，造成上下文污染。现两道闸门（`JsRunner.ts` 的 20000 字符、`chat-input.ts` 的 15000 字符）均追加明确警告语，四个平台提示词同步新增**截断自救强制纪律**：看到截断标记必须改用 `read` 的 offset/limit 或 `.slice()/.filter()` 提取，严禁重试全量。
+
+### 验证
+
+- `npm run typecheck` / `npm run lint`（0 errors）/ `npm run compile` / `npm test`（135 文件 1395 用例）全绿。
+- 待用户真机确认：纯净模式草稿不再被吃、延迟默认 12-36、并发数不再被覆盖。
+
 ## [0.10.215] - 2026-11-10
 
 ### 修复

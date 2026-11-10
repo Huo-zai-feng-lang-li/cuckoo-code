@@ -19,7 +19,7 @@ const state: PreloadState = {
   // 是否有待发送的初始提示
   pendingInitialPrompt: false,
   // 发送延迟配置（毫秒）—— 与全局默认一致（6-36 秒），实际值由主进程同步覆盖
-  sendDelayMin: 6000,
+  sendDelayMin: 12000,
   sendDelayMax: 36000,
   // 当前项目目录（null 表示未初始化）
   currentProjectDir: null,

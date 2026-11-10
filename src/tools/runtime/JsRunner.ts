@@ -270,7 +270,7 @@ class JsRunner {
           const rulesInjection = buildRulesInjection(readFiles, projectDir, settings);
           if (rulesInjection) output = rulesInjection + '\n\n' + output;
           if (output.length > OUTPUT_LIMIT) {
-            output = output.slice(0, OUTPUT_LIMIT) + '\n...[输出过长已截断]...';
+            output = output.slice(0, OUTPUT_LIMIT) + '\n...[输出过长已截断]...\n⚠️ 警告：回传内容超出长度上限被系统截断。严禁再次尝试输出全量内容，请立即改用 read 的 offset/limit 分段读取，或在 JS 脚本中使用 slice/filter 提取关键片段后再 log。';
           }
           logRun(code, toolFailures, null, { projectDir: projectDir || '(未设置)', windowId: windowId, 耗时ms: Date.now() - startTime });
           finish({ success: true, output: output || '（没有输出）\n如需输出请使用 log() 方法' }, 'done', logs);

@@ -58,7 +58,8 @@ export async function loadSettings(): Promise<void> {
 const dirty = new Set<string>();
 
 function collectSettings(): any {
-  const num = (id: string) => { const n = parseFloat(getVal(id)); return Number.isFinite(n) ? n : 0; };
+  const num = (id: string) => { const v = getVal(id).trim(); if (!v) return undefined; const n = parseFloat(v); return Number.isFinite(n) ? n : undefined; };
+  const intNum = (id: string) => { const v = getVal(id).trim(); if (!v) return undefined; const n = parseInt(v, 10); return Number.isFinite(n) ? n : undefined; };
   const enEl = document.getElementById('st-retry-enabled') as any;
   const ssrfEl = document.getElementById('st-ssrf-guard') as any;
   return {
@@ -66,16 +67,16 @@ function collectSettings(): any {
     ssrfGuard: !!(ssrfEl && ssrfEl.checked),
     retryDelayMin: num('retry-delay-min'),
     retryDelayMax: num('retry-delay-max'),
-    retryCount: parseInt(getVal('retry-count'), 10) || 0,
+    retryCount: intNum('retry-count'),
     retry429Delay: num('retry-429-delay'),
-    retry429Count: parseInt(getVal('retry-429-count'), 10) || 0,
+    retry429Count: intNum('retry-429-count'),
     retryPrompt: getVal('retry-prompt'),
     xhrIdleTimeout: num('xhr-idle-timeout'),
     watchdogPrompt: getVal('watchdog-prompt'),
-    watchdogCount: parseInt(getVal('watchdog-count'), 10) || 0,
+    watchdogCount: intNum('watchdog-count'),
     sendDelayMin: num('send-delay-min'),
     sendDelayMax: num('send-delay-max'),
-    maxConcurrentAgents: parseInt(getVal('max-concurrent-agents'), 10) || 0,
+    maxConcurrentAgents: intNum('max-concurrent-agents'),
     agentStartIntervalMin: num('agent-start-interval-min'),
     agentStartIntervalMax: num('agent-start-interval-max'),
   };

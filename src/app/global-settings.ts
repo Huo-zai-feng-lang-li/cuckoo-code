@@ -61,7 +61,7 @@ export const AGENT_SETTINGS_DEFAULTS: AgentSettings = {
   xhrIdleTimeout: 300,
   watchdogPrompt: '请继续',
   watchdogCount: 1,
-  sendDelayMin: 6,
+  sendDelayMin: 12,
   sendDelayMax: 36,
   goalMaxIterations: 50,
   ssrfGuard: false,
