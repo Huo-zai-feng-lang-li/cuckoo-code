@@ -1,3 +1,13 @@
+---
+id: 110
+type: feature
+title: 原生物理级发送防封、自适应认知延迟与智能提示词放权
+status: done
+branch: feat/110-native-input-adaptive-delay-and-smart-prompts
+created: 2026-11-10
+updated: 2026-11-10
+---
+
 # 需求 110：原生物理级发送防封、自适应认知延迟与智能提示词放权
 
 ## 一、背景与动机

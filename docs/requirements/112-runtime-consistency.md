@@ -1,3 +1,13 @@
+---
+id: 112
+type: fix
+title: 编辑恢复、显示几何与代理切换一致性
+status: done
+branch: fix/112-runtime-consistency
+created: 2026-11-10
+updated: 2026-11-10
+---
+
 # 112：编辑恢复、显示几何与代理切换一致性
 
 > 状态：**done**（2026-11-10，v0.10.215）

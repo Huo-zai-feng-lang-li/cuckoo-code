@@ -102,5 +102,8 @@
 | 106 | fix | [桌面宠物浮窗在「结果待发送」阶段动画卡死不动](./106-desktop-pet-send-anim.md) | done | fix/106-desktop-pet-send-anim | 2026-11-04 |
 | 107 | fix | [DeepSeek 官方 SSE 协议升级导致频繁误判为请求失败与自动重试](./107-deepseek-sse-protocol-adapt.md) | completed | fix/107-deepseek-sse-protocol-adapt | 2026-11-08 |
 | 108 | feature | [每窗口独立代理与浏览器指纹伪装（代理 + 时区/语言/位置 + WebRTC）](./108-per-window-proxy.md) | completed | feat/108-per-window-proxy | 2026-11-09 |
+| 110 | feature | [原生物理级发送防封、自适应认知延迟与智能提示词放权](./110-native-input-adaptive-delay-and-smart-prompts.md) | done | feat/110-native-input-adaptive-delay-and-smart-prompts | 2026-11-10 |
+| 111 | fix | [认知节奏发送管线与延迟配置合规加固](./111-cognitive-delay-pipeline.md) | done | feat/111-cognitive-delay-pipeline | 2026-11-10 |
+| 112 | fix | [编辑恢复、显示几何与代理切换一致性](./112-runtime-consistency.md) | done | fix/112-runtime-consistency | 2026-11-10 |
 
-共 97 个需求。
+共 100 个需求。

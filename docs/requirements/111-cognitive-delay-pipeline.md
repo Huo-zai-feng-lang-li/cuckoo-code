@@ -1,3 +1,13 @@
+---
+id: 111
+type: fix
+title: 认知节奏发送管线与延迟配置合规加固
+status: done
+branch: feat/111-cognitive-delay-pipeline
+created: 2026-11-10
+updated: 2026-11-10
+---
+
 # 需求 111：认知节奏发送管线与延迟配置合规加固
 
 ## 一、背景与动机
