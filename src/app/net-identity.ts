@@ -198,29 +198,54 @@ function checkProxyReachable(rules: string, timeoutMs = 2000): Promise<boolean> 
 
 // ========== 1. 代理（session/partition 级） ==========
 
+/** 每个 session 上一次成功应用的代理配置指纹（幂等：相同配置不重复关连接池） */
+const proxyStates = new WeakMap<any, string>();
+
 async function applySessionProxy(ses: any, cfg: ProxyConfig): Promise<void> {
   if (!ses) return;
+  const useProxy = !!(cfg.enabled && cfg.rules);
+  const chromiumRules = useProxy ? toChromiumProxyRules(cfg.rules) : '';
+  const bypass = cfg.bypass || '<local>';
+  const key = useProxy ? ('fixed|' + chromiumRules + '|' + bypass) : 'direct';
+  if (proxyStates.get(ses) === key) {
+    // 相同配置：不重复 setProxy / closeAllConnections（后者会打断在途请求）
+    return;
+  }
   // setProxy 在网络栈操作时偶发挂起（代理暂不可达、session 初始化中）。
   // 必须加超时，否则 entry.ts 的 loadPage 被永久阻塞 → 窗口白屏（url: ""）。
   try {
-    if (!cfg.enabled || !cfg.rules) {
+    if (!useProxy) {
       await withTimeout(ses.setProxy({ mode: 'direct' }), 5000, 'setProxy(direct)');
-      console.log('[NetIdentity] 代理已关闭（直连）');
-      return;
+    } else {
+      await withTimeout(
+        ses.setProxy({
+          mode: 'fixed_servers',
+          proxyRules: chromiumRules,
+          proxyBypassRules: bypass,
+        }),
+        5000,
+        'setProxy(fixed)',
+      );
     }
-    const chromiumRules = toChromiumProxyRules(cfg.rules);
-    await withTimeout(
-      ses.setProxy({
-        mode: 'fixed_servers',
-        proxyRules: chromiumRules,
-        proxyBypassRules: cfg.bypass || '<local>',
-      }),
-      5000,
-      'setProxy(fixed)',
-    );
-    console.log('[NetIdentity] 代理已设置:', cfg.rules, '-> Chromium:', chromiumRules, '| bypass:', cfg.bypass);
   } catch (err: any) {
+    // 关键：失败必须向上传递。若吞掉异常，entry.ts 会继续直连加载目标站点 → 真实 IP 泄露。
     console.error('[NetIdentity] 设置代理失败:', err && err.message);
+    throw new Error('设置代理失败: ' + (err && err.message ? err.message : String(err)));
+  }
+  // 仅在「配置变更」时关闭旧连接池：断开仍走旧出口/直连的存量连接。
+  // 首次 apply（proxyStates 无记录）发生在 loadURL 之前，session 无存量页面连接，
+  // 无需关闭；此时关闭反而可能打断壳页面/其他早期请求。
+  const isFirstApply = !proxyStates.has(ses);
+  if (!isFirstApply && typeof ses.closeAllConnections === 'function') {
+    try { ses.closeAllConnections(); } catch (e: any) {
+      console.warn('[NetIdentity] 关闭旧连接池失败:', e && e.message);
+    }
+  }
+  proxyStates.set(ses, key);
+  if (useProxy) {
+    console.log('[NetIdentity] 代理已设置:', cfg.rules, '-> Chromium:', chromiumRules, '| bypass:', bypass);
+  } else {
+    console.log('[NetIdentity] 代理已关闭（直连）');
   }
 }
 

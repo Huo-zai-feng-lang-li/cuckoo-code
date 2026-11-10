@@ -217,9 +217,6 @@ export function buildFingerprintScript(fp: FingerprintConfig): string {
   const cfgJson = JSON.stringify({
     hardwareConcurrency: fp.hardwareConcurrency,
     deviceMemory: fp.deviceMemory,
-    screenWidth: fp.screenWidth,
-    screenHeight: fp.screenHeight,
-    devicePixelRatio: fp.devicePixelRatio,
     webglVendor: fp.webglVendor,
     webglRenderer: fp.webglRenderer,
     canvasSeed: fp.canvasSeed,
@@ -260,7 +257,7 @@ export function buildFingerprintScript(fp: FingerprintConfig): string {
     markNative(hookedToString, 'toString');
     try { Function.prototype.toString = hookedToString; } catch (_) {}
 
-    // ========== 2. Navigator 与 Screen 属性伪装 ==========
+    // ========== 2. Navigator 属性伪装 ==========
     function patchProtoGetter(proto, prop, val) {
       if (!proto) return;
       try {
@@ -286,37 +283,7 @@ export function buildFingerprintScript(fp: FingerprintConfig): string {
       } catch (_) {}
     }
 
-    if (typeof Screen !== 'undefined' && Screen.prototype) {
-      patchProtoGetter(Screen.prototype, 'width', FP.screenWidth);
-      patchProtoGetter(Screen.prototype, 'height', FP.screenHeight);
-      patchProtoGetter(Screen.prototype, 'availWidth', FP.screenWidth);
-      patchProtoGetter(Screen.prototype, 'availHeight', FP.screenHeight - 40);
-    }
-    if (typeof Window !== 'undefined' && Window.prototype) {
-      patchProtoGetter(Window.prototype, 'devicePixelRatio', FP.devicePixelRatio);
-    } else {
-      patchProtoGetter(window, 'devicePixelRatio', FP.devicePixelRatio);
-    }
-    // 关键：部分环境（如本应用主窗口）window 实例上存在自有 devicePixelRatio，
-    // 会遮蔽原型链上的伪装 getter。必须删除自有属性让原型伪装生效；
-    // 若不可删除，则直接在实例上覆盖为伪造 getter。
-    try {
-      if (typeof window !== 'undefined' && Object.prototype.hasOwnProperty.call(window, 'devicePixelRatio')) {
-        var ownDprDesc = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio');
-        if (ownDprDesc && ownDprDesc.configurable) {
-          delete window.devicePixelRatio;
-        }
-        if (Object.prototype.hasOwnProperty.call(window, 'devicePixelRatio')) {
-          var ownDprGetter = ({ ['get devicePixelRatio']() { return FP.devicePixelRatio; } })['get devicePixelRatio'];
-          markNative(ownDprGetter, 'get devicePixelRatio');
-          Object.defineProperty(window, 'devicePixelRatio', {
-            configurable: true,
-            enumerable: true,
-            get: ownDprGetter
-          });
-        }
-      }
-    } catch (_) {}
+    // Screen 与 devicePixelRatio 保持 Chromium/Electron 的真实值。
 
     // ========== 3. WebGL 厂商与渲染器伪装 ==========
     function patchWebGL(glProto) {

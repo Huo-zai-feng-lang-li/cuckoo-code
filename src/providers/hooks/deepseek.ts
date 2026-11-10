@@ -9,7 +9,7 @@ import { createFrameDecoder, parseBlock, parseSseBlock } from './shared/sse.js';
 import { matchProviderEndpoint } from './shared/url-match.js';
 import { createIdleWatchdog } from './shared/idle-watchdog.js';
 import { maskAsNative } from './shared/native-mask.js';
-import { flattenDelta, decideDeepSeekStreamExit } from './shared/deepseek-protocol.js';
+import { flattenDelta, decideDeepSeekStreamExit, planFragmentsUpdate } from './shared/deepseek-protocol.js';
 
 // 幂等标记放模块作用域（不是 install 内部！放函数内每次调用都会重置，等于没有）。
 // 也不用 window 属性：那等于给页面留了可枚举的 "本页被 Cuckoo 改过" 标签
@@ -223,17 +223,31 @@ function install(): void {
       }
       if (isFragmentsPatch(atom)) {
         var types = [];
+        var frameText = '';
+        var frameThink = '';
         for (var j = 0; j < v.length; j++) {
-          types.push(String((v[j] && v[j].type) || 'RESPONSE'));
+          var ft = String((v[j] && v[j].type) || 'RESPONSE');
+          types.push(ft);
+          var fc = fragText(v[j]);
+          if (!fc) continue;
+          if (isThink(ft)) frameThink += fc;
+          else frameText += fc;
         }
-        if (atom.o === 'SET') {
-          fragmentTypes = types;
+        // DeepSeek 会整组重放 fragments（含已输出过的内容），旧实现无论 op 是什么
+        // 都无条件 text += / thinkText += —— 同一段内容被叠加成两份、三份（纯净模式实测）。
+        // 现把本帧重建出的内容一并交给判定函数：以内容前缀为准（与 op 无关），
+        // 重放帧重置后重建，真实增量帧追加。详见 planFragmentsUpdate 的注释。
+        var plan = planFragmentsUpdate(fragmentTypes, types, atom.o, text, thinkText, frameText, frameThink);
+        fragmentTypes = plan.types;
+        if (plan.reset) {
+          text = frameText;
+          thinkText = frameThink;
         } else {
-          for (var ti = 0; ti < types.length; ti++) fragmentTypes.push(types[ti]);
+          text += frameText;
+          thinkText += frameThink;
         }
         currentIndex = fragmentTypes.length - 1;
         observed = true;
-        consumeFragmentContent(v, types);
         return;
       }
       if (isThinkingPatch(p) && typeof v === 'string') {

@@ -61,9 +61,36 @@ test('buildFingerprintScript: 未启用返回空，启用时生成包含原生�
   assert.ok(script.includes('37446'), '必须拦截 UNMASKED_RENDERER_WEBGL');
   assert.ok(script.includes('toDataURL'), '必须覆盖 Canvas toDataURL');
   assert.ok(script.includes('getChannelData'), '必须覆盖 AudioContext getChannelData');
-  assert.ok(script.includes('Screen'), '必须覆盖 Screen 原型');
-  assert.ok(script.includes('devicePixelRatio'), '必须覆盖 devicePixelRatio');
+  assert.ok(!script.includes("patchProtoGetter(Screen.prototype"), '不得覆盖 Screen 原型');
+  assert.ok(!script.includes("patchProtoGetter(Window.prototype, 'devicePixelRatio'"), '不得覆盖 devicePixelRatio');
   assert.ok(script.includes('noisedBuffers'), '必须包含基于 WeakSet 的单次微扰守卫');
+});
+
+test('buildFingerprintScript 不修改真实 4K Screen 与设备缩放比', () => {
+  class MockScreen {
+    get width() { return 3840; }
+    get height() { return 2160; }
+    get availWidth() { return 3840; }
+    get availHeight() { return 2120; }
+  }
+  class MockWindow {
+    get devicePixelRatio() { return 2; }
+  }
+  class MockNavigator {}
+
+  const mockWindow = new MockWindow();
+  mockWindow.screen = new MockScreen();
+  const script = buildFingerprintScript(generateFingerprint('profile-4k'));
+  const execute = new Function('window', 'Screen', 'Navigator', 'Window', script);
+
+  execute(mockWindow, MockScreen, MockNavigator, MockWindow);
+
+  assert.deepStrictEqual(
+    [mockWindow.screen.width, mockWindow.screen.height, mockWindow.screen.availWidth, mockWindow.screen.availHeight],
+    [3840, 2160, 3840, 2120],
+    '4K 屏幕工作区尺寸必须保持 Electron/Chromium 的真实值',
+  );
+  assert.strictEqual(mockWindow.devicePixelRatio, 2, 'DPR 必须保持真实设备缩放比');
 });
 
 test('buildFingerprintScript 模拟执行：AudioBuffer 噪点单次注入、幂等性与零对象污染验证', () => {
@@ -84,7 +111,7 @@ test('buildFingerprintScript 模拟执行：AudioBuffer 噪点单次注入、幂
     AudioBuffer: mockAudioBuffer,
     Navigator: { prototype: {} },
     Screen: mockScreen,
-    Window: { prototype: {} },
+    Window: { prototype: { get devicePixelRatio() { return 1.5; } } },
     document: {},
   };
 
@@ -109,7 +136,7 @@ test('buildFingerprintScript 模拟执行：AudioBuffer 噪点单次注入、幂
 
   // 验证 window 自身没有被打上 ownProperty，必须干净继承自 Window.prototype
   assert.strictEqual(Object.prototype.hasOwnProperty.call(mockWindow, 'devicePixelRatio'), false, 'window 实例自身不可有自有属性');
-  assert.strictEqual(typeof mockWindow.Window.prototype.devicePixelRatio, 'number', 'Window.prototype 上必须挂载伪装 getter');
+  assert.strictEqual(mockWindow.Window.prototype.devicePixelRatio, 1.5, 'Window.prototype 上的原生 DPR 不得被覆盖');
 });
 
 test('buildFingerprintScript 模拟执行：Canvas 2D 噪点单次微扰、幂等性与零 DOM 污染验证', () => {

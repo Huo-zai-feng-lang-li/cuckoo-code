@@ -125,6 +125,52 @@ describe('normalizeProxyConfig 配置规范化', () => {
 });
 
 describe('applyNetIdentity WebRTC 底层防 DNS 泄露策略', () => {
+  test('相同 session 配置不重复切换，代理变更后关闭旧连接池', async () => {
+    let setProxyCalls = 0;
+    let closeConnectionCalls = 0;
+    const mockSes = {
+      setProxy: async () => { setProxyCalls++; },
+      closeAllConnections: async () => { closeConnectionCalls++; },
+    };
+    const mockWc = {
+      session: mockSes,
+      isDestroyed: () => false,
+      debugger: {
+        isAttached: () => false,
+        attach: async () => {},
+        sendCommand: async () => ({}),
+      },
+      setWebRTCIPHandlingPolicy: () => {},
+    };
+    const view = { webContents: mockWc };
+    const first = normalizeProxyConfig({ enabled: true, rules: 'http://127.0.0.1:51081' });
+    const second = normalizeProxyConfig({ enabled: true, rules: 'http://127.0.0.1:51082' });
+
+    await applyNetIdentity(view, first);
+    await applyNetIdentity(view, first);
+    assert.strictEqual(setProxyCalls, 1, '相同配置不应重复调用 setProxy');
+    assert.strictEqual(closeConnectionCalls, 0, '首次设置不需要关闭旧连接');
+
+    await applyNetIdentity(view, second);
+    assert.strictEqual(setProxyCalls, 2, '代理地址变化后必须重新设置');
+    assert.strictEqual(closeConnectionCalls, 1, '代理地址变化后必须关闭旧连接池');
+  });
+
+  test('setProxy 失败必须向调用方传播', async () => {
+    const mockWc = {
+      session: { setProxy: async () => { throw new Error('proxy unavailable'); } },
+      isDestroyed: () => false,
+      setWebRTCIPHandlingPolicy: () => {},
+    };
+    await assert.rejects(
+      () => applyNetIdentity({ webContents: mockWc }, normalizeProxyConfig({
+        enabled: true,
+        rules: 'http://127.0.0.1:51081',
+      })),
+      /proxy unavailable/
+    );
+  });
+
   test('开启代理时调用 wc.setWebRTCIPHandlingPolicy(disable_non_proxied_udp)', async () => {
     let appliedPolicy = '';
     let proxyArg = null;
@@ -369,4 +415,90 @@ describe('applyNetIdentity WebRTC 底层防 DNS 泄露策略', () => {
     Function.prototype.toString = origFnToString;
   });
 });
+
+
+describe('applyNetIdentity 代理切换：失败传播与连接池幂等关闭', () => {
+  function makeMockSession(overrides = {}) {
+    const calls = { setProxy: [], closeAllConnections: 0 };
+    const ses = {
+      setProxy: async (arg) => { calls.setProxy.push(arg); },
+      closeAllConnections: () => { calls.closeAllConnections++; },
+      ...overrides,
+    };
+    return { ses, calls };
+  }
+  function makeMockView(ses) {
+    return {
+      webContents: {
+        session: ses,
+        isDestroyed: () => false,
+        debugger: {
+          isAttached: () => false,
+          attach: async () => {},
+          detach: async () => {},
+          sendCommand: async () => ({}),
+        },
+        setWebRTCIPHandlingPolicy: () => {},
+      },
+    };
+  }
+
+  test('setProxy 失败必须向上抛出（不能静默吞掉导致直连加载）', async () => {
+    const ses = {
+      setProxy: async () => { throw new Error('ERR_PROXY_CONNECTION_FAILED'); },
+      closeAllConnections: () => {},
+    };
+    const view = makeMockView(ses);
+    const cfg = normalizeProxyConfig({ enabled: true, rules: 'http://127.0.0.1:9999' });
+    await assert.rejects(
+      () => applyNetIdentity(view, cfg),
+      /设置代理失败/,
+      'setProxy 失败必须抛出，否则 entry.ts 会直连加载目标站点（真实 IP 泄露）',
+    );
+  });
+
+  test('setProxy 失败时不得调用 closeAllConnections', async () => {
+    let closeCount = 0;
+    const ses = {
+      setProxy: async () => { throw new Error('boom'); },
+      closeAllConnections: () => { closeCount++; },
+    };
+    const view = makeMockView(ses);
+    try { await applyNetIdentity(view, normalizeProxyConfig({ enabled: true, rules: 'http://127.0.0.1:9999' })); } catch (_) {}
+    assert.strictEqual(closeCount, 0, '代理未生效却关闭所有连接，只会让页面更糟');
+  });
+
+  test('相同配置重复应用：不重复关闭连接池（避免打断在途请求）', async () => {
+    const { ses, calls } = makeMockSession();
+    const view = makeMockView(ses);
+    const cfg = normalizeProxyConfig({ enabled: true, rules: 'http://127.0.0.1:8888' });
+    await applyNetIdentity(view, cfg);
+    assert.strictEqual(calls.closeAllConnections, 0, '首次应用无存量连接，不关闭连接池');
+    await applyNetIdentity(view, cfg);
+    assert.strictEqual(calls.closeAllConnections, 0, '相同配置重复应用不得关闭连接池');
+  });
+
+  test('配置变更后：重新关闭旧连接池（旧连接仍走旧出口）', async () => {
+    const { ses, calls } = makeMockSession();
+    const view = makeMockView(ses);
+    await applyNetIdentity(view, normalizeProxyConfig({ enabled: true, rules: 'http://127.0.0.1:1111' }));
+    assert.strictEqual(calls.closeAllConnections, 0, '首次应用不关闭');
+    await applyNetIdentity(view, normalizeProxyConfig({ enabled: true, rules: 'http://127.0.0.1:2222' }));
+    assert.strictEqual(calls.closeAllConnections, 1, '代理地址变更后必须关闭旧连接池');
+  });
+
+  test('代理 → 直连：同样关闭旧代理连接池', async () => {
+    const { ses, calls } = makeMockSession();
+    const view = makeMockView(ses);
+    await applyNetIdentity(view, normalizeProxyConfig({ enabled: true, rules: 'http://127.0.0.1:3333' }));
+    await applyNetIdentity(view, normalizeProxyConfig({ enabled: false, webrtc: 'off' }));
+    assert.strictEqual(calls.setProxy[calls.setProxy.length - 1].mode, 'direct');
+    assert.strictEqual(calls.closeAllConnections, 1, '从代理切到直连，旧代理连接池必须关闭');
+  });
+});
+
+
+
+
+
 

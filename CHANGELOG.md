@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.10.215] - 2026-11-10
+
+### 修复
+
+- **纯净模式思考/正文重复渲染（两份、三份）**：根因不在「SET 覆盖语义」，而在 `BATCH` 批量帧——`flattenDelta` 展开 BATCH 时子项 `o` **继承 'BATCH'**，旧判据只认 `op === 'SET'` 才重置，整组重放的 BATCH 帧被当成增量累加。现改为**内容前缀判定**（`planFragmentsUpdate` 新增 prevText/prevThink/nextText/nextThink 四个可选参数）：本帧重建内容若以已累积内容为前缀（含相等）→ 判定为快照重放并重置；否则按真实增量追加。彻底摆脱对服务端 op 字面值的依赖，同时不丢真实增量内容。
+- **「用该项目新建会话」提示词只回显不发送**：`sendInitialPromptToInput` 原用 `randomDelay(系统提示词)` 计算延迟，数万字符直接顶到配置上限（默认 36 秒）。改为 0ms 立即发送——该指令由框架驱动，性质与 `insertSnippet`、格式纠正同类，不属于「用户回复 AI」，不应套拟人延迟。
+- **发送延迟分布偏低（配置 6~36 秒，实测总在 6~15 秒）**：`randomDelay` 的 `cognitiveBase = 3000 + min(20000, len/100*800)` 硬上限只有 23000ms，配置 max 永远够不着。改为 `ratio = min(1, len/4000)` 线性映射到用户配置区间，保留 ±20% 抖动与边界抖动。
+- **发送延迟设置「过一会儿自己恢复成 6s」**：overlay 设置面板保存时只写 localStorage + state，从不通知主进程；而主进程 `agent-settings.json` 才是唯一真相源，任何一次 `cuckoo-sync-settings` 广播（其他窗口加载 / 壳页面保存 / 页面 did-finish-load）都会把文件里的旧值写回 localStorage，覆盖用户刚改的配置。现 overlay 保存后同步调用新增的 `electronAPI.saveSettingsGlobal`（走 `save-settings` IPC），与壳页面共用同一条落盘+广播链路。
+- **平台选择页「API 未就绪，请重启应用」/ 开发环境无法新建窗口**：收紧主世界 `electronAPI` 暴露时误删了 `contextBridge.exposeInMainWorld`，而 `platform-select.html` 运行在主世界、脚本直接读 `window.electronAPI` → 拿到 undefined → 新建窗口永远停在报错页。现按**协议判据**恢复：仅 `file://` 本地页面暴露，远程 AI 页面（https）继续零暴露（CDP 实测远程页面 `typeof window.electronAPI === 'undefined'`）。
+
+### 新增与优化
+
+- **需求 112：编辑恢复、显示几何与代理切换一致性**
+  - 四份模型提示词（ChatGPT / Claude / DeepSeek / 默认）增加 edit 失败恢复规则：`oldString` 不匹配时禁止凭记忆重试，必须先 read 重取原文。
+  - 指纹移除 Screen / devicePixelRatio 伪造，保留 Chromium 真实屏幕尺寸与 DPR，消除 4K 屏 `outerWidth > screen.width` 穿帮特征（旧 profile 字段继续兼容）。
+  - 代理切换强一致：`setProxy` 失败向上抛出，`entry.ts` 显示代理错误页而非直连（防真实 IP 泄露）；`applySessionProxy` 增加 WeakMap 状态锁，相同配置不重复 `setProxy` / `closeAllConnections`，首次应用不关连接池。
+  - 移除主世界 `electronAPI` 的远程暴露，阻断远程 AI 页面调用命令/工具/JS IPC 的安全风险。
+
+### 验证
+
+- `npm run typecheck` / `npm run lint`（0 errors）/ `npm run compile` / `npm test`（135 文件 1395 用例）全绿。
+- 真机验证（开发版实例 + CDP 9444，DeepSeek 已登录）：
+  - 远程 AI 页面 `typeof window.electronAPI === 'undefined'`、`hasExecuteJs === false`（安全边界生效）。
+  - 新建窗口成功，平台选择页正常渲染 4 个平台卡片（`hasAPI: object`，不再报「API 未就绪」）。
+  - 设置链路端到端：保存 11/55 → 落盘 `agent-settings.json` 为 11/55 → 广播后 AI 页面 localStorage 同步 `11000/55000`（不再被冲回默认 6/36）。
+- 待用户真机确认：纯净模式思考/正文不再重复、初始提示立即发出、长延迟可逼近配置上限。
+
 ## [0.10.213] - 2026-11-10
 
 ### 新增与优化
