@@ -60,6 +60,24 @@ export interface Provider {
   getStopFn?(): (doc: any, win: any) => { found: boolean; x?: number; y?: number; [k: string]: any };
 
   /**
+   * 可选的「新会话默认开关」实现（**工厂**语义，与 getStopFn 一致）。
+   *
+   * 新开对话页面就绪后、发送系统提示词之前，主进程调用本方法取回一个函数，
+   * 将其 toString() 后注入 AI 页面主世界执行（executeJavaScript）。
+   * 因此返回的函数**必须自包含**——只能用自身参数与浏览器全局，
+   * 不能引用模块作用域的任何变量（序列化后这些引用全部丢失）。
+   *
+   * 用途：把该平台的功能开关设成用户期望的默认态
+   * （如 DeepSeek：开「深度思考」、关「智能搜索」）。
+   * 返回的函数建议返回 { ready: boolean }：ready 表示"目标开关已出现在 DOM 中"，
+   * 主进程据此判断页面是否渲染到位（未就绪则轮询重试）；返回其它值或不返回，
+   * 一律按"已就绪"处理，只执行一次。
+   *
+   * 未提供时不做任何事（零影响）。
+   */
+  setupNewSession?(): (doc: any, win: any) => any;
+
+  /**
    * 可选的「附件上传入口探测」实现（供 harness 的 CDP 上传通道使用）。
    * 返回**探测函数的源码字符串**（非函数本身），核心会拼成
    * `(<源码>)(document, window)` 注入 AI 页面主世界执行，**必须自包含**；

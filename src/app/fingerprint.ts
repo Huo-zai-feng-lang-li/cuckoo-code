@@ -16,9 +16,6 @@ export interface FingerprintPreset {
   name: string;
   hardwareConcurrency: number;
   deviceMemory: number;
-  screenWidth: number;
-  screenHeight: number;
-  devicePixelRatio: number;
   webglVendor: string;
   webglRenderer: string;
 }
@@ -28,9 +25,6 @@ export interface FingerprintConfig {
   presetId: string;
   hardwareConcurrency: number;
   deviceMemory: number;
-  screenWidth: number;
-  screenHeight: number;
-  devicePixelRatio: number;
   webglVendor: string;
   webglRenderer: string;
   canvasSeed: number;
@@ -44,9 +38,6 @@ export const HARDWARE_PRESETS: readonly FingerprintPreset[] = [
     name: '商务主流机 (Intel UHD 630)',
     hardwareConcurrency: 8,
     deviceMemory: 8,
-    screenWidth: 1920,
-    screenHeight: 1080,
-    devicePixelRatio: 1.0,
     webglVendor: 'Google Inc. (Intel)',
     webglRenderer: 'ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00003E9B) Direct3D11 vs_5_0 ps_5_0, D3D11)',
   },
@@ -55,9 +46,6 @@ export const HARDWARE_PRESETS: readonly FingerprintPreset[] = [
     name: '主流轻薄本 (Intel Iris Xe)',
     hardwareConcurrency: 8,
     deviceMemory: 8,
-    screenWidth: 1920,
-    screenHeight: 1080,
-    devicePixelRatio: 1.25,
     webglVendor: 'Google Inc. (Intel)',
     webglRenderer: 'ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)',
   },
@@ -66,9 +54,6 @@ export const HARDWARE_PRESETS: readonly FingerprintPreset[] = [
     name: '主流游戏/性能本 (NVIDIA RTX 3060)',
     hardwareConcurrency: 12,
     deviceMemory: 8,
-    screenWidth: 1920,
-    screenHeight: 1080,
-    devicePixelRatio: 1.0,
     webglVendor: 'Google Inc. (NVIDIA)',
     webglRenderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Laptop GPU (0x00002520) Direct3D11 vs_5_0 ps_5_0, D3D11)',
   },
@@ -77,9 +62,6 @@ export const HARDWARE_PRESETS: readonly FingerprintPreset[] = [
     name: '高性能台式机 (NVIDIA RTX 4070)',
     hardwareConcurrency: 16,
     deviceMemory: 8,
-    screenWidth: 2560,
-    screenHeight: 1440,
-    devicePixelRatio: 1.25,
     webglVendor: 'Google Inc. (NVIDIA)',
     webglRenderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 (0x00002786) Direct3D11 vs_5_0 ps_5_0, D3D11)',
   },
@@ -88,9 +70,6 @@ export const HARDWARE_PRESETS: readonly FingerprintPreset[] = [
     name: 'AMD 独显台式机 (Radeon RX 6600)',
     hardwareConcurrency: 8,
     deviceMemory: 8,
-    screenWidth: 1920,
-    screenHeight: 1080,
-    devicePixelRatio: 1.0,
     webglVendor: 'Google Inc. (AMD)',
     webglRenderer: 'ANGLE (AMD, AMD Radeon RX 6600 (0x000073FF) Direct3D11 vs_5_0 ps_5_0, D3D11)',
   },
@@ -99,9 +78,6 @@ export const HARDWARE_PRESETS: readonly FingerprintPreset[] = [
     name: '新一代台式机 (Intel UHD 770)',
     hardwareConcurrency: 12,
     deviceMemory: 8,
-    screenWidth: 1920,
-    screenHeight: 1080,
-    devicePixelRatio: 1.0,
     webglVendor: 'Google Inc. (Intel)',
     webglRenderer: 'ANGLE (Intel, Intel(R) UHD Graphics 770 (0x00004680) Direct3D11 vs_5_0 ps_5_0, D3D11)',
   },
@@ -134,9 +110,6 @@ export function generateFingerprint(profileId: string): FingerprintConfig {
     presetId: preset.id,
     hardwareConcurrency: preset.hardwareConcurrency,
     deviceMemory: preset.deviceMemory,
-    screenWidth: preset.screenWidth,
-    screenHeight: preset.screenHeight,
-    devicePixelRatio: preset.devicePixelRatio,
     webglVendor: preset.webglVendor,
     webglRenderer: preset.webglRenderer,
     canvasSeed,
@@ -165,18 +138,6 @@ export function normalizeFingerprintConfig(input: any, profileId?: string): Fing
     ? Math.min(8, input.deviceMemory)
     : Math.min(8, base.deviceMemory);
 
-  const sWidth = (typeof input.screenWidth === 'number' && input.screenWidth > 0)
-    ? input.screenWidth
-    : base.screenWidth;
-
-  const sHeight = (typeof input.screenHeight === 'number' && input.screenHeight > 0)
-    ? input.screenHeight
-    : base.screenHeight;
-
-  const dpr = (typeof input.devicePixelRatio === 'number' && input.devicePixelRatio > 0)
-    ? input.devicePixelRatio
-    : base.devicePixelRatio;
-
   const webglVendor = typeof input.webglVendor === 'string' && input.webglVendor.trim()
     ? input.webglVendor.trim()
     : base.webglVendor;
@@ -198,9 +159,6 @@ export function normalizeFingerprintConfig(input: any, profileId?: string): Fing
     presetId: finalPresetId,
     hardwareConcurrency: hwConcurrency,
     deviceMemory: devMemory,
-    screenWidth: sWidth,
-    screenHeight: sHeight,
-    devicePixelRatio: dpr,
     webglVendor,
     webglRenderer,
     canvasSeed,
@@ -283,7 +241,9 @@ export function buildFingerprintScript(fp: FingerprintConfig): string {
       } catch (_) {}
     }
 
-    // Screen 与 devicePixelRatio 保持 Chromium/Electron 的真实值。
+    // 尺寸类（screen.* / devicePixelRatio / 视口）一律保持 Chromium/Electron 真实值，
+    // 不在本配置中建模：锁死视口会与 WebContentsView.setBounds 冲突，
+    // 且会制造 screen.width 与 innerWidth 的矛盾特征（真实浏览器视口永远 ≤ 屏幕）。
 
     // ========== 3. WebGL 厂商与渲染器伪装 ==========
     function patchWebGL(glProto) {

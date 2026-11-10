@@ -12,7 +12,7 @@ import { setWindowUsage, getTotal, getTodayTotal, getRecentDailyTotal, getWindow
 import { resolveAsset } from '../../infra/paths.js';
 import * as updater from '../../updater/index.js';
 // 新对话要让 harness 视图一起重置 —— 两个入口共用同一段逻辑，避免行为分叉
-import { prepareNewConversation } from './harness.js';
+import { prepareNewConversation, applyNewSessionPreset } from './harness.js';
 import { initProject } from '../../session/project-context.js';
 import { ensureWorkspaceTrust } from '../workspace-trust-prompt.js';
 
@@ -275,6 +275,8 @@ function registerShellIpc(): void {
           ctxAny.__newConvTimer = null;
           waitInput(Date.now() + 1500, async () => {
             try {
+              // 平台功能开关预设（如 DeepSeek 开深度思考、关智能搜索）必须在发提示词前落定
+              await applyNewSessionPreset(ctx);
               // 沿用当前项目开新对话 → 仍需过信任门；ensureWorkspaceTrust 内部对已信任目录直接短路（不弹）。
               try { await ensureWorkspaceTrust(ctx ? ctx.win : null, currentDir); }
               catch (err: any) { console.warn('[Cuckoo Code] 信任门异常，按不信任处理:', err && err.message); }
@@ -294,8 +296,12 @@ function registerShellIpc(): void {
     } catch (_) { /* ignore */ }
     try {
       await view.webContents.loadURL(url);
-      // 无项目目录分支：不会走 initProject，导航完成即算完成（延迟一点让首页渲染稳定）
-      if (!currentDir) setTimeout(notifyDone, 600);
+      // 无项目目录分支：不会走 initProject，导航完成即算完成（延迟一点让首页渲染稳定）。
+      // 平台默认开关同样要在此时落定——否则"未绑定项目直接开新对话"这条路径
+      // 会漏掉预设，用户看到的开关状态与其它入口不一致。
+      if (!currentDir) {
+        applyNewSessionPreset(ctx).catch(() => { /* 内部已静默 */ }).finally(() => notifyDone());
+      }
       // 同 URL 导航：did-finish-load 可能不触发 → 手动触发 onLoad（走 initProject + notifyDone）
       else if (beforeUrl === url && onLoad) { setTimeout(onLoad, 100); }
       return { success: true };

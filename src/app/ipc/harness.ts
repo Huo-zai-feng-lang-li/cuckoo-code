@@ -412,6 +412,47 @@ function prepareNewConversation(ctx: any): void {
   notifyHarnessReset(ctx);
 }
 
+/**
+ * 新会话页面就绪后应用平台的「默认开关」预设（如 DeepSeek 开深度思考、关智能搜索）。
+ * 必须在发送系统提示词**之前**执行：提示词一旦发出就会立刻开始生成，
+ * 开关若在生成中途翻转，模型本轮的行为就与用户预期不一致。
+ *
+ * 平台未实现 setupNewSession 时不做任何事（零影响）。
+ * 失败一律静默：开关设置是"锦上添花"，绝不能阻断新会话初始化。
+ */
+async function applyNewSessionPreset(ctx: any): Promise<void> {
+  try {
+    const view = ctx && ctx.view;
+    if (!view || !view.webContents || view.webContents.isDestroyed()) return;
+    const provider = ctx.providerId ? getProvider(ctx.providerId) : null;
+    if (!provider || typeof provider.setupNewSession !== 'function') return;
+    const fn = provider.setupNewSession();
+    if (typeof fn !== 'function') return;
+    const code = '(' + fn.toString() + ')(document, window)';
+    const wc = view.webContents;
+
+    // 轮询重试：页面 did-finish-load 后输入区按钮可能还没渲染出来，
+    // 只执行一次会静默失败（开关没设上，用户以为功能坏了）。
+    // 就绪判据由 provider 返回 { ready }，未就绪则隔 200ms 再试，最多 10 次（≈2s）。
+    // 超时后仍继续新会话流程——开关是增强项，绝不能拖住初始化。
+    const MAX_TRIES = 10;
+    for (let i = 0; i < MAX_TRIES; i++) {
+      if (wc.isDestroyed()) return;
+      let r: any = null;
+      try { r = await wc.executeJavaScript(code, true); } catch (_) { r = null; }
+      if (r && typeof r === 'object' && r.ready === false) {
+        await new Promise((res) => setTimeout(res, 200));
+        continue;
+      }
+      console.log('[Cuckoo Code] 新会话默认开关已应用 (provider=' + ctx.providerId + ', try=' + (i + 1) + ')');
+      return;
+    }
+    console.warn('[Cuckoo Code] 新会话默认开关未就绪，超时跳过 (provider=' + ctx.providerId + ')');
+  } catch (err: any) {
+    console.warn('[Cuckoo Code] 应用新会话默认开关失败:', err && err.message);
+  }
+}
+
 function registerHarnessIpc(): void {
   // 用户在 harness 输入 → 转给 AI 页面（bridge 会调 sendToChat）
   ipcMain.handle('harness-send', (event: any, payload: any) => {
@@ -559,9 +600,23 @@ function registerHarnessIpc(): void {
       console.log('[Cuckoo Harness] 新对话 → 导航到 ' + url);
       // 清主进程 todo 缓存 + 让 harness 视图完整重置（后者是"残留"的根治点）
       prepareNewConversation(ctx);
-      ctx.view.webContents.loadURL(url).catch((err: any) => {
+      const wc = ctx.view.webContents;
+      const beforeUrl = (() => { try { return wc.getURL(); } catch (_) { return ''; } })();
+      // 导航完成后应用平台默认开关（开深度思考/关智能搜索）。
+      // 本入口不发系统提示词，故时序要求不严；但仍放在加载完成后，
+      // 避免在旧页面上执行（旧页面残留的开关状态会被误读）。
+      const onLoaded = () => {
+        try { wc.off('did-finish-load', onLoaded); } catch (_) { /* ignore */ }
+        if (wc.isDestroyed()) return;
+        applyNewSessionPreset(ctx).catch(() => { /* 内部已静默 */ });
+      };
+      try { wc.on('did-finish-load', onLoaded); } catch (_) { /* ignore */ }
+      wc.loadURL(url).catch((err: any) => {
         console.log('[Cuckoo Harness] loadURL 失败:', err && err.message);
+        try { wc.off('did-finish-load', onLoaded); } catch (_) { /* ignore */ }
       });
+      // 同 URL 导航：did-finish-load 可能不派发 → 直接应用（内部自带就绪轮询）
+      if (beforeUrl === url) applyNewSessionPreset(ctx).catch(() => { /* ignore */ });
       return { success: true, url: url };
     } catch (err: any) {
       console.log('[Cuckoo Harness] 新对话异常: ' + err.message);
@@ -962,6 +1017,6 @@ function attachStopFn(doc: any, win: any) {
   }
 }
 
-export { registerHarnessIpc, prepareNewConversation, pushHarnessState, stopGeneration };
+export { registerHarnessIpc, prepareNewConversation, applyNewSessionPreset, pushHarnessState, stopGeneration };
 
 

@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.10.217] - 2026-11-10
+
+### 修复
+
+- **停止操作会递归放大副作用**：`requestAbort()` → `emitUserStop()` → 订阅者回调（harness-bridge / remote-bridge 自身也会调 `requestAbort`）→ 再次 `requestAbort`，构成无限递归。旧实现靠每层 `try/catch` 把栈溢出吞掉，表面无异常，实测回调执行 **2974 次**，`task-idle` / `ai-stop` 上报被放大上千倍，`cancelPendingSend` / `clearInputArea` 被反复触发。现 `requestAbort` 加幂等短路；`stopped` 分支不再把 `abortRequested` 重置为 false（改为置 true 后再广播，原先的重置正是递归的直接成因）；中止标志统一由 `clearAbort()` 在下一条用户消息时复位。
+- **`Provider.setupNewSession` 类型签名与实现不符**：接口声明为 `(doc, win) => void`（直接执行语义），但 DeepSeek 实现返回函数（工厂语义，与 `getStopFn` 一致），调用方也按工厂用。TS 类型运行时被擦除，签名错误无人察觉。现修正为 `setupNewSession?(): (doc, win) => any`。
+
+### 新增与优化
+
+- **需求 113：停止双向同步、新会话开关预设与指纹字段清理**
+  - **反向停止同步补齐**：网页侧点停止（hook 报 `status=stopped`）时，`harness-bridge` 的 `onUserStop` 除上报 `task-idle` 外，补调 `requestAbort()` + `cancelPendingSend()`，与 `harness-stop-signal` 路径对齐。修复「用户已停止、工具结果仍打进对话」的串台。至此手机 / 网页 / 纯净模式三方停止互相同步。
+  - **新会话默认开关**：新增 `Provider.setupNewSession` 扩展点，DeepSeek 实现「开深度思考、关智能搜索」。按 `aria-pressed` 判态（不依赖 `--selected` 类名，抗样式改名），已符合目标态则不点击（避免多余交互痕迹），点击走 PointerEvent 序列（DeepSeek 只认真实指针事件）。`applyNewSessionPreset` 带就绪轮询（10 次 × 200ms），provider 返回 `{ ready }` 表示目标开关已渲染。
+  - **入口全覆盖**：`web-new-conversation`（含有/无项目目录两个分支）、`new-conversation-for-project`、`harness-new-conversation`（纯净模式自己的「新对话」按钮，原先只 `loadURL`、完全没应用预设）均接入。未实现该钩子的平台零影响。
+  - **指纹死字段清理**：`screenWidth` / `screenHeight` / `devicePixelRatio` 从 `FingerprintPreset` / `FingerprintConfig` / 预设池 / `normalizeFingerprintConfig` 移除。这三个字段存储但从未进入注入脚本（`cfgJson` 只打包 6 个字段），属误导性死代码。尺寸类一律保持 Chromium 真实值——锁死视口会与 `WebContentsView.setBounds` 冲突，并制造 `screen.width` 与 `innerWidth` 矛盾的穿帮特征。旧 profile JSON 里的残留字段不再读取，无消费者，不影响功能。
+
+### 验证
+
+- `npm run typecheck` / `npm run lint`（0 errors）/ `npm run compile` / `npm test`（135 文件 1396 用例）全绿。
+- 新增回归测试「requestAbort 幂等」：一次停止只广播一次、已中止态短路、`clearAbort` 后可恢复。
+- 新增指纹防回潮守卫：注入脚本不得出现 `screenWidth` / `screenHeight`，`FP` 配置对象必须恰好 6 个实际生效字段。
+- 真机验证（开发版实例 + CDP 9444，DeepSeek 已登录）：
+  - 新会话开关：手动把开关翻成非目标态（深度思考 false / 智能搜索 true）→ 从壳入口开新对话 → 自动拉回目标态（true / false）。
+  - 停止幂等：向 AI 页面注入 `cuckoo-ai-response`（`status=stopped`）事件，harness 侧 `task-idle` 每次只 +1；连发两次后仍为每次 +1，无递归放大。`ai-state` 的累积来自 2 秒心跳，属正常。
+  - 停止链路：`harnessAPI.stop()` 18ms 返回，走 `not-generating` 分支（DeepSeek 停止按钮仅生成中显示）。
+- 待用户真机确认：三端停止的实际体感（尤其手机端）。
+
 ## [0.10.216] - 2026-11-10
 
 ### 修复

@@ -64,7 +64,18 @@ let lastProcessedText = '';
 let lastInterceptedText = '';
 // 用户请求中止：停止工具循环的回传（停止按钮触发）
 let abortRequested = false;
+/**
+ * 请求中止并广播一次。
+ *
+ * 幂等是**必须**的：onUserStop 的订阅者（harness-bridge / remote-bridge）自身也会
+ * 调 requestAbort（把网页侧停止同步成"取消在途回传"）。若不做重入保护，
+ * requestAbort → emitUserStop → 订阅者 → requestAbort 会无限递归，
+ * 靠每个订阅者外层的 try/catch 把栈溢出吞掉——表面无异常，实际回调执行上千次，
+ * 副作用（上报 task-idle / ai-stop、清空输入框）被放大成百上千倍。
+ * clearAbort() 在下一条用户消息时复位，不影响下一轮停止。
+ */
 function requestAbort(): void {
+  if (abortRequested) return;
   abortRequested = true;
   emitUserStop();
 }
@@ -453,7 +464,13 @@ function startInterceptObserver(): void {
       // 用户主动停止：不处理，也不通知监听器（等待方按超时处理）
       if (detail.status === 'stopped') {
         console.log('[Cuckoo Code][拦截] 检测到用户停止生成，忽略该回复');
-        abortRequested = false;
+        // 注意：这里**不能**把 abortRequested 重置为 false。
+        // 重置会让订阅者回调里的 requestAbort() 重新通过幂等判断 → 再次 emitUserStop
+        // → 无限递归（实测 2974 层后被栈溢出兜住，副作用被放大上千倍）。
+        // 中止标志统一由 clearAbort() 在"下一条用户消息"时复位。
+        // 先置 true 再广播：订阅者回调里的 requestAbort() 会被幂等判断短路，
+        // 保证一次停止只广播一次（而不是 1 + N 次）。
+        abortRequested = true;
         try { watchdog.onResponseReceived('stopped'); } catch (_) { /* ignore */ }
         try { emitUserStop(); } catch (_) { /* ignore */ }
         return;

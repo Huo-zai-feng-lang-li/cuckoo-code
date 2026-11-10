@@ -159,6 +159,11 @@ export function initHarnessBridge(): void {
   onUserStop(() => {
     markAiActivity();
     setAiGenerating(false);
+    // 与 harness-stop-signal 对齐：网页侧的停止同样要中止工具回传、取消在途发送。
+    // 原实现只上报 task-idle，若此刻还有工具结果在拟人延迟里等待投递，会照发不误，
+    // 造成"用户已停止、工具结果仍打进对话"的串台（与停止语义矛盾）。
+    try { requestAbort(); } catch (_) { /* ignore */ }
+    try { cancelPendingSend(); } catch (_) { /* ignore */ }
     report({ type: 'task-idle' });
   });
 

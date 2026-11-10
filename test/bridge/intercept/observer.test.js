@@ -8,6 +8,9 @@ import {
   onInterceptedResponse,
   onAiError,
   onTaskIdle,
+  onUserStop,
+  requestAbort,
+  clearAbort,
   stripToolBlocks,
   stripInlineCodeAndQuotes,
 } from '../../../src/bridge/intercept/observer.js';
@@ -92,6 +95,40 @@ test('startInterceptObserver：stopped 不通知监听器', () => {
   track(onInterceptedResponse((t) => got.push(t)));
   dispatch(listeners, 'cuckoo-ai-response', { status: 'stopped', finished: true, text: 'x' });
   assert.deepStrictEqual(got, []);
+});
+
+/**
+ * 回归守卫（真实事故）：onUserStop 的订阅者自身会调 requestAbort
+ * （harness-bridge 与 remote-bridge 都是这个写法，用于把网页侧停止
+ * 同步成"取消在途工具回传"）。旧实现里 requestAbort 无幂等、
+ * stopped 分支还会把 abortRequested 重置为 false，于是：
+ *   requestAbort → emitUserStop → 订阅者 → requestAbort → …
+ * 无限递归，靠每层 try/catch 把栈溢出吞掉 —— 表面无异常，
+ * 实际回调执行了近 3000 次，task-idle / ai-stop 上报被放大上千倍。
+ */
+test('requestAbort 幂等：订阅者回调内再次 requestAbort 不递归放大', () => {
+  const listeners = setupGlobals();
+  startInterceptObserver();
+  clearAbort();
+  let calls = 0;
+  track(onUserStop(() => {
+    calls++;
+    requestAbort(); // 模拟 harness-bridge / remote-bridge 的真实行为
+  }));
+
+  // 网页侧停止（hook 报 status=stopped）
+  dispatch(listeners, 'cuckoo-ai-response', { status: 'stopped', finished: true, text: 'x' });
+  assert.strictEqual(calls, 1, '一次停止只能广播一次，不得递归放大');
+
+  // 已在中止态：直接调用也应短路
+  requestAbort();
+  assert.strictEqual(calls, 1, '已处于中止态时不得重复广播');
+
+  // 新消息会 clearAbort → 下一轮停止应能正常广播
+  clearAbort();
+  requestAbort();
+  assert.strictEqual(calls, 2, 'clearAbort 后应恢复可广播');
+  clearAbort();
 });
 
 test('startInterceptObserver：未 finished 不通知', () => {

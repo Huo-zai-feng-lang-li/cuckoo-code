@@ -1,48 +1,55 @@
-# 最新接续状态 (2026-11-10 15:40)
+# 最新接续状态 (2026-11-10 19:20)
 
 ## 核心进展
 
-**v0.10.216 已发布。** 本轮修了 4 类问题：截断自救、幽灵发送、并发被覆盖、默认延迟上调。
+**v0.10.217 已准备就绪（待提交/打 tag）。** 本轮完成需求 113：停止双向同步、新会话开关预设、指纹死字段清理。
 
-- 版本：`0.10.216`
-- 分支：`master`
-- 上一版：`v0.10.215`
+- 版本：`0.10.217`（package.json / package-lock.json / CHANGELOG 三处已同步）
+- 分支：`feat/113-stop-sync-and-session-preset` → 待合 master
+- 上一版：`v0.10.216`
 
-## 本轮交付的 4 项改动
+## 本轮交付
 
-### 1. 截断自救（防模型降质）
-- `src/tools/runtime/JsRunner.ts`：截断处（`OUTPUT_LIMIT = 20000`）追加警告语，禁止 AI 盲目重试全量。
-- `src/overlay/chat-input.ts`：截断处（`MAX_OUTPUT = 15000`）同步追加相同警告语。
-- 四个 prompt 文件（default/deepseek/claude/chatgpt）：在「本地数据前置精炼」下新增**截断自救强制纪律**。
+### 1. 停止递归 bug（本轮最大发现）
 
-### 2. 幽灵发送（纯净模式草稿被吃掉）
-- **真凶**：`findInputArea()` 的兜底逻辑按 `document.querySelectorAll('textarea')` 抓第一个可见 textarea，纯净模式的 `<textarea id="input">` 也在 DOM 里 → 工具结果被填进用户草稿框并触发发送。
-- **修法**：`src/overlay/chat-input.ts` 的 `findInputArea` 过滤 `id === 'input'` 与占位符含「输入消息」的 textarea；contenteditable 同样过滤。
+**现象**：`requestAbort()` → `emitUserStop()` → 订阅者回调（harness-bridge / remote-bridge 自身也调 `requestAbort`）→ 无限递归。旧实现靠每层 `try/catch` 把栈溢出吞掉，**表面无任何异常**。实测回调执行 2974 次，`task-idle`/`ai-stop` 上报放大上千倍。
 
-### 3. 子代理并发被改回 3
-- **真凶**：壳页面 `collectSettings()` 用 `parseInt(...) || 0`，空值变 0 提交，主进程 `toConcurrency(0, 3)` 兜底成默认 3。
-- **修法**：`src/ui/shell/scripts/pages/settings.ts` 全字段改为「空值返回 undefined」，不再提交空 delta。
+**修法**（`src/bridge/intercept/observer.ts`）：
+1. `requestAbort` 加幂等短路（`if (abortRequested) return`）
+2. `stopped` 分支**不再** `abortRequested = false`，改为置 true 后再广播——原先的重置正是递归直接成因
+3. 中止标志统一由 `clearAbort()` 在"下一条用户消息"时复位
 
-### 4. 默认发送延迟 6-36 → 12-36
-- `src/overlay/state.ts`：`sendDelayMin: 6000 → 12000`
-- `src/app/global-settings.ts`：`sendDelayMin: 6 → 12`
-- `src/overlay/panels/settings.ts`：重置逻辑 + 读取兜底同步
-- 测试断言同步：`test/app/global-settings.test.js`、`test/overlay/extra.test.js`
+### 2. 反向停止同步补齐
 
-## 验证
+`src/bridge/harness-bridge.ts` 的 `onUserStop` 补 `requestAbort()` + `cancelPendingSend()`，与 `harness-stop-signal` 对齐。修复「用户已停止、工具结果仍打进对话」。
 
-- typecheck / lint(0 errors) / test(135 文件 1395 用例) / compile 全绿。
-- **待用户真机确认三项**：
-  - 纯净模式输入框打草稿不点发送，跑工具回传，看草稿是否还在
-  - 设置里延迟默认值是否为 12-36
-  - 子代理并发数是否保持用户设定值不被覆盖
+### 3. 新会话默认开关（DeepSeek 开深度思考、关智能搜索）
+
+- `Provider.setupNewSession` 扩展点（**工厂语义**，签名已修正为 `(): (doc, win) => any`）
+- DeepSeek 按 `aria-pressed` 判态，PointerEvent 序列点击，已是目标态不点
+- `applyNewSessionPreset`（`src/app/ipc/harness.ts`）带就绪轮询：10 次 × 200ms，provider 返回 `{ ready }`
+- **入口全覆盖**：`web-new-conversation`（含/无项目目录两分支）、`new-conversation-for-project`、`harness-new-conversation`
+
+### 4. 指纹死字段清理
+
+`screenWidth`/`screenHeight`/`devicePixelRatio` 从 config/preset/normalize 全删。尺寸类保持 Chromium 真实值（锁死视口会与 `WebContentsView.setBounds` 冲突 + 制造 `screen.width` vs `innerWidth` 矛盾）。
+
+## 验证结果
+
+- typecheck / lint(0 errors) / compile / test（135 文件 **1396** 用例）全绿
+- **真机验证（开发版 + CDP 9444）**：
+  - 新会话开关：翻成非目标态 → 壳入口开新对话 → 自动拉回目标态 ✅
+  - 停止幂等：注入 `status=stopped` 事件，`task-idle` 每次只 +1，连发两次仍 +1，无放大 ✅
+  - `harnessAPI.stop()` 18ms 返回，走 `not-generating`（DeepSeek 停止按钮仅生成中显示）
+- **待用户确认**：三端停止的实际体感（尤其手机端）
 
 ## 关键上下文
 
 - 目录：`D:\Desktop\Super-File\cuckoo-code`
-- 当前分支：`master`
-- 版本：`0.10.216`
-- 输出长度硬上限：`JsRunner.ts` 的 `OUTPUT_LIMIT = 20000`；`chat-input.ts` 的 `MAX_OUTPUT = 15000`
-- 真机测试：`$env:CUCKOO_SESSION_DIR='cuckoo-dev-verify'; Start-Process -FilePath 'node_modules\electron\dist\electron.exe' -ArgumentList '.','--remote-debugging-port=9444'`
-- 打包版 `Cuckoo-Code.exe` 占 7799 端口正常，不要 kill；开发版用 `cuckoo-dev-verify` userData 隔离
-- 已知坑：PowerShell 按 GBK 解码 UTF-8 会导致中文乱码，读文件显式用 UTF-8
+- 需求档案：`docs/requirements/113-stop-sync-and-session-preset.md`（status: done）
+- 输出长度硬上限：`JsRunner.ts` `OUTPUT_LIMIT = 20000`；`chat-input.ts` `MAX_OUTPUT = 15000`
+- 真机测试：`set CUCKOO_SESSION_DIR=cuckoo-dev-verify&& node_modules\electron\dist\electron.exe . --remote-debugging-port=9444`（前台起，background 模式）
+- **进程管理**：`taskkill /F /IM electron.exe` 被安全策略拒绝；用 `powershell -NoProfile -Command "Stop-Process -Id <PID> -Force"`。开发版主进程 PID 用 `netstat -ano | findstr :9444` 查
+- 打包版 `Cuckoo-Code.exe` 占 7799 端口正常，不要动；开发版 userData 是 `cuckoo-dev-verify` 隔离
+- **坑**：`readLines` 默认 limit 2000，读大文件（如 CHANGELOG 3492 行）会截断；整体重写会丢数据，必须用 `edit` 精准插入
+- **坑**：PowerShell 按 GBK 解码 UTF-8 会中文乱码，读文件显式用 UTF-8

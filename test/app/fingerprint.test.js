@@ -14,8 +14,6 @@ test('HARDWARE_PRESETS: 预设池包含真实自洽的配置', () => {
     assert.ok(preset.id, '必须有 id');
     assert.ok(preset.hardwareConcurrency >= 4, 'CPU 核心数必须 >= 4');
     assert.ok(preset.deviceMemory >= 8, '内存必须 >= 8GB');
-    assert.ok(preset.screenWidth >= 1920, '屏幕宽度 >= 1920');
-    assert.ok(preset.screenHeight >= 1080, '屏幕高度 >= 1080');
     assert.ok(preset.webglVendor.includes('Google Inc.'), '必须是 Google Inc. 规范');
     assert.ok(preset.webglRenderer.includes('ANGLE'), '必须符合 ANGLE 渲染器规范');
   }
@@ -64,6 +62,18 @@ test('buildFingerprintScript: 未启用返回空，启用时生成包含原生�
   assert.ok(!script.includes("patchProtoGetter(Screen.prototype"), '不得覆盖 Screen 原型');
   assert.ok(!script.includes("patchProtoGetter(Window.prototype, 'devicePixelRatio'"), '不得覆盖 devicePixelRatio');
   assert.ok(script.includes('noisedBuffers'), '必须包含基于 WeakSet 的单次微扰守卫');
+  // 防回潮守卫：尺寸类字段（screenWidth/screenHeight/devicePixelRatio）不在配置中建模，
+  // 注入脚本的 cfgJson 绝不可出现这三个 key —— 它们既未被使用，出现只会让人误以为"分辨率已伪装"。
+  assert.ok(!script.includes('screenWidth'), '注入脚本不得携带 screenWidth（该字段已从配置移除）');
+  assert.ok(!script.includes('screenHeight'), '注入脚本不得携带 screenHeight（该字段已从配置移除）');
+  const cfgMatch = script.match(/var FP = (\{[^}]*\});/);
+  assert.ok(cfgMatch, '注入脚本必须包含 FP 配置对象');
+  const cfg = JSON.parse(cfgMatch[1]);
+  assert.deepStrictEqual(
+    Object.keys(cfg).sort(),
+    ['audioSeed', 'canvasSeed', 'deviceMemory', 'hardwareConcurrency', 'webglRenderer', 'webglVendor'],
+    '指纹配置只应有 6 个实际生效的字段',
+  );
 });
 
 test('buildFingerprintScript 不修改真实 4K Screen 与设备缩放比', () => {

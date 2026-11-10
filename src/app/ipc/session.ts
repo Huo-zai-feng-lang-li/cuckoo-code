@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { getProviderByUrl, getProvider } from '../../providers/registry.js';
 import { initProject } from '../../session/project-context.js';
+import { applyNewSessionPreset } from './harness.js';
 import { ensureWorkspaceTrust } from '../workspace-trust-prompt.js';
 import { assertSenderOk } from '../ipc-guard.js';
 
@@ -501,6 +502,8 @@ function registerSessionIpc(): void {
       ctxAny.__newConvTimer = setTimeout(async () => {
         ctxAny.__newConvTimer = null;
         try {
+          // 平台功能开关预设（如 DeepSeek 开深度思考、关智能搜索）必须在发提示词前落定
+          await applyNewSessionPreset(ctx);
           // 用户主动选了新目录 → 必须先过工作区信任门（initProject 因 presetDir 非空会跳过它）。
           // 未信任时项目级 MCP / 规则 / 技能 / 子代理不注入，但仍继续初始化（信任门是告知，不阻断）。
           try { await ensureWorkspaceTrust(ctx.win, projectDir); }

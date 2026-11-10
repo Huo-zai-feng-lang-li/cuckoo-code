@@ -107,6 +107,61 @@ const deepseek = {
   },
 
   /**
+   * 新会话默认开关：开「深度思考」、关「智能搜索」。
+   *
+   * 真机 DOM（2026-11-10 取证）：
+   *   深度思考 div.ds-toggle-button.ds-toggle-button--selected  aria-pressed="true"
+   *   智能搜索 div.ds-toggle-button                              aria-pressed="false"
+   * 以 aria-pressed 为准（不依赖 selected 类名，抗样式类改名）。
+   *
+   * 点击必须走 PointerEvent 序列：DeepSeek 只认真实指针事件，DOM .click()
+   * 不会触发其内部状态机（与 stopGeneration 的 clickInPage 同一结论）。
+   * 状态已符合预期时不点击，避免多余交互痕迹。
+   * 必须自包含：被序列化后注入页面主世界执行。
+   */
+  setupNewSession() {
+    return function (doc: any, win: any) {
+      try {
+        var toggles = doc.querySelectorAll('.ds-toggle-button');
+        var found = 0;
+        for (var i = 0; i < toggles.length; i++) {
+          var el = toggles[i];
+          var txt = (el.textContent || '').trim();
+          if (txt.length > 12) continue;
+
+          var wantOn = -1;
+          if (txt.indexOf('深度思考') !== -1) wantOn = 1;
+          else if (txt.indexOf('智能搜索') !== -1) wantOn = 0;
+          if (wantOn === -1) continue;
+          found++;
+
+          var pressed = el.getAttribute('aria-pressed') === 'true';
+          if (pressed === (wantOn === 1)) continue; // 已是目标态
+
+          var rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+          if (!rect || rect.width === 0 || rect.height === 0) continue;
+
+          var cx = Math.round(rect.left + rect.width / 2);
+          var cy = Math.round(rect.top + rect.height / 2);
+          var opts = { bubbles: true, cancelable: true, view: win, clientX: cx, clientY: cy, button: 0 };
+          try { el.dispatchEvent(new win.PointerEvent('pointerdown', opts)); } catch (e) {}
+          try { el.dispatchEvent(new win.MouseEvent('mousedown', opts)); } catch (e) {}
+          try { el.dispatchEvent(new win.PointerEvent('pointerup', opts)); } catch (e) {}
+          try { el.dispatchEvent(new win.MouseEvent('mouseup', opts)); } catch (e) {}
+          try { el.dispatchEvent(new win.MouseEvent('click', opts)); } catch (e) {}
+        }
+        // ready 表示"目标开关已在 DOM 里出现"（无论是否点击）。
+        // 主进程据此判断页面是否渲染到位：未就绪时轮询重试，避免首页刚加载完
+        // 按钮还没画出来就执行一次、结果什么都没设上。
+        return { ready: found > 0, found: found };
+      } catch (e) {
+        /* 静默：开关设置失败不应阻断新会话初始化 */
+        return { ready: false, found: 0 };
+      }
+    };
+  },
+
+  /**
    * 精确定位「停止生成」按钮（供 harness stopGeneration 使用）。
    *
    * DeepSeek 输入区主按钮是同一个元素：生成中显示方块图标（可停止），
