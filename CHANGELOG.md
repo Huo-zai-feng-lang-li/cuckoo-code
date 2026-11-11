@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.10.222] - 2026-11-11
+
+### 修复
+
+- **附件通道被 debugger 常驻占用而全线失效（根因修复）**
+  - 真机日志确证：`附件通道失败，回退 insertText: debugger-busy`。启用代理/指纹时 `net-identity.ts` 会 `wc.debugger.attach()` 后常驻不释放，而 `cdpAttach` 采用独占式判断，发现已附着即返回失败 —— 导致整个会话内长文本附件通道 100% 失效，全部静默回退为 `insertText` 全文注入（正是需求 115 要消灭的脚本特征）。
+  - `src/app/ipc/cdp-attach.ts` 改为复用已存在的 debugger 连接，并以 `ownsDebugger` 标记确保只 detach 自己 attach 的连接，绝不抢断外部占用者的会话。
+- **CDP 深层节点定位与前端状态唤醒**
+  - 优先 `Runtime.evaluate` + `DOM.requestNode` 精确取 `nodeId`，兜底 `DOM.getDocument({ depth: -1 })`，解决浅层索引遗漏导致的 `input[data-cuckoo-attach-input]` 检索不到；
+  - 文件注入后派发 `input` / `change` 事件，唤醒 React/Vue 受控状态机感知文件变更。
+- **纯净模式发送状态栏与宠物气泡恢复**
+  - 修复 `renderSendTick` 中 `sendSec` 未定义导致的 `ReferenceError`（状态栏与宠物气泡渲染被中断）；
+  - 定时器自停判据补入 `&& !sendPauseActive`，随机长暂停期间不再被误杀定格。
+- **长系统提示词与用户长输入改走附件**
+  - 抽出 `shouldAttach(tag, len)`，放行系统提示词、工具结果回传与用户消息；节流仅作用于自动化工具循环（`JS汇总`），系统提示词与用户手动长输入豁免 60s 节流；
+  - `lastAttachAt` 仅由工具结果刷新，避免系统提示词上传后把紧随的首轮工具结果挤回 `insertText`；
+  - 文件名前缀按语义区分：`系统设定-MMDD-HHMM.txt` / `用户需求-MMDD-HHMM.txt` / `工具输出-MMDD-HHMM.txt`。
+- **DeepSeek 附件就绪判定容错增强**
+  - 输入框检索优先 `#chat-input`，附件卡片匹配范围放宽（`boxTop - 260` ~ `boxBottom + 120`），支持子串匹配与文件名后缀边界，减少误判未就绪。
+
+### 验证
+
+- `npm run typecheck` 0 错误；`npm test` 146 文件 / 1477 用例 100% 通过；`npm run lint` 0 errors；`npm run compile` 全量重建成功。
+- 新增回归测试：系统提示词与用户长消息转附件通道、debugger 被外部常驻占用时复用连接且不擅自 detach。
+
 ## [0.10.221] - 2026-11-11
 
 ### 修复与优化

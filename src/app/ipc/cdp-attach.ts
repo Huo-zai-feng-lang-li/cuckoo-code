@@ -44,6 +44,11 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
   let tmpPath: string | null = null;
   let tmpDir: string | null = null;
   let attached = false;
+  // debugger 是否由本次调用 attach：只有自己 attach 的才在 finally 里 detach。
+  // net-identity 会常驻占用 wc.debugger（应用代理/指纹时 attach 后不释放），
+  // 旧逻辑"已 attach 就返回 debugger-busy"会让附件通道在整个会话内全部失效，
+  // 长文本只能回退 insertText 全文注入（正是需求 115/117 要消灭的机器特征）。
+  let ownsDebugger = false;
   let removeChooserListener: (() => void) | undefined;
   // 诊断镜像：主进程 console 不进 provider 日志，镜像到页面控制台以便落盘排查
   const pageLog = (msg: string) => {
@@ -62,8 +67,12 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
     tmpPath = path.join(tmpDir, name);
     fs.writeFileSync(tmpPath, bin);
 
-    if (wc.debugger.isAttached()) return { success: false, error: 'debugger-busy' };
-    wc.debugger.attach('1.3');
+    // 复用已存在的 debugger 连接（如 net-identity 常驻占用）：CDP 同一 target
+    // 只允许一个 debugger 附着，但附着后命令可共享。自己 attach 的才负责 detach。
+    if (!wc.debugger.isAttached()) {
+      wc.debugger.attach('1.3');
+      ownsDebugger = true;
+    }
     attached = true;
 
     // Page 域必须显式启用：CDP 只对已启用的域派发事件，
@@ -239,15 +248,46 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
       if (probe.isFileInput) {
         pageLog('命中隐藏 file input（坐标无意义），跳过点击，改为直接注入');
         try {
-          const docNode: any = await wc.debugger.sendCommand('DOM.getDocument', { depth: 1 });
-          const found: any = await wc.debugger.sendCommand('DOM.querySelector', {
-            nodeId: docNode && docNode.root && docNode.root.nodeId,
-            selector: 'input[data-cuckoo-attach-input]',
-          });
-          if (found && found.nodeId) {
-            await wc.debugger.sendCommand('DOM.setFileInputFiles', { files: [tmpPath], nodeId: found.nodeId });
+          let targetNodeId: number | null = null;
+          // 优先通过 Runtime.evaluate 拿到精准对象再转 nodeId（避开 DOM.getDocument 浅层索引遗漏）
+          try {
+            const evalRes: any = await wc.debugger.sendCommand('Runtime.evaluate', {
+              expression: 'document.querySelector("input[data-cuckoo-attach-input]")',
+              returnByValue: false,
+            });
+            if (evalRes && evalRes.result && evalRes.result.objectId) {
+              const nodeRes: any = await wc.debugger.sendCommand('DOM.requestNode', {
+                objectId: evalRes.result.objectId,
+              });
+              if (nodeRes && nodeRes.nodeId) targetNodeId = nodeRes.nodeId;
+            }
+          } catch (_) { /* 降级到 querySelector */ }
+
+          if (!targetNodeId) {
+            const docNode: any = await wc.debugger.sendCommand('DOM.getDocument', { depth: -1 });
+            const found: any = await wc.debugger.sendCommand('DOM.querySelector', {
+              nodeId: docNode && docNode.root && docNode.root.nodeId,
+              selector: 'input[data-cuckoo-attach-input]',
+            });
+            if (found && found.nodeId) targetNodeId = found.nodeId;
+          }
+
+          if (targetNodeId) {
+            await wc.debugger.sendCommand('DOM.setFileInputFiles', { files: [tmpPath], nodeId: targetNodeId });
             console.log('[Cuckoo Attach] 已直接注入隐藏 file input: ' + tmpPath);
             pageLog('文件已注入（直接注入隐藏 file input）');
+            // 派发原生事件，唤醒前端框架状态机（React/Vue）感知文件变更
+            try {
+              await wc.executeJavaScript(`
+                (function() {
+                  var inp = document.querySelector('input[data-cuckoo-attach-input]');
+                  if (inp) {
+                    try { inp.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
+                    try { inp.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
+                  }
+                })()
+              `, true);
+            } catch (_) { /* ignore */ }
             await dumpComposer('直接注入后立即');
             const ready = await waitComposerReady(12000);
             return { success: ready, mode: 'cdp-direct', error: ready ? undefined : 'attachment-not-ready', probe };
@@ -276,7 +316,7 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
   } finally {
     try { removeChooserListener?.(); } catch (_) { /* ignore */ }
     try { if (attached) await wc.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: false }); } catch (_) { /* ignore */ }
-    try { if (attached) wc.debugger.detach(); } catch (_) { /* ignore */ }
+    try { if (ownsDebugger && wc.debugger.isAttached()) wc.debugger.detach(); } catch (_) { /* ignore */ }
     try { if (tmpPath && fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) { /* ignore */ }
     try { if (tmpDir) fs.rmdirSync(tmpDir); } catch (_) { /* ignore */ }
   }

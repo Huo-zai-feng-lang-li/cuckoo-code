@@ -7,10 +7,10 @@ import { cdpAttach } from '../../src/app/ipc/cdp-attach.js';
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-function browserBoundary({ readyAfter = 0, hasEntry = true } = {}) {
+function browserBoundary({ readyAfter = 0, hasEntry = true, preAttached = false } = {}) {
   const debuggerApi = new EventEmitter();
   const start = Date.now();
-  const result = { clicks: 0, paths: [], contents: [], attached: false };
+  const result = { clicks: 0, paths: [], contents: [], attached: preAttached };
   const rect = { top: 700, left: 50, width: 30, height: 30 };
   const button = { tagName: 'BUTTON', className: 'upload', getBoundingClientRect: () => rect };
   const chip = { getBoundingClientRect: () => rect };
@@ -71,6 +71,18 @@ test('入口缺失时移除本次选择器监听，不影响已有监听', async
   debuggerApi.on('message', existing);
   expect(await cdpAttach(ctx, file)).toMatchObject({ success: false, error: 'upload-entry-not-found' });
   expect(debuggerApi.listeners('message')).toEqual([existing]);
+});
+
+test('debugger 被外部常驻占用（如 net-identity）时复用连接，且不擅自 detach', async () => {
+  // 旧逻辑"已 attach 就返回 debugger-busy"会让附件通道在启用代理/指纹的
+  // 真实会话中 100% 失效，长文本被迫 insertText 全文注入。
+  const { ctx, result, debuggerApi } = browserBoundary({ preAttached: true });
+  const r = await cdpAttach(ctx, file);
+  expect(r).toMatchObject({ success: true, mode: 'cdp' });
+  expect(result.contents).toEqual(['完整工具结果']);
+  // 外部占用者的连接必须保持附着，不能被本次调用抢走
+  expect(result.attached).toBe(true);
+  expect(debuggerApi.listenerCount('message')).toBe(0);
 });
 
 test('拒绝带目录的文件名，不能写出临时目录', async () => {

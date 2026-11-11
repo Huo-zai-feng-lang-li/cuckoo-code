@@ -292,6 +292,42 @@ test('非 DeepSeek 平台长文本保持文本发送，不进入自动附件通�
   assert.deepStrictEqual(sent, [text]);
 });
 
+test('DeepSeek 平台超长系统提示词转为附件通道发送', async () => {
+  vi.useFakeTimers();
+  const { sent } = composer();
+  window.location.href = 'https://chat.deepseek.com/';
+  const uploads = [];
+  window.electronAPI.sendAsFile = async (text, fileName) => {
+    uploads.push({ text, fileName });
+    return { success: true };
+  };
+  const text = '系统提示词设定内容'.repeat(600); // > 4000 字符
+  const send = chat.sendToChat(text, '系统提示词', 0);
+  await vi.runAllTimersAsync();
+  assert.strictEqual(await send, true);
+  assert.strictEqual(uploads.length, 1, '长系统提示词应调用 sendAsFile 上传附件');
+  assert.ok(uploads[0].fileName.startsWith('系统设定-'), '文件名应以系统设定为前缀');
+  assert.ok(sent[0].includes('系统设定与项目上下文已上传为附件'), '输入框应填入系统设定短提示词');
+});
+
+test('DeepSeek 平台用户长消息转为附件通道发送', async () => {
+  vi.useFakeTimers();
+  const { sent } = composer();
+  window.location.href = 'https://chat.deepseek.com/';
+  const uploads = [];
+  window.electronAPI.sendAsFile = async (text, fileName) => {
+    uploads.push({ text, fileName });
+    return { success: true };
+  };
+  const text = '用户的长篇开发需求内容'.repeat(500); // > 4000 字符
+  const send = chat.sendUserMessageToChat(text);
+  await vi.runAllTimersAsync();
+  assert.strictEqual(await send, true);
+  assert.strictEqual(uploads.length, 1, '用户长文本应调用 sendAsFile 上传附件');
+  assert.ok(uploads[0].fileName.startsWith('用户需求-'), '文件名应以用户需求为前缀');
+  assert.ok(sent[0].includes('详细需求已整理为附件上传'), '输入框应填入用户需求短提示词');
+});
+
 test('初始提示回执只在网页确认清空后返回对应 requestId', async () => {
   vi.useFakeTimers();
   const { input, sent } = composer();

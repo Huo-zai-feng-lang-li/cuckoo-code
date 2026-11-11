@@ -262,17 +262,26 @@ const deepseek = {
         var name = fileInfo && fileInfo.name;
         if (!name) return { ready: false, via: 'missing-file-name' };
         var vh = win.innerHeight || 800;
-        var box = doc.querySelector('textarea, [contenteditable="true"]');
-        var boxTop = box ? box.getBoundingClientRect().top : vh * 0.7;
+        var box = doc.querySelector('#chat-input, textarea, [contenteditable="true"]');
+        var boxRect = box && box.getBoundingClientRect ? box.getBoundingClientRect() : null;
+        var boxTop = boxRect ? boxRect.top : vh * 0.7;
+        var boxBottom = boxRect ? boxRect.bottom : boxTop + 100;
         var all = doc.querySelectorAll('div, span');
         for (var k = 0; k < all.length; k++) {
           var el = all[k];
-          if (el.children && el.children.length > 2) continue;
+          if (el.children && el.children.length > 3) continue;
           var t = String(el.textContent || '').trim();
-          if (t !== name) continue;
+          if (!t) continue;
+          var match = (t === name);
+          if (!match && t.indexOf(name) !== -1) {
+            var idx = t.indexOf(name);
+            var after = t.charAt(idx + name.length);
+            if (!after || /[\s\r\n(\[]/.test(after)) match = true;
+          }
+          if (!match) continue;
           var r = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
           if (!r || r.width === 0 || r.height === 0) continue;
-          if (r.top < boxTop - 200 || r.top > boxTop + 120) continue;
+          if (r.top < boxTop - 260 || r.top > boxBottom + 120) continue;
           return { ready: true, via: 'file-card' };
         }
         return { ready: false, via: 'no-attachment' };

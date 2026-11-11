@@ -3148,6 +3148,7 @@
     if (!statusText) { stopSendTick(); return; }
     if (statusEl) statusEl.classList.add('sending');
     var totalPauseSec = Math.max(1, Math.round(pauseDurationMs / 1000));
+    var sendSec = sendStartAt > 0 ? Math.floor((Date.now() - sendStartAt) / 1000) : 0;
     statusText.innerHTML = sendPauseActive
       ? ('随机长暂停中（第 ' + escapeSecHtml(pauseCount || 1) + ' 次 · 共 ' + escapeSecHtml(totalPauseSec) + 's · 等待 ' + escapeSecHtml(sendSec) + 's）')
       : ('结果待发送（工具 ' + escapeSecHtml(sendExecSec) + ' · 延迟 ' + escapeSecHtml(sendSec) + '）');
@@ -3180,8 +3181,8 @@
     renderSendTick();
     sendTickTimer = setInterval(function () {
       // 自停判据用业务态而非 DOM class：DOM class 是渲染结果，不该充当状态机。
-      // 任务已不再运行（无生成、无工具）→ 停表，防泄漏。
-      if (!statusText || (!generating && toolRunningCount <= 0)) { stopSendTick(); return; }
+      // 任务已不再运行（无生成、无工具、且非长暂停）→ 停表，防泄漏。
+      if (!statusText || (!generating && toolRunningCount <= 0 && !sendPauseActive)) { stopSendTick(); return; }
       renderSendTick();
     }, 1000);
   }

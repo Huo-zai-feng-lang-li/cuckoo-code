@@ -35,11 +35,18 @@ const ATTACH_PROMPTS = [
 function pickAttachPrompt(): string {
   return ATTACH_PROMPTS[Math.floor(Math.random() * ATTACH_PROMPTS.length)];
 }
-/** 拟人化文件名：带日期时分，不带毫秒/时间戳（tool-result-1731234567890.txt 机器味太重） */
-function makeAttachFileName(): string {
+/** 拟人化文件名：带业务前缀与日期时分，不带毫秒/时间戳（避免暴露机器特征） */
+function makeAttachFileName(prefix = '工具输出'): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
-  return '工具输出-' + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + '.txt';
+  return prefix + '-' + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + '.txt';
+}
+
+/** 判定消息是否应转为附件发送（放行长系统提示词、工具结果回传与用户消息） */
+function shouldAttach(tag?: string, len?: number): boolean {
+  if (!len || len <= ATTACH_THRESHOLD) return false;
+  if (getCurrentProvider()?.id !== 'deepseek') return false;
+  return tag === '系统提示词' || tag === 'JS汇总' || !isSystemTag(tag);
 }
 
 
@@ -370,21 +377,36 @@ async function doSendToChat(msg: string, token: PendingSend, fixedDelay?: number
     didLongPause = true;
   }
 
-  // ===== 长文本走附件通道（需求 115） =====
+  // ===== 长文本走附件通道（需求 115 / 117） =====
   // 成功 → 实际填充改为短提示词（附件已在输入区）；失败/节流 → 保持原 msg 走 insertText。
   let fillMsg = msg;
-  if (usesNaturalDelivery(tag) && msg.length > ATTACH_THRESHOLD && getCurrentProvider()?.id === 'deepseek') {
+  if (shouldAttach(tag, msg.length)) {
     const now = Date.now();
-    if (now - lastAttachAt > ATTACH_THROTTLE_MS) {
+    const isAutoToolResult = tag === 'JS汇总';
+    // 节流仅针对自动化工具密集循环；新会话系统提示词和用户手动长输入不受 60s 节流限制
+    const throttled = isAutoToolResult && (now - lastAttachAt <= ATTACH_THROTTLE_MS);
+    if (!throttled) {
       const api = (window as any).electronAPI;
       if (api && typeof api.sendAsFile === 'function') {
         try {
-          const r = await api.sendAsFile(msg, makeAttachFileName());
+          let filePrefix = '工具输出';
+          let attachPrompt = pickAttachPrompt();
+          if (tag === '系统提示词') {
+            filePrefix = '系统设定';
+            attachPrompt = '（系统设定与项目上下文已上传为附件，请仔细阅读附件内容，做好准备并严格按要求执行任务）';
+          } else if (!isSystemTag(tag)) {
+            filePrefix = '用户需求';
+            attachPrompt = '（详细需求已整理为附件上传，请仔细查阅附件并开始处理）';
+          }
+          const fileName = makeAttachFileName(filePrefix);
+          const r = await api.sendAsFile(msg, fileName);
           if (token.cancelled) return false;
           if (r && r.success) {
-            lastAttachAt = now;
-            fillMsg = pickAttachPrompt();
-            console.log('[Cuckoo Code] 长文本已走附件通道（' + msg.length + ' 字符 → 附件）');
+            // 时间戳只由自动化工具结果刷新：系统提示词/用户消息上传后，
+            // 紧随的首轮工具结果不应被 60s 节流挤回 insertText（否则长文本又裸露在输入框）。
+            if (isAutoToolResult) lastAttachAt = now;
+            fillMsg = attachPrompt;
+            console.log('[Cuckoo Code] 长文本已走附件通道（' + msg.length + ' 字符 → ' + fileName + '）');
           } else {
             console.warn('[Cuckoo Code] 附件通道失败，回退 insertText:', (r && r.error) || 'unknown');
           }
