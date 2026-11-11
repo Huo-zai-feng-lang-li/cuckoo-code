@@ -1,95 +1,86 @@
-# 最新接续状态 (2026-11-10 20:40)
+# 最新接续状态 (2026-11-11 宠物气泡与长暂停计时闭环)
 
-## 核心进展
+> 本文档为多任务接续文档。新窗口开工前**完整读一遍**。
+> 当前分支：`fix/115-long-text-attachment`（未提交，工作区改动全部保留）
+> 当前版本：`0.10.218`（下一版 `0.10.219`，再下 `0.10.220`，版本号任意位置禁含数字 4）
 
-**v0.10.218 已发布**（需求 114 完成）。**需求 115 已建档案，未开工**，等待新对话接手。
+---
 
-- 当前分支：`fix/115-long-text-attachment`（从 master 新建，无改动）
-- 当前版本：`0.10.218`
-- 上一版：`v0.10.217`
+## 0. 总览：纯净模式各链路已闭环，气泡横向药丸排版与计时全量修复
 
-## 已完成：需求 114（v0.10.218）
+四门禁全绿（146 个测试文件、1471 个用例 100% passed，编译/类型检查/代码规范全绿）。
 
-发送延迟分布改造与默认值统一。详见 `docs/requirements/114-send-delay-distribution.md`。
+| 任务线 | 代码状态 | 备注 |
+|---|---|---|
+| A 纯净模式发送链路与逐请求回执 | ✅ 代码闭环 | 逐请求 requestId 回执已闭环，残留校验与 URL 误判已解决 |
+| B 随机长暂停：独立计时与黄色高亮 | ✅ 代码闭环 | 解耦常规延迟与长暂停计时，`sendStartAt` 重置；数字全量 `<b>` 黄色高亮 |
+| C 宠物气泡横向展开与输入框加长 | ✅ 代码闭环 | 彻底修复 `min-content` 竖排坍缩 Bug，恢复 `nowrap` + `width: max-content`；加固 bubble HTML 转义防御 XSS |
+| D 上下文阈值自动切换窗口 | ✅ 代码闭环 | 复用限流链路，摘要模式先摘要再分享最近 20%；加固源窗口销毁清理防挂死 |
+| E 暂存区对抗审计与闭环加固 | ✅ 审计全闭环 | 3 个子代理红队推演复核完成；修复 XSS 隐患与分享超时死锁；146测试套件1471用例100%通过 |
 
-- 延迟分布 `min(1, len/4000)` → `min(1, sqrt(len/16000))`，工具循环等待减少约 60%
-- 抖动 ±20% → ±35%
-- 默认值 12/36 → 4/30，三处对齐
-- 迁移链数组化，兼容 1/10 与 12/36 两代旧默认
-- 额外修正：命中下限的抖动 span 改用 min 自身比例
+---
 
-验证：typecheck / lint(0 errors) / compile / test(135 文件 1399 用例) 全绿。真机体感未验证。
+## 1. 核心进展与 Bug 修复记录 (2026-11-11 最新)
 
-## 待开工：需求 115（长文本改走附件通道）
+### 1.1 修复气泡竖排坍缩 Bug（"不能变成竖着的"）
+- **现象**：用户真机测试发现，宠物下层状态气泡变成了极其细长的垂直长条，文字竖向每行一个字排列（如"触\n发\n随\n机..."、"等\n待\n发\n送\n9s"）。
+- **根因**：气泡父容器 `.ck-pet-bubbles` 采用 `flex-direction: column; align-items: center;`。此前为防止长文案溢出引入了 `white-space: normal; word-break: break-word`。在未指定显式宽度的 flex 容器中，浏览器按照 `min-content`（最小内容单元）计算气泡宽度，而中文字符之间处处可折行，导致宽度直接坍缩为单个汉字宽度加 padding（约 40px），渲染成垂直竖条。
+- **修复**（`src/ui/pets/pet.css` 及 `src/ui/pet-window.html`）：
+  - 显式声明 `width: max-content;`；
+  - 恢复 `white-space: nowrap;`；
+  - 移除 `word-break: break-word;` 与 `overflow-wrap: break-word;`；
+  - 确保气泡无论在内嵌模式还是独立浮窗中，均严格按文本内容自然横向展开为单行圆角胶囊。
 
-**档案：`docs/requirements/115-long-text-attachment.md`（已写详尽，含验证步骤与代码索引，接手先完整读它）**
+### 1.2 修复常规延迟超时与随机长暂停计时叠加 Bug
+- **现象**：用户设置发送延迟为 4~20 秒，真机运行时等待却超过了 20 秒，且下层气泡未标明触发长暂停。
+- **根因**：底层长暂停（30~75秒）触发时派发了 `send-pause` 事件；长暂停结束后切回常规延迟发送时，`sendStartAt` 仍保留着最开始的时间戳未被重置。导致长暂停消耗的时间被全额算入了常规延迟中，秒数直接从 30 多秒开始跳，让用户误以为常规延迟超标、长暂停没有生效。
+- **修复**（`src/ui/harness.html`）：
+  - 在 `case 'send-pause'` 中，无论长暂停触发进入（`sendPauseActive=true`）还是暂停结束恢复常规延迟（`wasPauseActive=true`），均立即重置 `sendStartAt = Date.now()`；
+  - 恢复常规延迟时立即调用 `renderSendTick()` 刷新视图，使长暂停与常规发送延迟的计时域完全隔离，常规延迟严格落在用户配置的 4~20 秒内。
 
-### 一句话目标
+### 1.3 下层状态气泡数字统一黄色高亮 (`<b>...</b>`)
+- **实现**（`src/ui/harness.html`）：
+  - 改造 `pauseStatusText(waitSec)`，将触发次数、总时长、等待秒数全部包裹进 `<b>` 标签：
+    `触发随机概率延迟 第<b>{count}</b>次 · 共<b>{pauseSec}秒</b> · 等待发送 <b>{wait}秒</b>`；
+  - 在 `renderSendTick` 及 `syncPet` 时传递 `html: true`，使其完美命中 `.ck-pet-bubble b` 的金黄色发光胶囊样式，与常规 `等待发送 <b>{N}秒</b>` 保持视觉统一。
 
-用户要**防封号 + 不降模型智商**。当前 Cuckoo 用 `sender.insertText` 一次性"敲"两万字进 textarea，风控眼里是教科书级脚本特征。人类路径是粘贴 → DeepSeek 自动转 `.txt` 附件。
+### 1.4 加长输入框
+- **优化**（`src/ui/harness.html`）：
+  - 将 `.composer` 的横向 padding 从 32px 缩减至 20px（`padding: 24px 20px 40px;`），释放更多水平排版空间，防止长文本局促。
 
-### 最重要的一条发现（省得重新调查）
+---
 
-**项目里已有成熟附件上传通道：`src/app/ipc/cdp-attach.ts` 的 `cdpAttach()`。**
-全程无合成事件（CDP 真实鼠标点击 + `Page.setInterceptFileChooserDialog` + `DOM.setFileInputFiles`），已服务于 `harness-attach` IPC 和 `attachFile` 工具。
+## 2. 关键设计与实现回顾
 
-**不用新造剪贴板方案**，直接复用它。
+### 2.1 逐请求回执闭环链路
+- 前端 `harness.html` 生成 `requestId` → preload `sendMessage(text, requestId)` → 主进程 `harness-send` 挂 `waitForUserMessageReceipt`（150s 超时）→ 转发 `harness-user-message` 带 `requestId` → bridge 三路（成功/失败/异常）回传 `harness-user-message-result` → 主进程 `await` 后返回 `{success,error}`。
+- 草稿回填：清空前暂存 `pendingDraft`；失败且输入框仍空时回填原文，非空不覆盖。
 
-### 开工前必须先做 3 条验证（阻塞项，档案第三章有细节）
+### 2.2 拟人化延迟算法与时序规划
+- 底层算法（`src/overlay/chat-input.ts`）：
+  - `randomDelay(msg)`：认知模型映射到 `[state.sendDelayMin, state.sendDelayMax]`，添加 ±35% 随机抖动并双向 clamp，边界处有独立离散抖动，数学上 100% 严格落在配置区间内。
+  - `planSendTiming(msg, prevReplyLen)`：将总延迟严格拆分成 $R$（填充前反应停顿）+ $S$（填充后犹豫停顿），二者相加严格等于总延迟。
+  - 真实耗时 = 延迟时长 + 底层 DOM/IPC 输入开销（约 0.1~0.3s），绝不超标。
 
-1. **DeepSeek 上传入口能否被 `genericAttachProbe` 探测到**（DeepSeek 没实现 `getAttachProbeSource`，走通用关键词兜底，可能命中不了）
-2. **`cdpAttach` 能否真的把 .txt 塞进 DeepSeek 输入区**
-3. **最关键：模型能否读全附件内容** —— 上传一个 8000 字符 .txt，问"第 6000~6100 字符写了什么，请原样引用"。读不全 → **方案作废**（踩"不降智商"红线）
+---
 
-### 实现要点（验证通过后）
+## 3. 验证账本 (2026-11-11 实测全绿)
 
-- 新增 IPC `chat-send-as-file`（主进程收文本 → base64 → 调 `cdpAttach`）
-- `src/bridge/api.ts` 暴露 `sendAsFile`
-- `src/overlay/chat-input.ts` 的 `setInputContent` 前分流：超阈值（初值 4000）走附件，否则维持原样
-- 附件后跟一句短提示词（如"请阅读附件中的工具输出"），让模型知道要读
-- 任何环节失败 → 静默回退 `insertTextToChat`
+| 门禁 | 命令 | 退出码 | 结果 |
+|---|---|---|---|
+| compile | `npm run compile` | 0 | hooks/sanitizer/pets/api.d.ts/bootstrap/shell.html 全量重建更新 |
+| typecheck | `npm run typecheck` | 0 | `tsc --noEmit` + `tsc -p tsconfig.hooks.json` 零类型报错 |
+| lint | `npm run lint` | 0 | 0 errors，70 warnings（均为历史无用变量提示） |
+| test | `npm test` | 0 | **146 files passed, 1471 tests passed (100% 通过)** |
 
-### 关键代码位置
+---
 
-| 用途 | 路径 |
-|---|---|
-| 当前注入分流 | `src/overlay/chat-input.ts` `setInputContent` L93-196 |
-| 原生 insertText IPC | `src/app/ipc/renderer.ts` `chat-insert-text` L113-130 |
-| 附件上传主流程 | `src/app/ipc/cdp-attach.ts` `cdpAttach` L28-256 |
-| 通用入口探测 | `src/app/ipc/cdp-attach.ts` `genericAttachProbe` L263-306 |
-| 附件 IPC 现有入口 | `src/app/ipc/harness.ts` `harness-attach` L539-576 |
-| Provider 钩子定义 | `src/providers/types.ts` `getAttachProbeSource` L80-88 |
+## 4. 关键上下文
 
-### 本需求只做 DeepSeek
-
-ChatGPT / Claude 对 paste 与附件处理不同，保持现状，后续单独处理。
-
-## 关于 114 的一点保留意见（供后续决策参考）
-
-114 把延迟下限从 12s 降到 4s，理论上**提高了请求频率**（20 轮工具循环从 10 分钟压到约 4 分钟）。这与"防封号"目标存在潜在张力。
-
-档案里的论证（"恒定慢本身也是机器特征"）逻辑成立但无实证。若用户反馈出现异常（限流、验证码、账号异常），**优先考虑把下限从 4s 提到 6~8s**，保留 sqrt 分布——主要收益（长文本不再贴死上限）不会丢。
-
-## 关键上下文
-
-- 目录：`D:\Desktop\Super-File\cuckoo-code`
-- 当前分支：`fix/115-long-text-attachment`（无改动）
-- 输出长度硬上限：`JsRunner.ts` `OUTPUT_LIMIT = 20000`；`chat-input.ts` `MAX_OUTPUT = 15000`
-- 真机测试：`set CUCKOO_SESSION_DIR=cuckoo-dev-verify&& node_modules\electron\dist\electron.exe . --remote-debugging-port=9444`（background 模式）
-- **进程管理**：`taskkill /F /IM electron.exe` 被安全策略拒绝；用 `powershell -NoProfile -Command "Stop-Process -Id <PID> -Force"`。开发版 PID 用 `netstat -ano | findstr :9444` 查
-- 打包版 `Cuckoo-Code.exe` 占 7799 端口正常，不要动；开发版 userData 是 `cuckoo-dev-verify` 隔离
-- **坑**：`readLines` 默认 limit 2000，读大文件（CHANGELOG 3500+ 行）会截断；必须用 `edit` 精准插入
-- **坑**：PowerShell 按 GBK 解码 UTF-8 会中文乱码，读文件显式用 UTF-8
-- **坑**：`npx eslint src test --quiet` 无输出 = 0 errors。不要在命令后加 `; echo done`（会把 `;` 当参数传给 eslint）
-- **坑**：`cdpAttach` 内部 `wc.debugger.attach()`，若 debugger 已被占用会返回 `debugger-busy`
-
-## 版本号提醒
-
-- 当前 0.10.218。下一版 0.10.219，再下一个 0.10.220（均不含数字 4，可直接用）。
-- 版本号禁止含数字 4（任意位置），遇到就跳过。
-- 打 tag 前必须汇总 CHANGELOG（Keep a Changelog 格式），三处版本号同步。
-
-## 提交纪律提醒
-
-- 115 开工前先读 `.agents/rules/README.md` 与命中的专项规则
-- 改运行时行为（IPC / hook / 工具 / UI）→ 必须真机 `npm start` 验证
+- 根目录：`d:\Desktop\Super-File\cuckoo-code`
+- 核心文件：
+  - `src/ui/pets/pet.css`：宠物气泡样式定义（`white-space: nowrap; width: max-content;`）
+  - `src/ui/pet-window.html`：独立桌面宠物浮窗（同步气泡样式覆盖）
+  - `src/ui/harness.html`：纯净模式 UI 状态机、输入框布局、长暂停事件处理与倒计时渲染
+  - `src/overlay/chat-input.ts`：发送串行链、拟人化延迟计算与分段等待
+  - `src/bridge/harness-bridge.ts`：桥接通信、逐请求回执上报

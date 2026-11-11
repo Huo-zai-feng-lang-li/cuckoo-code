@@ -480,7 +480,7 @@ function startInterceptObserver(): void {
       // 缓存最近一次完整回复文本，供手动解析复用（不依赖 DOM）
       lastInterceptedText = detail.text || '';
       // 通知监听器（每次成功回复都触发），携带服务端权威数据
-      const meta = { tokenUsage: detail.tokenUsage || null, msgIds: detail.msgIds || null };
+      const meta = { tokenUsage: detail.tokenUsage || null, msgIds: detail.msgIds || null, sessionId: typeof detail.sessionId === 'string' ? detail.sessionId : null };
       for (const cb of responseListeners) {
         try { cb(detail.text || '', meta); } catch (_) { /* ignore */ }
       }

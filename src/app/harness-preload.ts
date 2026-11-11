@@ -9,8 +9,8 @@ const require = createRequire(import.meta.url);
 const { contextBridge, ipcRenderer } = require('electron');
 
 const harnessAPI = {
-  /** 发送用户消息到 AI（转由 bridge 侧 sendToChat 发出） */
-  sendMessage: (text: string) => ipcRenderer.invoke('harness-send', { text }),
+  /** 发送用户消息到 AI（转由 bridge 侧 sendToChat 发出；requestId 用于逐请求回执配对） */
+  sendMessage: (text: string, requestId?: string) => ipcRenderer.invoke('harness-send', { text, requestId }),
   /** 退出纯净模式，返回网页模式 */
   exitToWeb: () => ipcRenderer.invoke('harness-exit'),
   /** 停止生成 */

@@ -23,7 +23,7 @@ import {
   onInterceptedResponse, onToolCall, onStream, onTaskIdle, onAiError, onUserStop,
   requestAbort, clearAbort,
 } from './intercept/observer.js';
-import { sendToChat, cancelPendingSend, clearInputArea, onMessageDelivered } from '../overlay/chat-input.js';
+import { sendUserMessageToChat, cancelPendingSend, clearInputArea, onMessageDelivered, onSendPause, getLastSendError } from '../overlay/chat-input.js';
 import { hideToolMask } from '../overlay/panel.js';
 import { cancelPendingForSwitch, resumeRetry } from './loop/retry.js';
 import { extractJsToolBlocks } from './parser/js-detector.js';
@@ -199,20 +199,35 @@ export function initHarnessBridge(): void {
   });
 
   // 用户在 harness 输入 → 主进程转发到此 → 发到 AI
+  onSendPause((info) => report({ type: 'send-pause', active: info.active, durationMs: info.durationMs }));
   ipcRenderer.on('harness-user-message', (_e: any, payload: any) => {
     const text = payload && payload.text;
     if (!text) return;
+    const requestId = payload && payload.requestId;
     clearAbort(); // 新消息：清除中止标志
     try { setWatchdogSuspended(false); } catch (_) { /* ignore */ } // 新任务：恢复看门狗
+    // 先取消原版页面所有待发送消息（含工具结果），并等待输入框真正清空。
+    // 工具循环回传结果时可能正卡在拟人化延迟里（pendingSend != null，输入框已被填入工具结果），
+    // 若不取消，用户消息会排在工具结果之后一起发出（用户实测串发 bug）。
     // 用户手动在纯净模式发送：0ms 立即发出——真人手动操作本身是最强的人类证据，
     // 加随机延迟反而制造「每次都落在固定区间」的机器特征。
-    sendToChat(text, 'harness', 0).then((ok) => {
+    // 逐请求回执：成败按 requestId 回传主进程，供 harness 侧失败时回填草稿；无 requestId 的
+    // 自动投递（分享页激活）不挂回执，保持旧行为。
+    const sendResult = (success: boolean, error?: string) => {
+      if (!requestId) return;
+      try { ipcRenderer.send('harness-user-message-result', { requestId, success, error }); } catch (_) { /* ignore */ }
+    };
+    sendUserMessageToChat(text).then((ok) => {
+      const failText = (typeof getLastSendError === 'function' ? getLastSendError() : '') || '网页未找到输入框（可能在分享页或页面加载中）';
+      sendResult(ok, ok ? undefined : failText);
       if (!ok) {
-        report({ type: 'status', text: '网页未找到输入框（可能在分享页或页面加载中）', busy: false });
+        report({ type: 'status', text: failText, busy: false });
         report({ type: 'task-idle' });
       }
     }).catch((err: any) => {
-      report({ type: 'status', text: '发送失败: ' + ((err && err.message) || String(err)), busy: false });
+      const msg = '发送失败: ' + ((err && err.message) || String(err));
+      sendResult(false, msg);
+      report({ type: 'status', text: msg, busy: false });
       report({ type: 'task-idle' });
     });
   });

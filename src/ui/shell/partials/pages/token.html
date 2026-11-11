@@ -45,23 +45,41 @@
                 </div>
               </div>
 
+              <div class="ck-auto-grid">
               <div class="ck-auto-block">
                 <div class="ck-auto-head">
                   <span class="ck-stat-key">自动压缩</span>
                   <label class="ck-switch">
-                    <input type="checkbox" id="tk-auto-enabled" />
+                    <input type="checkbox" id="tk-auto-enabled" aria-label="自动压缩" />
                     <span class="ck-switch-track"></span>
                   </label>
                 </div>
                 <div class="ck-auto-body">
                   <span>超过</span>
-                  <input type="number" id="tk-auto-threshold" value="80" min="1" />
+                  <input type="number" id="tk-auto-threshold" value="80" min="0.01" step="0.01" aria-label="自动压缩阈值（万 tokens）" />
                   <span>万 tokens 时触发</span>
                 </div>
                 <button class="ck-btn ck-btn-anim" id="tk-auto-save">
                   <svg class="ck-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
                   <span>保存设置</span>
                 </button>
+              </div>
+
+              <div class="ck-auto-block">
+                <div class="ck-auto-head">
+                  <span class="ck-stat-key">上下文切换窗口</span>
+                  <label class="ck-switch">
+                    <input type="checkbox" id="tk-switch-enabled" aria-label="上下文达到阈值自动切换窗口" />
+                    <span class="ck-switch-track"></span>
+                  </label>
+                </div>
+                <div class="ck-auto-body">
+                  <span>达到</span>
+                  <input type="number" id="tk-switch-threshold" value="10" min="0.01" step="0.01" aria-label="切换窗口阈值（万 tokens）" />
+                  <span>万 tokens 时切换</span>
+                </div>
+                <button class="ck-btn ck-btn-anim" id="tk-switch-save">保存设置</button>
+              </div>
               </div>
 
               <div class="ck-chart-block">

@@ -105,6 +105,7 @@ function install(): void {
         window.dispatchEvent(new CustomEvent('cuckoo-ai-error', { detail: detail }));
       } else {
         var respDetail: any = { text: text || '', finished: status === 'finished', status: status, tokenUsage: tokenUsage || null, msgIds: msgIds || null };
+        if (extra && extra.sessionId) respDetail.sessionId = extra.sessionId;
         if (dbg) respDetail.dbg = dbg;
         window.dispatchEvent(new CustomEvent('cuckoo-ai-response', { detail: respDetail }));
       }
@@ -397,7 +398,7 @@ function install(): void {
       dispatchStream(extractor.think, extractor.text, extractor.finished, extractor.tokenUsage ? extractor.tokenUsage.accumulatedTokens : null, sessionId);
       if (extractor.finished && !dispatched) {
         dispatched = true;
-        dispatch(extractor.text, resolveStatus(extractor), extractor.tokenUsage, extractor.msgIds, null, Object.assign({ path: 'feed-finished-frame' }, extractor.snapshot()));
+        dispatch(extractor.text, resolveStatus(extractor), extractor.tokenUsage, extractor.msgIds, { sessionId: sessionId }, Object.assign({ path: 'feed-finished-frame' }, extractor.snapshot()));
       }
     }
 
@@ -414,7 +415,7 @@ function install(): void {
           }
           if (!dispatched) {
             dispatched = true;
-            dispatch(extractor.text, resolveStatus(extractor), extractor.tokenUsage, extractor.msgIds, null, Object.assign({ path: 'stream-end' }, extractor.snapshot()));
+            dispatch(extractor.text, resolveStatus(extractor), extractor.tokenUsage, extractor.msgIds, { sessionId: sessionId }, Object.assign({ path: 'stream-end' }, extractor.snapshot()));
           }
           return;
         }
@@ -613,7 +614,7 @@ function install(): void {
       if (extractor.finished && !dispatched) {
         dispatched = true;
         wd.stop();
-        dispatch(extractor.text, resolveStatus(extractor), extractor.tokenUsage, extractor.msgIds, null, Object.assign({ path: 'xhr-finished-frame' }, extractor.snapshot()));
+        dispatch(extractor.text, resolveStatus(extractor), extractor.tokenUsage, extractor.msgIds, { sessionId: reqSessionId }, Object.assign({ path: 'xhr-finished-frame' }, extractor.snapshot()));
       }
     }
 
@@ -638,7 +639,7 @@ function install(): void {
           if (xhrRL) console.log('[Cuckoo Code][hook] XHR 命中限流（status=' + xhr.status + ', streamRL=' + extractor.streamRateLimit + '）');
           dispatch(extractor.text, 'error', extractor.tokenUsage, extractor.msgIds, { reason: xhrRL ? 'rate_limit' : 'xhr', httpStatus: xhr.status, sessionId: reqSessionId }, Object.assign({ path: 'xhr-error', httpStatus: xhr.status }, extractor.snapshot()));
         } else {
-          dispatch(extractor.text, st, extractor.tokenUsage, extractor.msgIds, null, Object.assign({ path: 'xhr-end' }, extractor.snapshot()));
+          dispatch(extractor.text, st, extractor.tokenUsage, extractor.msgIds, { sessionId: reqSessionId }, Object.assign({ path: 'xhr-end' }, extractor.snapshot()));
         }
       }
     });

@@ -3,20 +3,21 @@
  * chat-input 纯逻辑测试：随机延迟、输入框可见性、输入框查找
  * window/document/provider 是外部边界，按需 mock。
  */
-import { test, beforeEach, vi } from 'vitest';
+import { test, beforeEach, afterEach, vi } from 'vitest';
 import assert from 'node:assert';
 
+const ipc = vi.hoisted(() => ({ listeners: new Map(), sent: [] }));
 vi.mock('node:module', async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
-    createRequire: () => () => ({ ipcRenderer: { on: () => {}, invoke: async () => ({}) } }),
+    createRequire: () => () => ({ ipcRenderer: {
+      on: (channel, fn) => ipc.listeners.set(channel, fn),
+      send: (channel, payload) => ipc.sent.push({ channel, payload }),
+      invoke: async () => ({}),
+    } }),
   };
 });
-
-vi.mock('../../src/providers/registry.js', () => ({
-  getProviderByUrl: () => null,
-}));
 
 let chat;
 let state;
@@ -47,10 +48,253 @@ function setupGlobals() {
 }
 
 beforeEach(async () => {
+  vi.useRealTimers();
   vi.resetModules();
+  ipc.listeners.clear();
+  ipc.sent.length = 0;
   setupGlobals();
   chat = await import('../../src/overlay/chat-input.js');
   state = (await import('../../src/overlay/state.js')).state;
+});
+
+afterEach(() => { vi.useRealTimers(); });
+
+function composer() {
+  const sent = [];
+  const input = { tagName: 'TEXTAREA', value: '', focus() {}, dispatchEvent() {} };
+  document.querySelectorAll = () => [input];
+  window.electronAPI = {
+    sendEnterToChat: async () => { sent.push(input.value); input.value = ''; return true; },
+  };
+  state.pauseEnabled = false;
+  state.sendDelayMin = state.sendDelayMax = 0;
+  return { input, sent };
+}
+
+test('取消覆盖尚未执行的工具结果，后续用户消息不串发', async () => {
+  vi.useFakeTimers();
+  const { sent } = composer();
+  const first = chat.sendToChat('旧结果一', 'JS汇总', 5000);
+  const queued = chat.sendToChat('旧结果二', 'JS汇总', 0);
+  await vi.advanceTimersByTimeAsync(0);
+  chat.cancelPendingSend();
+  const fresh = chat.sendToChat('用户消息', 'harness', 0);
+  await vi.runAllTimersAsync();
+  assert.deepStrictEqual(await Promise.all([first, queued, fresh]), [false, false, true]);
+  assert.deepStrictEqual(sent, ['用户消息']);
+});
+
+test('取消原生分块注入时停止剩余块及 DOM 回退，清理等待注入完成', async () => {
+  vi.useFakeTimers();
+  const { input, sent } = composer();
+  let release;
+  const inserting = new Promise((resolve) => { release = resolve; });
+  window.electronAPI.insertTextToChat = async (text) => {
+    await inserting;
+    input.value += text;
+    return true;
+  };
+  const old = chat.sendToChat('旧'.repeat(9000), 'JS汇总', 0);
+  await vi.advanceTimersByTimeAsync(0);
+  chat.cancelPendingSend();
+  const cleared = chat.clearInputArea();
+  release();
+  await vi.runAllTimersAsync();
+  assert.strictEqual(await old, false);
+  assert.strictEqual(await cleared, true);
+  assert.strictEqual(input.value, '');
+  assert.deepStrictEqual(sent, []);
+});
+
+test('纯净模式快速连发保留每条用户消息，只撤销工具结果', async () => {
+  vi.useFakeTimers();
+  const { sent } = composer();
+  const tool = chat.sendToChat('旧工具结果', 'JS汇总', 5000);
+  await vi.advanceTimersByTimeAsync(0);
+  const one = chat.sendUserMessageToChat('用户一');
+  const two = chat.sendUserMessageToChat('用户二');
+  await vi.runAllTimersAsync();
+  assert.strictEqual(await tool, false);
+  assert.deepStrictEqual(await Promise.all([one, two]), [true, true]);
+  assert.deepStrictEqual(sent, ['用户一', '用户二']);
+});
+
+test('工具汇总长文本走附件，失败时完整回退文本', async () => {
+  vi.useFakeTimers();
+  const { sent } = composer();
+  const uploads = [];
+  window.electronAPI.sendAsFile = async (text) => { uploads.push(text); return { success: false }; };
+  const text = '工具输出'.repeat(1500);
+  const send = chat.sendToChat(text, 'JS汇总');
+  await vi.runAllTimersAsync();
+  assert.strictEqual(await send, true);
+  assert.deepStrictEqual(uploads, [text]);
+  assert.deepStrictEqual(sent, [text]);
+});
+
+test('工具结果长暂停可取消且发出开始和结束通知', async () => {
+  vi.useFakeTimers();
+  const { sent } = composer();
+  state.pauseEnabled = true;
+  state.pauseChance = 1;
+  state.pauseMinMs = state.pauseMaxMs = 30000;
+  const pauses = [];
+  chat.onSendPause((info) => pauses.push(info.active));
+  const send = chat.sendToChat('工具结果', 'JS汇总');
+  await vi.advanceTimersByTimeAsync(0);
+  assert.deepStrictEqual(pauses, [true]);
+  chat.cancelPendingSend();
+  await vi.runAllTimersAsync();
+  assert.strictEqual(await send, false);
+  assert.deepStrictEqual(pauses, [true, false]);
+  assert.deepStrictEqual(sent, []);
+});
+
+test('Enter 打空（输入框残留）时判定未发出，不误报投递', async () => {
+  vi.useFakeTimers();
+  const { input } = composer();
+  // 主进程 sendInputEvent 不抛异常即返回 true，但站点可能没收下（Enter 打空）：
+  // 输入框残留 = 未发出，必须判 false 且不派发 delivered。
+  window.electronAPI.sendEnterToChat = async () => true;
+  const delivered = [];
+  chat.onMessageDelivered(() => delivered.push(1));
+  const send = chat.sendToChat('工具结果', 'JS汇总', 0);
+  await vi.runAllTimersAsync();
+  assert.strictEqual(await send, false);
+  assert.strictEqual(input.value.length > 0, true);
+  assert.deepStrictEqual(delivered, []);
+});
+
+test('切换-摘要属系统标签：即时投递、不上报为用户消息', () => {
+  assert.strictEqual(chat.isSystemTag('切换-摘要'), true);
+});
+
+test('原生发送未结束时取消不能提前释放队列或发送新输入', async () => {
+  vi.useFakeTimers();
+  const { input, sent } = composer();
+  let release;
+  const blocked = new Promise((resolve) => { release = resolve; });
+  let entered = false;
+  window.electronAPI.sendEnterToChat = async () => {
+    if (!entered) { entered = true; await blocked; }
+    sent.push(input.value);
+    input.value = '';
+    return true;
+  };
+  const old = chat.sendToChat('旧工具结果', 'JS汇总', 0);
+  await vi.advanceTimersByTimeAsync(1);
+  assert.strictEqual(entered, true);
+  chat.cancelPendingSend();
+  const fresh = chat.sendUserMessageToChat('新用户消息');
+  await vi.advanceTimersByTimeAsync(500);
+  const beforeRelease = input.value;
+  release();
+  await vi.runAllTimersAsync();
+  assert.strictEqual(beforeRelease, '旧工具结果');
+  assert.deepStrictEqual(await Promise.all([old, fresh]), [false, true]);
+  assert.deepStrictEqual(sent, ['旧工具结果', '新用户消息']);
+});
+
+test('用户消息已填充后第二条用户消息不会取消第一条', async () => {
+  vi.useFakeTimers();
+  const { sent } = composer();
+  const one = chat.sendUserMessageToChat('用户一');
+  await vi.advanceTimersByTimeAsync(1);
+  const two = chat.sendUserMessageToChat('用户二');
+  await vi.runAllTimersAsync();
+  assert.deepStrictEqual(await Promise.all([one, two]), [true, true]);
+  assert.deepStrictEqual(sent, ['用户一', '用户二']);
+});
+
+test('站点延迟清空输入时等待确认，避免误判失败与重复发送', async () => {
+  vi.useFakeTimers();
+  const { input, sent } = composer();
+  window.electronAPI.sendEnterToChat = async () => {
+    sent.push(input.value);
+    setTimeout(() => { input.value = ''; }, 700);
+    return true;
+  };
+  const send = chat.sendToChat('工具结果', 'JS汇总', 0);
+  await vi.runAllTimersAsync();
+  assert.strictEqual(await send, true);
+  assert.deepStrictEqual(sent, ['工具结果']);
+});
+
+test('发送确认期间 URL 变化（站点创建新会话）不提前判失败，空框仍判投递成功', async () => {
+  // 回归背景：首条消息触发站点创建新会话时 URL 会变；旧实现把 URL 变化直接当投递失败，
+  // 触发上层重试 → 同一条消息双发。方案 A'：URL 变化不提前判失败，继续观察空框。
+  vi.useFakeTimers();
+  const { input } = composer();
+  window.electronAPI.sendEnterToChat = async () => {
+    window.location.href = 'https://chat.deepseek.com/a/new-session';
+    document.querySelectorAll = () => [{ ...input, value: '' }];
+    return true;
+  };
+  const delivered = [];
+  chat.onMessageDelivered(() => delivered.push(1));
+  const send = chat.sendToChat('首条消息', 'JS汇总', 0);
+  await vi.runAllTimersAsync();
+  assert.strictEqual(await send, true);
+  assert.strictEqual(delivered.length, 1);
+});
+
+test('发送确认期间 URL 变化但输入框仍有残留，判未发出', async () => {
+  vi.useFakeTimers();
+  const { input } = composer();
+  window.electronAPI.sendEnterToChat = async () => {
+    window.location.href = 'https://chat.deepseek.com/a/new-session';
+    document.querySelectorAll = () => [{ ...input, value: '旧会话内容' }];
+    return true;
+  };
+  const delivered = [];
+  chat.onMessageDelivered(() => delivered.push(1));
+  const send = chat.sendToChat('旧会话内容', 'JS汇总', 0);
+  await vi.runAllTimersAsync();
+  assert.strictEqual(await send, false);
+  assert.deepStrictEqual(delivered, []);
+});
+
+test('非 DeepSeek 平台长文本保持文本发送，不进入自动附件通道', async () => {
+  vi.useFakeTimers();
+  const { sent } = composer();
+  window.location.href = 'https://example.invalid/chat';
+  const uploads = [];
+  window.electronAPI.sendAsFile = async (text) => { uploads.push(text); return { success: true }; };
+  const text = '工具结果'.repeat(1500);
+  const send = chat.sendToChat(text, 'JS汇总', 0);
+  await vi.runAllTimersAsync();
+  assert.strictEqual(await send, true);
+  assert.deepStrictEqual(uploads, []);
+  assert.deepStrictEqual(sent, [text]);
+});
+
+test('初始提示回执只在网页确认清空后返回对应 requestId', async () => {
+  vi.useFakeTimers();
+  const { input, sent } = composer();
+  window.electronAPI.sendEnterToChat = async () => {
+    sent.push(input.value);
+    setTimeout(() => { input.value = ''; }, 700);
+    return true;
+  };
+  chat.registerIpcListeners();
+  ipc.listeners.get('initial-prompt')({}, '承接上下文提示词', { requestId: 'switch-1' });
+  await vi.advanceTimersByTimeAsync(500);
+  assert.deepStrictEqual(ipc.sent, []);
+  await vi.runAllTimersAsync();
+  assert.deepStrictEqual(ipc.sent, [{ channel: 'initial-prompt-result', payload: { requestId: 'switch-1', success: true } }]);
+  assert.deepStrictEqual(sent, ['承接上下文提示词']);
+});
+
+test('初始提示等待输入框期间停止，终止重试并回失败，不晚到复活', async () => {
+  vi.useFakeTimers();
+  chat.registerIpcListeners();
+  ipc.listeners.get('initial-prompt')({}, '承接上下文提示词', { requestId: 'switch-stop' });
+  await vi.advanceTimersByTimeAsync(10);
+  chat.cancelPendingSend();
+  const { sent } = composer();
+  await vi.runAllTimersAsync();
+  assert.deepStrictEqual(sent, []);
+  assert.deepStrictEqual(ipc.sent, [{ channel: 'initial-prompt-result', payload: { requestId: 'switch-stop', success: false } }]);
 });
 
 test('randomDelay 在 [min, max] 范围内', () => {
@@ -218,57 +462,16 @@ test('triggerSend: 优先调用 electronAPI.sendEnterToChat 原生按键', async
 });
 
 test('sendInitialPromptToInput: 系统提示词必须立即发送（不排随机延迟）', async () => {
-  // 回归：旧实现走 randomDelay(提示词自身长度)，数万字的系统提示词会算到配置上限（默认 36s），
-  // 表现为「提示词只回显到输入框、迟迟不发送」。
-  const origSetTimeout = globalThis.setTimeout;
-  const delays = [];
-  let sendTriggered = false;
-  globalThis.setTimeout = ((fn, delay) => {
-    delays.push(delay);
-    return 1;
-  });
-  try {
-    Object.defineProperty(globalThis.window.HTMLTextAreaElement.prototype, 'value', {
-      set(v) { this._val = v; },
-      configurable: true,
-    });
-    // 注意：不能自带 value 自有属性，否则会遮蔽原型访问器，写入后读回为空
-    const input = {
-      tagName: 'TEXTAREA',
-      focus() {},
-      setSelectionRange() {},
-      getAttribute: () => null,
-      dispatchEvent: () => true,
-      __style: { display: 'block', visibility: 'visible', opacity: '1' },
-    };
-    // 原型级 value 存取器：setInputContent 走 HTMLTextAreaElement.prototype 的 desc.set，
-    // 必须在原型上定义访问器才能让它与 getInputText 的读回保持一致。
-    Object.defineProperty(globalThis.window.HTMLTextAreaElement.prototype, 'value', {
-      get() { return this._val || ''; },
-      set(v) { this._val = String(v); },
-      configurable: true,
-    });
-    // 普通对象字面量的原型是 Object.prototype，必须显式接上 textarea 原型，
-    // 否则上面定义的 value 访问器对 input.value 的读写都不生效。
-    Object.setPrototypeOf(input, globalThis.window.HTMLTextAreaElement.prototype);
-    globalThis.document.querySelector = () => input;
-    globalThis.document.querySelectorAll = () => [input];
-    globalThis.window.electronAPI = {
-      sendEnterToChat: async () => { sendTriggered = true; return true; },
-    };
-    state.initialPromptContent = '系统提示词'.repeat(2000);
-    state.pendingInitialPrompt = true;
-
-    const ok = await chat.sendInitialPromptToInput();
-
-    assert.strictEqual(ok, true, '初始提示应发送成功');
-    assert.ok(delays.every((d) => d < 1000), '初始提示不得排随机延迟，实际延迟=' + JSON.stringify(delays));
-    await new Promise((r) => origSetTimeout(r, 0));
-    assert.strictEqual(sendTriggered, true, '应立即触发发送');
-    assert.strictEqual(state.pendingInitialPrompt, false, '发送后必须清标志，否则重试逻辑卡死');
-  } finally {
-    globalThis.setTimeout = origSetTimeout;
-  }
+  vi.useFakeTimers();
+  const { sent } = composer();
+  state.sendDelayMin = state.sendDelayMax = 30000;
+  state.initialPromptContent = '系统提示词'.repeat(2000);
+  state.pendingInitialPrompt = true;
+  const result = chat.sendInitialPromptToInput();
+  await vi.advanceTimersByTimeAsync(1);
+  assert.strictEqual(await result, true);
+  assert.deepStrictEqual(sent, [state.initialPromptContent]);
+  assert.strictEqual(state.pendingInitialPrompt, false);
 });
 
 test('insertSnippet: autoSend 是用户手动触发，0ms 立即发送（不排延迟）', async () => {
@@ -305,4 +508,37 @@ test('insertSnippet: autoSend 是用户手动触发，0ms 立即发送（不排�
   } finally {
     globalThis.setTimeout = origSetTimeout;
   }
+});
+
+test('isHarnessInput 不会误杀 placeholder 包含"输入消息"的真实站点输入框', () => {
+  const deepseekInput = {
+    tagName: 'TEXTAREA',
+    id: 'chat-input',
+    placeholder: '输入消息，Enter发送，Shift+Enter换行',
+    hasAttribute: () => false,
+  };
+  assert.strictEqual(chat.isHarnessInput(deepseekInput), false, 'DeepSeek 真实输入框绝不能被判定为 harness 输入框');
+
+  const harnessInput = {
+    tagName: 'TEXTAREA',
+    id: 'input',
+    hasAttribute: (name) => name === 'data-cuckoo-harness',
+  };
+  assert.strictEqual(chat.isHarnessInput(harnessInput), true, '带 data-cuckoo-harness 的输入框应识别为 harness 输入框');
+});
+
+test('waitForInputArea 在输入框延迟出现时能有界轮询获取', async () => {
+  const token = { cancelled: false };
+  let calls = 0;
+  const target = {
+    tagName: 'TEXTAREA',
+    __style: { display: 'block', visibility: 'visible', opacity: '1' },
+  };
+  globalThis.document.querySelectorAll = () => {
+    calls++;
+    return calls >= 3 ? [target] : [];
+  };
+  const res = await chat.waitForInputArea(token, 1000);
+  assert.strictEqual(res, target, '应在轮询命中后返回输入框');
+  assert.ok(calls >= 3, '应经历重试轮询');
 });

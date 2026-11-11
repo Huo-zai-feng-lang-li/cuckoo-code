@@ -101,7 +101,7 @@ function ensureAgentsHandoff(projectDir: string): void {
  * @param extraPrompt 追加到提示词末尾的额外内容（子代理用它带上"代理系统提示 + 任务"）
  * @param noDialog 为 true 时不弹目录选择框（子代理场景：目录取不到就用空值继续）
  */
-async function initProject(skipPrompt: boolean = false, windowContext: any = null, presetDir: string | null = null, isCompaction: boolean = false, extraPrompt: string = '', noDialog: boolean = false, parentSessionId: string | null = null): Promise<any> {
+async function initProject(skipPrompt: boolean = false, windowContext: any = null, presetDir: string | null = null, isCompaction: boolean = false, extraPrompt: string = '', noDialog: boolean = false, parentSessionId: string | null = null, initialPromptRequestId: string = ''): Promise<any> {
   const ctx = windowContext || windowState.getMainContext();
   const mainWindow = ctx ? ctx.win : windowState.getMainWindow();
   // AI 页面在 WebContentsView 中（壳窗口的 win.webContents 是地址栏壳页面）
@@ -234,8 +234,11 @@ async function initProject(skipPrompt: boolean = false, windowContext: any = nul
     combined += '\n\n---\n\n' + extraPrompt;
   }
   console.log('[Cuckoo Code] 准备发送初始提示（不含目录树），长度:', combined.length);
+  if (!view || !view.webContents || view.webContents.isDestroyed()) {
+    return { success: false, message: 'AI 页面不可用，初始提示未发送' };
+  }
   if (view && view.webContents && !view.webContents.isDestroyed()) {
-    view.webContents.send('initial-prompt', combined);
+    view.webContents.send('initial-prompt', combined, initialPromptRequestId ? { requestId: initialPromptRequestId } : undefined);
     // 主进程直接告诉纯净模式：框架正在驱动 AI 页面（不依赖 AI 页面 bridge 门控，
     // 因为此刻页面可能正处在导航/重载中，bridge 尚未就绪）。
     // 只反馈运行态，提示词内容不进对话流。

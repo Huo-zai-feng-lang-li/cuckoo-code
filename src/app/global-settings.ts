@@ -41,6 +41,17 @@ export interface AgentSettings {
   autoCompactEnabled: boolean;
   /** 自动压缩阈值（单位：万 token，默认 80） */
   autoCompactThreshold: number;
+  /** 上下文达到阈值切换窗口，默认关闭，阈值单位：万 token */
+  contextSwitchEnabled: boolean;
+  contextSwitchThreshold: number;
+  /** 随机长暂停开关（拟人：模拟"走神/离开"，默认 true） */
+  pauseEnabled: boolean;
+  /** 随机长暂停触发概率（0~1，默认 0.1） */
+  pauseChance: number;
+  /** 随机长暂停时长下限（秒，默认 30） */
+  pauseMin: number;
+  /** 随机长暂停时长上限（秒，默认 75） */
+  pauseMax: number;
 }
 
 /**
@@ -74,6 +85,15 @@ export const AGENT_SETTINGS_DEFAULTS: AgentSettings = {
   agentStartIntervalMax: 5,
   autoCompactEnabled: false,
   autoCompactThreshold: 80,
+  contextSwitchEnabled: false,
+  contextSwitchThreshold: 10,
+  // 需求 115：随机长暂停。sendDelay 的 [min,max] 是「读内容→动手」的认知时长，
+  // 长暂停是更高一层的「偶尔走神」，两者独立——混在一起会破坏 114 建立的分布语义。
+  // 10% 概率、30~75 秒，期望每轮 +11 秒，20 轮工具循环只多约 4 分钟。
+  pauseEnabled: true,
+  pauseChance: 0.1,
+  pauseMin: 30,
+  pauseMax: 75,
 };
 
 function getUserDir(): string {
@@ -139,6 +159,13 @@ function toPositiveInt(v: any, def: number): number {
   return n > 0 ? n : def;
 }
 
+/** 概率：0~1 之间；越界钳制，非数字回退默认 */
+function toChance(v: any, def: number): number {
+  const n = toNum(v, def);
+  if (n < 0) return 0;
+  return n > 1 ? 1 : n;
+}
+
 /** 并发上限：1~10 合法；<1 或非数字回退默认，>10 压到 10 */
 function toConcurrency(v: any, def: number): number {
   const n = toInt(v, def);
@@ -157,6 +184,7 @@ function normalize(raw: any): AgentSettings {
     raw.agentStartIntervalMin, raw.agentStartIntervalMax,
     d.agentStartIntervalMin, d.agentStartIntervalMax,
   );
+  const [pauseMin, pauseMax] = toRange(raw.pauseMin, raw.pauseMax, d.pauseMin, d.pauseMax);
 
   return {
     retryEnabled: toBool(raw.retryEnabled, d.retryEnabled),
@@ -178,6 +206,13 @@ function normalize(raw: any): AgentSettings {
     agentStartIntervalMax,
     autoCompactEnabled: toBool(raw.autoCompactEnabled, d.autoCompactEnabled),
     autoCompactThreshold: toNonNeg(raw.autoCompactThreshold, d.autoCompactThreshold),
+    contextSwitchEnabled: toBool(raw.contextSwitchEnabled, d.contextSwitchEnabled),
+    contextSwitchThreshold: toNum(raw.contextSwitchThreshold, d.contextSwitchThreshold) > 0
+      ? toNum(raw.contextSwitchThreshold, d.contextSwitchThreshold) : d.contextSwitchThreshold,
+    pauseEnabled: toBool(raw.pauseEnabled, d.pauseEnabled),
+    pauseChance: toChance(raw.pauseChance, d.pauseChance),
+    pauseMin,
+    pauseMax,
   };
 }
 

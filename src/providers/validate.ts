@@ -5,6 +5,13 @@
  */
 import type { Provider } from './types.js';
 
+function validateAttachmentHooks(p: Record<string, unknown>): string | null {
+  for (const key of ['getAttachProbeSource', 'getAttachReadySource']) {
+    if (p[key] !== undefined && typeof p[key] !== 'function') return key + ' 必须是函数';
+  }
+  return null;
+}
+
 /** 校验 provider；返回错误描述，通过返回 null */
 export function validateProvider(p: any): string | null {
   if (!p || typeof p !== 'object') return '必须是对象';
@@ -14,7 +21,7 @@ export function validateProvider(p: any): string | null {
   if (!p.sessionUrlBase || typeof p.sessionUrlBase !== 'string') return '缺少 sessionUrlBase';
   if (typeof p.matchesUrl !== 'function') return '缺少 matchesUrl 方法';
   if (typeof p.extractSessionId !== 'function') return '缺少 extractSessionId 方法';
-  return null;
+  return validateAttachmentHooks(p);
 }
 
 /** 校验并断言（不通过则抛错），返回原对象 */

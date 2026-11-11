@@ -63,6 +63,10 @@ const TRUNCATE_PENDING_KEY = 'cuckoo-truncate-pending';
 // 窗口组切换：URL flag + 跨刷新 pending reqId（切换需完整 IDB，故与压缩/截断同走"清 IDB + 刷新"）
 const SWITCH_URL_FLAG = 'cuckoo-switch-share';
 const SWITCH_PENDING_KEY = 'cuckoo-switch-pending';
+// 上下文阈值切换：先生成摘要、只分享最近 20%（与压缩一致），
+// 否则新窗口拿到同样满的上下文，切了等于没切。摘要随回执传给主进程注入目标会话。
+const SWITCH_SUMMARY_KEY = 'cuckoo-switch-summary';
+const SWITCH_WITH_SUMMARY_KEY = 'cuckoo-switch-with-summary';
 
 function logStep(step: string, msg: string): void {
   console.log('[Cuckoo Compact] [' + step + '] ' + msg);
@@ -89,22 +93,33 @@ interface MessageItem {
 }
 
 /** 等待 AI 回复完成（拦截到完整回复） */
-function waitForResponse(timeoutMs: number): Promise<{ text: string; meta: any }> {
+function waitForResponse(timeoutMs: number, sessionId?: string, signal?: AbortSignal): Promise<{ text: string; meta: any }> {
   return new Promise((resolve, reject) => {
     let done = false;
     const off = onInterceptedResponse((text: string, meta: any) => {
       if (done) return;
+      if (sessionId && meta?.sessionId !== sessionId) return;
       done = true;
       off();
       clearTimeout(timer);
+      signal?.removeEventListener('abort', cancel);
       resolve({ text, meta: meta || {} });
     });
     const timer = setTimeout(() => {
       if (done) return;
       done = true;
       off();
+      signal?.removeEventListener('abort', cancel);
       reject(new Error('等待 AI 回复超时（' + timeoutMs + 'ms）'));
     }, timeoutMs);
+    function cancel() {
+      if (done) return;
+      done = true;
+      off();
+      clearTimeout(timer);
+      reject(new Error('摘要等待已取消'));
+    }
+    signal?.addEventListener('abort', cancel, { once: true });
   });
 }
 
@@ -717,19 +732,59 @@ async function checkPendingTruncate(): Promise<boolean> {
  *
  * reqId 经 localStorage 跨刷新传递，刷新后由 checkPendingSwitchShare 消费并回执主进程。
  */
-function prepareSwitchShare(reqId: string): void {
+async function prepareSwitchShare(reqId: string, withSummary = false): Promise<void> {
   const sessionId = getSessionIdFromUrl();
   if (!sessionId) throw new Error('无法从 URL 获取 chat_session_id');
+  // 摘要必须在刷新前生成（发指令→等回复是异步的，刷新后页面上下文就没了）
+  localStorage.removeItem(SWITCH_WITH_SUMMARY_KEY);
+  localStorage.removeItem(SWITCH_SUMMARY_KEY);
   try {
-    localStorage.setItem(SWITCH_PENDING_KEY, JSON.stringify({ reqId: reqId, ts: Date.now() }));
-  } catch (_) { /* ignore */ }
+    if (withSummary) {
+      logStep('switch', '生成切换摘要（上下文阈值触发）');
+      const controller = new AbortController();
+      const waitReply = waitForResponse(120000, sessionId, controller.signal);
+      // 发送尚未完成时等待也可能超时；提前接住拒绝，finally 统一解除监听。
+      void waitReply.catch(() => {});
+      let summaryText: string;
+      try {
+        if (!(await sendToChat(SUMMARY_INSTRUCTION, '切换-摘要', 0))) throw new Error('切换摘要指令未投递');
+        summaryText = (await waitReply).text;
+      } finally { controller.abort(); }
+      if (getSessionIdFromUrl() !== sessionId) throw new Error('摘要期间源会话已切换');
+      const parsed = parseSummaryTitle(summaryText || '');
+      const body = parsed.body || '';
+      const clipped = body.length > MAX_SUMMARY_LEN
+        ? body.slice(0, MAX_SUMMARY_LEN).replace(/\s+$/, '') + ' …'
+        : body;
+      if (!clipped.trim()) throw new Error('切换摘要为空，保留源窗口');
+      localStorage.setItem(SWITCH_SUMMARY_KEY, clipped);
+      localStorage.setItem(SWITCH_WITH_SUMMARY_KEY, '1');
+      logStep('switch', '摘要已生成，长度=' + clipped.length);
+    }
+  } catch (err: any) {
+    logStep('switch', '摘要生成失败，取消切换: ' + (err && err.message));
+    localStorage.removeItem(SWITCH_WITH_SUMMARY_KEY);
+    localStorage.removeItem(SWITCH_SUMMARY_KEY);
+    throw err;
+  }
+  localStorage.setItem(SWITCH_PENDING_KEY, JSON.stringify({ reqId, sessionId, ts: Date.now() }));
   logStep('switch', '清 IDB 并刷新以重建完整历史（session=' + sessionId + '）');
-  // 清 IDB 后刷新。clearSessionFromIdb 失败也不阻断——仍刷新，DeepSeek 会重建。
-  clearSessionFromIdb(sessionId).catch(() => {}).then(() => {
-    const url = new URL(location.href);
-    url.searchParams.set(SWITCH_URL_FLAG, '1');
-    location.href = url.toString();
-  });
+  try { await clearSessionFromIdb(sessionId); }
+  catch (err) {
+    localStorage.removeItem(SWITCH_PENDING_KEY);
+    localStorage.removeItem(SWITCH_WITH_SUMMARY_KEY);
+    localStorage.removeItem(SWITCH_SUMMARY_KEY);
+    throw err;
+  }
+  if (getSessionIdFromUrl() !== sessionId) {
+    localStorage.removeItem(SWITCH_PENDING_KEY);
+    localStorage.removeItem(SWITCH_WITH_SUMMARY_KEY);
+    localStorage.removeItem(SWITCH_SUMMARY_KEY);
+    throw new Error('分享期间源会话已切换');
+  }
+  const url = new URL(location.href);
+  url.searchParams.set(SWITCH_URL_FLAG, '1');
+  location.href = url.toString();
 }
 
 /**
@@ -758,6 +813,8 @@ async function checkPendingSwitchShare(): Promise<boolean> {
     const sessionId = getSessionIdFromUrl();
     if (!sessionId) throw new Error('无法从 URL 获取 chat_session_id');
 
+    if (pending.sessionId !== sessionId) throw new Error('分享请求与当前会话不匹配');
+
     logStep('switch', '等待 DeepSeek 重建 IDB（轮询）');
     const { list: allMsgs, currentMessageId } = await waitForIdbMessages(
       sessionId,
@@ -770,17 +827,31 @@ async function checkPendingSwitchShare(): Promise<boolean> {
     if (!headers || !headers['authorization']) {
       throw new Error('未获取到认证请求头（请刷新页面后重试）');
     }
-    const ids = pickRecentPairedIds(allMsgs, currentMessageId, 1.0);
+    // 带摘要时只分享最近 20%（与压缩一致）：新窗口靠摘要续接，不是靠全量历史。
+    // 全量分享会让目标窗口拿到同样满的上下文，切了等于没切。
+    let withSummary = false;
+    let summary = '';
+    try { withSummary = localStorage.getItem(SWITCH_WITH_SUMMARY_KEY) === '1'; } catch (_) {}
+    try { summary = localStorage.getItem(SWITCH_SUMMARY_KEY) || ''; } catch (_) {}
+    if (withSummary && !summary.trim()) throw new Error('切换摘要缺失，取消部分历史分享');
+    if (getSessionIdFromUrl() !== sessionId) throw new Error('分享期间源会话已切换');
+    const ratio = withSummary ? 0.2 : 1.0;
+    const ids = pickRecentPairedIds(allMsgs, currentMessageId, ratio);
     if (ids.length === 0) throw new Error('无有效消息可分享');
-    logStep('switch', '全量分享 ' + ids.length + ' 条消息（会话 ' + sessionId + '）');
+    logStep('switch', (withSummary ? '摘要模式分享 ' : '全量分享 ') + ids.length + ' 条消息（会话 ' + sessionId + '）');
     const shareId = await createShare(sessionId, ids, headers);
+    if (getSessionIdFromUrl() !== sessionId) throw new Error('分享期间源会话已切换');
     try { localStorage.removeItem(SWITCH_PENDING_KEY); } catch (_) {}
-    // 回执主进程（reqId 来自跨刷新的 localStorage）
-    try { ipcRenderer.send('cuckoo-switch-share-result', { reqId: pending.reqId, ok: true, shareId: shareId, sessionId: sessionId }); } catch (_) {}
+    try { localStorage.removeItem(SWITCH_WITH_SUMMARY_KEY); } catch (_) {}
+    try { localStorage.removeItem(SWITCH_SUMMARY_KEY); } catch (_) {}
+    // 回执主进程（reqId 来自跨刷新的 localStorage）；摘要随回执带过去供目标窗口注入
+    try { ipcRenderer.send('cuckoo-switch-share-result', { reqId: pending.reqId, ok: true, shareId: shareId, sessionId: sessionId, summary: summary }); } catch (_) {}
     return true;
   } catch (err: any) {
     console.error('[Cuckoo Compact] 切换分享失败:', err);
     try { localStorage.removeItem(SWITCH_PENDING_KEY); } catch (_) {}
+    try { localStorage.removeItem(SWITCH_WITH_SUMMARY_KEY); } catch (_) {}
+    try { localStorage.removeItem(SWITCH_SUMMARY_KEY); } catch (_) {}
     try { ipcRenderer.send('cuckoo-switch-share-result', { reqId: pending.reqId, ok: false, error: (err && err.message) || '分享失败' }); } catch (_) {}
     return false;
   }

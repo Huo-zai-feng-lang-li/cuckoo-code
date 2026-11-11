@@ -458,7 +458,7 @@
   .tool-pre.err { color: var(--red); }
 
   /* ===== 输入区 ===== */
-  .composer { flex-shrink: 0; padding: 28px 56px 48px; } /* 大幅增加四周 padding，留足 96px 宠物的绕圈空间 */
+  .composer { flex-shrink: 0; padding: 24px 20px 40px; } /* 放长输入框横向宽度，留足两边宠物空间 */
   /* 首次对话需选择项目目录（大虚线按钮，替代输入框） */
   .init-project-btn {
     display: block; width: 100%; max-width: 100%; margin: 0 auto;
@@ -1118,7 +1118,7 @@
         <button class="attach-btn" id="attach-btn" title="添加附件（图片/文件）"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 4.5l-5 5a2 2 0 0 0 2.8 2.8l5-5a3.5 3.5 0 0 0-5-5l-4.5 4.5a5 5 0 0 0 7 7l4-4"/></svg></button>
         <button class="enhance-btn" id="enhance-btn" title="增强提示词（Ctrl+E）"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l1.6 4.1 4.4 1.6-4.4 1.6L8 12.9l-1.6-4.1L2 7.2l4.4-1.6z"/><path d="M12.5 11l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z"/></svg></button>
       </div>
-      <textarea id="input" rows="3" placeholder="输入消息…  / 查看技能与工具"></textarea>
+      <textarea id="input" data-cuckoo-harness="1" rows="3" placeholder="输入消息…  / 查看技能与工具"></textarea>
       <button id="send" title="发送"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M8 3l-4 4M8 3l4 4"/></svg></button>
       <input type="file" id="file-input" multiple style="display:none" />
     </div>
@@ -1804,6 +1804,10 @@
     stopSendTick();
     toolRunningCount = 0;
     generating = false;
+    // 暂停次数按当前对话会话计数：切会话/新对话清零，不把上一会话的次数带过来。
+    sendPauseActive = false;
+    pauseDurationMs = 0;
+    pauseCount = 0;
     clearAbortSuppression();
     frameworkDriveUntil = 0;
     retryUntil = 0;
@@ -3133,6 +3137,13 @@
   var SEND_ANIM_POOL = ['juggling', 'carrying', 'react-double', 'building'];
   var SEND_ONESHOT = { 'react-double': 1, 'building': 1 };
   var lastSendAnim = null;   // 已播动画名，防同一动画被每秒重复触发
+  // 长暂停下排文案：第几次触发 · 本次共多久 · 等待发送已走多少秒。waitSec 由调用方传入当前等待秒数。
+  function pauseStatusText(waitSec) {
+    var count = typeof pauseCount === 'number' && pauseCount > 0 ? pauseCount : 1;
+    var pauseSec = Math.max(1, Math.round(pauseDurationMs / 1000));
+    var wait = typeof waitSec === 'number' ? waitSec : (sendStartAt > 0 ? Math.floor((Date.now() - sendStartAt) / 1000) : 0);
+    return '触发随机概率延迟 第<b>' + count + '</b>次 · 共<b>' + pauseSec + '秒</b> · 等待发送 <b>' + wait + '秒</b>';
+  }
   function renderSendTick() {
     if (!statusText) { stopSendTick(); return; }
     if (statusEl) statusEl.classList.add('sending');
@@ -3142,9 +3153,10 @@
     // 需要同一动画名才能与纯净模式逐帧同步。经 petBubble 的 hint 通道下发，
     // 分派方式（react: / state:）直接复用下面的 SEND_ONESHOT，保持单一真相源。
     var animName = SEND_ANIM_POOL[Math.floor(sendSec / SEND_ANIM_SWAP_SEC) % SEND_ANIM_POOL.length];
-    petBubble('等待发送 ' + petSec(sendSec), true, 0, true,
-      (SEND_ONESHOT[animName] ? 'react:' : 'state:') + animName);
-    petMood('waiting');
+    var animHint = (SEND_ONESHOT[animName] ? 'react:' : 'state:') + animName;
+    var bubbleText = sendPauseActive ? pauseStatusText(sendSec) : ('等待发送 ' + petSec(sendSec));
+    petBubble(bubbleText, true, 0, true, animHint);
+    petMood(sendPauseActive ? 'pausing' : 'waiting');
     // 动画由这里接管（syncPet 在 sendTickTimer 活跃时会主动让路）。
     // 注意：不使用 attention（happy）——那是「一轮任务真正结束」的完成态表情，等待发送时用会误导。
     if (pet) {
@@ -3256,7 +3268,18 @@
   function stopThinkTick() {
     if (thinkTickTimer) { clearInterval(thinkTickTimer); thinkTickTimer = null; }
   }
+  var sendPauseActive = false;
+  // 本次随机长暂停总时长（毫秒，事件下发）与本轮累计触发次数。
+  var pauseDurationMs = 0;
+  var pauseCount = 0;
   function syncPet() {
+    if (sendPauseActive) {
+      petMood('pausing');
+      var pauseText = pauseStatusText();
+      try { if (api.setPetState) api.setPetState({ state: 'pausing', text: pauseText, sticky: true, html: true, hint: '' }); } catch (e) { /* ignore */ }
+      if (pet) { try { pet.bubble(pauseText, true, 0, { html: true }); } catch (e) { /* ignore */ } }
+      return;
+    }
     if (!pet) return;
     // 「结果待发送」期间动画由 renderSendTick 轮换（SEND_ANIM_POOL）。
     // 这里必须让路：syncBusyIndicators / setStatus 会在等待窗口内被触发，
@@ -3319,7 +3342,7 @@
     try {
       if (api.setPetState) {
         api.setPetState({
-          state: toolRunningCount > 0 ? 'working' : (generating ? 'thinking' : 'idle'),
+          state: sendPauseActive ? 'pausing' : (toolRunningCount > 0 ? 'working' : (generating ? 'thinking' : 'idle')),
           text: text || '',
           sticky: !!sticky,
           html: !!html,
@@ -4324,6 +4347,24 @@
         // 框架侧投递（系统提示词 / 工具结果回传 / 看门狗 / 重试 / 压缩等）：
         // 内容不显示（底层指令），但必须体现"AI 页面正在被驱动"。
         case 'framework-send': onFrameworkSend(payload.tag); break;
+        case 'send-pause': {
+          var wasPauseActive = sendPauseActive;
+          sendPauseActive = !!payload.active;
+          pauseDurationMs = payload.active ? (payload.durationMs || 0) : 0;
+          if (sendPauseActive) {
+            pauseCount++;
+            sendStartAt = Date.now();
+          } else if (wasPauseActive) {
+            sendStartAt = Date.now();
+          }
+          syncPet();
+          if (sendTickTimer) renderSendTick();
+          break;
+        }
+        // 投递回执（事件通道兜底，与 invoke 返回二选一到达）：按 requestId 配对 settle 草稿，幂等
+        case 'send-result':
+          settleDraft(payload.requestId, payload.success === true);
+          break;
         // 任务空闲（observer 权威判定：本轮回复无工具调用 = 真的结束）→ 收尾
         case 'task-idle': onTaskIdle(); break;
         // AI 页面权威生成状态（每 2 秒心跳）→ 校正运行态，解套"卡在运行中"
@@ -4823,7 +4864,12 @@
     resetPlanDrive(); // 新任务：重置计划驱动轮数
     resetStreamRender(); // 新任务：复位上一轮可能残留的流式标记（防前缀巧合吞字）
     hideSlashMenu();
+    // 普通直发才存草稿（override 为远程/内部投递，无用户输入框可回填）。
+    // 清空前保存原文；投递失败且输入框仍为空时回填，用户已打新内容则不覆盖。
+    var draftRequestId = hasOverride ? null : newRequestId();
     if (!hasOverride) {
+      dropExpiredDraft();
+      pendingDraft = { requestId: draftRequestId, text: text, at: Date.now() };
       input.value = '';
       inputMinH = 84;            // 复位手动拖拽高度
       input.style.height = 'auto';
@@ -4926,15 +4972,17 @@
         if (api.sendMessage) {
           setStatus('发送中…', 'busy');
           setTimeout(function () {
-            var smP = api.sendMessage(sendText || ' ');
+            var smP = api.sendMessage(sendText || ' ', draftRequestId);
             if (smP && typeof smP.then === 'function') {
               smP.then(function (r2) {
+                settleDraft(draftRequestId, !(r2 && r2.success === false));
                 if (r2 && r2.success === false) {
                   appendSystem('消息发送失败：' + (r2.error || '网页视图未就绪'));
                   setStatus('就绪', 'ready');
                   clearPendingBubble();
                 }
               }).catch(function (e2) {
+                settleDraft(draftRequestId, false);
                 appendSystem('消息发送异常：' + ((e2 && e2.message) || '未知错误'));
                 setStatus('就绪', 'ready');
                 clearPendingBubble();
@@ -4948,15 +4996,17 @@
         clearPendingBubble();
       });
     } else if (api.sendMessage) {
-      var smP = api.sendMessage(sendText);
+      var smP = api.sendMessage(sendText, draftRequestId);
       if (smP && typeof smP.then === 'function') {
         smP.then(function (res) {
+          settleDraft(draftRequestId, !(res && res.success === false));
           if (res && res.success === false) {
             appendSystem('消息发送失败：' + (res.error || '网页视图未就绪'));
             setStatus('就绪', 'ready');
             clearPendingBubble();
           }
         }).catch(function (e) {
+          settleDraft(draftRequestId, false);
           appendSystem('消息发送异常：' + ((e && e.message) || '未知错误'));
           setStatus('就绪', 'ready');
           clearPendingBubble();
@@ -5166,6 +5216,33 @@
   var pendingFiles = []; // { name, mime, size, data(base64) }
   // 待发隐藏指令（技能/工具/计划等）：只显示为 chip，发送时作为隐藏文本附加给 AI，不进对话气泡
   var pendingHints = []; // { label, text }
+
+  // 待回填草稿：发送前保存用户原文；投递失败且输入框仍为空时回填，用户已打新内容则不覆盖。
+  var pendingDraft = null; // { requestId, text, at }
+  var DRAFT_TTL_MS = 150000; // 与投递回执超时同档，过期清理，避免旧草稿回填到新消息
+
+  function newRequestId() {
+    try { if (window.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
+    return 'req-' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
+  }
+
+  // 回执配对 settle：成功清草稿；失败仅在输入框仍为空时回填原文，非空不覆盖。
+  function settleDraft(requestId, success) {
+    if (!pendingDraft || pendingDraft.requestId !== requestId) return;
+    var draft = pendingDraft;
+    pendingDraft = null;
+    if (success) return;
+    if (input && !input.value.trim()) {
+      input.value = draft.text;
+      inputMinH = 84;
+      autoGrowInput();
+      input.focus();
+    }
+  }
+
+  function dropExpiredDraft() {
+    if (pendingDraft && Date.now() - pendingDraft.at > DRAFT_TTL_MS) pendingDraft = null;
+  }
 
   var hintRow = document.getElementById('hint-row');
   function renderHints() {

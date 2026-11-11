@@ -10,6 +10,11 @@ interface PreloadState {
   // 发送延迟配置（毫秒）
   sendDelayMin: number;
   sendDelayMax: number;
+  // 随机长暂停配置（需求 115；毫秒，概率 0~1）
+  pauseEnabled: boolean;
+  pauseChance: number;
+  pauseMinMs: number;
+  pauseMaxMs: number;
   // 当前项目目录（null 表示未初始化）
   currentProjectDir: string | null;
 }
@@ -21,6 +26,11 @@ const state: PreloadState = {
   // 发送延迟配置（毫秒）—— 与全局默认一致（4-30 秒），实际值由主进程同步覆盖
   sendDelayMin: 4000,
   sendDelayMax: 30000,
+  // 随机长暂停默认：开、10% 概率、30~75 秒，实际值由主进程同步覆盖
+  pauseEnabled: true,
+  pauseChance: 0.1,
+  pauseMinMs: 30000,
+  pauseMaxMs: 75000,
   // 当前项目目录（null 表示未初始化）
   currentProjectDir: null,
 };

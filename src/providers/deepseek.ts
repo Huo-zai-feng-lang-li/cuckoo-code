@@ -16,8 +16,11 @@ const deepseek = {
   sessionUrlBase: 'https://chat.deepseek.com/a/chat/s/',
 
   // 查找可见的聊天输入框
+  // 查找可见的聊天输入框（优先唯一 ID #chat-input，支持 querySelectorAll 遍历可见项）
   findInput() {
     const selectors = [
+      '#chat-input',
+      'textarea#chat-input',
       'textarea[placeholder*="message"]',
       'textarea[placeholder*="Message"]',
       'textarea[placeholder*="输入"]',
@@ -36,8 +39,12 @@ const deepseek = {
     ];
     for (const sel of selectors) {
       try {
-        const el = document.querySelector(sel);
-        if (this.isElementVisible(el)) return el;
+        const list = typeof document.querySelectorAll === 'function'
+          ? Array.from(document.querySelectorAll(sel))
+          : (document.querySelector(sel) ? [document.querySelector(sel)] : []);
+        for (const el of list) {
+          if (this.isElementVisible(el)) return el;
+        }
       } catch (_) {}
     }
     return null;
@@ -64,17 +71,88 @@ const deepseek = {
     ];
     for (const sel of selectors) {
       try {
-        const btn = document.querySelector(sel) as any;
-        if (this.isElementVisible(btn) && !btn.disabled) return btn;
+        const list = typeof document.querySelectorAll === 'function'
+          ? Array.from(document.querySelectorAll(sel))
+          : (document.querySelector(sel) ? [document.querySelector(sel)] : []);
+        for (const btn of list) {
+          if (this.isElementVisible(btn) && !(btn as any).disabled) return btn;
+        }
       } catch (_) {}
     }
+    // DeepSeek 真机（2026-11-10 取证）：发送/停止主按钮是 DIV.ds-button--primary，
+    // 非 <button>、aria-label/title 全空，上面的 button 选择器全部 0 命中。
+    // 空闲显示箭头（发送）、生成中显示方块（停止）；禁用态带 ds-button--disabled。
+    // 使用 querySelectorAll 遍历，防止顶部栏等其它 primary 按钮干扰。
+    try {
+      const btns = typeof document.querySelectorAll === 'function'
+        ? Array.from(document.querySelectorAll('.ds-button--primary'))
+        : (document.querySelector('.ds-button--primary') ? [document.querySelector('.ds-button--primary')] : []);
+      for (const btn of btns) {
+        if (this.isElementVisible(btn) && !(btn as any).disabled) {
+          const cls = String((btn as any).className || '');
+          const path = (btn as any).querySelector ? (btn as any).querySelector('svg path') : null;
+          const d = path && path.getAttribute ? (path.getAttribute('d') || '') : '';
+          const isSquare = d.indexOf('M2 4.88') !== -1;
+          if (cls.indexOf('ds-button--disabled') === -1 && !isSquare) return btn;
+        }
+      }
+    } catch (_) {}
     return null;
+  },
+
+  // 触发发送：纯净模式下 AI 视图在后台/无窗口焦点，原生键盘事件会被 Chromium 静默丢弃。
+  // 必须优先通过 DOM click 触发发送按钮（完全不受焦点限制，100% 触发 Vue 绑定的提交逻辑）。
+  async triggerSend(input: any) {
+    if (input) {
+      try {
+        if (typeof input.focus === 'function') input.focus();
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      } catch (_) {}
+    }
+
+    // 轮询等待 Vue 响应式将发送按钮从 disabled 状态解除（最多等 400ms）
+    let btn: any = null;
+    for (let i = 0; i < 8; i++) {
+      btn = this.findSendButton();
+      if (btn) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+
+    if (btn) {
+      try {
+        btn.click();
+        console.log('[Cuckoo Code][DeepSeek] 已通过 DOM click 点击发送按钮');
+        return true;
+      } catch (_) {}
+    }
+
+    // 兜底一：主进程原生 Enter
+    try {
+      const api = (window as any).electronAPI;
+      if (api && typeof api.sendEnterToChat === 'function') {
+        const ok = await api.sendEnterToChat();
+        if (ok) return true;
+      }
+    } catch (_) {}
+
+    // 兜底二：合成 Enter 按键事件
+    if (input) {
+      try {
+        const opts = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true, isComposing: false };
+        input.dispatchEvent(new KeyboardEvent('keydown', opts));
+        input.dispatchEvent(new KeyboardEvent('keypress', opts));
+        input.dispatchEvent(new KeyboardEvent('keyup', opts));
+        return true;
+      } catch (_) {}
+    }
+    return false;
   },
 
   // 提取当前用户信息文本（脱敏手机号/微信昵称）
   extractUserInfo() {
     const el = document.querySelector('._9d8da05');
-    return el ? el.textContent.trim() : '';
+    return el && el.textContent ? el.textContent.trim() : '';
   },
 
   // 首页判断正则（用于覆盖层首页模式）
@@ -94,16 +172,105 @@ const deepseek = {
     return url.includes('chat.deepseek.com');
   },
 
-  // 判断元素是否可见（offsetWidth/offsetHeight > 0）
+  // 判断元素是否可用/可见（优先几何尺寸，后台/纯净模式视口折叠时回退样式与 DOM 挂载检查）
   isElementVisible(el: any) {
     if (!el) return false;
-    return el.offsetWidth > 0 && el.offsetHeight > 0;
+    if (el.offsetWidth > 0 && el.offsetHeight > 0) return true;
+    try {
+      if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+        if (el.isConnected !== undefined && el.isConnected === false) return false;
+        return true;
+      }
+    } catch (_) {}
+    return false;
   },
 
   // 返回注入主世界的网络拦截器源码（拦截模式使用）
   // 源码由 scripts/build-hooks.mjs 从 hooks/deepseek.ts 打包生成（自包含 IIFE）
   getHookSource() {
     return DEEPSEEK_HOOK;
+  },
+
+  /**
+   * 附件上传入口探测（供 CDP 上传通道使用）。
+   *
+   * 真机取证（2026-11-10）：DeepSeek 上传键是 `div.ds-button[role=button]`，
+   * 类名是 hash（如 `db183363`），aria-label/title 全空 —— 通用关键词探测必然 0 命中。
+   * 但页面存在隐藏的 `input[type=file]`（display:none、multiple、accept 含 .txt/.md/.json/.log），
+   * 这是最干净的入口：返回 isFileInput 让核心跳过点击、直接 DOM.setFileInputFiles 注入，
+   * 全程不派发任何合成事件。
+   *
+   * 必须自包含：被序列化后注入页面主世界执行。
+   */
+  getAttachProbeSource() {
+    return function (doc: any, win: any) {
+      try {
+        // 清掉上一次的标记，避免多轮探测选错元素
+        var olds = doc.querySelectorAll('input[data-cuckoo-attach-input]');
+        for (var oi = 0; oi < olds.length; oi++) {
+          try { olds[oi].removeAttribute('data-cuckoo-attach-input'); } catch (e) {}
+        }
+        var inputs = doc.querySelectorAll('input[type=file]');
+        for (var i = 0; i < inputs.length; i++) {
+          var el = inputs[i];
+          if (!el) continue;
+          var accept = String(el.getAttribute('accept') || '');
+          // 只认支持纯文本的入口（长工具输出走 .txt）
+          if (accept && accept.indexOf('.txt') === -1 && accept.indexOf('.md') === -1) continue;
+          try { el.setAttribute('data-cuckoo-attach-input', '1'); } catch (e) {}
+          return {
+            found: true,
+            isFileInput: true,
+            x: 0,
+            y: 0,
+            tag: 'INPUT[type=file]',
+            accept: accept.slice(0, 60),
+          };
+        }
+        return { found: false, reason: 'no-file-input' };
+      } catch (e) {
+        return { found: false, reason: 'error:' + String(e) };
+      }
+    };
+  },
+
+  /**
+   * 附件就绪判定（供 CDP 上传通道使用）。
+   *
+   * 核心内置启发式只认 zhipu/mimo 的类名与预览图，DeepSeek 的附件卡片是
+   * hash 类名（真机取证：`_871cbca`），.txt 也没有缩略图 → 必然超时误判失败。
+   * 注意：不能用 `input[type=file].files.length > 0` 当就绪判据——文件写入 input
+   * 后该值立即为真，但站点上传是异步的，此刻附件尚未挂进输入区，提前发送会被拒。
+   * 只认本次文件的视觉证据：输入区附近出现精确文件名，避免旧卡片冒充上传完成。
+   *
+   * 必须自包含：被序列化后注入页面主世界执行。
+   */
+  getAttachReadySource() {
+    return function (doc: any, win: any, fileInfo?: { name?: string }) {
+      try {
+        var name = fileInfo && fileInfo.name;
+        if (!name) return { ready: false, via: 'missing-file-name' };
+        var vh = win.innerHeight || 800;
+        var box = doc.querySelector('textarea, [contenteditable="true"]');
+        var boxTop = box ? box.getBoundingClientRect().top : vh * 0.7;
+        var all = doc.querySelectorAll('div, span');
+        for (var k = 0; k < all.length; k++) {
+          var el = all[k];
+          if (el.children && el.children.length > 2) continue;
+          var t = String(el.textContent || '').trim();
+          if (t !== name) continue;
+          var r = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+          if (!r || r.width === 0 || r.height === 0) continue;
+          if (r.top < boxTop - 200 || r.top > boxTop + 120) continue;
+          return { ready: true, via: 'file-card' };
+        }
+        return { ready: false, via: 'no-attachment' };
+      } catch (e) {
+        return { ready: false, via: 'error:' + String(e) };
+      }
+    };
   },
 
   /**

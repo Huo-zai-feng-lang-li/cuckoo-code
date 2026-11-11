@@ -145,6 +145,29 @@ function fillValid() {
   }
 }
 
+test('暂停无效区间拒绝整次保存，不写入其它字段', () => {
+  fillValid();
+  for (const [id, value] of Object.entries({ 'cuckoo-delay-min': '2', 'cuckoo-delay-max': '4', 'cuckoo-pause-chance': '0.1', 'cuckoo-pause-min': '90', 'cuckoo-pause-max': '30' })) {
+    els[id] = makeEl(id); els[id].value = value;
+  }
+  settings.saveSettings();
+  assert.strictEqual(localStorage.getItem('cuckoo-retry-delay-min'), null);
+  assert.strictEqual(localStorage.getItem('cuckoo-pause-min'), null);
+});
+
+test('暂停概率清空回退0.1、明确0保留；时长按毫秒存储', () => {
+  fillValid();
+  for (const [id, value] of Object.entries({ 'cuckoo-delay-min': '2', 'cuckoo-delay-max': '4', 'cuckoo-pause-chance': '', 'cuckoo-pause-min': '30', 'cuckoo-pause-max': '75' })) {
+    els[id] = makeEl(id); els[id].value = value;
+  }
+  settings.saveSettings();
+  assert.strictEqual(localStorage.getItem('cuckoo-pause-chance'), '0.1');
+  assert.strictEqual(localStorage.getItem('cuckoo-pause-min'), '30000');
+  els['cuckoo-pause-chance'].value = '0';
+  settings.saveSettings();
+  assert.strictEqual(localStorage.getItem('cuckoo-pause-chance'), '0');
+});
+
 test('saveSettings 全部合法写入 localStorage', () => {
   fillValid();
   els['cuckoo-delay-min'] = makeEl('x'); els['cuckoo-delay-min'].value = '2';
@@ -209,5 +232,27 @@ test('resetSettingsData 必须清空全部设置键（含子代理 3 个，回�
   // state 重置到默认
   assert.strictEqual(data.sendDelayMin, 4, 'state.sendDelayMin 应重置为 4');
   assert.strictEqual(data.sendDelayMax, 30, 'state.sendDelayMax 应重置为 30');
+});
+
+test('主进程规整配置经设置数据接口同步毫秒、状态并可完整恢复默认', async () => {
+  const { applyDelta, AGENT_SETTINGS_DEFAULTS } = await import('../../../src/app/global-settings.js');
+  const { state } = await import('../../../src/overlay/state.js');
+  const next = applyDelta(AGENT_SETTINGS_DEFAULTS, { pauseEnabled: false, pauseChance: 0, pauseMin: 1.25, pauseMax: 2.75 });
+  assert.deepStrictEqual(settings.applySettingsData(next), { success: true });
+  assert.strictEqual(localStorage.getItem('cuckoo-pause-enabled'), '0');
+  assert.strictEqual(localStorage.getItem('cuckoo-pause-chance'), '0');
+  assert.strictEqual(localStorage.getItem('cuckoo-pause-min'), '1250');
+  assert.strictEqual(localStorage.getItem('cuckoo-pause-max'), '2750');
+  assert.strictEqual(state.pauseEnabled, false);
+  assert.strictEqual(state.pauseChance, 0);
+  assert.strictEqual(state.pauseMinMs, 1250);
+  assert.strictEqual(state.pauseMaxMs, 2750);
+  assert.strictEqual(settings.getSettingsData().pauseMin, 1.25);
+  const defaults = settings.resetSettingsData();
+  assert.strictEqual(defaults.pauseEnabled, true);
+  assert.strictEqual(defaults.pauseChance, 0.1);
+  assert.strictEqual(state.pauseMinMs, 30000);
+  assert.strictEqual(state.pauseMaxMs, 75000);
+  assert.strictEqual(localStorage.getItem('cuckoo-pause-max'), null);
 });
 

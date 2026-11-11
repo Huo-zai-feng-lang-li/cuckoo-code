@@ -37,6 +37,7 @@ import { resetTodosCache } from './tool.js';
 import { cdpAttach } from './cdp-attach.js';
 import { initProject } from '../../session/project-context.js';
 import { onHarnessReady } from './window-groups.js';
+import { waitForUserMessageReceipt } from './harness-send-receipt.js';
 import { readPrefs, writePrefs, type PromptEnhancerConfig } from '../ui-prefs.js';
 import { enhancePrompt } from '../prompt-enhancer.js';
 import { cancelSubagentsByParent } from '../subagent.js';
@@ -455,9 +456,13 @@ async function applyNewSessionPreset(ctx: any): Promise<void> {
 
 function registerHarnessIpc(): void {
   // 用户在 harness 输入 → 转给 AI 页面（bridge 会调 sendToChat）
-  ipcMain.handle('harness-send', (event: any, payload: any) => {
+  // 逐请求回执：主进程挂一次性监听，等 AI 页面投递结果；不再把"已转发"当成"已投递"。
+  // 超时覆盖长暂停(75s) + 拟人延迟(30s) + 附件/输入余量。
+  const USER_MESSAGE_RECEIPT_TIMEOUT_MS = 150000;
+  ipcMain.handle('harness-send', async (event: any, payload: any) => {
     console.log('[Cuckoo Harness] 收到用户消息，长度=' + ((payload && payload.text) || '').length);
     const text = (payload && payload.text) || '';
+    const requestId = payload && payload.requestId;
     const ctx = findContext(event.sender);
     if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) {
       return { success: false, error: 'no-ai-view' };
@@ -470,8 +475,23 @@ function registerHarnessIpc(): void {
       const hv = (ctx as any).harnessView;
       if (hv && !hv.webContents.isDestroyed()) hv.webContents.send('harness-event', { type: 'plan', todos: [] });
     } catch (_) { /* ignore */ }
-    ctx.view.webContents.send('harness-user-message', { text: text });
-    return { success: true };
+    // 无 requestId 的自动投递（目标续跑 nudge / 分享页激活）走旧 fire-and-forget：
+    // 转发后即返回成功，不挂回执等待，避免自动消息被 150s 回执超时拖挂。
+    if (!requestId) {
+      ctx.view.webContents.send('harness-user-message', { text: text });
+      return { success: true };
+    }
+    const receipt = waitForUserMessageReceipt(ipcMain, ctx.view.webContents, USER_MESSAGE_RECEIPT_TIMEOUT_MS, requestId);
+    ctx.view.webContents.send('harness-user-message', { text: text, requestId: receipt.requestId });
+    const result = await receipt.result;
+    // 事件通道兜底：invoke 被打断时 harness 页也能从事件拿到回执回填草稿
+    const hv = (ctx as any).harnessView;
+    if (hv && !hv.webContents.isDestroyed()) {
+      hv.webContents.send('harness-event', {
+        type: 'send-result', requestId: receipt.requestId, success: result.success, error: result.error,
+      });
+    }
+    return { success: result.success, error: result.error };
   });
 
   // AI 页面的 bridge 上报事件 → 转给 harness 页面

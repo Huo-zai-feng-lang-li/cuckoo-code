@@ -58,7 +58,8 @@
    气泡本身已足够指示归属，去掉更干净。 */
 .ck-pet-bubble {
   position: relative;
-  max-width: 280px;
+  max-width: min(580px, calc(100vw - 32px));
+  box-sizing: border-box;
   padding: 8px 16px;
   border-radius: 14px;
   /* 实心深底：只让荧光边框发光，气泡内部保持干净（不做渐变/毛玻璃） */
@@ -68,7 +69,9 @@
   font-weight: 500;
   line-height: 1.5;
   letter-spacing: 0.01em;
+  width: max-content;
   white-space: nowrap;
+  text-align: center;
   display: none;
   pointer-events: none;
   font-variant-numeric: tabular-nums;

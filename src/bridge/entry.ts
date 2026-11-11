@@ -219,6 +219,21 @@ function init(): void {
         if (data.autoCompactThreshold !== undefined) {
           localStorage.setItem('cuckoo-auto-compact-threshold', String(data.autoCompactThreshold));
         }
+        if (data.contextSwitchEnabled !== undefined) localStorage.setItem('cuckoo-context-switch-enabled', data.contextSwitchEnabled ? '1' : '0');
+        if (data.contextSwitchThreshold !== undefined) localStorage.setItem('cuckoo-context-switch-threshold', String(data.contextSwitchThreshold));
+        // 随机长暂停（需求 115）：主进程单位秒/概率，localStorage 存毫秒（与 overlay/events.ts:521-527 读取口径一致）
+        if (data.pauseEnabled !== undefined) {
+          localStorage.setItem('cuckoo-pause-enabled', data.pauseEnabled ? '1' : '0');
+        }
+        if (data.pauseChance !== undefined) {
+          localStorage.setItem('cuckoo-pause-chance', String(data.pauseChance));
+        }
+        if (data.pauseMin !== undefined) {
+          localStorage.setItem('cuckoo-pause-min', String(Math.round(Number(data.pauseMin) * 1000)));
+        }
+        if (data.pauseMax !== undefined) {
+          localStorage.setItem('cuckoo-pause-max', String(Math.round(Number(data.pauseMax) * 1000)));
+        }
       } catch (_) { /* ignore */ }
     });
     ipcRenderer.on('cuckoo-trigger-compact', (_e: any, payload: any) => {
@@ -236,9 +251,10 @@ function init(): void {
     // 窗口组切换：主进程请求"全量分享当前会话"。
     // 直接读 IDB 常失败（同会话内 IDB 不更新）；改用"清 IDB + 刷新 + 等重建"流程，
     // 刷新后由 overlay/events.ts → compaction.checkPendingSwitchShare 完成分享并回执。
-    ipcRenderer.on('cuckoo-switch-share', async (_e: any, { reqId }: any) => {
+    ipcRenderer.on('cuckoo-switch-share', async (_e: any, { reqId, withSummary }: any) => {
       try {
-        prepareSwitchShare(reqId);
+        // withSummary=true：上下文阈值切换，先生成摘要再分享最近 20%（压缩同款流程）
+        await prepareSwitchShare(reqId, !!withSummary);
       } catch (err: any) {
         ipcRenderer.send('cuckoo-switch-share-result', { reqId, ok: false, error: err.message });
       }

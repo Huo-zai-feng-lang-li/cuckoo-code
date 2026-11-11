@@ -7,6 +7,7 @@ import { registerSessionIpc } from './session.js';
 import { registerCommandIpc } from './command.js';
 import { registerToolIpc } from './tool.js';
 import { registerRendererIpc } from './renderer.js';
+import { registerSendAsFileIpc } from './send-as-file.js';
 import { registerShellIpc } from './shell.js';
 import { registerSubagentIpc } from './subagent.js';
 import { registerHarnessIpc } from './harness.js';
@@ -39,6 +40,7 @@ function registerIpcHandlers(): void {
   registerCommandIpc();
   registerToolIpc();
   registerRendererIpc();
+  registerSendAsFileIpc();
   registerShellIpc();
   registerSubagentIpc();
   registerHarnessIpc();

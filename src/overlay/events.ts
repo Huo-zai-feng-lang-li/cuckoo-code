@@ -14,6 +14,7 @@ import { openSettings, closeSettings, resetSettings, saveSettings } from './pane
 import { makeFabDraggable } from './fab.js';
 import { getProviderByUrl } from '../providers/registry.js';
 import { createTpsMeter, formatTps } from './tps.js';
+import { createContextSwitchGate } from './context-switch.js';
 
 // 回调注入（P4.2-A：overlay 不依赖 bridge）
 let hooks: {
@@ -25,6 +26,7 @@ let hooks: {
 } = {};
 // 服务端权威 token 统计（由 bridge 经回调推送，不共享状态）
 let serverTokenUsage: any = null;
+let tokenSessionId: string | null = null;
 // 本轮流式实时的上下文 token（仅用于显示；不写缓存、不累加，避免污染累计口径）
 let liveContext = 0;
 // 流式刷新节流（ms）
@@ -336,6 +338,8 @@ function updateConversationTokenDisplay() {
 function refreshTokenForCurrentSession(): void {
   // 会话切换：清空实时值 + 去重签名，回落到新会话的缓存值
   liveContext = 0;
+  serverTokenUsage = null;
+  tokenSessionId = null;
   lastPushedTokenSig = '';
   updateConversationTokenDisplay();
 }
@@ -346,6 +350,9 @@ let autoCompactEnabled = false;
 let autoCompactThresholdWan = 80;
 // 防止压缩过程中重复触发
 let autoCompactTriggering = false;
+// 上下文阈值自动切换窗口：配置（是否启用 + 阈值，单位万 token；默认关闭、10 万）
+let contextSwitchEnabled = false;
+let contextSwitchThresholdWan = 10;
 
 /** 从 localStorage 读取自动压缩配置并同步到 UI */
 function loadAutoCompactConfig() {
@@ -360,6 +367,15 @@ function loadAutoCompactConfig() {
   const thEl = document.getElementById('cuckoo-auto-compact-threshold');
   if (enEl) (enEl as any).checked = autoCompactEnabled;
   if (thEl) (thEl as any).value = autoCompactThresholdWan;
+}
+
+function loadContextSwitchConfig() {
+  try {
+    const en = localStorage.getItem('cuckoo-context-switch-enabled');
+    const threshold = localStorage.getItem('cuckoo-context-switch-threshold');
+    if (en !== null) contextSwitchEnabled = en === '1';
+    if (threshold !== null) { const v = parseFloat(threshold); if (Number.isFinite(v) && v > 0) contextSwitchThresholdWan = v; }
+  } catch (_) {}
 }
 
 /** 保存自动压缩配置 */
@@ -389,6 +405,9 @@ function saveAutoCompactConfig() {
  * 数据源：state.serverTokenUsage.accumulatedTokens
  */
 function checkAutoCompact() {
+  loadAutoCompactConfig();
+  loadContextSwitchConfig();
+  if (isSubagentWindow) return;
   if (!autoCompactEnabled || autoCompactTriggering) return;
   const server = serverTokenUsage;
   if (!server || typeof server.accumulatedTokens !== 'number') return;
@@ -404,6 +423,27 @@ function checkAutoCompact() {
   });
 }
 
+const contextSwitchGate = createContextSwitchGate(async (sessionId) => {
+  const api = (window as any).electronAPI;
+  if (typeof api?.contextLimitHit !== 'function') { contextSwitchGate.reset(sessionId); return; }
+  showToast('上下文达到阈值，准备切换窗口...', 4000);
+  const result = await api.contextLimitHit();
+  if (result?.reason === 'in-progress' || result?.reason === 'disabled' || result?.reason === 'not-in-group') contextSwitchGate.reset(sessionId);
+  if (result?.success === false) {
+    contextSwitchGate.reset(sessionId);
+    showToast('窗口切换失败：' + (result.error || '请检查窗口组'), 4000);
+  }
+});
+
+function checkContextSwitch(): boolean {
+  loadContextSwitchConfig();
+  if (isSubagentWindow || !tokenSessionId || tokenSessionId !== getCurrentSessionId()) return false;
+  if (autoCompactTriggering) return false;
+  try {
+    return contextSwitchGate.check({ enabled: contextSwitchEnabled, threshold: contextSwitchThresholdWan }, serverTokenUsage?.accumulatedTokens, tokenSessionId);
+  } catch (_) { return false; }
+}
+
 /**
  * 启动对话 token 显示 + 自动压缩检查（事件驱动）
  * 仅在收到成功回复事件时刷新 token 显示并检查自动压缩，
@@ -413,6 +453,9 @@ function startTokenCounter() {
   hooks.onInterceptedResponse?.((_text: string, meta: any) => {
     // 一轮回复完成：保留本轮最终 TPS（不清零），仅更新 token 统计。
     // 下一轮生成开始时由测速器内部自动重置。
+    const currentSession = getCurrentSessionId();
+    if (meta?.sessionId && currentSession && meta.sessionId !== currentSession) return;
+    tokenSessionId = currentSession;
     serverTokenUsage = (meta && meta.tokenUsage) || null;
     // 按当前会话写入缓存（切回来时能显示该会话的值）
     const tokens = serverTokenUsage && serverTokenUsage.accumulatedTokens;
@@ -427,7 +470,7 @@ function startTokenCounter() {
   //  - 检查自动压缩
   //  - 清空输出速度：否则状态栏会一直停留在上一轮的最终 TPS，让用户误以为还在生成
   hooks.onTaskIdle?.(() => {
-    checkAutoCompact();
+    if (!checkContextSwitch()) checkAutoCompact();
     tpsMeter.reset();
     pushTps();
   });
@@ -516,6 +559,15 @@ function bindEvents() {
     const maxInput = document.getElementById('cuckoo-delay-max');
     if (minInput) (minInput as any).value = state.sendDelayMin / 1000;
     if (maxInput) (maxInput as any).value = state.sendDelayMax / 1000;
+    // 随机长暂停（需求 115）：主进程广播会在后续覆盖，这里先恢复本页缓存值
+    const pEn = localStorage.getItem('cuckoo-pause-enabled');
+    if (pEn !== null) state.pauseEnabled = pEn === '1';
+    const pChance = parseFloat(localStorage.getItem('cuckoo-pause-chance') || '');
+    if (Number.isFinite(pChance)) state.pauseChance = Math.min(1, Math.max(0, pChance));
+    const pMin = parseInt(localStorage.getItem('cuckoo-pause-min') || '', 10);
+    if (Number.isFinite(pMin) && pMin >= 0) state.pauseMinMs = pMin;
+    const pMax = parseInt(localStorage.getItem('cuckoo-pause-max') || '', 10);
+    if (Number.isFinite(pMax) && pMax >= 0) state.pauseMaxMs = pMax;
   } catch (e) {}
 
   const minimizeBtn = document.getElementById('cuckoo-btn-minimize');
@@ -639,8 +691,9 @@ function bindEvents() {
     }
   });
 
-  // 自动压缩：加载配置 + 绑定保存按钮
+  // 自动压缩 / 上下文切换：加载配置 + 绑定保存按钮
   loadAutoCompactConfig();
+  loadContextSwitchConfig();
   const autoSaveBtn = document.getElementById('cuckoo-auto-compact-save');
   autoSaveBtn?.addEventListener('click', saveAutoCompactConfig);
 

@@ -12,10 +12,19 @@ const chatgpt = {
   homeUrl: 'https://chatgpt.com/',
   sessionUrlBase: 'https://chatgpt.com/c/',
 
-  // 判断元素是否可见（offsetWidth/offsetHeight > 0）
+  // 判断元素是否可用/可见（优先几何尺寸，后台/纯净模式视口折叠时回退样式与 DOM 挂载检查）
   isElementVisible(el: any) {
     if (!el) return false;
-    return el.offsetWidth > 0 && el.offsetHeight > 0;
+    if (el.offsetWidth > 0 && el.offsetHeight > 0) return true;
+    try {
+      if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+        if (el.isConnected !== undefined && el.isConnected === false) return false;
+        return true;
+      }
+    } catch (_) {}
+    return false;
   },
 
   // 查找可见的聊天输入框（ChatGPT 用 ProseMirror contenteditable）

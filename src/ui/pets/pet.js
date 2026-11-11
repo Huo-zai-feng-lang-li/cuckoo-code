@@ -87,6 +87,12 @@
       '歇会儿', '喝口水', '发个呆', '摸摸鱼', '伸个懒腰',
       '好安静', '在的', '随叫随到',
     ],
+    // 随机长暂停期间的情绪文案（需求 115）：有任务、在主动歇着，
+    // 既不是"等 AI 出字"（waiting）也不是"没任务"（idle）。
+    pausing: [
+      '走个神', '去倒杯水', '活动下筋骨', '伸个懒腰',
+      '看会儿窗外', '摸鱼两分钟', '歇口气', '脑子降温中',
+    ],
     done: ['搞定', '收工', '这轮结束啦', '干完了', '任务清空'],
     error: ['翻车了', '哎呀', '没跑通', '摔了一跤', '这不对', '裂开', '血压上来了', '换个姿势再来'],
   };
@@ -435,6 +441,17 @@
       bubbleHintEl.classList.add('show');
     }
 
+    /** 仅放行数字高亮所需的 <b> 与 </b>，其它任何 HTML 标签及特殊字符全部严格转义 */
+    function sanitizeBubbleHtml(raw) {
+      var s = String(raw == null ? '' : raw)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+      return s.replace(/&lt;b&gt;/g, '<b>').replace(/&lt;\/b&gt;/g, '</b>');
+    }
+
     /**
      * 状态气泡：sticky=true → 功能状态行（含耗时）；
      *           sticky=false → 瞬时提醒（这轮做完了 / 出错了），到期后还原情绪层。
@@ -445,7 +462,7 @@
         el.classList.remove('show');
         return;
       }
-      if (opts && opts.html) el.innerHTML = text;
+      if (opts && opts.html) el.innerHTML = sanitizeBubbleHtml(text);
       else el.textContent = text;
       el.classList.add('show');
       if (sticky) return;
@@ -462,13 +479,18 @@
       bubble('', true);
       mood('');
     }
-    /** 按分组随机换一句情绪文案（内部节流，避免每次调用都变） */
+    /** 按分组随机换一句情绪文案：同组 4s 内防抖，跨组切换立即换 */
     var lastMoodAt = 0;
     var lastMoodText = '';
+    var lastMoodGroup = '';
     function randomMood(group) {
       var t = nowMs();
-      if (t - lastMoodAt < 4000) return lastMoodText;   // 4s 内不换，读得完
+      var groupChanged = group !== lastMoodGroup;
+      // 跨组切换（如 waiting → pausing）必须立刻换句：这类一次性进入的状态没有定时器重试，
+      // 若被时间窗吞掉，整段暂停期宠物会一直停在上一句。同组重复调用才保留 4s 防抖。
+      if (!groupChanged && t - lastMoodAt < 4000) return lastMoodText;
       lastMoodAt = t;
+      lastMoodGroup = group;
       lastMoodText = pickMood(group, lastMoodText);
       mood(lastMoodText);
       return lastMoodText;

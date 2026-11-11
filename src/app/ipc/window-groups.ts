@@ -16,10 +16,11 @@ const pendingShare = new Map<string, any>();
 const pendingExport = new Map<string, any>();
 
 /** harness 状态导出回执入口（由 index 注册） */
-function onHarnessExportResult(_event: any, payload: any): void {
+function onHarnessExportResult(event: any, payload: any): void {
   const { reqId, state } = payload || {};
   if (!reqId || !pendingExport.has(reqId)) return;
   const p = pendingExport.get(reqId);
+  if (event.sender !== p.sender) return;
   pendingExport.delete(reqId);
   if (p.timer) clearTimeout(p.timer);
   p.resolve(state || null);
@@ -38,7 +39,7 @@ function requestHarnessExport(windowId: number, timeoutMs = 5000): Promise<any> 
     const timer = setTimeout(() => {
       if (pendingExport.has(reqId)) { pendingExport.delete(reqId); resolve(null); }
     }, timeoutMs);
-    pendingExport.set(reqId, { resolve, timer });
+    pendingExport.set(reqId, { resolve, timer, sender: hv.webContents });
     try { hv.webContents.send('harness-export-state-req', { reqId }); }
     catch (_) { pendingExport.delete(reqId); clearTimeout(timer); resolve(null); }
   });
@@ -80,18 +81,22 @@ function clearHarnessReady(windowId: number): void {
 }
 
 /** AI 页面回执入口（由 index 注册） */
-function onSwitchShareResult(_event: any, payload: any): void {
+function onSwitchShareResult(event: any, payload: any): void {
   const { reqId } = payload || {};
   if (!reqId || !pendingShare.has(reqId)) return;
   const p = pendingShare.get(reqId);
-  pendingShare.delete(reqId);
-  if (p.timer) clearTimeout(p.timer);
+  if (event.sender !== p.sender) return;
+  if (typeof p.cleanup === "function") p.cleanup();
+  else {
+    pendingShare.delete(reqId);
+    if (p.timer) clearTimeout(p.timer);
+  }
   p.resolve(payload);
 }
 
 /** 让指定窗口的 AI 页面执行全量分享，返回 { ok, shareId, sessionId, error } */
 // 超时 90s：切换现走"清 IDB + 刷新 + 等重建 + 分享"流程（跨页面刷新），比直接读 IDB 慢
-function requestShareFromWindow(windowId: number, timeoutMs = 90000): Promise<any> {
+function requestShareFromWindow(windowId: number, timeoutMs = 90000, withSummary = false): Promise<any> {
   return new Promise((resolve) => {
     const ctx = windowState.getWindowContext(windowId);
     const view = ctx && ctx.view;
@@ -99,13 +104,35 @@ function requestShareFromWindow(windowId: number, timeoutMs = 90000): Promise<an
       resolve({ ok: false, error: "源窗口不可用" });
       return;
     }
+    const wc = view.webContents;
     const reqId = "wg-" + (++reqSeq) + "-" + Date.now();
+    // 摘要模式要先生成摘要（120s 等回复）+ 刷新重建（最长 20s），超时放宽到 180s
+    const effTimeout = withSummary ? Math.max(timeoutMs, 180000) : timeoutMs;
+    const cleanup = () => {
+      if (pendingShare.has(reqId)) {
+        pendingShare.delete(reqId);
+      }
+      if (timer) clearTimeout(timer);
+      try {
+        if (typeof wc.removeListener === "function") wc.removeListener("destroyed", onSenderDestroyed);
+      } catch (_) {}
+    };
+    const onSenderDestroyed = () => {
+      cleanup();
+      resolve({ ok: false, error: "源窗口在分享完成前已关闭" });
+    };
     const timer = setTimeout(() => {
-      if (pendingShare.has(reqId)) { pendingShare.delete(reqId); resolve({ ok: false, error: "分享请求超时" }); }
-    }, timeoutMs);
-    pendingShare.set(reqId, { resolve, timer });
-    try { view.webContents.send("cuckoo-switch-share", { reqId }); }
-    catch (err: any) { pendingShare.delete(reqId); clearTimeout(timer); resolve({ ok: false, error: err.message }); }
+      cleanup();
+      resolve({ ok: false, error: "分享请求超时" });
+    }, effTimeout);
+    pendingShare.set(reqId, { resolve, timer, sender: wc, cleanup });
+    try {
+      if (typeof wc.once === "function") wc.once("destroyed", onSenderDestroyed);
+      wc.send("cuckoo-switch-share", { reqId, withSummary });
+    } catch (err: any) {
+      cleanup();
+      resolve({ ok: false, error: err.message });
+    }
   });
 }
 

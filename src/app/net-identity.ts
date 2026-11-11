@@ -453,7 +453,18 @@ function buildShieldScript(cfg: ProxyConfig, fp?: FingerprintConfig): string {
           var origRemove = pc.removeEventListener.bind(pc);
           var listenerMap = typeof WeakMap !== 'undefined' ? new WeakMap() : new Map();
 
-          pc.addEventListener = function(type, listener, opts) {
+          function defineHidden(obj, prop, val) {
+            try {
+              Object.defineProperty(obj, prop, {
+                value: val,
+                configurable: true,
+                writable: true,
+                enumerable: false,
+              });
+            } catch (_) { obj[prop] = val; }
+          }
+
+          var wrappedAdd = function(type, listener, opts) {
             if (type === 'icecandidate' && typeof listener === 'function') {
               // 原生按 (type,listener,capture) 去重：已登记则不再包装（否则旧 wrapped 孤儿化、无法解绑）
               if (listenerMap.has(listener)) return;
@@ -485,8 +496,9 @@ function buildShieldScript(cfg: ProxyConfig, fp?: FingerprintConfig): string {
             }
             return origAdd(type, listener, opts);
           };
+          defineHidden(pc, 'addEventListener', wrappedAdd);
 
-          pc.removeEventListener = function(type, listener, opts) {
+          var wrappedRemove = function(type, listener, opts) {
             if (type === 'icecandidate' && typeof listener === 'function') {
               var wrapped = listenerMap.get(listener);
               if (wrapped) {
@@ -496,12 +508,13 @@ function buildShieldScript(cfg: ProxyConfig, fp?: FingerprintConfig): string {
             }
             return origRemove(type, listener, opts);
           };
+          defineHidden(pc, 'removeEventListener', wrappedRemove);
 
           var onHandler = null;
           try {
             Object.defineProperty(pc, 'onicecandidate', {
               configurable: true,
-              enumerable: true,
+              enumerable: false,
               set: function(fn) {
                 if (onHandler) {
                   try { pc.removeEventListener('icecandidate', onHandler); } catch (e) {}
@@ -516,16 +529,15 @@ function buildShieldScript(cfg: ProxyConfig, fp?: FingerprintConfig): string {
           } catch (e) {}
           try {
             var origSetConf = pc.setConfiguration.bind(pc);
-            pc.setConfiguration = function(conf) {
+            defineHidden(pc, 'setConfiguration', function(conf) {
               var mod = {};
               if (conf) for (var k in conf) mod[k] = conf[k];
               mod.iceServers = [];
               return origSetConf(mod);
-            };
+            });
           } catch (e) {}
-          // 让实例的 constructor 指向 Fake（与 window.RTCPeerConnection 一致），否则
-          // new RTCPeerConnection().constructor === RTCPeerConnection 探测得 false
-          try { Object.defineProperty(pc, 'constructor', { value: Fake, configurable: true }); } catch (e) {}
+          // 让实例的 constructor 指向 Fake（与 window.RTCPeerConnection 一致），且不可枚举
+          defineHidden(pc, 'constructor', Fake);
           return pc;
         }
         // 浅拷贝原型再改 constructor，避免污染原生 Native.prototype
@@ -548,6 +560,21 @@ function buildShieldScript(cfg: ProxyConfig, fp?: FingerprintConfig): string {
 
   return `(function(){
     try {
+      // 1. 域名守卫：排除 Cloudflare Turnstile 等人机验证挑战沙箱 iframe，
+      //    避免 hook 污染 CF 内部运行环境导致跨帧一致性校验失败、卡在 interactiveBegin。
+      try {
+        var _h = (window.location && window.location.hostname) || '';
+        if (
+          _h === 'challenges.cloudflare.com' ||
+          _h === 'challenges.fed.cloudflare.com' ||
+          _h === 'challenges.cloudflare-cn.com' ||
+          _h === 'challenges-staging.cloudflare.com' ||
+          _h.endsWith('.challenges.cloudflare.com')
+        ) {
+          return;
+        }
+      } catch (_) {}
+
       if (window.__cuckooShieldInjected) return;
       try { Object.defineProperty(window, '__cuckooShieldInjected', { value: true, enumerable: false, configurable: true, writable: true }); } catch (_) { window.__cuckooShieldInjected = true; }
 

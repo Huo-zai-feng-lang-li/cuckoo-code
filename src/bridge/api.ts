@@ -53,6 +53,11 @@ let electronAPI: any = {
   insertTextToChat: (text: string) => {
     return ipcRenderer.invoke('chat-insert-text', { text });
   },
+  /** 长文本走附件通道（需求 115）；失败时调用方回退 insertTextToChat */
+  sendAsFile: (text: string, fileName: string) => {
+    return ipcRenderer.invoke('chat-send-as-file', { text, fileName });
+  },
+  contextLimitHit: () => ipcRenderer.invoke('context-limit-hit'),
   simulateMouse: (action: any, x: any, y: any) => {
     return ipcRenderer.invoke('simulate-mouse', { action, x, y });
   },

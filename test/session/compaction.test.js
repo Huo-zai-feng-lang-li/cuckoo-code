@@ -46,6 +46,64 @@ function linearMsgs() {
   ];
 }
 
+function setupSwitchShare({ summary = '', sessionId = 'abc' } = {}) {
+  globalThis.location = { href: 'https://chat.deepseek.com/a/chat/s/abc?cuckoo-switch-share=1' };
+  globalThis.history = { replaceState() {} };
+  localStorage.setItem('cuckoo-switch-pending', JSON.stringify({ reqId: 'switch-1', sessionId, ts: Date.now() }));
+  localStorage.setItem('cuckoo-switch-with-summary', '1');
+  localStorage.setItem('cuckoo-switch-summary', summary);
+  localStorage.setItem('cuckoo-ds-headers', JSON.stringify({ authorization: 'test-token' }));
+  globalThis.indexedDB = { open() {
+    const req = {};
+    queueMicrotask(() => {
+      req.result = { close() {}, transaction() { return { objectStore() { return { get() {
+        const read = {};
+        queueMicrotask(() => {
+          read.result = { data: { chat_messages: linearMsgs(), chat_session: { current_message_id: 4 } } };
+          read.onsuccess();
+        });
+        return read;
+      } }; } }; } };
+      req.onsuccess();
+    });
+    return req;
+  } };
+  const shares = [];
+  globalThis.fetch = async (_url, options) => {
+    shares.push(JSON.parse(options.body));
+    return { status: 200, text: async () => JSON.stringify({ code: 0, data: { biz_data: { share_id: 'share-1' } } }) };
+  };
+  return shares;
+}
+
+test('摘要模式缺失摘要时不创建部分历史分享', async () => {
+  const shares = setupSwitchShare();
+  assert.strictEqual(await compaction.checkPendingSwitchShare(), false);
+  assert.deepStrictEqual(shares, []);
+});
+
+test('跨刷新分享绑定源会话，不得把另一个会话带到目标窗口', async () => {
+  const shares = setupSwitchShare({ summary: '完整上下文', sessionId: 'def' });
+  assert.strictEqual(await compaction.checkPendingSwitchShare(), false);
+  assert.deepStrictEqual(shares, []);
+});
+
+test('有效摘要模式仍可创建最近成对消息分享', async () => {
+  const shares = setupSwitchShare({ summary: '完整上下文' });
+  assert.strictEqual(await compaction.checkPendingSwitchShare(), true);
+  assert.strictEqual(shares.length, 1);
+  assert.strictEqual(shares[0].chat_session_id, 'abc');
+  assert.deepStrictEqual(shares[0].message_ids, [4, 3]);
+});
+
+test('源会话 IDB 清理失败时取消刷新分享并清理 pending', async () => {
+  globalThis.location = { href: 'https://chat.deepseek.com/a/chat/s/abc' };
+  globalThis.indexedDB = { open() { const req = {}; queueMicrotask(() => req.onerror()); return req; } };
+  await assert.rejects(compaction.prepareSwitchShare('switch-clear-fails', false));
+  assert.strictEqual(localStorage.getItem('cuckoo-switch-pending'), null);
+  assert.strictEqual(localStorage.getItem('cuckoo-switch-with-summary'), null);
+});
+
 test('_pickRecentPairedIds 空数组返回空', () => {
   assert.deepStrictEqual(compaction._pickRecentPairedIds([], null, 0.2), []);
 });

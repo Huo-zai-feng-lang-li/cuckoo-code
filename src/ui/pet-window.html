@@ -38,7 +38,8 @@
      且窗口高度受限，尾巴容易落在宠物身上变成"菱形噪点"。 */
   #stage .ck-pet-bubbles::after { display: none !important; }
   #stage .ck-pet-bubble {
-    max-width: 320px;
+    width: max-content;
+    max-width: min(560px, 96vw);
     white-space: nowrap;
     text-align: center;
   }
@@ -95,9 +96,10 @@
       lastAnimHint = null;
       if (msg.state === 'working') pet.setState('working', 1);
       else if (msg.state === 'thinking') pet.setState('thinking');
+      else if (msg.state === 'pausing') pet.setState('idle');
       else pet.setState('idle');
       // 上层：情绪文案（本地按状态随机挑，带节流）；下层：功能状态（来自 harness）
-      var group = msg.state === 'working' ? 'working' : (msg.state === 'thinking' ? 'thinking' : 'idle');
+      var group = msg.state === 'working' ? 'working' : (msg.state === 'thinking' ? 'thinking' : (msg.state === 'pausing' ? 'pausing' : 'idle'));
       try { pet.randomMood(group); } catch (e) { /* ignore */ }
     }
     // html 仅用于我们自产的 <b> 秒数强调（harness 侧保证内容可控）

@@ -88,6 +88,15 @@ test('onInterceptedResponse 返回可取消函数', () => {
   assert.deepStrictEqual(got, []);
 });
 
+test('完成回复保留请求所属 sessionId，供阈值和摘要等待过滤旧会话', () => {
+  const listeners = setupGlobals();
+  const received = [];
+  track(onInterceptedResponse((_text, meta) => received.push(meta)));
+  startInterceptObserver();
+  dispatch(listeners, 'cuckoo-ai-response', { finished: true, text: '', sessionId: 'source-session' });
+  assert.strictEqual(received[0].sessionId, 'source-session');
+});
+
 test('startInterceptObserver：stopped 不通知监听器', () => {
   const listeners = setupGlobals();
   startInterceptObserver();

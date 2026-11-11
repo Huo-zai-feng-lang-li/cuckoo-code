@@ -10,8 +10,21 @@ updated: 2026-11-10
 
 # 115：长文本回传改走附件通道（降低脚本特征）
 
-> 状态：**doing**（仅建档案，未开工）
-> 分支：`fix/115-long-text-attachment`（已创建，尚无改动）
+> 状态：**doing**（代码闭环完成，待真机验证）
+> 分支：`fix/115-long-text-attachment`
+> 最近更新：2026-11-10
+
+## 〇、当前进度（2026-11-10 闭环记录）
+
+附件通道代码已落地，与随机长暂停、上下文阈值切换同分支交付。代码侧门禁全绿（见第八节验证记录）；**真机验证由用户执行**，本窗口未启动 Electron、未打包发布。
+
+已实现：
+- 主进程 IPC `chat-send-as-file`（`src/app/ipc/send-as-file.ts`）：`assertSenderOk` 来源硬校验，按 sender 遍历 view/harnessView/win/overlayView 找上下文，UTF-8 base64 后复用 `cdpAttach`。
+- bridge `electronAPI.sendAsFile`（`src/bridge/api.ts`）；overlay 分流（`src/overlay/chat-input.ts`）：>4000 字符且 60s 节流窗口内才走附件，失败/异常静默回退 `insertTextToChat`，消息不丢；成功后只发短提示词。
+- DeepSeek 两个 provider 钩子（`src/providers/deepseek.ts`）：探测隐藏 `input[type=file]` 直接注入；就绪判据只认输入区附近带文件名后缀的文本卡片（已删除 `files.length>0` 短路——文件写入 input 后该值立即为真，但站点上传是异步的，提前判就绪会导致发送被拒）。
+- 钩子契约放宽（`src/providers/types.ts`）：probe/ready 可返回函数或源码字符串，`cdp-attach.ts` 统一 `(src)(document, window, fileInfo?)` 拼接执行。
+
+待真机确认：阶段 0 验证 1/2/3（入口探测、附件进输入区、模型中段引用完整度）；取消/中断后已上传附件目前无 detach 通道（见第七节遗留）。
 
 ## 一、用户目标与约束
 
@@ -180,11 +193,11 @@ if (msg.length > ATTACH_THRESHOLD && typeof api.sendAsFile === 'function') {
 
 ## 五、验收标准
 
-- [ ] 阶段 0 三条验证完成，结论写进本档案「验证记录」
+- [ ] 阶段 0 三条验证完成，结论写进本档案「验证记录」（真机，用户执行）
 - [ ] 长文本（> 4000 字符）回传后，模型能正确引用内容**中段**（不降智商）
 - [ ] 短文本（< 4000）回传行为无任何变化
-- [ ] 附件通道失败能静默回退到 insertText，消息不丢
-- [ ] typecheck / test / lint / compile 全绿
+- [x] 附件通道失败能静默回退到 insertText，消息不丢（代码路径已实现，测试覆盖回退分支）
+- [x] typecheck / test / lint / compile 全绿（2026-11-10，见第八节）
 - [ ] 真机验证（开发版 `cuckoo-dev-verify`）
 
 ## 六、关键代码位置索引（接手必读）
@@ -203,8 +216,30 @@ if (msg.length > ATTACH_THRESHOLD && typeof api.sendAsFile === 'function') {
 
 ## 七、遗留 / 后续
 
-（完成后补）
+- **取消/中断后残留附件无 detach 通道**：`data-cuckoo-attach-input` 仅探测使用，站点级"移除附件卡片"选择器缺乏真机取证；未做站点特定的卸载点击伪修复。真机若观察到取消后附件仍挂在输入区，需补 detach 钩子。
+- ChatGPT / Claude 附件行为不同，本需求先只做 DeepSeek，其他平台保持 insertText 现状。
+- 附件大小上限需真机对照 DeepSeek 单文件限制；超限仍受 `MAX_OUTPUT=15000` 截断约束。
 
 ## 八、验证记录
 
-（阶段 0 完成后在此记录：探测结果 / 上传结果 / 模型读取完整度对比）
+### 代码侧门禁（2026-11-10，本窗口实测）
+
+| 门禁 | 命令 | 结果 |
+|---|---|---|
+| typecheck | `npm run typecheck` | EXIT=0（`tsc --noEmit` + `tsc -p tsconfig.hooks.json`） |
+| test | `npm test` | EXIT=0，144 files / **1458 tests passed**（含本分支回执/暂停/切换回归） |
+| lint | `npm run lint` | EXIT=0，**0 errors**，70 warnings（均为历史 test 文件 unused-var） |
+| compile | `npm run compile` | EXIT=0，`src/ui/shell.html` 等生成物已重建 |
+
+### 代码侧门禁（2026-11-11，宠物走神句节流修复）
+
+- **根因**：`src/ui/pets/pet.js` `randomMood` 的 4000ms 换句节流不区分情绪组；pausing 只在暂停进入时触发一次、期间无 tick 重试，进入前 4s 内刚换过 waiting/working 句时走神句被吞，整段暂停停在旧态。真机 CDP 离屏实例对照坐实。
+- **修复**：`randomMood` 记录 `lastMoodGroup`，跨组切换立即换句绕过节流，同组重复仍保留 4s 防抖；签名/返回值不变，内嵌与浮窗同源生效。回归 `test/ui/pet-mood-throttle.test.js` 2 条。
+- 门禁：typecheck EXIT=0；`npx vitest run` 146 files / **1463 passed**；lint 0 errors / 70 warnings；compile EXIT=0；docs:index EXIT=0（104 需求）。
+
+### 真机验证（待用户执行）
+
+- [ ] DeepSeek 上传入口可被探测到（隐藏 file input 直接注入路径）
+- [ ] .txt 附件进入输入区、文件名正确、无报错
+- [ ] 模型能引用附件中段内容（不降智商对比 insertText 路径）
+- [ ] 附件通道失败时回退 insertText，短文本节奏不变

@@ -38,6 +38,18 @@ test('文件不存在时 readAgentSettings 返回防封默认值', () => {
   assert.strictEqual(s.agentStartIntervalMax, 5);
 });
 
+test('上下文切换默认关闭、10万，持久化保留小数阈值且非法阈值回退', () => {
+  assert.strictEqual(gs.readAgentSettings().contextSwitchEnabled, false);
+  assert.strictEqual(gs.readAgentSettings().contextSwitchThreshold, 10);
+  gs.writeAgentSettings({ contextSwitchEnabled: true, contextSwitchThreshold: 0.5 });
+  gs._clearCache();
+  assert.strictEqual(gs.readAgentSettings().contextSwitchThreshold, 0.5);
+  assert.strictEqual(gs.readAgentSettings().contextSwitchEnabled, true);
+  for (const threshold of [0, -1, 'bad', Infinity]) {
+    assert.strictEqual(gs.writeAgentSettings({ contextSwitchThreshold: threshold }).contextSwitchThreshold, 10);
+  }
+});
+
 test('子代理并发：1~10 合法，越界回退/压顶', () => {
   assert.strictEqual(gs.writeAgentSettings({ maxConcurrentAgents: 5 }).maxConcurrentAgents, 5);
   assert.strictEqual(gs.writeAgentSettings({ maxConcurrentAgents: 0 }).maxConcurrentAgents, 3, '0 回退默认 3');
@@ -216,4 +228,29 @@ test('applyDelta：增量非法值被 normalize 规整而非写脏', () => {
   const next = gs.applyDelta(latest, { retryDelayMin: -99, retryPrompt: '   ' });
   assert.strictEqual(next.retryDelayMin, 0, '负数归零');
   assert.ok(next.retryPrompt.length > 0, '空文本回退默认');
+});
+
+test('暂停配置持久化保留零概率、关闭和小数秒，增量保存不覆盖上下文切换', () => {
+  gs.writeAgentSettings({ contextSwitchEnabled: true, contextSwitchThreshold: 2.5 });
+  gs.writeAgentSettings(gs.applyDelta(gs.readAgentSettings(), {
+    pauseEnabled: false, pauseChance: 0, pauseMin: 1.25, pauseMax: 2.75,
+  }));
+  gs._clearCache();
+  const saved = gs.readAgentSettings();
+  assert.strictEqual(saved.pauseEnabled, false);
+  assert.strictEqual(saved.pauseChance, 0);
+  assert.strictEqual(saved.pauseMin, 1.25);
+  assert.strictEqual(saved.pauseMax, 2.75);
+  assert.strictEqual(saved.contextSwitchEnabled, true);
+  assert.strictEqual(saved.contextSwitchThreshold, 2.5);
+});
+
+test('暂停非法配置规整后概率和区间保持可执行', () => {
+  const saved = gs.writeAgentSettings({ pauseEnabled: 'false', pauseChance: 9, pauseMin: -3, pauseMax: -1 });
+  assert.strictEqual(saved.pauseEnabled, false);
+  assert.strictEqual(saved.pauseChance, 1);
+  assert.strictEqual(saved.pauseMin, 0);
+  assert.strictEqual(saved.pauseMax, 0);
+  assert.strictEqual(gs.writeAgentSettings({ pauseMin: 90, pauseMax: 30 }).pauseMax, 90);
+  assert.strictEqual(gs.writeAgentSettings({ pauseChance: 'invalid' }).pauseChance, 0.1);
 });

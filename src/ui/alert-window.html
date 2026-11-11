@@ -292,6 +292,10 @@
       if (api && api.onInit) {
         api.onInit(function (data) {
           if (!data) return;
+          if (data.reason === 'context-limit') {
+            document.querySelector('.title').textContent = '上下文达到阈值，自动切换窗口';
+            document.querySelector('.subtitle').textContent = '当前对话上下文已达设定阈值，正在切换到组内下一个窗口';
+          }
           elCur.textContent = data.currentName || '—';
           elTarget.textContent = data.targetName || '—';
           totalSec = Number(data.seconds) || 10;

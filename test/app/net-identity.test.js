@@ -291,7 +291,7 @@ describe('applyNetIdentity WebRTC 底层防 DNS 泄露策略', () => {
     }
     class MockNativePC {
       constructor() {
-        this._listeners = new Map();
+        Object.defineProperty(this, '_listeners', { value: new Map(), writable: true, configurable: true });
       }
       addEventListener(type, fn) {
         if (!this._listeners.has(type)) this._listeners.set(type, []);
@@ -406,13 +406,58 @@ describe('applyNetIdentity WebRTC 底层防 DNS 泄露策略', () => {
     // 6. 实例 constructor 必须指向被替换的 RTCPeerConnection（否则 new X().constructor === X 探测得 false）
     assert.strictEqual(pc.constructor, WrappedPC, 'pc.constructor 必须指向包装后的构造函数');
 
-    // 7. toString 伪装：Function.prototype.toString.call 不可泄露伪造源码（本次关键修复）
+    // 7. 实例自有属性隐身：Object.keys(pc) 必须为空数组，与原生一致（不可被 ownKeys 扫描识别）
+    assert.deepStrictEqual(Object.keys(pc), [], 'RTC 实例自有属性不得枚举（Object.keys 为空），与原生一致');
+
+    // 8. toString 伪装：Function.prototype.toString.call 不可泄露伪造源码（本次关键修复）
     const fakeSrc = Function.prototype.toString.call(WrappedPC);
     assert.strictEqual(fakeSrc, 'function RTCPeerConnection() { [native code] }', '构造函数 toString 必须伪装为 native code');
     assert.strictEqual(fakeSrc.includes('iceServers'), false, '绝不可通过 toString 泄露伪造逻辑');
 
     // 恢复被 hook 的 Function.prototype.toString（脚本执行时已 hook 真实全局）
     Function.prototype.toString = origFnToString;
+  });
+
+  test('Cloudflare Turnstile 挑战域名旁路放行：challenges.cloudflare.com 下直接早退不污染环境', async () => {
+    const cdpCommands = [];
+    const mockWc = {
+      session: { setProxy: async () => {} },
+      isDestroyed: () => false,
+      debugger: {
+        isAttached: () => false,
+        attach: async () => {},
+        detach: async () => {},
+        sendCommand: async (method, params) => {
+          cdpCommands.push({ method, params });
+          return {};
+        },
+      },
+      setWebRTCIPHandlingPolicy: () => {},
+    };
+    await applyNetIdentity({ webContents: mockWc }, normalizeProxyConfig({ enabled: true, webrtc: 'spoof' }));
+    const script = cdpCommands.find((c) => c.method === 'Page.addScriptToEvaluateOnNewDocument').params.source;
+
+    class MockNativePC {}
+    const cfDomains = [
+      'challenges.cloudflare.com',
+      'challenges.fed.cloudflare.com',
+      'challenges.cloudflare-cn.com',
+      'challenges-staging.cloudflare.com',
+      'sub.challenges.cloudflare.com',
+    ];
+
+    for (const hostname of cfDomains) {
+      const sandboxWindow = {
+        location: { hostname },
+        RTCPeerConnection: MockNativePC,
+        document: {},
+      };
+      const exec = new Function('window', 'document', 'RTCPeerConnection', script);
+      exec(sandboxWindow, sandboxWindow.document, MockNativePC);
+
+      assert.strictEqual(sandboxWindow.__cuckooShieldInjected, undefined, `${hostname} 下不得注入 shield 标记`);
+      assert.strictEqual(sandboxWindow.RTCPeerConnection, MockNativePC, `${hostname} 下不得替换 RTCPeerConnection`);
+    }
   });
 });
 
