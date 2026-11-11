@@ -59,3 +59,76 @@ test('纯净模式后台隐藏（offsetWidth为0）但computedStyle正常时判�
     delete globalThis.window;
   }
 });
+
+test('DeepSeek setupNewSession: 正确开「深度思考」、关「联网搜索」', () => {
+  const eventsA = [];
+  const eventsB = [];
+  const btnThink = {
+    textContent: '深度思考 (R1)',
+    getAttribute: (attr) => (attr === 'aria-pressed' ? 'false' : null),
+    className: 'ds-toggle-button',
+    getBoundingClientRect: () => ({ left: 10, top: 10, width: 80, height: 32 }),
+    dispatchEvent: (ev) => { eventsA.push(ev.type); return true; },
+  };
+  const btnSearch = {
+    textContent: '联网搜索',
+    getAttribute: (attr) => (attr === 'aria-pressed' ? 'true' : null),
+    className: 'ds-toggle-button ds-toggle-button--selected',
+    getBoundingClientRect: () => ({ left: 100, top: 10, width: 80, height: 32 }),
+    dispatchEvent: (ev) => { eventsB.push(ev.type); return true; },
+  };
+
+  const doc = {
+    querySelectorAll: (sel) => [btnThink, btnSearch],
+  };
+  class MockEvent {
+    constructor(type, opts) {
+      this.type = type;
+      this.opts = opts;
+    }
+  }
+  const win = {
+    PointerEvent: MockEvent,
+    MouseEvent: MockEvent,
+  };
+
+  const fn = deepseek.setupNewSession();
+  const res = fn(doc, win);
+  expect(res.ready).toBe(true);
+  expect(res.found).toBe(2);
+  // 深度思考应收到点击序列
+  expect(eventsA).toContain('click');
+  // 联网搜索应收到点击序列（关闭）
+  expect(eventsB).toContain('click');
+});
+
+test('DeepSeek setupNewSession: 状态已符合预期时静默不点击', () => {
+  const eventsA = [];
+  const eventsB = [];
+  const btnThink = {
+    textContent: '深度思考 (R1)',
+    getAttribute: (attr) => (attr === 'aria-pressed' ? 'true' : null),
+    className: 'ds-toggle-button ds-toggle-button--selected',
+    getBoundingClientRect: () => ({ left: 10, top: 10, width: 80, height: 32 }),
+    dispatchEvent: (ev) => { eventsA.push(ev.type); return true; },
+  };
+  const btnSearch = {
+    textContent: '联网搜索',
+    getAttribute: (attr) => (attr === 'aria-pressed' ? 'false' : null),
+    className: 'ds-toggle-button',
+    getBoundingClientRect: () => ({ left: 100, top: 10, width: 80, height: 32 }),
+    dispatchEvent: (ev) => { eventsB.push(ev.type); return true; },
+  };
+
+  const doc = {
+    querySelectorAll: (sel) => [btnThink, btnSearch],
+  };
+  const win = {};
+
+  const fn = deepseek.setupNewSession();
+  const res = fn(doc, win);
+  expect(res.ready).toBe(true);
+  expect(res.found).toBe(2);
+  expect(eventsA.length).toBe(0);
+  expect(eventsB.length).toBe(0);
+});

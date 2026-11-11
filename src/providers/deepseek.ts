@@ -307,20 +307,27 @@ const deepseek = {
   setupNewSession() {
     return function (doc: any, win: any) {
       try {
-        var toggles = doc.querySelectorAll('.ds-toggle-button');
+        var toggles = doc.querySelectorAll('.ds-toggle-button, [role="button"].ds-toggle-button');
         var found = 0;
         for (var i = 0; i < toggles.length; i++) {
           var el = toggles[i];
           var txt = (el.textContent || '').trim();
-          if (txt.length > 12) continue;
+          if (txt.length > 16) continue;
 
           var wantOn = -1;
-          if (txt.indexOf('深度思考') !== -1) wantOn = 1;
-          else if (txt.indexOf('智能搜索') !== -1) wantOn = 0;
+          if (/深度思考|DeepThink/i.test(txt)) {
+            wantOn = 1;
+          } else if (/联网搜索|智能搜索|搜索|联网|Search/i.test(txt)) {
+            wantOn = 0;
+          }
           if (wantOn === -1) continue;
           found++;
 
-          var pressed = el.getAttribute('aria-pressed') === 'true';
+          var cls = typeof el.className === 'string' ? el.className : '';
+          var pressed =
+            el.getAttribute('aria-pressed') === 'true' ||
+            cls.indexOf('ds-toggle-button--selected') !== -1 ||
+            cls.indexOf('selected') !== -1;
           if (pressed === (wantOn === 1)) continue; // 已是目标态
 
           var rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
@@ -334,11 +341,11 @@ const deepseek = {
           try { el.dispatchEvent(new win.PointerEvent('pointerup', opts)); } catch (e) {}
           try { el.dispatchEvent(new win.MouseEvent('mouseup', opts)); } catch (e) {}
           try { el.dispatchEvent(new win.MouseEvent('click', opts)); } catch (e) {}
+          try { if (typeof el.click === 'function') el.click(); } catch (e) {}
         }
         // ready 表示"目标开关已在 DOM 里出现"（无论是否点击）。
-        // 主进程据此判断页面是否渲染到位：未就绪时轮询重试，避免首页刚加载完
-        // 按钮还没画出来就执行一次、结果什么都没设上。
-        return { ready: found > 0, found: found };
+        // 深度思考与搜索成对出现，found >= 2 判定为完全就绪；有找到即算有效探测
+        return { ready: found >= 2 || found > 0, found: found };
       } catch (e) {
         /* 静默：开关设置失败不应阻断新会话初始化 */
         return { ready: false, found: 0 };

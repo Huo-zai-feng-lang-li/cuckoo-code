@@ -42,11 +42,14 @@ function makeAttachFileName(prefix = '工具输出'): string {
   return prefix + '-' + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + '.txt';
 }
 
-/** 判定消息是否应转为附件发送（放行长系统提示词、工具结果回传与用户消息） */
-function shouldAttach(tag?: string, len?: number): boolean {
-  if (!len || len <= ATTACH_THRESHOLD) return false;
-  if (getCurrentProvider()?.id !== 'deepseek') return false;
-  return tag === '系统提示词' || tag === 'JS汇总' || !isSystemTag(tag);
+/**
+ * 判定消息是否应转为附件发送。
+ * 评估结论：纯文本消息自动转附件（如 工具输出-MMDD-HHMM.txt）具有明显的机器外挂特征，
+ * 且极易因附件就绪判定超时导致「既发附件又回退输入文本」的偶发双发 Bug，同时降低模型对系统提示词/工具结果的关注度。
+ * 人类自然交互习惯是一律大段粘贴代码与日志，因此不再自动转附件，统一走原生直接输入管线。
+ */
+function shouldAttach(_tag?: string, _len?: number): boolean {
+  return false;
 }
 
 

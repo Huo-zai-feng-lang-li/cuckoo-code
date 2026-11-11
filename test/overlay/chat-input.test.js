@@ -119,7 +119,7 @@ test('纯净模式快速连发保留每条用户消息，只撤销工具结果',
   assert.deepStrictEqual(sent, ['用户一', '用户二']);
 });
 
-test('工具汇总长文本走附件，失败时完整回退文本', async () => {
+test('工具汇总长文本不再自动转附件，恒走原生物理直接输入', async () => {
   vi.useFakeTimers();
   const { sent } = composer();
   const uploads = [];
@@ -128,7 +128,7 @@ test('工具汇总长文本走附件，失败时完整回退文本', async () =>
   const send = chat.sendToChat(text, 'JS汇总');
   await vi.runAllTimersAsync();
   assert.strictEqual(await send, true);
-  assert.deepStrictEqual(uploads, [text]);
+  assert.deepStrictEqual(uploads, []);
   assert.deepStrictEqual(sent, [text]);
 });
 
@@ -292,7 +292,7 @@ test('非 DeepSeek 平台长文本保持文本发送，不进入自动附件通�
   assert.deepStrictEqual(sent, [text]);
 });
 
-test('DeepSeek 平台超长系统提示词转为附件通道发送', async () => {
+test('DeepSeek 平台超长系统提示词保持文本直接发送，不转附件', async () => {
   vi.useFakeTimers();
   const { sent } = composer();
   window.location.href = 'https://chat.deepseek.com/';
@@ -305,12 +305,11 @@ test('DeepSeek 平台超长系统提示词转为附件通道发送', async () =>
   const send = chat.sendToChat(text, '系统提示词', 0);
   await vi.runAllTimersAsync();
   assert.strictEqual(await send, true);
-  assert.strictEqual(uploads.length, 1, '长系统提示词应调用 sendAsFile 上传附件');
-  assert.ok(uploads[0].fileName.startsWith('系统设定-'), '文件名应以系统设定为前缀');
-  assert.ok(sent[0].includes('系统设定与项目上下文已上传为附件'), '输入框应填入系统设定短提示词');
+  assert.strictEqual(uploads.length, 0, '长系统提示词不应转为附件');
+  assert.deepStrictEqual(sent, [text], '输入框应直接填入系统提示词全文');
 });
 
-test('DeepSeek 平台用户长消息转为附件通道发送', async () => {
+test('DeepSeek 平台用户长消息保持文本直接发送，不转附件', async () => {
   vi.useFakeTimers();
   const { sent } = composer();
   window.location.href = 'https://chat.deepseek.com/';
@@ -323,9 +322,8 @@ test('DeepSeek 平台用户长消息转为附件通道发送', async () => {
   const send = chat.sendUserMessageToChat(text);
   await vi.runAllTimersAsync();
   assert.strictEqual(await send, true);
-  assert.strictEqual(uploads.length, 1, '用户长文本应调用 sendAsFile 上传附件');
-  assert.ok(uploads[0].fileName.startsWith('用户需求-'), '文件名应以用户需求为前缀');
-  assert.ok(sent[0].includes('详细需求已整理为附件上传'), '输入框应填入用户需求短提示词');
+  assert.strictEqual(uploads.length, 0, '用户长文本不应转为附件');
+  assert.deepStrictEqual(sent, [text], '输入框应直接填入用户长文本全文');
 });
 
 test('初始提示回执只在网页确认清空后返回对应 requestId', async () => {
