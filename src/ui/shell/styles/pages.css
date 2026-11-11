@@ -65,22 +65,100 @@
     font-family: "SF Mono", "Consolas", monospace; font-size: 13px;
     font-variant-numeric: tabular-nums;
   }
-  .ck-auto-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-  @media (max-width: 780px) { .ck-auto-grid { grid-template-columns: minmax(0, 1fr); } }
+  .ck-auto-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
   .ck-auto-block {
-    display: flex; flex-direction: column; gap: 13px;
-    background: var(--ck-bg); border: 1px solid var(--ck-border);
-    border-radius: 12px; padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    background: var(--ck-bg);
+    border: 1px solid var(--ck-border);
+    border-radius: 12px;
+    padding: 12px 14px;
     box-shadow: var(--ck-shadow-sm);
+    transition: border-color .15s ease, box-shadow .15s ease;
   }
-  .ck-auto-head { display: flex; align-items: center; justify-content: space-between; }
-  .ck-auto-body { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ck-text-2); }
+  .ck-auto-block:hover {
+    border-color: var(--ck-border-strong);
+    box-shadow: var(--ck-shadow);
+  }
+  .ck-auto-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .ck-auto-head .ck-stat-key {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ck-text);
+  }
+  .ck-auto-body {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--ck-text-2);
+  }
+  .ck-auto-rule {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    min-width: 0;
+  }
   .ck-auto-body input[type="number"] {
-    width: 56px; background: var(--ck-surface); border: 1px solid transparent;
-    border-radius: 7px; padding: 5px 8px; color: var(--ck-text); font-size: 12.5px;
-    text-align: center; font-family: inherit;
+    width: 58px;
+    background: var(--ck-surface);
+    border: 1px solid var(--ck-border-strong);
+    border-radius: 7px;
+    padding: 4px 6px;
+    color: var(--ck-text);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    font-family: "SF Mono", "Consolas", monospace;
+    font-variant-numeric: tabular-nums;
+    transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
   }
-  .ck-auto-body input[type="number"]:focus { outline: none; border-color: var(--ck-primary); box-shadow: 0 0 0 3px var(--ck-primary-soft); }
+  .ck-auto-body input[type="number"]:focus {
+    outline: none;
+    border-color: var(--ck-primary);
+    background: var(--ck-bg);
+    box-shadow: 0 0 0 3px var(--ck-primary-soft);
+  }
+  .ck-auto-save-btn {
+    background: var(--ck-primary-soft);
+    border: 1px solid color-mix(in srgb, var(--ck-primary) 22%, transparent);
+    color: var(--ck-primary);
+    padding: 4px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 11.5px;
+    font-weight: 600;
+    flex-shrink: 0;
+    transition: all .15s ease;
+    font-family: inherit;
+    line-height: 1.4;
+  }
+  .ck-auto-save-btn:hover {
+    background: var(--ck-primary);
+    border-color: var(--ck-primary);
+    color: #fff;
+    box-shadow: 0 2px 6px color-mix(in srgb, var(--ck-primary) 32%, transparent);
+  }
+  .ck-auto-save-btn:active {
+    transform: scale(0.96);
+  }
+  .ck-auto-save-btn:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
   /* 开关 */
   .ck-switch { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
   .ck-switch input { opacity: 0; width: 0; height: 0; }

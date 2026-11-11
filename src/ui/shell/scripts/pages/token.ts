@@ -222,9 +222,14 @@ tkSwitchSave?.addEventListener('click', async () => {
     const r = await api.saveContextSwitch({ enabled, threshold });
     if (!r.success) { await ckAlert(r.error || '保存失败'); return; }
     tkSwitchSave.textContent = '已保存';
-    setTimeout(() => { tkSwitchSave.textContent = '保存设置'; }, 1200);
+    setTimeout(() => { tkSwitchSave.textContent = '保存'; }, 1200);
   } catch (e: unknown) { await ckAlert('保存失败: ' + String(e)); }
   finally { tkSwitchSave.disabled = false; }
+});
+// 拨动开关时联动自动保存
+const tkSwitchEnabledEl = document.getElementById('tk-switch-enabled') as HTMLInputElement | null;
+tkSwitchEnabledEl?.addEventListener('change', () => {
+  tkSwitchSave?.click();
 });
 const tkCompactBtn = document.getElementById('tk-compact');
 if (tkCompactBtn) tkCompactBtn.addEventListener('click', async () => {
@@ -245,10 +250,15 @@ if (tkAutoSaveBtn) tkAutoSaveBtn.addEventListener('click', async () => {
     const r = await api.saveAutoCompact({ enabled, threshold });
     if (r && r.success) {
       tkAutoSaveBtn.textContent = '已保存';
-      setTimeout(() => { tkAutoSaveBtn.textContent = '保存设置'; }, 1200);
+      setTimeout(() => { tkAutoSaveBtn.textContent = '保存'; }, 1200);
     } else {
       await ckAlert((r && r.error) || '保存失败');
     }
   } catch (e: any) { await ckAlert('保存失败: ' + (e.message || e)); }
   tkAutoSaveBtn.disabled = false;
+});
+// 拨动开关时联动自动保存
+const tkAutoEnabledEl = document.getElementById('tk-auto-enabled') as HTMLInputElement | null;
+tkAutoEnabledEl?.addEventListener('change', () => {
+  tkAutoSaveBtn?.click();
 });

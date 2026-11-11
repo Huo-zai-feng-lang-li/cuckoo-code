@@ -1609,22 +1609,100 @@
     font-family: "SF Mono", "Consolas", monospace; font-size: 13px;
     font-variant-numeric: tabular-nums;
   }
-  .ck-auto-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-  @media (max-width: 780px) { .ck-auto-grid { grid-template-columns: minmax(0, 1fr); } }
+  .ck-auto-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
   .ck-auto-block {
-    display: flex; flex-direction: column; gap: 13px;
-    background: var(--ck-bg); border: 1px solid var(--ck-border);
-    border-radius: 12px; padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    background: var(--ck-bg);
+    border: 1px solid var(--ck-border);
+    border-radius: 12px;
+    padding: 12px 14px;
     box-shadow: var(--ck-shadow-sm);
+    transition: border-color .15s ease, box-shadow .15s ease;
   }
-  .ck-auto-head { display: flex; align-items: center; justify-content: space-between; }
-  .ck-auto-body { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ck-text-2); }
+  .ck-auto-block:hover {
+    border-color: var(--ck-border-strong);
+    box-shadow: var(--ck-shadow);
+  }
+  .ck-auto-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .ck-auto-head .ck-stat-key {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ck-text);
+  }
+  .ck-auto-body {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--ck-text-2);
+  }
+  .ck-auto-rule {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    min-width: 0;
+  }
   .ck-auto-body input[type="number"] {
-    width: 56px; background: var(--ck-surface); border: 1px solid transparent;
-    border-radius: 7px; padding: 5px 8px; color: var(--ck-text); font-size: 12.5px;
-    text-align: center; font-family: inherit;
+    width: 58px;
+    background: var(--ck-surface);
+    border: 1px solid var(--ck-border-strong);
+    border-radius: 7px;
+    padding: 4px 6px;
+    color: var(--ck-text);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    font-family: "SF Mono", "Consolas", monospace;
+    font-variant-numeric: tabular-nums;
+    transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
   }
-  .ck-auto-body input[type="number"]:focus { outline: none; border-color: var(--ck-primary); box-shadow: 0 0 0 3px var(--ck-primary-soft); }
+  .ck-auto-body input[type="number"]:focus {
+    outline: none;
+    border-color: var(--ck-primary);
+    background: var(--ck-bg);
+    box-shadow: 0 0 0 3px var(--ck-primary-soft);
+  }
+  .ck-auto-save-btn {
+    background: var(--ck-primary-soft);
+    border: 1px solid color-mix(in srgb, var(--ck-primary) 22%, transparent);
+    color: var(--ck-primary);
+    padding: 4px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 11.5px;
+    font-weight: 600;
+    flex-shrink: 0;
+    transition: all .15s ease;
+    font-family: inherit;
+    line-height: 1.4;
+  }
+  .ck-auto-save-btn:hover {
+    background: var(--ck-primary);
+    border-color: var(--ck-primary);
+    color: #fff;
+    box-shadow: 0 2px 6px color-mix(in srgb, var(--ck-primary) 32%, transparent);
+  }
+  .ck-auto-save-btn:active {
+    transform: scale(0.96);
+  }
+  .ck-auto-save-btn:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
   /* 开关 */
   .ck-switch { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
   .ck-switch input { opacity: 0; width: 0; height: 0; }
@@ -2658,40 +2736,41 @@ body[data-ck-dark] .ck-stat-item-hl .ck-stat-val { color: #fbbf24; }
               </div>
 
               <div class="ck-auto-grid">
-              <div class="ck-auto-block">
-                <div class="ck-auto-head">
-                  <span class="ck-stat-key">自动压缩</span>
-                  <label class="ck-switch">
-                    <input type="checkbox" id="tk-auto-enabled" aria-label="自动压缩" />
-                    <span class="ck-switch-track"></span>
-                  </label>
+                <div class="ck-auto-block">
+                  <div class="ck-auto-head">
+                    <span class="ck-stat-key">自动压缩<span class="ck-hint" data-tooltip="当前上下文超过阈值时，自动向模型发送指令压缩上下文并开启新会话">!</span></span>
+                    <label class="ck-switch">
+                      <input type="checkbox" id="tk-auto-enabled" aria-label="自动压缩" />
+                      <span class="ck-switch-track"></span>
+                    </label>
+                  </div>
+                  <div class="ck-auto-body">
+                    <div class="ck-auto-rule">
+                      <span>超过</span>
+                      <input type="number" id="tk-auto-threshold" value="80" min="0.01" step="0.01" aria-label="自动压缩阈值（万 tokens）" />
+                      <span>万 tokens 时触发</span>
+                    </div>
+                    <button class="ck-auto-save-btn" id="tk-auto-save">保存</button>
+                  </div>
                 </div>
-                <div class="ck-auto-body">
-                  <span>超过</span>
-                  <input type="number" id="tk-auto-threshold" value="80" min="0.01" step="0.01" aria-label="自动压缩阈值（万 tokens）" />
-                  <span>万 tokens 时触发</span>
-                </div>
-                <button class="ck-btn ck-btn-anim" id="tk-auto-save">
-                  <svg class="ck-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
-                  <span>保存设置</span>
-                </button>
-              </div>
 
-              <div class="ck-auto-block">
-                <div class="ck-auto-head">
-                  <span class="ck-stat-key">上下文切换窗口</span>
-                  <label class="ck-switch">
-                    <input type="checkbox" id="tk-switch-enabled" aria-label="上下文达到阈值自动切换窗口" />
-                    <span class="ck-switch-track"></span>
-                  </label>
+                <div class="ck-auto-block">
+                  <div class="ck-auto-head">
+                    <span class="ck-stat-key">上下文切换窗口<span class="ck-hint" data-tooltip="当前上下文达到阈值时，自动平滑轮换切换到下一个可用窗口">!</span></span>
+                    <label class="ck-switch">
+                      <input type="checkbox" id="tk-switch-enabled" aria-label="上下文达到阈值自动切换窗口" />
+                      <span class="ck-switch-track"></span>
+                    </label>
+                  </div>
+                  <div class="ck-auto-body">
+                    <div class="ck-auto-rule">
+                      <span>达到</span>
+                      <input type="number" id="tk-switch-threshold" value="10" min="0.01" step="0.01" aria-label="切换窗口阈值（万 tokens）" />
+                      <span>万 tokens 时切换</span>
+                    </div>
+                    <button class="ck-auto-save-btn" id="tk-switch-save">保存</button>
+                  </div>
                 </div>
-                <div class="ck-auto-body">
-                  <span>达到</span>
-                  <input type="number" id="tk-switch-threshold" value="10" min="0.01" step="0.01" aria-label="切换窗口阈值（万 tokens）" />
-                  <span>万 tokens 时切换</span>
-                </div>
-                <button class="ck-btn ck-btn-anim" id="tk-switch-save">保存设置</button>
-              </div>
               </div>
 
               <div class="ck-chart-block">
@@ -8430,13 +8509,17 @@ paths:            # 可选；省略 = 始终生效
       }
       tkSwitchSave.textContent = "\u5DF2\u4FDD\u5B58";
       setTimeout(() => {
-        tkSwitchSave.textContent = "\u4FDD\u5B58\u8BBE\u7F6E";
+        tkSwitchSave.textContent = "\u4FDD\u5B58";
       }, 1200);
     } catch (e) {
       await ckAlert("\u4FDD\u5B58\u5931\u8D25: " + String(e));
     } finally {
       tkSwitchSave.disabled = false;
     }
+  });
+  var tkSwitchEnabledEl = document.getElementById("tk-switch-enabled");
+  tkSwitchEnabledEl?.addEventListener("change", () => {
+    tkSwitchSave?.click();
   });
   var tkCompactBtn = document.getElementById("tk-compact");
   if (tkCompactBtn) tkCompactBtn.addEventListener("click", async () => {
@@ -8464,7 +8547,7 @@ paths:            # 可选；省略 = 始终生效
       if (r && r.success) {
         tkAutoSaveBtn.textContent = "\u5DF2\u4FDD\u5B58";
         setTimeout(() => {
-          tkAutoSaveBtn.textContent = "\u4FDD\u5B58\u8BBE\u7F6E";
+          tkAutoSaveBtn.textContent = "\u4FDD\u5B58";
         }, 1200);
       } else {
         await ckAlert(r && r.error || "\u4FDD\u5B58\u5931\u8D25");
@@ -8473,6 +8556,10 @@ paths:            # 可选；省略 = 始终生效
       await ckAlert("\u4FDD\u5B58\u5931\u8D25: " + (e.message || e));
     }
     tkAutoSaveBtn.disabled = false;
+  });
+  var tkAutoEnabledEl = document.getElementById("tk-auto-enabled");
+  tkAutoEnabledEl?.addEventListener("change", () => {
+    tkAutoSaveBtn?.click();
   });
 
   // src/ui/shell/scripts/pages/about.ts
