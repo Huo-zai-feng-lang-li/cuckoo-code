@@ -68,6 +68,9 @@ if (RENDERER_LOG_DIR) {
 
 import { registerIpcHandlers } from './ipc/index.js';
 import * as globalSettings from './global-settings.js';
+import { runAutomaticSwitch, type SwitchReason } from './auto-switch.js';
+import { loadSwitchTarget } from './switch-target-load.js';
+import { waitForInitialPromptReceipt } from './ipc/initial-prompt-receipt.js';
 import { injectSemaphoreConfig } from './agent-semaphore.js';
 import * as taskManager from '../infra/task-manager.js';
 import { initRemote, stopRemote } from '../remote/manager.js';
@@ -404,11 +407,11 @@ function createWindow(profile: any) {
     const vx = sbw, vy = tbh;
     const vw = Math.max(0, w - sbw), vh = Math.max(0, h - tbh - STATUS_HEIGHT);
     // AI 视图可见性：浮层打开 / modal 隐藏 / harness 可见 → 隐藏；否则显示。
-    // setVisible + setBounds 双保险（某些平台 setVisible 偶发不生效，见下方 harness 切换处）。
+    // setVisible + 移至屏幕外负坐标双保险（绝不归零 width/height，避免底层网页视口坍塌为 0 导致 DOM 元素 offsetWidth 为 0 或触发移动端折叠）。
     const aiVisible = !webviewHidden && !harnessVisible && !aiHiddenByModal;
     try {
       if (view && !view.webContents.isDestroyed()) {
-        view.setBounds(aiVisible ? { x: vx, y: vy, width: vw, height: vh } : { x: 0, y: 0, width: 0, height: 0 });
+        view.setBounds(aiVisible ? { x: vx, y: vy, width: vw, height: vh } : { x: -20000, y: -20000, width: vw, height: vh });
         view.setVisible(aiVisible);
       }
     } catch (_) { /* ignore */ }
@@ -530,13 +533,11 @@ function createWindow(profile: any) {
       // 懒加载：首次进入纯净模式才创建 harness 视图
       const hv = ensureHarnessView();
       try { hv.setVisible(true); } catch (_) {}
-      // 隐藏 AI 视图（DS 页面）→ harness 透明可透出壳页面壁纸，天然对齐。
-      // setVisible + setBounds 双保险：某些平台 WebContentsView 的 setVisible 偶发不生效，
-      // 归零 bounds 可确保 AI 页面不残留（否则两层叠加）。
+      // 隐藏 AI 视图（DS 页面）→ 移至屏幕外负坐标（由 layoutView 统一分配），
+      // 保持 setVisible(true) 确保 Chromium 渲染管线、DOM 事件与输入管线活性，避免后台冻结。
       try {
         if (view && !view.webContents.isDestroyed()) {
-          view.setVisible(false);
-          view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+          view.setVisible(true);
         }
       } catch (_) {}
       layoutView();
@@ -1216,13 +1217,13 @@ function notifyWindowSwitch(reason: string, fromName: string, toName: string, ok
 }
 
 /** 把 fromProfileId 窗口的当前对话分享给组内下一个窗口（返回 { success, ... }） */
-async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSource: boolean = false, reasonOverride?: string): Promise<any> {
+async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSource: boolean = false, reasonOverride?: string, withSummary: boolean = false, sourceWindowId?: number): Promise<any> {
     // reason 独立于 closeSource：手动转移也可关源窗口，但文案仍是"手动转移"
     const reason = reasonOverride || (closeSource ? 'rate-limit' : 'manual');
     const fromName = profileDisplayName(fromProfileId);
     // 1) 找源窗口上下文
     const allCtx = windowState.getAllContexts().filter((c: any) => c.profileId === fromProfileId && !c.isSubagent);
-    const cur: any = allCtx[0];
+    const cur: any = sourceWindowId === undefined ? allCtx[0] : allCtx.find((c: any) => c.win?.id === sourceWindowId);
     if (!cur || !cur.win || cur.win.isDestroyed()) {
       notifyWindowSwitch(reason, fromName, '', false, '源窗口不可用');
       return { success: false, error: '源窗口不可用' };
@@ -1245,12 +1246,21 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSo
     // 源窗口是否处于纯净模式：切换后目标窗口也进入（否则用户从纯净模式被切走，只看到网页，不算无缝）
     const srcWasHarness = !!(cur.win && (cur.win as any).__ckHarnessVisible);
 
-    // 4) 请求源窗口分享当前对话（全量）
-    const share = await requestShareFromWindow(curWindowId);
+    // 4) 请求源窗口分享当前对话（withSummary 时先生成摘要、只分享最近 20%）
+    const share = await requestShareFromWindow(curWindowId, 90000, withSummary);
     if (!share || !share.ok || !share.shareId) {
       try { cur.view.webContents.send('harness-resume-retry'); } catch (_) { /* ignore */ }
       notifyWindowSwitch(reason, fromName, '', false, (share && share.error) || '分享失败');
       return { success: false, error: (share && share.error) || '分享失败' };
+    }
+    const currentSourceSession = () => cur.sessionStore?.extractSessionIdFromUrl(cur.view.webContents.getURL()) || null;
+    if (!share.sessionId || currentSourceSession() !== share.sessionId) {
+      notifyWindowSwitch(reason, fromName, '', false, '源会话已变化，取消切换');
+      return { success: false, error: '源会话已变化，取消切换' };
+    }
+    if (withSummary && !String(share.summary || '').trim()) {
+      notifyWindowSwitch(reason, fromName, '', false, '切换摘要缺失，保留源窗口');
+      return { success: false, error: '切换摘要缺失，保留源窗口' };
     }
 
     // 5) 取源窗口的项目目录
@@ -1319,46 +1329,34 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSo
     }
     const twc = tctx.view.webContents;
 
-    // 8) 导航到分享链接；加载完成后初始化项目
+    // 8) 导航并等待目标页面加载、初始提示实际投递成功。
     const shareUrl = 'https://chat.deepseek.com/share/' + share.shareId;
-    // 目标就绪信号：initProject 成功 → true；失败/超时 → false（供"关源窗口"前置校验）
-    let targetReadyResolve: (v: boolean) => void = () => {};
-    const targetReady = new Promise<boolean>((res) => { targetReadyResolve = res; });
-    const onLoad = () => {
-      try { twc.off('did-finish-load', onLoad); } catch (_) { /* ignore */ }
-      setTimeout(async () => {
-        let ready = false;
-        try {
-          // 注意：这里【故意不】加工作区信任门。
-          // 源窗口的项目目录必是它自己初始化时选定并已过信任门的（session.ts / shell.ts 入口已覆盖），
-          // 转移时 isWorkspaceTrusted 对已信任目录短路；而"用户当初选了不信任"的情况本就没启用项目级内容，
-          // 再问一次无意义。更关键：限流自动切换（rate-limit-hit）是无人值守路径，
-          // 此处弹模态框会卡死切换流程（switchingProfiles 不释放 → 该窗口再也无法自动切换）。
-          // 指定项目目录；不追加"请继续"（isCompaction=false, extraPrompt=''）
-          await initProject(false, tctx, projectDir, false, '', false);
-          ready = true;
-        } catch (_) { /* ignore */ }
-        try { targetReadyResolve(ready); } catch (_) { /* ignore */ }
-        // 源窗口若在纯净模式 → 目标窗口也进入（无缝接续的必要条件）
-        try {
-          if (srcWasHarness && tctx.win && !tctx.win.isDestroyed()) {
-            (tctx.win as any).__ckToggleHarness?.(true);
-          }
-        } catch (_) { /* ignore */ }
-        // 迁移源窗口 harness 状态（历史 + 队列）到目标窗口，实现无缝接续。
-        // 放在 initProject 之后：等目标 harness 就绪（若懒加载则等其创建）。
-        try {
-          // 暂存状态：目标 harness 可能尚未加载完（监听器未注册），
-          // 由 harness-ready 信号触发推送（window-groups.ts 的 onHarnessReady）。
-          if (harnessState) stageHarnessImport(targetWindowId, harnessState);
-        } catch (_) { /* ignore */ }
-      }, 2500);
-    };
-    try { twc.on('did-finish-load', onLoad); } catch (_) { /* ignore */ }
-    try { await twc.loadURL(shareUrl); } catch (err: any) {
-      try { twc.off('did-finish-load', onLoad); } catch (_) { /* ignore */ }
+    const loaded = await loadSwitchTarget(twc, shareUrl, 60000);
+    if (!loaded || twc.isDestroyed()) {
       try { cur.view.webContents.send('harness-resume-retry'); } catch (_) { /* ignore */ }
-      return { success: false, error: err.message };
+      notifyWindowSwitch(reason, fromName, '', false, '目标窗口加载失败');
+      return { success: false, error: '目标窗口加载失败' };
+    }
+    const extraPrompt = withSummary
+      ? '以下是上一段对话（因上下文达到阈值而切换窗口）的摘要，请基于它无缝续接，不要重复已完成的工作：\n\n' + share.summary
+      : '';
+    const receipt = waitForInitialPromptReceipt(ipcMainForProfile, twc, 60000);
+    let ready = false;
+    try {
+      // 自动切换不弹目录选择框；先注册回执监听，再发送初始提示。
+      const initialized = await initProject(false, tctx, projectDir, false, extraPrompt, true, null, receipt.requestId);
+      ready = !!initialized?.success && await receipt.result;
+    } catch (err: any) {
+      console.warn('[窗口组] 目标初始化失败:', err?.message || err);
+    } finally { receipt.cancel(); }
+    if (!ready || currentSourceSession() !== share.sessionId) {
+      try { cur.view.webContents.send('harness-resume-retry'); } catch (_) { /* ignore */ }
+      notifyWindowSwitch(reason, fromName, '', false, '目标提示词未投递或源会话已变化，保留源窗口');
+      return { success: false, error: '目标提示词未投递或源会话已变化' };
+    }
+    if (harnessState) stageHarnessImport(targetWindowId, harnessState);
+    if (srcWasHarness && tctx.win && !tctx.win.isDestroyed()) {
+      try { (tctx.win as any).__ckToggleHarness?.(true); } catch (_) { /* ignore */ }
     }
 
     // 9) 焦点切到新窗口
@@ -1372,34 +1370,13 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string, closeSo
       }, 5000);
     } catch (_) { /* ignore */ }
 
-    // 11) 关闭源窗口（避免窗口累积）。限流自动切换与手动转移**都会**关闭源窗口
-    //     （两处调用 closeSource 均为 true）；差异只在文案（'限流自动切换' vs '手动转移'）。
-    //     前置校验：等目标窗口 initProject 成功后才关；失败/超时（60s）则保留源窗口，
-    //     避免"目标没接上、源已关"导致对话真丢。
+    // 11) 仅在目标确实接收初始提示后关闭源窗口。
     if (closeSource) {
-      // 不阻塞 switch 主流程返回：后台等目标就绪后再关
-      Promise.race([
-        targetReady,
-        new Promise<boolean>((res) => setTimeout(() => res(false), 60000)),
-      ]).then((ready) => {
-        if (!ready) {
-          console.warn('[窗口组] 目标窗口未就绪，保留源窗口（不关闭） ' + curProfileId);
-          return;
-        }
-        setTimeout(() => {
-          try {
-            if (cur && cur.win && !cur.win.isDestroyed()) {
-              cur.win.close();
-              console.log('[窗口组] 已关闭限流的源窗口 ' + curProfileId);
-            }
-          } catch (err: any) {
-            console.warn('[窗口组] 关闭源窗口失败:', err.message);
-          }
-        }, 1500); // 等焦点切到新窗口后再关，避免闪烁
-      });
+      try { if (!cur.win.isDestroyed()) cur.win.close(); }
+      catch (err: any) { console.warn('[窗口组] 关闭源窗口失败:', err.message); }
     }
 
-    notifyWindowSwitch(reason, fromName, profileDisplayName(nextProfileId), true, closeSource ? '源窗口待目标就绪后关闭' : '');
+    notifyWindowSwitch(reason, fromName, profileDisplayName(nextProfileId), true, '');
     return { success: true, toProfileId: nextProfileId };
 }
 
@@ -1409,7 +1386,7 @@ injectWindowGroupDeps({
     const cur = (sender && windowState.getContextByWebContents(sender)) || windowState.getMainContext();
     if (!cur || !cur.win || cur.win.isDestroyed()) return { success: false, error: '无活跃窗口' };
     // 手动转移也关闭源窗口（closeSource=true），但文案保持"手动转移"
-    return runSwitchForGroup(groupId, cur.profileId, true, 'manual');
+    return runSwitchForGroup(groupId, cur.profileId, true, 'manual', false, cur.win.id);
   },
 });
 
@@ -1453,57 +1430,35 @@ function countdownBeforeAutoSwitch(ctx: any, seconds: number): Promise<boolean> 
 }
 
 // bridge 检测到限流（429 / rate_limit）→ 上报 → 若该窗口属于某组，则触发自动切换
-ipcMainForProfile.handle('rate-limit-hit', async (event: any) => {
+async function handleAutomaticSwitch(event: any, reason: SwitchReason) {
   const ctx = windowState.getContextByWebContents(event.sender);
   if (!ctx || !ctx.win || ctx.win.isDestroyed()) return { success: false };
+  if (reason === 'context-limit' && (ctx.isSubagent || ctx.view?.webContents !== event.sender)) return { success: false, error: 'invalid-sender' };
+  if (reason === 'context-limit' && !globalSettings.readAgentSettings().contextSwitchEnabled) return { success: true, switched: false, reason: 'disabled' };
+  const sourceSessionId = reason === 'context-limit' && ctx.sessionStore
+    ? ctx.sessionStore.extractSessionIdFromUrl(ctx.view.webContents.getURL())
+    : null;
+  if (reason === 'context-limit' && !sourceSessionId) return { success: false, error: 'missing-session' };
   const profileId = ctx.profileId;
   const group = windowGroups.getGroupByWindowId(profileId);
   if (!group) {
     console.log('[窗口组] 限流，但该窗口不在任何组，不切换');
     return { success: true, switched: false, reason: 'not-in-group' };
   }
-  // 去重：同一窗口已在切换流程中（倒计时/切换）→ 忽略后续重复触发
-  if (switchingProfiles.has(profileId)) {
-    console.log('[窗口组] 该窗口已在切换流程中，忽略重复触发 ' + profileId);
-    return { success: true, switched: false, reason: 'in-progress' };
-  }
-  switchingProfiles.add(profileId);
-  console.log('[窗口组] 限流触发自动切换，组=' + group.name);
-  // 系统级浮窗告警：右下角独立 BrowserWindow（一定看得见），10 秒倒计时，可取消/加速
-  // 注：目标窗口此刻尚未探测（要等分享 + 逐个探测），故只显示源窗口名
-  let decision: string;
-  try {
-    decision = await showSwitchAlert({
-      currentName: profileDisplayName(profileId),
-      seconds: 10,
-    });
-  } catch (err: any) {
-    // 浮窗异常（理论上不会，但守卫必要）：视同取消并释放 switchingProfiles，防该 profile 永久卡死
-    console.error('[窗口组] 告警浮窗异常:', err && err.message);
-    switchingProfiles.delete(profileId);
-    return { success: false, error: (err && err.message) || '告警浮窗异常' };
-  }
-  if (decision === 'cancel') {
-    console.log('[窗口组] 用户取消自动切换');
-    switchingProfiles.delete(profileId);
-    return { success: true, switched: false, reason: 'cancelled' };
-  }
-  if (decision === 'superseded') {
-    // 被新告警顶替（多窗口同时限流）：本轮静默放弃，不写"用户取消"误导日志
-    console.log('[窗口组] 告警被新告警顶替，放弃本轮切换 ' + profileId);
-    switchingProfiles.delete(profileId);
-    return { success: true, switched: false, reason: 'superseded' };
-  }
-  // 触发切换（复用 P2 的编排）
-  try {
-    const res = await runSwitchForGroup(group.id, profileId, true);
-    switchingProfiles.delete(profileId);
-    return { success: true, switched: !!(res && res.success), result: res };
-  } catch (err: any) {
-    switchingProfiles.delete(profileId);
-    return { success: false, error: err.message };
-  }
-});
+  return runAutomaticSwitch({ groupId: group.id, profileId, currentName: profileDisplayName(profileId), reason }, {
+    locks: switchingProfiles, showAlert: (data) => showSwitchAlert({ ...data, reason }),
+    // 上下文阈值切换：先摘要再只分享最近 20%，避免新窗口拿到同样满的上下文；限流切换保持全量。
+    switchGroup: (groupId, sourceId, closeSource, switchReason) => {
+      if (switchReason === 'context-limit') {
+        const currentSessionId = ctx.sessionStore?.extractSessionIdFromUrl(ctx.view.webContents.getURL()) || null;
+        if (currentSessionId !== sourceSessionId) return Promise.resolve({ success: false, error: '阈值对应的源会话已变化' });
+      }
+      return runSwitchForGroup(groupId, sourceId, closeSource, switchReason, switchReason === 'context-limit', ctx.win.id);
+    },
+  });
+}
+ipcMainForProfile.handle('rate-limit-hit', (event: any) => handleAutomaticSwitch(event, 'rate-limit'));
+ipcMainForProfile.handle('context-limit-hit', (event: any) => handleAutomaticSwitch(event, 'context-limit'));
 
 // ========== IPC 处理器 ==========
 registerIpcHandlers();

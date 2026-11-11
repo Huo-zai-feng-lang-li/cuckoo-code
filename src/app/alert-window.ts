@@ -55,6 +55,7 @@ function computeBounds(width: number, height: number): { x: number; y: number; w
 }
 
 interface AlertInitData {
+  reason?: 'rate-limit' | 'context-limit';
   /** 当前窗口显示名（限流源） */
   currentName?: string;
   /** 切换目标窗口显示名 */
@@ -94,7 +95,7 @@ function showSwitchAlert(data: AlertInitData): Promise<string> {
         skipTaskbar: false,
         alwaysOnTop: true,
         show: false,
-        title: '账号限流',
+        title: data.reason === 'context-limit' ? '上下文达到阈值自动切换窗口' : '账号限流',
         webPreferences: {
           preload: path.join(import.meta.dirname, 'alert-preload.js'),
           contextIsolation: true,
@@ -148,6 +149,7 @@ function showSwitchAlert(data: AlertInitData): Promise<string> {
     win.webContents.on('did-finish-load', () => {
       try {
         win.webContents.send('alert-init', {
+          reason: data.reason || 'rate-limit',
           currentName: data.currentName || '当前账号',
           targetName: data.targetName || '组内其他窗口',
           seconds,

@@ -16,6 +16,9 @@ const SET_FIELDS: [string, string][] = [
   ['watchdog-count', 'watchdogCount'],
   ['send-delay-min', 'sendDelayMin'],
   ['send-delay-max', 'sendDelayMax'],
+  ['pause-chance', 'pauseChance'],
+  ['pause-min', 'pauseMin'],
+  ['pause-max', 'pauseMax'],
   ['max-concurrent-agents', 'maxConcurrentAgents'],
   ['agent-start-interval-min', 'agentStartIntervalMin'],
   ['agent-start-interval-max', 'agentStartIntervalMax'],
@@ -35,6 +38,8 @@ function renderSettings(data: any): void {
   if (enEl) enEl.checked = data.retryEnabled !== false;
   const ssrfEl = document.getElementById('st-ssrf-guard') as any;
   if (ssrfEl) ssrfEl.checked = data.ssrfGuard === true;
+  const pauseEl = document.getElementById('st-pause-enabled') as HTMLInputElement | null;
+  if (pauseEl) pauseEl.checked = data.pauseEnabled !== false;
   for (const [id, key] of SET_FIELDS) setVal(id, data[key]);
 }
 
@@ -76,6 +81,10 @@ function collectSettings(): any {
     watchdogCount: intNum('watchdog-count'),
     sendDelayMin: num('send-delay-min'),
     sendDelayMax: num('send-delay-max'),
+    pauseEnabled: (document.getElementById('st-pause-enabled') as HTMLInputElement | null)?.checked ?? true,
+    pauseChance: num('pause-chance') ?? 0.1,
+    pauseMin: num('pause-min') ?? 30,
+    pauseMax: num('pause-max') ?? 75,
     maxConcurrentAgents: intNum('max-concurrent-agents'),
     agentStartIntervalMin: num('agent-start-interval-min'),
     agentStartIntervalMax: num('agent-start-interval-max'),
@@ -84,16 +93,19 @@ function collectSettings(): any {
 
 // ===== 即时保存：任一表单项变更后立即写入（不再需要"保存设置"按钮）=====
 // 并发保护：保存期间若再次变更，标记 pending，当前保存完成后再补存一次（不丢最后修改）
-let saving = false;
+let activeSave: Promise<void> | null = null;
 let savePending = false;
 /** reset 进行中：屏蔽即时保存，避免把用户改动写回、污染 reset 结果 */
 let resetting = false;
-async function saveNow(): Promise<void> {
+function saveNow(): void {
   if (!api.saveSettings || resetting) return;
-  if (saving) { savePending = true; return; }
-  saving = true;
+  if (activeSave) { savePending = true; return; }
+  activeSave = flushSettings().finally(() => { activeSave = null; });
+}
+
+async function flushSettings(): Promise<void> {
   // 循环到 pending 清空为止：每轮 await 让出事件循环，期间新增的 change 会置 savePending
-  for (;;) {
+  while (!resetting) {
     savePending = false;
     // 只提交本轮待保存的字段（增量）。dirty 为空 → 无变更可提交，直接退出。
     // 绝不能回退成全量提交：设置已全局化，全量提交会覆盖其他窗口刚改的字段。
@@ -102,24 +114,25 @@ async function saveNow(): Promise<void> {
     const all = collectSettings();
     const payload: any = {};
     for (const k of keys) payload[k] = all[k];
+    // 请求发出时出队；await 期间同字段的新 change 必须保留给下一轮。
+    for (const k of keys) dirty.delete(k);
     try {
-      const r = await api.saveSettings(payload);
-      // 成功才清 dirty：失败会 loadSettings 回滚，dirty 由后续 change 重新填充
-      if (r && r.success) { for (const k of keys) dirty.delete(k); }
+      const r = await api.saveSettings!(payload);
       if (!(r && r.success)) {
         // 校验失败（如区间 min>max）：提示并回滚到已保存值，丢弃期间的 pending
         await ckAlert((r && r.error) || '保存失败');
+        dirty.clear();
         await loadSettings();
         break;
       }
     } catch (e: any) {
       await ckAlert('保存失败: ' + (e.message || e));
+      dirty.clear();
       await loadSettings();
       break;
     }
     if (!savePending) break;
   }
-  saving = false;
 }
 // 数字/文本字段：change（失焦或回车）时保存（只提交该字段）
 for (const [id, key] of SET_FIELDS) {
@@ -128,6 +141,7 @@ for (const [id, key] of SET_FIELDS) {
 // 开关项：切换即保存（只提交该字段）
 document.getElementById('st-retry-enabled')?.addEventListener('change', () => { dirty.add('retryEnabled'); saveNow(); });
 document.getElementById('st-ssrf-guard')?.addEventListener('change', () => { dirty.add('ssrfGuard'); saveNow(); });
+document.getElementById('st-pause-enabled')?.addEventListener('change', () => { dirty.add('pauseEnabled'); saveNow(); });
 // 刷新：重新读取全部设置（失败重试 + 纯净模式字号 + 主题）
 // 注意：只调用"取值"函数，不调用 initThemeListener，避免重复注册监听器。
 document.getElementById('st-refresh')?.addEventListener('click', () => {
@@ -142,7 +156,7 @@ document.getElementById('st-reset')?.addEventListener('click', async () => {
   const anyApi = api as any;
   // 门控：reset 期间屏蔽即时保存，避免竞态把用户改动写回污染 reset 结果
   resetting = true;
-  saving = false;
+  await activeSave;
   savePending = false;
   // 清空待保存字段：否则 reset 后首次改单个字段时，会把 reset 前的陈旧字段值一并提交
   dirty.clear();

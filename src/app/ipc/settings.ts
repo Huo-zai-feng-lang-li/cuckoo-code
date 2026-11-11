@@ -183,10 +183,24 @@ function registerSettingsIpc(): void {
   ipcMain.handle('save-autocompact', async (event: any, { data }: any) => {
     const th = parseFloat(data.threshold);
     if (!Number.isFinite(th) || th <= 0) return { success: false, error: '阈值需为正数（万）' };
-    const next = globalSettings.writeAgentSettings({ autoCompactEnabled: !!data.enabled, autoCompactThreshold: th });
+    const next = globalSettings.writeAgentSettings(globalSettings.applyDelta(globalSettings.readAgentSettings(), { autoCompactEnabled: !!data.enabled, autoCompactThreshold: th }));
     broadcastSettings(next);
     return { success: true, data: { enabled: next.autoCompactEnabled, threshold: next.autoCompactThreshold } };
   });
+  // 手动触发压缩
+  ipcMain.handle('get-context-switch', async () => {
+    const s = globalSettings.readAgentSettings();
+    return { success: true, data: { enabled: s.contextSwitchEnabled, threshold: s.contextSwitchThreshold } };
+  });
+  ipcMain.handle('save-context-switch', async (_event: unknown, payload: { data?: { enabled?: boolean; threshold?: number } } = {}) => {
+    const data = payload.data;
+    const threshold = Number(data?.threshold);
+    if (!Number.isFinite(threshold) || threshold <= 0) return { success: false, error: '阈值需为正数（万）' };
+    const next = globalSettings.writeAgentSettings(globalSettings.applyDelta(globalSettings.readAgentSettings(), { contextSwitchEnabled: data?.enabled === true, contextSwitchThreshold: threshold }));
+    broadcastSettings(next);
+    return { success: true, data: { enabled: next.contextSwitchEnabled, threshold: next.contextSwitchThreshold } };
+  });
+
   // 手动触发压缩
   ipcMain.handle('trigger-compact', async (event: any) => {
     const ctx = windowState.getContextByWebContents(event.sender);

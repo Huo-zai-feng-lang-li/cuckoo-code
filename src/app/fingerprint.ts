@@ -184,6 +184,21 @@ export function buildFingerprintScript(fp: FingerprintConfig): string {
   return String.raw`
 (function() {
   try {
+    // 1. 域名守卫：排除 Cloudflare Turnstile 等人机验证挑战沙箱 iframe，
+    //    避免 hook 污染 CF 内部运行环境导致跨帧一致性校验失败、卡在 interactiveBegin。
+    try {
+      var _h = (window.location && window.location.hostname) || '';
+      if (
+        _h === 'challenges.cloudflare.com' ||
+        _h === 'challenges.fed.cloudflare.com' ||
+        _h === 'challenges.cloudflare-cn.com' ||
+        _h === 'challenges-staging.cloudflare.com' ||
+        _h.endsWith('.challenges.cloudflare.com')
+      ) {
+        return;
+      }
+    } catch (_) {}
+
     if (window.__cuckooFpInjected) return;
     // 不可枚举，避免 Reflect.ownKeys/Object.keys(window) 枚举到伪装标记
     try {

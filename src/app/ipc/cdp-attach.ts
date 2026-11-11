@@ -21,6 +21,20 @@ export interface AttachResult { success: boolean; mode?: string; error?: string;
 /** 该 AI 视图对应窗口上下文的最小接口（避免循环依赖 window.js） */
 export interface AttachCtx { providerId?: string; view: { webContents: any }; }
 
+async function waitForChooser(pending: Promise<AttachResult>): Promise<AttachResult> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      pending,
+      new Promise<AttachResult>((resolve) => {
+        timer = setTimeout(() => resolve({ success: false, error: 'round-timeout' }), 2500);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * CDP 上传主流程。临时文件落盘 → 探测入口坐标 → 真实点击 →
  * 拦截文件选择框 → setFileInputFiles → 清理。
@@ -28,7 +42,9 @@ export interface AttachCtx { providerId?: string; view: { webContents: any }; }
 export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<AttachResult> {
   const wc = ctx.view.webContents;
   let tmpPath: string | null = null;
+  let tmpDir: string | null = null;
   let attached = false;
+  let removeChooserListener: (() => void) | undefined;
   // 诊断镜像：主进程 console 不进 provider 日志，镜像到页面控制台以便落盘排查
   const pageLog = (msg: string) => {
     try {
@@ -36,10 +52,14 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
     } catch (_) { /* ignore */ }
   };
   try {
+    const name = file.name || 'file.bin';
+    if (typeof name !== 'string' || name === '.' || name === '..' || /[<>:"/\\|?*\x00]/.test(name)) {
+      return { success: false, error: 'invalid-file-name' };
+    }
     const bin = Buffer.from(file.data || '', 'base64');
     if (!bin.length) return { success: false, error: 'empty-file-data' };
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cuckoo-attach-'));
-    tmpPath = path.join(tmpDir, file.name || 'file.bin');
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cuckoo-attach-'));
+    tmpPath = path.join(tmpDir, name);
     fs.writeFileSync(tmpPath, bin);
 
     if (wc.debugger.isAttached()) return { success: false, error: 'debugger-busy' };
@@ -74,6 +94,10 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
      *   2. 输入区出现附件预览图/chip（上传成功后的视觉证据）。
      */
     const waitComposerReady = async (timeoutMs: number): Promise<boolean> => {
+      // provider 自定义就绪判据优先：内置启发式只认智谱/mimo 的类名与状态标记，
+      // DeepSeek 等用 hash 类名 + 无预览图的纯文本卡片，会被误判为"未就绪"。
+      const customReadySrc = provider && typeof (provider as any).getAttachReadySource === 'function'
+        ? (provider as any).getAttachReadySource() : null;
       const fn = function () {
         try {
           // 各 provider 自报的上传状态标记（provider 的 hook 在页内维护）。
@@ -110,7 +134,10 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
       let last: any = null;
       while (Date.now() < deadline) {
         try {
-          last = await wc.executeJavaScript('(' + fn.toString() + ')()', true);
+          // 统一传 (document, window)：provider 自定义源码按此签名取值；
+          // 内置 fn 不声明参数，多余实参被忽略，行为不变。
+          const readySrc = customReadySrc || fn.toString();
+          last = await wc.executeJavaScript('(' + readySrc + ')(document, window, ' + fileInfo + ')', true);
           if (last && last.ready) { pageLog('附件就绪: ' + last.via); return true; }
           if (last && last.via && last.via.indexOf('upload-fail') === 0) {
             pageLog('上传失败，不再等待: ' + last.via);
@@ -172,12 +199,10 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
           await wc.debugger.sendCommand('DOM.setFileInputFiles', { files: [tmpPath], backendNodeId: bnid });
           console.log('[Cuckoo Attach] 文件已注入: ' + tmpPath);
           pageLog('文件已注入 ' + file.name);
-          // 注入后立刻 + 3 秒后各看一次输入区状态：附件是否真的进去了
+          // 诊断与上传共用生命周期，避免结束后遗留页面操作。
           await dumpComposer('注入后立即');
-          setTimeout(() => { dumpComposer('注入后3s'); }, 3000);
           // 关键：等附件真正就绪再返回成功，否则 harness 立刻发送会被站点拒绝
           const ready = await waitComposerReady(12000);
-          setTimeout(() => { dumpComposer('就绪等待后'); }, 500);
           resolveChooser && resolveChooser({ success: ready, mode: 'cdp', error: ready ? undefined : 'attachment-not-ready' });
         } catch (err: any) {
           pageLog('注入失败: ' + ((err && err.message) || 'setFileInputFiles-failed'));
@@ -186,12 +211,14 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
       })();
     };
     wc.debugger.on('message', onMessage);
+    removeChooserListener = () => wc.debugger.removeListener('message', onMessage);
     await wc.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true });
 
     // 最多 3 轮「探测 → 真实点击 → 等文件选择框」：
     // 单步入口（如智谱图片键）一轮命中；两步流程（工具键弹菜单 → 菜单项）
     // 则每轮结束后重新探测，由 provider 按当前 DOM 状态给出下一步目标。
     for (let round = 1; round <= 3; round++) {
+      if (chooserSettled) return await chooserPromise;
       let probe: any = null;
       try {
         probe = await runProbe();
@@ -223,7 +250,6 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
             pageLog('文件已注入（直接注入隐藏 file input）');
             await dumpComposer('直接注入后立即');
             const ready = await waitComposerReady(12000);
-            setTimeout(() => { dumpComposer('就绪等待后'); }, 500);
             return { success: ready, mode: 'cdp-direct', error: ready ? undefined : 'attachment-not-ready', probe };
           }
           pageLog('未按标记定位到 file input，回退到点击流程');
@@ -237,10 +263,9 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
       await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', x: cx, y: cy, button: 'left', buttons: 0, clickCount: 1 });
       console.log('[Cuckoo Attach] CDP 已点击 (' + cx + ',' + cy + ') ' + (probe.tag || ''));
       pageLog('已点击 (' + cx + ',' + cy + ') ' + (probe.tag || ''));
-      const hit = await Promise.race([
-        chooserPromise,
-        new Promise<AttachResult>((r) => setTimeout(() => r({ success: false, error: 'round-timeout' }), 2500)),
-      ]);
+      const hit = await waitForChooser(chooserPromise);
+      // 2.5s 只限制等待选择器；一旦开始上传，必须等待其完整结果才能释放资源。
+      if (chooserSettled) return await chooserPromise;
       if (hit.success) return hit;
       if (hit.error && hit.error !== 'round-timeout') return hit;   // 真实失败（如注入异常）直接返回
       pageLog('本轮未出现文件选择框，重新探测下一步…');
@@ -249,9 +274,11 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
   } catch (err: any) {
     return { success: false, error: (err && err.message) || 'cdp-attach-failed' };
   } finally {
+    try { removeChooserListener?.(); } catch (_) { /* ignore */ }
     try { if (attached) await wc.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: false }); } catch (_) { /* ignore */ }
     try { if (attached) wc.debugger.detach(); } catch (_) { /* ignore */ }
-    try { if (tmpPath) { fs.unlinkSync(tmpPath); fs.rmdirSync(path.dirname(tmpPath)); } } catch (_) { /* ignore */ }
+    try { if (tmpPath && fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) { /* ignore */ }
+    try { if (tmpDir) fs.rmdirSync(tmpDir); } catch (_) { /* ignore */ }
   }
 }
 

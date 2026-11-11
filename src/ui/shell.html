@@ -1609,6 +1609,8 @@
     font-family: "SF Mono", "Consolas", monospace; font-size: 13px;
     font-variant-numeric: tabular-nums;
   }
+  .ck-auto-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  @media (max-width: 780px) { .ck-auto-grid { grid-template-columns: minmax(0, 1fr); } }
   .ck-auto-block {
     display: flex; flex-direction: column; gap: 13px;
     background: var(--ck-bg); border: 1px solid var(--ck-border);
@@ -2655,23 +2657,41 @@ body[data-ck-dark] .ck-stat-item-hl .ck-stat-val { color: #fbbf24; }
                 </div>
               </div>
 
+              <div class="ck-auto-grid">
               <div class="ck-auto-block">
                 <div class="ck-auto-head">
                   <span class="ck-stat-key">自动压缩</span>
                   <label class="ck-switch">
-                    <input type="checkbox" id="tk-auto-enabled" />
+                    <input type="checkbox" id="tk-auto-enabled" aria-label="自动压缩" />
                     <span class="ck-switch-track"></span>
                   </label>
                 </div>
                 <div class="ck-auto-body">
                   <span>超过</span>
-                  <input type="number" id="tk-auto-threshold" value="80" min="1" />
+                  <input type="number" id="tk-auto-threshold" value="80" min="0.01" step="0.01" aria-label="自动压缩阈值（万 tokens）" />
                   <span>万 tokens 时触发</span>
                 </div>
                 <button class="ck-btn ck-btn-anim" id="tk-auto-save">
                   <svg class="ck-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
                   <span>保存设置</span>
                 </button>
+              </div>
+
+              <div class="ck-auto-block">
+                <div class="ck-auto-head">
+                  <span class="ck-stat-key">上下文切换窗口</span>
+                  <label class="ck-switch">
+                    <input type="checkbox" id="tk-switch-enabled" aria-label="上下文达到阈值自动切换窗口" />
+                    <span class="ck-switch-track"></span>
+                  </label>
+                </div>
+                <div class="ck-auto-body">
+                  <span>达到</span>
+                  <input type="number" id="tk-switch-threshold" value="10" min="0.01" step="0.01" aria-label="切换窗口阈值（万 tokens）" />
+                  <span>万 tokens 时切换</span>
+                </div>
+                <button class="ck-btn ck-btn-anim" id="tk-switch-save">保存设置</button>
+              </div>
               </div>
 
               <div class="ck-chart-block">
@@ -3034,6 +3054,27 @@ paths:            # 可选；省略 = 始终生效
                       <input type="number" class="ck-set-input" id="st-send-delay-max" min="0" step="0.1" />
                     </div>
                   </div>
+                  <p class="ck-about-tip">每条消息发送前的「读内容 → 动手输入」认知时长。</p>
+                  <div class="ck-set-field ck-set-toggle">
+                    <span class="ck-set-key">随机长暂停（拟人：偶尔走神/离开）</span>
+                    <label class="ck-switch">
+                      <input type="checkbox" id="st-pause-enabled" />
+                      <span class="ck-switch-track"></span>
+                    </label>
+                  </div>
+                  <div class="ck-set-field">
+                    <span class="ck-set-key">触发概率（0~1）</span>
+                    <input type="number" class="ck-set-input" id="st-pause-chance" min="0" max="1" step="0.01" />
+                  </div>
+                  <div class="ck-set-field">
+                    <span class="ck-set-key">暂停时长区间（秒）</span>
+                    <div class="ck-set-inline">
+                      <input type="number" class="ck-set-input" id="st-pause-min" min="0" step="1" />
+                      <span class="ck-set-sep">至</span>
+                      <input type="number" class="ck-set-input" id="st-pause-max" min="0" step="1" />
+                    </div>
+                  </div>
+                  <p class="ck-about-tip">独立于发送延迟。系统消息（格式纠正/看门狗/重试）永不参与暂停，始终即时发出。</p>
                 </div>
               </div>
 
@@ -8346,6 +8387,7 @@ paths:            # 可选；省略 = 始终生效
     });
   }
   async function loadAutoCompact() {
+    await loadContextSwitch();
     if (!api.getAutoCompact) return;
     try {
       const r = await api.getAutoCompact();
@@ -8358,6 +8400,44 @@ paths:            # 可选；省略 = 始终生效
     } catch (_) {
     }
   }
+  async function loadContextSwitch() {
+    if (!api.getContextSwitch) return;
+    try {
+      const r = await api.getContextSwitch();
+      if (!r.success || !r.data) return;
+      const enabled = document.getElementById("tk-switch-enabled");
+      const threshold = document.getElementById("tk-switch-threshold");
+      if (enabled) enabled.checked = r.data.enabled;
+      if (threshold) threshold.value = String(r.data.threshold);
+    } catch (_) {
+    }
+  }
+  var tkSwitchSave = document.getElementById("tk-switch-save");
+  tkSwitchSave?.addEventListener("click", async () => {
+    if (!api.saveContextSwitch) return;
+    const enabled = document.getElementById("tk-switch-enabled")?.checked === true;
+    const threshold = Number(document.getElementById("tk-switch-threshold")?.value);
+    if (!Number.isFinite(threshold) || threshold <= 0) {
+      await ckAlert("\u9608\u503C\u9700\u4E3A\u6B63\u6570\uFF08\u4E07\uFF09");
+      return;
+    }
+    tkSwitchSave.disabled = true;
+    try {
+      const r = await api.saveContextSwitch({ enabled, threshold });
+      if (!r.success) {
+        await ckAlert(r.error || "\u4FDD\u5B58\u5931\u8D25");
+        return;
+      }
+      tkSwitchSave.textContent = "\u5DF2\u4FDD\u5B58";
+      setTimeout(() => {
+        tkSwitchSave.textContent = "\u4FDD\u5B58\u8BBE\u7F6E";
+      }, 1200);
+    } catch (e) {
+      await ckAlert("\u4FDD\u5B58\u5931\u8D25: " + String(e));
+    } finally {
+      tkSwitchSave.disabled = false;
+    }
+  });
   var tkCompactBtn = document.getElementById("tk-compact");
   if (tkCompactBtn) tkCompactBtn.addEventListener("click", async () => {
     if (!api.triggerCompact) return;
@@ -9379,6 +9459,9 @@ paths:            # 可选；省略 = 始终生效
     ["watchdog-count", "watchdogCount"],
     ["send-delay-min", "sendDelayMin"],
     ["send-delay-max", "sendDelayMax"],
+    ["pause-chance", "pauseChance"],
+    ["pause-min", "pauseMin"],
+    ["pause-max", "pauseMax"],
     ["max-concurrent-agents", "maxConcurrentAgents"],
     ["agent-start-interval-min", "agentStartIntervalMin"],
     ["agent-start-interval-max", "agentStartIntervalMax"]
@@ -9397,6 +9480,8 @@ paths:            # 可选；省略 = 始终生效
     if (enEl) enEl.checked = data.retryEnabled !== false;
     const ssrfEl = document.getElementById("st-ssrf-guard");
     if (ssrfEl) ssrfEl.checked = data.ssrfGuard === true;
+    const pauseEl = document.getElementById("st-pause-enabled");
+    if (pauseEl) pauseEl.checked = data.pauseEnabled !== false;
     for (const [id, key] of SET_FIELDS) setVal(id, data[key]);
   }
   async function loadSettings() {
@@ -9443,46 +9528,53 @@ paths:            # 可选；省略 = 始终生效
       watchdogCount: intNum("watchdog-count"),
       sendDelayMin: num("send-delay-min"),
       sendDelayMax: num("send-delay-max"),
+      pauseEnabled: document.getElementById("st-pause-enabled")?.checked ?? true,
+      pauseChance: num("pause-chance") ?? 0.1,
+      pauseMin: num("pause-min") ?? 30,
+      pauseMax: num("pause-max") ?? 75,
       maxConcurrentAgents: intNum("max-concurrent-agents"),
       agentStartIntervalMin: num("agent-start-interval-min"),
       agentStartIntervalMax: num("agent-start-interval-max")
     };
   }
-  var saving2 = false;
+  var activeSave = null;
   var savePending = false;
   var resetting = false;
-  async function saveNow() {
+  function saveNow() {
     if (!api.saveSettings || resetting) return;
-    if (saving2) {
+    if (activeSave) {
       savePending = true;
       return;
     }
-    saving2 = true;
-    for (; ; ) {
+    activeSave = flushSettings().finally(() => {
+      activeSave = null;
+    });
+  }
+  async function flushSettings() {
+    while (!resetting) {
       savePending = false;
       const keys = Array.from(dirty2);
       if (keys.length === 0) break;
       const all = collectSettings();
       const payload = {};
       for (const k of keys) payload[k] = all[k];
+      for (const k of keys) dirty2.delete(k);
       try {
         const r = await api.saveSettings(payload);
-        if (r && r.success) {
-          for (const k of keys) dirty2.delete(k);
-        }
         if (!(r && r.success)) {
           await ckAlert(r && r.error || "\u4FDD\u5B58\u5931\u8D25");
+          dirty2.clear();
           await loadSettings();
           break;
         }
       } catch (e) {
         await ckAlert("\u4FDD\u5B58\u5931\u8D25: " + (e.message || e));
+        dirty2.clear();
         await loadSettings();
         break;
       }
       if (!savePending) break;
     }
-    saving2 = false;
   }
   for (const [id, key] of SET_FIELDS) {
     document.getElementById("st-" + id)?.addEventListener("change", () => {
@@ -9498,6 +9590,10 @@ paths:            # 可选；省略 = 始终生效
     dirty2.add("ssrfGuard");
     saveNow();
   });
+  document.getElementById("st-pause-enabled")?.addEventListener("change", () => {
+    dirty2.add("pauseEnabled");
+    saveNow();
+  });
   document.getElementById("st-refresh")?.addEventListener("click", () => {
     loadSettings();
     loadUiPrefs();
@@ -9508,7 +9604,7 @@ paths:            # 可选；省略 = 始终生效
     if (!await ckConfirm("\u786E\u5B9A\u6062\u590D\u9ED8\u8BA4\u8BBE\u7F6E\uFF1F")) return;
     const anyApi = api;
     resetting = true;
-    saving2 = false;
+    await activeSave;
     savePending = false;
     dirty2.clear();
     try {

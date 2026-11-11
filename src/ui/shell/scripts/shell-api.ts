@@ -193,6 +193,8 @@ export interface ShellAPI {
   getWindowUsage?: () => Promise<any>;
   onWindowUsage?: (cb: (data: any) => void) => void;
   getAutoCompact?: () => Promise<any>;
+  getContextSwitch?: () => Promise<{ success: boolean; data?: { enabled: boolean; threshold: number }; error?: string }>;
+  saveContextSwitch?: (data: { enabled: boolean; threshold: number }) => Promise<{ success: boolean; error?: string }>;
   saveAutoCompact?: (data: any) => Promise<any>;
   triggerCompact?: () => Promise<any>;
   // 设置

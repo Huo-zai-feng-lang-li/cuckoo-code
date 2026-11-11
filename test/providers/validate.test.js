@@ -79,3 +79,11 @@ test('assertProvider 非法时抛错', () => {
   assert.throws(() => assertProvider({}), /缺少 id/);
   assert.throws(() => assertProvider(null), /必须是对象/);
 });
+
+test('附件钩子是可选工厂，但显式提供时必须为函数', () => {
+  for (const key of ['getAttachProbeSource', 'getAttachReadySource']) {
+    assert.match(String(validateProvider({ ...validProvider(), [key]: 'not-a-factory' })), new RegExp(key));
+    assert.strictEqual(validateProvider({ ...validProvider(), [key]: () => '(doc, win) => ({ ready: true })' }), null);
+    assert.strictEqual(validateProvider({ ...validProvider(), [key]: () => () => ({ ready: true }) }), null);
+  }
+});

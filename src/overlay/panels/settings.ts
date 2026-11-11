@@ -32,6 +32,15 @@ function openSettings() {
   } catch (_) {}
   setVal('cuckoo-delay-min', state.sendDelayMin / 1000);
   setVal('cuckoo-delay-max', state.sendDelayMax / 1000);
+  // 随机长暂停（需求 115）：UI 单位秒 / 概率 0~1
+  try {
+    const pEn = localStorage.getItem('cuckoo-pause-enabled');
+    const pEnEl = document.getElementById('cuckoo-pause-enabled');
+    if (pEnEl) (pEnEl as any).checked = pEn === null ? true : pEn === '1';
+    setVal('cuckoo-pause-chance', state.pauseChance);
+    setVal('cuckoo-pause-min', state.pauseMinMs / 1000);
+    setVal('cuckoo-pause-max', state.pauseMaxMs / 1000);
+  } catch (_) {}
   const panel = document.getElementById('cuckoo-settings');
   if (panel) panel.classList.remove('cuckoo-hidden');
 }
@@ -49,12 +58,17 @@ function resetSettings() {
     'cuckoo-retry-count', 'cuckoo-retry-429-delay', 'cuckoo-retry-429-count',
     'cuckoo-retry-prompt', 'cuckoo-xhr-idle-timeout', 'cuckoo-watchdog-prompt',
     'cuckoo-watchdog-count', 'cuckoo-send-delay-min', 'cuckoo-send-delay-max',
+    'cuckoo-pause-enabled', 'cuckoo-pause-chance', 'cuckoo-pause-min', 'cuckoo-pause-max',
   ];
   try {
     for (const k of KEYS) localStorage.removeItem(k);
   } catch (_) {}
   state.sendDelayMin = 4000;
   state.sendDelayMax = 30000;
+  state.pauseEnabled = true;
+  state.pauseChance = 0.1;
+  state.pauseMinMs = 30000;
+  state.pauseMaxMs = 75000;
   showToast('已恢复默认设置', 2500);
   openSettings(); // 重新加载默认值到输入框
 }
@@ -87,6 +101,15 @@ function saveSettings() {
   if (Number.isNaN(smin) || smin < 0) { showToast('发送延迟最小值必须是非负数字（秒）', 3000); return; }
   if (Number.isNaN(smax) || smax < smin) { showToast('发送延迟最大值不能小于最小值', 3000); return; }
 
+  const pEnEl = document.getElementById('cuckoo-pause-enabled') as HTMLInputElement | null;
+  const pauseEnabled = pEnEl ? pEnEl.checked : state.pauseEnabled;
+  const pauseChance = Number(val('cuckoo-pause-chance').trim() || '0.1');
+  const pauseMinMs = secToMs(val('cuckoo-pause-min').trim() || '30');
+  const pauseMaxMs = secToMs(val('cuckoo-pause-max').trim() || '75');
+  if (!Number.isFinite(pauseChance) || pauseChance < 0 || pauseChance > 1) { showToast('随机长暂停概率必须是 0~1 的数字', 3000); return; }
+  if (!Number.isFinite(pauseMinMs) || pauseMinMs < 0) { showToast('随机长暂停最短时长必须非负', 3000); return; }
+  if (!Number.isFinite(pauseMaxMs) || pauseMaxMs < pauseMinMs) { showToast('随机长暂停最长时长不能小于最短时长', 3000); return; }
+
   const enEl = document.getElementById('cuckoo-retry-enabled');
   try {
     localStorage.setItem('cuckoo-retry-enabled', (enEl && (enEl as any).checked) ? '1' : '0');
@@ -104,6 +127,18 @@ function saveSettings() {
   } catch (_) {}
   state.sendDelayMin = smin;
   state.sendDelayMax = smax;
+
+  // 随机长暂停（需求 115）：界面单位 = 秒 / 概率 0~1
+  try {
+    localStorage.setItem('cuckoo-pause-enabled', pauseEnabled ? '1' : '0');
+    localStorage.setItem('cuckoo-pause-chance', String(pauseChance));
+    localStorage.setItem('cuckoo-pause-min', String(pauseMinMs));
+    localStorage.setItem('cuckoo-pause-max', String(pauseMaxMs));
+  } catch (_) {}
+  state.pauseEnabled = pauseEnabled;
+  state.pauseChance = pauseChance;
+  state.pauseMinMs = pauseMinMs;
+  state.pauseMaxMs = pauseMaxMs;
 
   // 必须同步到主进程（agent-settings.json 是唯一真相源）。
   // 只写 localStorage 的话，主进程任何一次 cuckoo-sync-settings 广播（其他窗口加载、
@@ -125,6 +160,10 @@ function saveSettings() {
       watchdogCount: watchdogCount,
       sendDelayMin: smin / 1000,
       sendDelayMax: smax / 1000,
+      pauseEnabled,
+      pauseChance,
+      pauseMin: pauseMinMs / 1000,
+      pauseMax: pauseMaxMs / 1000,
     }).then((res: any) => {
       if (res && res.success === false) {
         showToast('设置同步失败: ' + (res.error || '未知错误'), 4000);
@@ -169,6 +208,11 @@ interface SettingsData {
   /** 子代理启动间隔区间（秒；0 = 不等待，默认 2~5） */
   agentStartIntervalMin: number;
   agentStartIntervalMax: number;
+  /** 随机长暂停：开关 / 概率（0~1） / 时长区间（秒） */
+  pauseEnabled: boolean;
+  pauseChance: number;
+  pauseMin: number;
+  pauseMax: number;
 }
 
 /** 读取当前设置（UI 单位：秒） */
@@ -202,6 +246,10 @@ function getSettingsData(): SettingsData {
     // 需求 100：默认 2~5 秒，打散同账号多路子代理的并发启动特征
     agentStartIntervalMin: sec(lsGet('cuckoo-agent-start-interval-min'), 2),
     agentStartIntervalMax: sec(lsGet('cuckoo-agent-start-interval-max'), 5),
+    pauseEnabled: lsGet('cuckoo-pause-enabled') === null ? true : lsGet('cuckoo-pause-enabled') === '1',
+    pauseChance: (() => { const n = parseFloat(lsGet('cuckoo-pause-chance') || ''); return Number.isFinite(n) ? n : 0.1; })(),
+    pauseMin: sec(lsGet('cuckoo-pause-min'), 30),
+    pauseMax: sec(lsGet('cuckoo-pause-max'), 75),
   };
 }
 
@@ -262,6 +310,28 @@ function applySettingsData(data: any): { success: boolean; error?: string } {
     if (!Number.isFinite(v) || v < 0) return { success: false, error: '子代理启动间隔必须是非负数字（秒）' };
     subIntervalMaxMs = v;
   }
+  // 随机长暂停（需求 115）：同 ssrfGuard / 子代理字段模式 —— 仅显式提供才校验并写。
+  let pauseChanceVal: number | null = null;
+  if (data && data.pauseChance !== undefined && data.pauseChance !== null && data.pauseChance !== '') {
+    const v = parseFloat(data.pauseChance);
+    if (!Number.isFinite(v) || v < 0 || v > 1) return { success: false, error: '随机长暂停概率必须是 0~1 的数字' };
+    pauseChanceVal = v;
+  }
+  let pauseMinMs: number | null = null;
+  if (data && data.pauseMin !== undefined && data.pauseMin !== null && data.pauseMin !== '') {
+    const v = secToMs(data.pauseMin);
+    if (!Number.isFinite(v) || v < 0) return { success: false, error: '随机长暂停最短时长必须是非负数字（秒）' };
+    pauseMinMs = v;
+  }
+  let pauseMaxMs: number | null = null;
+  if (data && data.pauseMax !== undefined && data.pauseMax !== null && data.pauseMax !== '') {
+    const v = secToMs(data.pauseMax);
+    if (!Number.isFinite(v) || v < 0) return { success: false, error: '随机长暂停最长时长必须是非负数字（秒）' };
+    pauseMaxMs = v;
+  }
+  if (pauseMinMs !== null && pauseMaxMs !== null && pauseMaxMs < pauseMinMs) {
+    return { success: false, error: '随机长暂停最长时长不能小于最短时长' };
+  }
 
   try {
     localStorage.setItem('cuckoo-retry-enabled', (data && data.retryEnabled) ? '1' : '0');
@@ -283,11 +353,19 @@ function applySettingsData(data: any): { success: boolean; error?: string } {
     if (subMaxConcurrent !== null) localStorage.setItem('cuckoo-max-concurrent-agents', String(subMaxConcurrent));
     if (subIntervalMinMs !== null) localStorage.setItem('cuckoo-agent-start-interval-min', String(subIntervalMinMs));
     if (subIntervalMaxMs !== null) localStorage.setItem('cuckoo-agent-start-interval-max', String(subIntervalMaxMs));
+    if (data && data.pauseEnabled !== undefined) localStorage.setItem('cuckoo-pause-enabled', data.pauseEnabled ? '1' : '0');
+    if (pauseChanceVal !== null) localStorage.setItem('cuckoo-pause-chance', String(pauseChanceVal));
+    if (pauseMinMs !== null) localStorage.setItem('cuckoo-pause-min', String(pauseMinMs));
+    if (pauseMaxMs !== null) localStorage.setItem('cuckoo-pause-max', String(pauseMaxMs));
   } catch (err: any) {
     return { success: false, error: '写入失败: ' + err.message };
   }
   state.sendDelayMin = smin;
   state.sendDelayMax = smax;
+  if (data && data.pauseEnabled !== undefined) state.pauseEnabled = !!data.pauseEnabled;
+  if (pauseChanceVal !== null) state.pauseChance = pauseChanceVal;
+  if (pauseMinMs !== null) state.pauseMinMs = pauseMinMs;
+  if (pauseMaxMs !== null) state.pauseMaxMs = pauseMaxMs;
   return { success: true };
 }
 
@@ -305,10 +383,15 @@ function resetSettingsData(): SettingsData {
     'cuckoo-max-concurrent-agents',
     'cuckoo-agent-start-interval-min',
     'cuckoo-agent-start-interval-max',
+    'cuckoo-pause-enabled', 'cuckoo-pause-chance', 'cuckoo-pause-min', 'cuckoo-pause-max',
   ];
   try { for (const k of KEYS) localStorage.removeItem(k); } catch (_) {}
   state.sendDelayMin = 4000;
   state.sendDelayMax = 30000;
+  state.pauseEnabled = true;
+  state.pauseChance = 0.1;
+  state.pauseMinMs = 30000;
+  state.pauseMaxMs = 75000;
   return getSettingsData();
 }
 

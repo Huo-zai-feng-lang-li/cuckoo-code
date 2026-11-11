@@ -144,6 +144,58 @@ test('过渡态用状态位而非文案前缀匹配', () => {
   );
 });
 
+test('暂停通知在运行态同步期间保持优先，并在暂停结束后复位宠物', () => {
+  assert.ok(/var sendPauseActive = false;/.test(script), '应记录长暂停活动状态');
+  const syncIdx = script.indexOf('function syncPet');
+  const syncEnd = script.indexOf('\n  function ', syncIdx + 10);
+  const syncBody = script.slice(syncIdx, syncEnd > 0 ? syncEnd : syncIdx + 1500);
+  assert.ok(syncBody.includes('if (sendPauseActive)'), '运行态同步应优先维持暂停情绪');
+  assert.ok(syncBody.includes("petMood('pausing')"), '同步期间内嵌宠物应保持暂停情绪');
+  assert.ok(syncBody.includes("state: 'pausing'"), '同步期间独立宠物应保持暂停状态');
+  const eventIdx = script.indexOf("case 'send-pause'");
+  const eventBody = script.slice(eventIdx, eventIdx + 600);
+  assert.ok(eventBody.includes('sendPauseActive = !!payload.active'), '暂停开始和结束都应更新状态');
+  assert.ok(eventBody.includes('syncPet()'), '暂停结束应恢复到当前生成状态');
+});
+
+test('长暂停下排显示次数/总时长/等待秒数，不走等待发送旧文案', () => {
+  // 回归背景：暂停期间等待发送秒表仍在每秒把下排刷回「等待发送 Xs」，
+  // 暂停分支只切了上排情绪，下排看不出这是触发了随机概率延迟。
+  const eventIdx = script.indexOf("case 'send-pause'");
+  assert.ok(eventIdx > 0, '应处理 send-pause');
+  const eventBody = script.slice(eventIdx, eventIdx + 600);
+  assert.ok(eventBody.includes('pauseCount++'), '每次暂停开始应累计次数');
+  assert.ok(/pauseDurationMs = payload\.active \? \(payload\.durationMs \|\| 0\) : 0;/.test(eventBody), '应记录本次暂停时长（毫秒）');
+  assert.ok(script.includes('触发随机概率延迟'), '下排文案应点明触发随机概率延迟');
+  assert.ok(script.includes('等待发送'), '下排应保留等待发送已走秒数');
+  const syncIdx = script.indexOf('function syncPet');
+  const syncEnd = script.indexOf('\n  function ', syncIdx + 10);
+  const syncBody = script.slice(syncIdx, syncEnd > 0 ? syncEnd : syncIdx + 1500);
+  assert.ok(syncBody.includes('pauseStatusText()'), '暂停分支应调用统一文案函数');
+  const psIdx = script.indexOf('function pauseStatusText');
+  assert.ok(psIdx > 0, '应有暂停下排文案函数');
+  const psBody = script.slice(psIdx, psIdx + 400);
+  assert.ok(psBody.includes('pauseDurationMs'), '文案函数应使用记录的暂停时长');
+  assert.ok(psBody.includes('Math.round(pauseDurationMs / 1000)'), '暂停时长应换算成秒');
+});
+
+test('暂停期间 petBubble 下发浮窗 state 保持 pausing（不被打回 thinking）', () => {
+  // 回归背景：renderSendTick 每秒经 petBubble 下发浮窗状态，原三元只看
+  // toolRunningCount/generating，暂停期间 generating=true 会把浮窗 state 覆盖回 thinking，
+  // 上排走神句被拉回 thinking 组。
+  const idx = script.indexOf('function petBubble');
+  assert.ok(idx > 0, '应有 petBubble 函数');
+  const body = script.slice(idx, idx + 600);
+  assert.ok(/state: sendPauseActive \? 'pausing' :/.test(body), '暂停态浮窗 state 应为 pausing');
+});
+
+test('切会话/新对话清零暂停次数（按当前会话计数）', () => {
+  const idx = script.indexOf('function clearTransientState');
+  assert.ok(idx > 0, '应有 clearTransientState');
+  const body = script.slice(idx, idx + 2000);
+  assert.ok(body.includes('pauseCount = 0'), '切会话/新对话应清零暂停次数');
+});
+
 test('静默兜底有界：不允许数分钟级卡在运行态', () => {
   const m = script.match(/var limit = Date\.now\(\) < frameworkDriveUntil \? (\d+) : (\d+);/);
   assert.ok(m, '应能找到静默兜底的容忍上限');
@@ -404,4 +456,43 @@ test('历史消息编辑：三态按钮组（中间/已完成末轮/待发送）
   assert.ok(body.includes('msg-edit-quote'), '中间消息应有填入输入框');
   assert.ok(/hasRepliedAfter/.test(body), '应区分最后一轮是否已回复');
   assert.ok(body.includes('msg-edit-save primary'), '待发送消息应有重新发送');
+});
+
+// ===== 逐请求回执：失败回填草稿，不覆盖用户新输入 =====
+
+test('回执草稿：有 pendingDraft 状态与 settleDraft 配对函数', () => {
+  assert.ok(/var pendingDraft = null;/.test(script), '应有 pendingDraft 状态');
+  assert.ok(/function settleDraft\s*\(/.test(script), '应有 settleDraft 配对函数');
+  assert.ok(/function newRequestId\s*\(/.test(script), '应生成本地 requestId');
+});
+
+test('回执草稿：失败仅在输入框为空时回填，非空不覆盖', () => {
+  const idx = script.indexOf('function settleDraft');
+  const body = script.slice(idx, idx + 900);
+  assert.ok(body.includes('pendingDraft.requestId !== requestId'), '回执须按 requestId 配对，旧回执不串');
+  assert.ok(body.includes('pendingDraft = null'), 'settle 后必须清草稿（幂等）');
+  assert.ok(/!input\.value\.trim\(\)/.test(body), '回填前必须判输入框为空');
+  assert.ok(body.includes('input.value = draft.text'), '回填用户原文');
+  assert.ok(body.includes('autoGrowInput()'), '回填后应复位输入框高度');
+});
+
+test('回执草稿：事件通道 send-result 按 requestId 配对 settle', () => {
+  const idx = script.indexOf("case 'send-result'");
+  assert.ok(idx > 0, '事件分发应处理 send-result');
+  const body = script.slice(idx, idx + 400);
+  assert.ok(body.includes('settleDraft(payload.requestId, payload.success === true)'), '事件回执应按 requestId 配对');
+});
+
+test('回执草稿：TTL 过期清理，避免旧草稿回填到新消息', () => {
+  assert.ok(/var DRAFT_TTL_MS = 150000;/.test(script), '应有与回执超时同档的草稿 TTL');
+  assert.ok(/function dropExpiredDraft\s*\(/.test(script), '应有过期清理函数');
+  const sendIdx = script.indexOf('function send(');
+  const sendBody = script.slice(sendIdx, sendIdx + 1200);
+  assert.ok(sendBody.includes('dropExpiredDraft()'), '发送前应清理过期草稿');
+});
+
+test('回执草稿：requestId 贯穿 sendMessage 调用，override 投递不存草稿', () => {
+  assert.ok(/var draftRequestId = hasOverride \? null : newRequestId\(\);/.test(script), '仅普通直发生成 requestId');
+  const calls = script.match(/api\.sendMessage\([^,]+,\s*draftRequestId\)/g);
+  assert.ok(calls && calls.length >= 1, 'sendMessage 应携带 requestId 配对回执');
 });

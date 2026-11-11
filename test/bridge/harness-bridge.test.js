@@ -16,6 +16,7 @@ import assert from 'node:assert';
 const S = {
   reported: [],
   invoked: [],
+  sent: [],
   userMsgListener: null,
   stopListener: null,
   intervals: [],
@@ -31,6 +32,7 @@ vi.mock('node:module', async (importOriginal) => {
           if (ch === 'harness-user-message') S.userMsgListener = fn;
           if (ch === 'harness-stop-signal') S.stopListener = fn;
         },
+        send: (ch, payload) => { S.sent.push({ ch, payload }); },
         invoke: (ch, payload) => {
           S.invoked.push(ch);
           if (ch === 'harness-event-report') { S.reported.push(payload); return Promise.resolve({ success: true }); }
@@ -42,7 +44,7 @@ vi.mock('node:module', async (importOriginal) => {
 });
 
 // observer 与 chat-input 是外部边界：只关心 bridge 是否按要求上报
-const CB = { response: null, stream: null, tool: null, delivered: null, taskIdle: null, aiError: null, userStop: null };
+const CB = { response: null, stream: null, tool: null, delivered: null, taskIdle: null, aiError: null, userStop: null, userMsg: null };
 vi.mock('../../src/bridge/intercept/observer.js', () => ({
   onInterceptedResponse: (cb) => { CB.response = cb; return () => {}; },
   onStream: (cb) => { CB.stream = cb; return () => {}; },
@@ -56,6 +58,9 @@ vi.mock('../../src/bridge/intercept/observer.js', () => ({
 
 vi.mock('../../src/overlay/chat-input.js', () => ({
   sendToChat: () => Promise.resolve(true),
+  sendUserMessageToChat: (text) => (CB.userMsg ? CB.userMsg(text) : Promise.resolve(true)),
+  getLastSendError: () => '',
+  onSendPause: () => () => {},
   cancelPendingSend: () => {},
   clearInputArea: () => Promise.resolve(true),
   onMessageDelivered: (cb) => { CB.delivered = cb; return () => {}; },
@@ -78,6 +83,7 @@ beforeEach(async () => {
   vi.resetModules();
   S.reported = [];
   S.invoked = [];
+  S.sent = [];
   S.userMsgListener = null;
   S.stopListener = null;
   S.intervals = [];
@@ -87,6 +93,7 @@ beforeEach(async () => {
   CB.delivered = null;
   CB.taskIdle = null;
   CB.aiError = null;
+  CB.userMsg = null;
   globalThis.window = {};
   globalThis.document = { addEventListener: () => {} };
   // 捕获心跳定时器（不真跑），用于断言周期上报
@@ -330,4 +337,43 @@ test('B-009: 残缺 cuckoo 开标记（```cuck）仍被隐藏', async () => {
   const p = S.reported.find((x) => x.type === 'stream');
   assert.ok(p, '应上报 stream');
   assert.ok(!/```cuck/.test(p.text), '残缺 cuck 开标记应被剥离，实际: ' + JSON.stringify(p.text));
+});
+
+// ===== 逐请求投递回执：requestId 贯穿成功/失败/异常 =====
+
+function resultSent() {
+  return S.sent.find((x) => x.ch === 'harness-user-message-result');
+}
+
+test('投递成功 → 回传匹配 requestId 的 success 回执', async () => {
+  CB.userMsg = () => Promise.resolve(true);
+  S.userMsgListener(null, { text: '你好', requestId: 'req-1' });
+  await new Promise((r) => setTimeout(r, 0));
+  const r = resultSent();
+  assert.ok(r, '应发送 harness-user-message-result 回执');
+  assert.strictEqual(r.payload.requestId, 'req-1');
+  assert.strictEqual(r.payload.success, true);
+});
+
+test('投递失败（未找到输入框）→ 回传 success:false 与错误文案', async () => {
+  CB.userMsg = () => Promise.resolve(false);
+  S.userMsgListener(null, { text: '你好', requestId: 'req-2' });
+  await new Promise((r) => setTimeout(r, 0));
+  const r = resultSent();
+  assert.ok(r, '失败也应回传回执');
+  assert.strictEqual(r.payload.requestId, 'req-2');
+  assert.strictEqual(r.payload.success, false);
+  assert.ok(r.payload.error, '应携带错误文案');
+  assert.ok(types().includes('task-idle'), '失败仍应收尾 task-idle');
+});
+
+test('投递抛异常 → 回传 success:false 且错误来自异常消息', async () => {
+  CB.userMsg = () => Promise.reject(new Error('boom'));
+  S.userMsgListener(null, { text: '你好', requestId: 'req-3' });
+  await new Promise((r) => setTimeout(r, 0));
+  const r = resultSent();
+  assert.ok(r, '异常也应回传回执');
+  assert.strictEqual(r.payload.requestId, 'req-3');
+  assert.strictEqual(r.payload.success, false);
+  assert.ok(/boom/.test(r.payload.error), '错误应含异常消息: ' + r.payload.error);
 });

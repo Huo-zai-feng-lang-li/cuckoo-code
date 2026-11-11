@@ -186,6 +186,7 @@ if ((api as any).getSystemTotal) {
 }
 
 export async function loadAutoCompact(): Promise<void> {
+  await loadContextSwitch();
   if (!api.getAutoCompact) return;
   try {
     const r = await api.getAutoCompact();
@@ -197,6 +198,34 @@ export async function loadAutoCompact(): Promise<void> {
     }
   } catch (_) { /* ignore */ }
 }
+
+async function loadContextSwitch(): Promise<void> {
+  if (!api.getContextSwitch) return;
+  try {
+    const r = await api.getContextSwitch();
+    if (!r.success || !r.data) return;
+    const enabled = document.getElementById('tk-switch-enabled') as HTMLInputElement | null;
+    const threshold = document.getElementById('tk-switch-threshold') as HTMLInputElement | null;
+    if (enabled) enabled.checked = r.data.enabled;
+    if (threshold) threshold.value = String(r.data.threshold);
+  } catch (_) { /* 页面未就绪时下次打开重读 */ }
+}
+
+const tkSwitchSave = document.getElementById('tk-switch-save') as HTMLButtonElement | null;
+tkSwitchSave?.addEventListener('click', async () => {
+  if (!api.saveContextSwitch) return;
+  const enabled = (document.getElementById('tk-switch-enabled') as HTMLInputElement | null)?.checked === true;
+  const threshold = Number((document.getElementById('tk-switch-threshold') as HTMLInputElement | null)?.value);
+  if (!Number.isFinite(threshold) || threshold <= 0) { await ckAlert('阈值需为正数（万）'); return; }
+  tkSwitchSave.disabled = true;
+  try {
+    const r = await api.saveContextSwitch({ enabled, threshold });
+    if (!r.success) { await ckAlert(r.error || '保存失败'); return; }
+    tkSwitchSave.textContent = '已保存';
+    setTimeout(() => { tkSwitchSave.textContent = '保存设置'; }, 1200);
+  } catch (e: unknown) { await ckAlert('保存失败: ' + String(e)); }
+  finally { tkSwitchSave.disabled = false; }
+});
 const tkCompactBtn = document.getElementById('tk-compact');
 if (tkCompactBtn) tkCompactBtn.addEventListener('click', async () => {
   if (!api.triggerCompact) return;

@@ -202,3 +202,28 @@ test('buildFingerprintScript 模拟执行：Canvas 2D 噪点单次微扰、幂�
   assert.ok(!canvasKeys.includes('__ckFpApplied'), '绝不可在 canvas 节点上挂载任何可被扫描的自有属性');
 });
 
+test('buildFingerprintScript: Cloudflare Turnstile 挑战域名下直接跳过，绝不 hook 环境', () => {
+  const fp = generateFingerprint('profile-cf-test');
+  const script = buildFingerprintScript(fp);
+
+  const cfDomains = [
+    'challenges.cloudflare.com',
+    'challenges.fed.cloudflare.com',
+    'challenges.cloudflare-cn.com',
+    'challenges-staging.cloudflare.com',
+    'sub.challenges.cloudflare.com',
+  ];
+
+  for (const hostname of cfDomains) {
+    const mockWindow = {
+      location: { hostname },
+      navigator: { hardwareConcurrency: 2 },
+      document: {},
+    };
+    const fn = new Function('window', 'Screen', 'Navigator', 'Window', script);
+    fn(mockWindow, {}, mockWindow.navigator, {});
+
+    assert.strictEqual(mockWindow.__cuckooFpInjected, undefined, `${hostname} 下不得注入 fp 标记`);
+  }
+});
+

@@ -18,6 +18,31 @@ function getCurrentProvider(): any {
   return getProviderByUrl(window.location.href);
 }
 
+// ==================== 长文本附件通道（需求 115） ====================
+// 超过阈值走附件：真人不会把上万字直接"敲"进输入框，站点自己也把长粘贴转附件。
+const ATTACH_THRESHOLD = 4000;
+// 节流窗口：60 秒内最多走一次附件。工具循环密集中若每轮都上传，
+// 「上传频率」本身会成为新的机器特征（真人一天传几个文件，不是每 30 秒一个）。
+const ATTACH_THROTTLE_MS = 60000;
+let lastAttachAt = 0;
+// 附件后跟的短提示词：随机选，且明确"请阅读附件后继续任务"，
+// 避免模型把附件当总结对象而丢掉工具输出的指令性。
+const ATTACH_PROMPTS = [
+  '（工具输出已作为附件发送，请阅读附件内容后继续任务）',
+  '（上面附件是工具输出，请查阅后继续）',
+  '（工具输出较长，已转成附件，请阅读附件后继续任务）',
+];
+function pickAttachPrompt(): string {
+  return ATTACH_PROMPTS[Math.floor(Math.random() * ATTACH_PROMPTS.length)];
+}
+/** 拟人化文件名：带日期时分，不带毫秒/时间戳（tool-result-1731234567890.txt 机器味太重） */
+function makeAttachFileName(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return '工具输出-' + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + '.txt';
+}
+
+
 /**
  * 生成自适应拟人化等待时间（ms）：
  * 1. 结合回传内容长度计算认知负荷（短文本 3~6s，长文本 12~25s）；
@@ -98,7 +123,8 @@ function interruptibleWait(ms: number, token: PendingSend): Promise<boolean> {
  * @param msg - 要填入的文本
  * @returns 是否成功填入
  */
-async function setInputContent(input: any, msg: string): Promise<boolean> {
+async function setInputContent(input: any, msg: string, token?: PendingSend): Promise<boolean> {
+  if (token?.cancelled) return false;
   try {
     // 平台自定义填入（优先）：部分站点对 ClipboardEvent('paste') 敏感
     // （ChatGPT 会识别为"粘贴的文件"附件），由 provider.fillInput 覆盖。
@@ -106,12 +132,14 @@ async function setInputContent(input: any, msg: string): Promise<boolean> {
       const provider = getCurrentProvider();
       if (provider && typeof provider.fillInput === 'function') {
         const r = await provider.fillInput(input, msg);
+        if (token?.cancelled) return false;
         if (r) return true;
       }
     } catch (err: any) {
       console.warn('[Cuckoo Code] provider.fillInput 失败，回退通用逻辑:', err && err.message);
     }
 
+    if (token?.cancelled) return false;
     const api = (window as any).electronAPI;
     const isTextareaOrInput = input.tagName === 'TEXTAREA' || input.tagName === 'INPUT';
     const isContentEdit = !!input.isContentEditable || (typeof input.getAttribute === 'function' && input.getAttribute('contenteditable') === 'true');
@@ -143,6 +171,7 @@ async function setInputContent(input: any, msg: string): Promise<boolean> {
         for (let i = 0; i < msg.length; i += CHUNK_SIZE) {
           const chunk = msg.slice(i, i + CHUNK_SIZE);
           const ok = await api.insertTextToChat(chunk);
+          if (token?.cancelled) return false;
           if (!ok) { nativeOk = false; break; }
         }
         if (nativeOk) {
@@ -158,6 +187,7 @@ async function setInputContent(input: any, msg: string): Promise<boolean> {
       }
     }
 
+    if (token?.cancelled) return false;
     if (isTextareaOrInput) {
       input.focus();
       const desc = Object.getOwnPropertyDescriptor(
@@ -181,6 +211,7 @@ async function setInputContent(input: any, msg: string): Promise<boolean> {
       // 实测 12000 字符只需约 350ms。
       const CHUNK_SIZE = 6000;
       for (let i = 0; i < msg.length; i += CHUNK_SIZE) {
+        if (token?.cancelled) return false;
         const chunk = msg.slice(i, i + CHUNK_SIZE);
         const dt = new DataTransfer();
         dt.setData('text/plain', chunk);
@@ -211,18 +242,36 @@ async function setInputContent(input: any, msg: string): Promise<boolean> {
  * @returns 是否成功
  */
 // 当前待发送的消息（可被 cancelPendingSend 取消）
-interface PendingSend { timer: any; input: any; cancelled: boolean; tag?: string; resolve?: (v: boolean) => void; wake?: ((v: boolean) => void) | null; }
+interface PendingSend { timer: ReturnType<typeof setTimeout> | null; input: any; cancelled: boolean; tag?: string; wake?: ((v: boolean) => void) | null; }
 let pendingSend: PendingSend | null = null;
+const queuedSends = new Set<PendingSend>();
+const pauseListeners = new Set<(info: { active: boolean; durationMs: number }) => void>();
+
+function onSendPause(cb: (info: { active: boolean; durationMs: number }) => void): () => void {
+  pauseListeners.add(cb);
+  return () => { pauseListeners.delete(cb); };
+}
+
+function notifyPause(active: boolean, durationMs: number): void {
+  for (const cb of pauseListeners) {
+    try { cb({ active, durationMs }); } catch (_) { /* ignore */ }
+  }
+}
+
+/** 工具结果使用自然节奏；控制消息继续即时发送且不走附件。 */
+function usesNaturalDelivery(tag?: string): boolean {
+  return tag === 'JS汇总' || !isSystemTag(tag);
+}
 
 // 发送串行链：确保同一时刻只有一条消息处于"填充→等待→发送"流程，
 // 避免并发时后一条覆盖输入框、导致前一条内容丢失（实测 Bug：两条并发只发出后者）。
-let sendChain: Promise<any> = Promise.resolve();
+let sendChain: Promise<void> = Promise.resolve();
 
 // 「用户消息已发出」回调（供 bridge 上报远程等；overlay 不依赖上层，用回调注入）
 // 系统内部消息的 tag（不视为"用户消息"，不上报远程）
 const SYSTEM_MSG_TAGS = [
   'JS汇总', '看门狗', '重试', '重试(操作频繁)',
-  '压缩-摘要', 'MCP信息', '技能与代理清单', '继续',
+  '压缩-摘要', '切换-摘要', 'MCP信息', '技能与代理清单', '继续',
   'JSON工具调用提示', 'XML工具调用提示', '系统提示词',
 ];
 const userMessageSentListeners = new Set<(text: string, tag?: string) => void>();
@@ -259,20 +308,94 @@ function emitMessageDelivered(text: string, tag?: string): void {
  * 避免并发覆盖输入框内容（实测 Bug：两条并发只发出后者，前者丢失）。
  */
 function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterSent?: () => void, contextLen?: number): Promise<boolean> {
-  const run = sendChain.then(() => doSendToChat(msg, tag, fixedDelay, afterSent, contextLen));
+  const token: PendingSend = { timer: null, input: null, cancelled: false, tag };
+  queuedSends.add(token);
+  const run = sendChain.then(async () => {
+    if (token.cancelled) return false;
+    try { return await doSendToChat(msg, token, fixedDelay, afterSent, contextLen); }
+    finally {
+      if (pendingSend === token) pendingSend = null;
+    }
+  }).finally(() => { queuedSends.delete(token); });
   // 链上无论成败都继续，避免一次失败卡死后续发送
   sendChain = run.then(() => undefined, () => undefined);
   return run;
 }
 
-async function doSendToChat(msg: string, tag?: string, fixedDelay?: number, afterSent?: () => void, contextLen?: number): Promise<boolean> {
-  const input = findInputArea();
+let lastSendError = '';
+function getLastSendError(): string {
+  return lastSendError;
+}
+
+function sendUserMessageToChat(msg: string): Promise<boolean> {
+  // 新用户消息撤销旧框架投递，但不能撤销已排队的其它用户消息。
+  // 同步入队：setInputContent 在串行链内覆盖旧输入，避免清空与入队之间的空隙。
+  cancelInitialPrompt();
+  cancelQueuedSends(true);
+  return sendToChat(msg, 'harness', 0);
+}
+
+async function doSendToChat(msg: string, token: PendingSend, fixedDelay?: number, afterSent?: () => void, contextLen?: number): Promise<boolean> {
+  lastSendError = '';
+  const tag = token.tag;
+  const waitMs = tag === 'harness' ? 4000 : 0;
+  const input = findInputArea() || (waitMs > 0 ? await waitForInputArea(token, waitMs) : null);
   if (!input) {
+    lastSendError = '网页未找到输入框（可能在分享页或页面加载中）';
     console.log('[Cuckoo Code] 找不到输入框，无法发送消息');
     return false;
   }
-  const token: PendingSend = { timer: null, input: input, cancelled: false, tag: tag };
+  token.input = input;
   pendingSend = token;
+
+  // ===== 随机长暂停（拟人：模拟"走神/离开"，独立于 sendDelay 配置） =====
+  // 为什么独立：sendDelay 的 [min,max] 是「读内容→动手」的认知时长，
+  // 长暂停是更高一层的「偶尔走神」。若混进 randomDelay 会突破 max、
+  // 破坏 114 建立的分布语义。10% 概率、30~75 秒，系统消息（格式纠正/
+  // 看门狗/重试/系统提示词）绝不参与——它们必须即时发出。
+  if (state.pauseEnabled && fixedDelay === undefined && usesNaturalDelivery(tag) && Math.random() < state.pauseChance) {
+    const minMs = state.pauseMinMs;
+    const maxMs = state.pauseMaxMs > minMs ? state.pauseMaxMs : minMs;
+    const pauseMs = minMs + Math.floor(Math.random() * (maxMs - minMs + 1));
+    console.log('[Cuckoo Code] 随机长暂停 ' + Math.round(pauseMs / 1000) + 's（拟人）...');
+    notifyPause(true, pauseMs);
+    let resumed: boolean;
+    try { resumed = await interruptibleWait(pauseMs, token); }
+    finally { notifyPause(false, pauseMs); }
+    if (!resumed) {
+      if (pendingSend === token) pendingSend = null;
+      return false;
+    }
+  }
+
+  // ===== 长文本走附件通道（需求 115） =====
+  // 成功 → 实际填充改为短提示词（附件已在输入区）；失败/节流 → 保持原 msg 走 insertText。
+  let fillMsg = msg;
+  if (usesNaturalDelivery(tag) && msg.length > ATTACH_THRESHOLD && getCurrentProvider()?.id === 'deepseek') {
+    const now = Date.now();
+    if (now - lastAttachAt > ATTACH_THROTTLE_MS) {
+      const api = (window as any).electronAPI;
+      if (api && typeof api.sendAsFile === 'function') {
+        try {
+          const r = await api.sendAsFile(msg, makeAttachFileName());
+          if (token.cancelled) return false;
+          if (r && r.success) {
+            lastAttachAt = now;
+            fillMsg = pickAttachPrompt();
+            console.log('[Cuckoo Code] 长文本已走附件通道（' + msg.length + ' 字符 → 附件）');
+          } else {
+            console.warn('[Cuckoo Code] 附件通道失败，回退 insertText:', (r && r.error) || 'unknown');
+          }
+        } catch (err: any) {
+          console.warn('[Cuckoo Code] 附件通道异常，回退 insertText:', err && err.message);
+        }
+      }
+    } else {
+      console.log('[Cuckoo Code] 附件通道节流中（距上次 ' + Math.round((now - lastAttachAt) / 1000) + 's），走 insertText');
+    }
+  }
+
+  if (token.cancelled) return false;
 
   // 时序规划：总延迟严格遵守 state.sendDelayMin/Max，拆成 R（填之前）+ S（填之后）。
   // fixedDelay 显式传入（格式纠正等系统即时指令传 0）→ 不拆分，仅填充后一次性等，保持旧行为。
@@ -296,43 +419,78 @@ async function doSendToChat(msg: string, tag?: string, fixedDelay?: number, afte
   }
 
   // T：填充内容（原生分块注入，自带自然耗时）
-  if (!(await setInputContent(input, msg))) {
+  // fillMsg 默认 = msg；走附件时是短提示词（附件已在输入区）
+  if (!(await setInputContent(input, fillMsg, token))) {
+    lastSendError = '填入输入框失败';
     if (pendingSend === token) pendingSend = null;
     return false;
   }
   // 填充期间被取消：不发送（输入框内容保留）
   if (token.cancelled) {
+    lastSendError = '发送已被取消';
     return false;
   }
 
   // S：填充后的犹豫停顿，然后触发发送
   console.log('[Cuckoo Code] 消息已填入输入框，等待 ' + hesitationMs + 'ms 后发送...');
-  return new Promise<boolean>((resolve) => {
-    token.resolve = resolve;
-    const timer = setTimeout(function() {
-      if (pendingSend === token) pendingSend = null;
-      if (token.cancelled) { resolve(false); return; }
-      console.log('[Cuckoo Code] 等待结束，开始触发发送');
-      Promise.resolve(triggerSend(input)).then(() => {
-        console.log('[Cuckoo Code] 已触发发送, ' + (tag || '') + ', 长度=' + msg.length);
-        // 通知监听者（远程等）；系统内部消息（工具结果/看门狗/重试等）不上报
-        if (!isSystemTag(tag)) {
-          for (const cb of userMessageSentListeners) {
-            try { cb(msg, tag); } catch (_) { /* ignore */ }
+  if (!(await interruptibleWait(hesitationMs, token))) {
+    lastSendError = '发送等待期间被中断';
+    return false;
+  }
+  const sent = await sendAndConfirm(input, token);
+  if (token.cancelled) {
+    lastSendError = '发送已被取消';
+    return false;
+  }
+  if (sent) notifyDelivered(msg, tag);
+  if (typeof afterSent === 'function') afterSent();
+  return sent;
+}
+
+/** 原生发送完成前保持队列占用；取消只能停止后续步骤，不能撤回已派发的 Enter。 */
+async function sendAndConfirm(input: any, token: PendingSend): Promise<boolean> {
+  try {
+    if (!(await triggerSend(input))) {
+      lastSendError = '触发发送失败（发送按钮不可点击或按键派发失败）';
+      return false;
+    }
+    // 受控输入的更新可能晚于 IPC 返回；只观察，不重复派发造成重复消息。
+    // URL 变化（站点创建新会话/导航）不提前判失败：首条消息触发新建会话时 URL 本就会变，
+    // 提前 return false 会被上层重试 → 同一条消息双发。继续在观察窗内读回输入框：
+    // 空框判成功，仍有残留判失败。
+    for (let elapsed = 0; elapsed <= 2500; elapsed += 50) {
+      if (token.cancelled) return false;
+      const current = findInputArea();
+      if (current && !getInputText(current).trim()) return true;
+      // 若 400ms 后依然有残留文本，尝试补点一次发送按钮（防首次点击落在 Vue 响应式更新间隙）
+      if (elapsed === 400 && current) {
+        const provider = getCurrentProvider();
+        if (provider && typeof provider.findSendButton === 'function') {
+          const btn = provider.findSendButton();
+          if (btn) {
+            try { btn.click(); } catch (_) {}
           }
         }
-        // 纯净模式：任何投递（含框架内部消息）都派发一次，用于显示"框架正在驱动"运行态
-        emitMessageDelivered(msg, tag);
-        if (typeof afterSent === 'function') afterSent();
-        resolve(true);
-      }).catch((err) => {
-        console.warn('[Cuckoo Code] triggerSend 执行异常:', err && err.message);
-        if (typeof afterSent === 'function') afterSent();
-        resolve(false);
-      });
-    }, hesitationMs);
-    token.timer = timer;
-  });
+      }
+      if (elapsed === 2500 || !(await interruptibleWait(50, token))) break;
+    }
+  } catch (err: any) {
+    lastSendError = '发送确认异常: ' + ((err && err.message) || String(err));
+    console.warn('[Cuckoo Code] 发送确认失败:', err);
+  }
+  if (!lastSendError) {
+    lastSendError = '网页发送未响应（输入框文本未清空，可能网页处于生成中或卡顿）';
+  }
+  return false;
+}
+
+function notifyDelivered(msg: string, tag?: string): void {
+  if (!isSystemTag(tag)) {
+    for (const cb of userMessageSentListeners) {
+      try { cb(msg, tag); } catch (_) { /* ignore */ }
+    }
+  }
+  emitMessageDelivered(msg, tag);
 }
 
 /**
@@ -340,29 +498,41 @@ async function doSendToChat(msg: string, tag?: string, fixedDelay?: number, afte
  * @param clearSystemTagOnly 是否清空系统内部消息填入的输入框内容
  * @returns 是否确实取消了待发送
  */
-function cancelPendingSend(clearSystemTagOnly = true): boolean {
-  if (!pendingSend) return false;
-  const t = pendingSend;
+function cancelSend(t: PendingSend): void {
   t.cancelled = true;
   if (t.timer) clearTimeout(t.timer);
   // 唤醒正卡在 R（反应）延迟 interruptibleWait 里的等待，立即返回 false
   if (t.wake) { try { t.wake(false); } catch (_) {} t.wake = null; }
-  // 释放串行链：取消后必须 resolve，否则 sendChain 永久挂起、后续消息全部卡死
-  if (t.resolve) { try { t.resolve(false); } catch (_) {} }
-  // 系统内部消息（工具结果/看门狗/重试）：取消时必须清空输入框，防止工具结果残留/回显
-  if (clearSystemTagOnly && isSystemTag(t.tag)) {
-    setInputContent(t.input, '').catch(() => {});
+  // 不提前释放仍在执行的原生输入/发送；等待异步副作用结束再运行下一条。
+}
+
+function cancelQueuedSends(keepUserMessages = false): boolean {
+  let cancelled = false;
+  for (const token of queuedSends) {
+    if (keepUserMessages && token.tag === 'harness') continue;
+    if (token.cancelled) continue;
+    cancelSend(token);
+    cancelled = true;
   }
-  pendingSend = null;
-  console.log('[Cuckoo Code] 已取消待发送的消息' + (isSystemTag(t.tag) ? '（已清空系统内部内容）' : ''));
-  return true;
+  return cancelled;
+}
+
+function cancelPendingSend(clearSystemTagOnly = true): boolean {
+  cancelInitialPrompt();
+  const clear = clearSystemTagOnly && pendingSend && isSystemTag(pendingSend.tag);
+  const cancelled = cancelQueuedSends();
+  if (clear) void clearInputArea();
+  return cancelled;
 }
 
 /** 清空底层网页输入框（供停止信号或队列发送调用，防任务结果回显） */
 async function clearInputArea(): Promise<boolean> {
-  const input = findInputArea();
-  if (!input) return false;
-  return setInputContent(input, '');
+  const run = sendChain.then(() => {
+    const input = findInputArea();
+    return input ? setInputContent(input, '') : false;
+  });
+  sendChain = run.then(() => undefined, () => undefined);
+  return run;
 }
 /**
  * 将消息填入 DeepSeek 聊天输入框并触发发送（工具结果回传的公共实现）
@@ -448,27 +618,54 @@ async function sendCombinedJsResultsToChat(results: any, onSent?: () => void, co
 /**
  * 查找 DeepSeek 的输入框元素
  */
+/** 是否为纯净模式（harness）的输入框：框架内部消息绝不能填入用户的草稿框 */
+/** 是否为纯净模式（harness）的输入框：框架内部消息绝不能填入用户的草稿框 */
+function isHarnessInput(el: any): boolean {
+  if (!el) return false;
+  // 必须只识别明确带有 Cuckoo harness 专有标记的元素，严禁使用通用 placeholder 文本（防止误杀各平台包含"输入消息"的原生输入框）
+  if (typeof el.hasAttribute === 'function' && el.hasAttribute('data-cuckoo-harness')) return true;
+  if (el.id === '__ck_harness_input') return true;
+  if (typeof el.closest === 'function' && el.closest('#__ck_harness_root, [data-cuckoo-harness-root]')) return true;
+  return false;
+}
+
 function findInputArea(): any {
   const provider = getCurrentProvider();
   if (provider && typeof provider.findInput === 'function') {
     const el = provider.findInput();
-    if (el) return el;
+    // 【幽灵发送防御】provider 选择器末尾常是裸 'textarea'（如 DeepSeek），
+    // 可能命中 harness 输入框。必须与通用兜底同规则过滤，否则框架消息串台进用户草稿框。
+    if (el && !isHarnessInput(el)) return el;
   }
 
   // 通用兜底：找所有可见 textarea
   const allTextareas = document.querySelectorAll('textarea');
   for (const ta of allTextareas) {
-    // 【幽灵发送防御】必须过滤纯净模式(harness)的输入框，否则框架内部消息会串台填入用户的草稿框
-    if (ta.id === 'input' || (ta as any).placeholder?.includes('输入消息')) continue;
+    if (isHarnessInput(ta)) continue;
     if (isInputVisible(ta)) return ta;
   }
   // 再找 contenteditable 或 textbox
   const editables = document.querySelectorAll('div[contenteditable="true"], [role="textbox"]');
   for (const ed of editables) {
-    if (ed.id === 'input') continue;
+    if (isHarnessInput(ed)) continue;
     if (isInputVisible(ed)) return ed;
   }
 
+  return null;
+}
+
+/**
+ * 有界轮询等待输入框出现（缓冲页面跳转、SPA 渲染或新对话挂载时序）
+ */
+async function waitForInputArea(token: PendingSend, maxWaitMs = 2500): Promise<any> {
+  const start = Date.now();
+  while (!token.cancelled) {
+    const input = findInputArea();
+    if (input) return input;
+    if (Date.now() - start >= maxWaitMs) break;
+    const ok = await interruptibleWait(100, token);
+    if (!ok) break;
+  }
   return null;
 }
 /**
@@ -482,45 +679,42 @@ function isInputVisible(el: any): boolean {
 /**
  * 发送初始提示（目录树+systemPrompt）到输入框
  */
-async function sendInitialPromptToInput(): Promise<boolean> {
-  if (!state.initialPromptContent) {
-    state.pendingInitialPrompt = false;
-    return false;
-  }
+let initialPromptEpoch = 0;
+let initialPromptRequestId = '';
+let initialPromptRun: Promise<boolean> | null = null;
+let initialPromptRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const input = findInputArea();
-  if (!input) {
-    return false;
-  }
+function finishInitialPrompt(success: boolean, epoch: number): void {
+  if (epoch !== initialPromptEpoch) return;
+  state.pendingInitialPrompt = false;
+  if (initialPromptRetryTimer) clearTimeout(initialPromptRetryTimer);
+  initialPromptRetryTimer = null;
+  const requestId = initialPromptRequestId;
+  initialPromptRequestId = '';
+  if (requestId) ipcRenderer.send('initial-prompt-result', { requestId, success });
+}
 
-  if (!(await setInputContent(input, state.initialPromptContent))) {
-    console.log('[Cuckoo Code] 初始提示填充失败');
-    return false;
-  }
+function cancelInitialPrompt(): void {
+  finishInitialPrompt(false, initialPromptEpoch);
+  initialPromptEpoch++;
+  initialPromptRun = null;
+}
 
-  // 校验：填充后输入框确实有内容（contenteditable 合成粘贴可能被站点拒绝）
-  try {
-    const filled = getInputText(input);
-    if (!filled || filled.trim().length < 10) {
-      console.log('[Cuckoo Code] 初始提示填充后输入框为空，判定失败');
-      return false;
-    }
-  } catch (_) { /* ignore */ }
-
-  // 初始提示是框架驱动的系统指令（非"用户回复 AI"），与 insertSnippet / 格式纠正同类：
-  // 必须 0ms 立即发出。旧实现走 randomDelay(提示词自身长度) —— 系统提示词数万字符，
-  // 按认知模型会算到配置上限（默认 36s），用户看到"填进输入框却半天不发"以为坏了。
-  console.log('[Cuckoo Code] 初始提示已填入，立即发送...');
-  try {
-    await triggerSend(input);
-  } finally {
-    // 无论 triggerSend 是否抛异常都必须清除标志，否则重试逻辑会卡死
-    state.pendingInitialPrompt = false;
-  }
-  // 纯净模式：系统提示词投递也要有运行态反馈（内容不显示）
-  emitMessageDelivered(state.initialPromptContent || '', '系统提示词');
-
-  return true;
+function sendInitialPromptToInput(): Promise<boolean> {
+  if (initialPromptRun) return initialPromptRun;
+  const epoch = initialPromptEpoch;
+  const content = state.initialPromptContent;
+  if (!content || !state.pendingInitialPrompt) return Promise.resolve(false);
+  // 与用户消息、工具结果共用串行链和确认判据，不能绕过并发隔离。
+  const run = sendToChat(content, '系统提示词', 0).then((sent) => {
+    if (epoch !== initialPromptEpoch) return false;
+    if (sent) finishInitialPrompt(true, epoch);
+    return sent;
+  }).finally(() => {
+    if (initialPromptRun === run) initialPromptRun = null;
+  });
+  initialPromptRun = run;
+  return run;
 }
 /** 初始提示发送的最大尝试次数（跨"等输入框"与"等发送成功"共用） */
 const INITIAL_PROMPT_MAX_ATTEMPTS = 30;
@@ -529,35 +723,21 @@ const INITIAL_PROMPT_MAX_ATTEMPTS = 30;
  * 尝试发送初始提示；失败则重试，直到成功或达上限。
  * @param attempt 已尝试次数（递归时 +1 传递，不重置，避免无限重试）
  */
-function trySendInitialPrompt(attempt: number): void {
-  const input = findInputArea();
-  if (!input) {
-    if (attempt >= INITIAL_PROMPT_MAX_ATTEMPTS) {
-      state.pendingInitialPrompt = false;
-      console.log('[Cuckoo Code] 等待输入框超时，放弃发送初始提示');
-      return;
-    }
-    setTimeout(() => trySendInitialPrompt(attempt + 1), 500);
+async function trySendInitialPrompt(attempt: number, epoch: number): Promise<void> {
+  if (epoch !== initialPromptEpoch || !state.pendingInitialPrompt) return;
+  let ok = false;
+  try { ok = await sendInitialPromptToInput(); } catch (_) { /* 进入有界重试 */ }
+  if (ok || epoch !== initialPromptEpoch || !state.pendingInitialPrompt) return;
+  if (attempt >= INITIAL_PROMPT_MAX_ATTEMPTS) {
+    finishInitialPrompt(false, epoch);
     return;
   }
-  // 找到输入框：尝试发送（sendInitialPromptToInput 内部会校验填充是否成功）
-  sendInitialPromptToInput().then((ok) => {
-    if (ok) return;
-    if (attempt < INITIAL_PROMPT_MAX_ATTEMPTS) {
-      console.log('[Cuckoo Code] 初始提示发送失败，重试（第 ' + (attempt + 1) + ' 次）');
-      setTimeout(() => trySendInitialPrompt(attempt + 1), 500);
-    } else {
-      console.log('[Cuckoo Code] 初始提示发送失败，已达上限，放弃');
-      state.pendingInitialPrompt = false;
-    }
-  }).catch(() => {
-    if (attempt < INITIAL_PROMPT_MAX_ATTEMPTS) setTimeout(() => trySendInitialPrompt(attempt + 1), 500);
-  });
+  initialPromptRetryTimer = setTimeout(() => { void trySendInitialPrompt(attempt + 1, epoch); }, 500);
 }
 
 /** 等待输入框出现后再发送初始提示（对外入口，从 0 开始） */
 function waitForInitialPromptAndSend(): void {
-  trySendInitialPrompt(0);
+  void trySendInitialPrompt(0, initialPromptEpoch);
 }
 /** 读取输入框当前文本 */
 function getInputText(input: any): string {
@@ -657,7 +837,7 @@ async function insertSnippet(content: string, autoSend?: boolean): Promise<boole
 /**
  * 触发发送消息
  */
-async function triggerSend(input: any): Promise<void> {
+async function triggerSend(input: any): Promise<boolean> {
   const provider = getCurrentProvider();
 
   // 方法 0: 站点原生发送（若平台有针对特定输入组件的定制发送逻辑）
@@ -669,46 +849,35 @@ async function triggerSend(input: any): Promise<void> {
         const ok = await result;
         if (ok) {
           console.log('[Cuckoo Code] 已通过站点原生发送触发');
-          return;
+          return true;
         }
       } catch (_) { /* ignore */ }
-      await fallbackSend(provider, input);
-      return;
+      return await fallbackSend(provider, input);
     }
     if (result) {
       console.log('[Cuckoo Code] 已通过站点原生发送触发');
-      return;
+      return true;
     }
   }
 
-  await fallbackSend(provider, input);
+  return await fallbackSend(provider, input);
 }
 
 /**
  * 通用发送兜底：
  * 优先走主进程物理级原生输入（isTrusted=true），彻底杜绝合成事件触发的反爬虫与风控封号
  */
-async function fallbackSend(provider: any, input: any): Promise<void> {
-  // 1. 确保输入框聚焦
-  if (input && typeof input.focus === 'function') {
-    try { input.focus(); } catch (_) {}
+async function fallbackSend(provider: any, input: any): Promise<boolean> {
+  // 1. 确保输入框聚焦并派发 input/change 事件唤醒响应式状态
+  if (input) {
+    try {
+      if (typeof input.focus === 'function') input.focus();
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch (_) {}
   }
 
-  // 2. 原生 Enter 按键（通过主进程 sendInputEvent 派发 C++ 内核事件，isTrusted=true）
-  try {
-    const api = (window as any).electronAPI;
-    if (api && typeof api.sendEnterToChat === 'function') {
-      const ok = await api.sendEnterToChat();
-      if (ok) {
-        console.log('[Cuckoo Code] 已通过原生 Enter 触发发送 (isTrusted=true)');
-        return;
-      }
-    }
-  } catch (err: any) {
-    console.warn('[Cuckoo Code] 原生 Enter 发送异常，尝试备用发送:', err && err.message);
-  }
-
-  // 3. 尝试平台发送按钮（优先原生物理鼠标点击）
+  // 2. 尝试平台发送按钮（优先原生物理鼠标点击，降级 DOM click；在后台/纯净模式视图无焦点下 100% 生效）
   if (provider && typeof provider.findSendButton === 'function') {
     try {
       const btn = provider.findSendButton();
@@ -723,7 +892,7 @@ async function fallbackSend(provider: any, input: any): Promise<void> {
             const ok = await api.simulateMouse('click', cx, cy);
             if (ok) {
               console.log('[Cuckoo Code] 已通过原生物理鼠标点击发送按钮 (isTrusted=true)');
-              return;
+              return true;
             }
           }
         } catch (_) {}
@@ -731,9 +900,23 @@ async function fallbackSend(provider: any, input: any): Promise<void> {
         // 若主进程鼠标模拟不可用，降级为 DOM click
         btn.click();
         console.log('[Cuckoo Code] 已通过 DOM click 点击发送按钮 (降级)');
-        return;
+        return true;
       }
     } catch (_) {}
+  }
+
+  // 3. 原生 Enter 按键（通过主进程 sendInputEvent 派发 C++ 内核事件，isTrusted=true）
+  try {
+    const api = (window as any).electronAPI;
+    if (api && typeof api.sendEnterToChat === 'function') {
+      const ok = await api.sendEnterToChat();
+      if (ok) {
+        console.log('[Cuckoo Code] 已通过原生 Enter 触发发送 (isTrusted=true)');
+        return true;
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Cuckoo Code] 原生 Enter 发送异常，尝试备用发送:', err && err.message);
   }
 
   // 4. 兜底合成 Enter 按键序列（最后防线）
@@ -743,7 +926,9 @@ async function fallbackSend(provider: any, input: any): Promise<void> {
     input.dispatchEvent(new KeyboardEvent('keypress', opts));
     input.dispatchEvent(new KeyboardEvent('keyup', opts));
     console.log('[Cuckoo Code] 已通过合成 Enter 触发发送 (兜底)');
+    return true;
   }
+  return false;
 }
 /**
  * 注册主进程消息监听（initial-prompt）
@@ -751,10 +936,13 @@ async function fallbackSend(provider: any, input: any): Promise<void> {
  */
 function registerIpcListeners(): void {
 // 监听主进程发送的初始提示
-ipcRenderer.on('initial-prompt', (_event: any, content: string) => {
+ipcRenderer.on('initial-prompt', (_event: any, content: string, options?: { requestId?: string }) => {
+  cancelPendingSend(false);
+  initialPromptRequestId = typeof options?.requestId === 'string' ? options.requestId : '';
   console.log('[' + new Date().toISOString() + '] [Cuckoo Code] 收到 initial-prompt 事件, content长度=' + (content || '').length);
   state.initialPromptContent = content || '';
   state.pendingInitialPrompt = true;
+  if (!state.initialPromptContent) { finishInitialPrompt(false, initialPromptEpoch); return; }
   // 如果当前已有新的空会话输入框，立即发送
   if (state.pendingInitialPrompt && state.initialPromptContent) {
     try {
@@ -777,6 +965,9 @@ export {
   insertSnippet,
   appendTextToInput,
   sendToChat,
+  sendUserMessageToChat,
+  getLastSendError,
+  onSendPause,
   onUserMessageSent,
   onMessageDelivered,
   isSystemTag,
@@ -786,6 +977,8 @@ export {
   cancelPendingSend,
   clearInputArea,
   findInputArea,
+  waitForInputArea,
+  isHarnessInput,
   getInputText,
   isInputVisible,
   sendInitialPromptToInput,

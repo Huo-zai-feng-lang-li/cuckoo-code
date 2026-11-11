@@ -281,6 +281,8 @@ const shellAPI = {
   restartRemote: () => ipcRenderer.invoke('remote-restart'),
   // ========== 自动压缩 ==========
   getAutoCompact: () => ipcRenderer.invoke('get-autocompact'),
+  getContextSwitch: () => ipcRenderer.invoke('get-context-switch'),
+  saveContextSwitch: (data: { enabled: boolean; threshold: number }) => ipcRenderer.invoke('save-context-switch', { data }),
   saveAutoCompact: (data: any) => ipcRenderer.invoke('save-autocompact', { data }),
   triggerCompact: () => ipcRenderer.invoke('trigger-compact'),
   // ========== 记忆 ==========

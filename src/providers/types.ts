@@ -79,13 +79,22 @@ export interface Provider {
 
   /**
    * 可选的「附件上传入口探测」实现（供 harness 的 CDP 上传通道使用）。
-   * 返回**探测函数的源码字符串**（非函数本身），核心会拼成
-   * `(<源码>)(document, window)` 注入 AI 页面主世界执行，**必须自包含**；
+   * 返回探测函数本身或其源码字符串，核心会拼成
+   * `(<源码>)(document, window, fileInfo)` 注入 AI 页面主世界执行，**必须自包含**；
    * 返回 { found, x, y } 视口坐标，核心据此用 CDP 派发真实点击并拦截文件选择框。
    * 未提供或未命中时回退到核心的通用关键词探测（仅覆盖类名含
    * attach/upload/file/image 等词的站点；纯图标上传键的平台需自行实现）。
    */
-  getAttachProbeSource?(): string;
+  getAttachProbeSource?(): string | ((doc: any, win: any, fileInfo?: any) => any);
+
+  /**
+   * 可选的「附件就绪判定」实现（供 harness 的 CDP 上传通道使用）。
+   * 返回判定函数本身或其源码字符串，核心会拼成
+   * `(<源码>)(document, window, fileInfo)` 注入 AI 页面主世界执行，**必须自包含**；
+   * 返回 { ready: boolean, via?: string }：ready=true 表示附件已挂进输入区、可发送。
+   * 未提供时回退到核心的内置启发式（智谱/mimo 上传状态标记 + 附件卡片类名）。
+   */
+  getAttachReadySource?(): string | ((doc: any, win: any, fileInfo?: { name: string; mime: string }) => any);
 
   /** 是否使用网络拦截模式（默认 false = DOM 抓取） */
   useIntercept?: boolean;
