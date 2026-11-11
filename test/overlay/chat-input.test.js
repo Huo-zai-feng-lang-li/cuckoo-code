@@ -150,6 +150,30 @@ test('工具结果长暂停可取消且发出开始和结束通知', async () =>
   assert.deepStrictEqual(sent, []);
 });
 
+test('工具结果长暂停结束后不再叠加常规发送延迟，直接填充并发送', async () => {
+  vi.useFakeTimers();
+  const { sent } = composer();
+  state.pauseEnabled = true;
+  state.pauseChance = 1;
+  state.pauseMinMs = state.pauseMaxMs = 30000;
+  // 设置长常规延迟，验证长暂停完成后不会再等待常规延迟
+  state.sendDelayMin = state.sendDelayMax = 15000;
+  const pauses = [];
+  chat.onSendPause((info) => pauses.push(info.active));
+  const send = chat.sendToChat('工具结果内容', 'JS汇总');
+  await vi.advanceTimersByTimeAsync(0);
+  assert.deepStrictEqual(pauses, [true]);
+  assert.deepStrictEqual(sent, []);
+
+  // 步进 30000ms（长暂停结束）：reactionMs 和 hesitationMs 为 0，
+  // 分块注入后立即发送，不再等待 15000ms 常规延迟
+  await vi.advanceTimersByTimeAsync(30000);
+  await vi.advanceTimersByTimeAsync(500);
+  assert.deepStrictEqual(sent, ['工具结果内容']);
+  assert.strictEqual(await send, true);
+  assert.deepStrictEqual(pauses, [true, false]);
+});
+
 test('Enter 打空（输入框残留）时判定未发出，不误报投递', async () => {
   vi.useFakeTimers();
   const { input } = composer();
@@ -542,3 +566,26 @@ test('waitForInputArea 在输入框延迟出现时能有界轮询获取', async 
   assert.strictEqual(res, target, '应在轮询命中后返回输入框');
   assert.ok(calls >= 3, '应经历重试轮询');
 });
+
+test('sendCombinedJsResultsToChat 在重试时走快速通道并不重复拼接旧工具回传', async () => {
+  vi.useFakeTimers();
+  const { input, sent } = composer();
+  state.sendDelayMin = state.sendDelayMax = 10000;
+  state.pauseEnabled = false;
+
+  // 模拟输入框残留上一轮的工具结果
+  input.value = '执行结果：\n\n成功\n旧回传内容\n\n';
+
+  const results = [{ code: 'log(1)', result: { success: true, output: '新结果' } }];
+  // 传入 isRetry = true
+  const sendPromise = chat.sendCombinedJsResultsToChat(results, undefined, 0, true);
+
+  // isRetry 走 300ms 快速重发通道，不等待 10000ms 常规延迟
+  await vi.advanceTimersByTimeAsync(350);
+  await vi.advanceTimersByTimeAsync(100);
+
+  assert.strictEqual(sent.length, 1, '应快速触发发送');
+  assert.ok(!sent[0].includes('旧回传内容'), '重试时严禁把输入框旧工具回传作为用户输入重复拼接');
+  assert.ok(sent[0].includes('新结果'), '应包含本次新执行结果');
+});
+

@@ -353,6 +353,7 @@ async function doSendToChat(msg: string, token: PendingSend, fixedDelay?: number
   // 长暂停是更高一层的「偶尔走神」。若混进 randomDelay 会突破 max、
   // 破坏 114 建立的分布语义。10% 概率、30~75 秒，系统消息（格式纠正/
   // 看门狗/重试/系统提示词）绝不参与——它们必须即时发出。
+  let didLongPause = false;
   if (state.pauseEnabled && fixedDelay === undefined && usesNaturalDelivery(tag) && Math.random() < state.pauseChance) {
     const minMs = state.pauseMinMs;
     const maxMs = state.pauseMaxMs > minMs ? state.pauseMaxMs : minMs;
@@ -366,6 +367,7 @@ async function doSendToChat(msg: string, token: PendingSend, fixedDelay?: number
       if (pendingSend === token) pendingSend = null;
       return false;
     }
+    didLongPause = true;
   }
 
   // ===== 长文本走附件通道（需求 115） =====
@@ -403,6 +405,10 @@ async function doSendToChat(msg: string, token: PendingSend, fixedDelay?: number
   let hesitationMs = 0;
   if (fixedDelay !== undefined) {
     hesitationMs = fixedDelay;
+  } else if (didLongPause) {
+    // 已经历 30~75s 随机长暂停：拟人与避风控效果已极其充分，不再叠加 4~20s 常规延迟，避免双重漫长等待。
+    reactionMs = 0;
+    hesitationMs = 0;
   } else {
     const timing = planSendTiming(msg, contextLen || 0);
     reactionMs = timing.reactionMs;
@@ -457,7 +463,6 @@ async function sendAndConfirm(input: any, token: PendingSend): Promise<boolean> 
     // 受控输入的更新可能晚于 IPC 返回；只观察，不重复派发造成重复消息。
     // URL 变化（站点创建新会话/导航）不提前判失败：首条消息触发新建会话时 URL 本就会变，
     // 提前 return false 会被上层重试 → 同一条消息双发。继续在观察窗内读回输入框：
-    // 空框判成功，仍有残留判失败。
     for (let elapsed = 0; elapsed <= 2500; elapsed += 50) {
       if (token.cancelled) return false;
       const current = findInputArea();
@@ -569,7 +574,7 @@ function pickPrefix(multi: boolean): string {
 /**
  * 将 JS 工具脚本执行结果发送回 DeepSeek 聊天，让 AI 看到结果并继续工作
  */
-async function sendCombinedJsResultsToChat(results: any, onSent?: () => void, contextLen?: number): Promise<boolean> {
+async function sendCombinedJsResultsToChat(results: any, onSent?: () => void, contextLen?: number, isRetry?: boolean): Promise<boolean> {
   if (!Array.isArray(results) || results.length === 0) return false;
 
   const MAX_OUTPUT = 15000;
@@ -603,17 +608,25 @@ async function sendCombinedJsResultsToChat(results: any, onSent?: () => void, co
   // provider 可自定义回传格式（某些平台对格式敏感，如触发风控）
   msg = applyResultTransform(msg, getCurrentProvider());
 
-  // 追加（不覆盖）：保留用户已输入的内容，工具结果拼在其后一起发送
+  // 追加（不覆盖）：保留用户已输入的内容，工具结果拼在其后一起发送。
+  // 注意：重试期间（isRetry=true）或输入框内容本身为历史工具回传残留文本时，
+  // 严禁当作用户输入重复拼接，否则会导致消息长度翻倍并恶性累积。
   const input = findInputArea();
   if (input) {
     const current = (getInputText(input) || '').trim();
-    if (current) {
+    const isToolResidual = SINGLE_PREFIXES.some(p => current.startsWith(p)) ||
+      MULTI_PREFIXES.some(p => current.startsWith(p)) ||
+      current.includes('跑完了，结果') || current.includes('执行结果：') ||
+      current.includes('代码有问题，请修正');
+    if (current && !isRetry && !isToolResidual) {
       msg = current + sep + sep + msg;
       console.log('[Cuckoo Code] 工具结果追加在用户已输入内容之后（保留 ' + current.length + ' 字符）');
     }
   }
-  console.log('[Cuckoo Code] 回传 JS 汇总执行结果, 消息长度=' + msg.length + ', 上一条回复长度=' + (contextLen || 0));
-  return sendMessageToChat(msg, 'JS汇总', onSent, undefined, contextLen);
+  // 重试快速重发（300ms），绝不再次叠加 4~20s 拟人延迟；初次发送保持 undefined 走拟人延迟
+  const retryFixedDelay = isRetry ? 300 : undefined;
+  console.log('[Cuckoo Code] 回传 JS 汇总执行结果, 消息长度=' + msg.length + ', 上一条回复长度=' + (contextLen || 0) + (isRetry ? ' (重试快速通道)' : ''));
+  return sendMessageToChat(msg, 'JS汇总', onSent, retryFixedDelay, contextLen);
 }
 /**
  * 查找 DeepSeek 的输入框元素

@@ -2,10 +2,10 @@
 id: 116
 type: feat
 title: 接续发送与暂停闭环及上下文阈值切换
-status: doing
+status: completed
 branch: fix/115-long-text-attachment
 created: 2026-11-11
-updated: 2026-11-10
+updated: 2026-11-11
 ---
 
 # 接续任务闭环
@@ -16,7 +16,7 @@ updated: 2026-11-10
 
 执行计划与证据见 `.agents/plan-代码闭环执行.md`。验收包括发送并发、取消、设置保存同步、阈值去重及全量 typecheck/test/lint/compile。真机测试由用户执行。
 
-## 一、本轮代码闭环记录（2026-11-10）
+## 一、本轮代码闭环记录（2026-11-10 ~ 2026-11-11）
 
 ### 1. 发送竞态 / 漏发（任务 A）
 
@@ -43,10 +43,21 @@ updated: 2026-11-10
 
 - **空闲态未复现**：纯文本直发、图片附件后发送两条路径真机回执均 `success:true`，输入框清空、附件随消息提交；未能在空闲态复现截图漏发。
 - **确证缺陷（已修）**：`src/providers/deepseek.ts` `findSendButton` 原 14 条选择器全部以 `<button>` 标签起头；真机实测 DeepSeek 发送/停止主按钮是 `DIV.ds-button--primary`（34×34，aria-label/title 全空），选择器 0 命中 → 原生 Enter 失败后，原生物理鼠标点击按钮这条兜底通道在 DeepSeek 落空，只剩合成 Enter 最后防线。已补 div 主按钮入口：可见、`class` 不含 `ds-button--disabled`、svg path 为箭头（排除 `M2 4.88` 方块停止态，避免生成中误点停止）。回归测试 `test/providers/deepseek-send-button.test.js` 3 条（箭头命中 / 方块排除 / 禁用排除）。
-- **留档时序疑点（空闲态未复现，未贸然改）**：
-  - 附件上传走合成事件兜底 `attachFn`（harness.ts）：`change` 派发即判 `success`，不等站点真正接收/上传完成；DeepSeek 图片是无文件名缩略图，现有就绪判据（文件名文本卡片）走不到。随后 harness.html 固定 `setTimeout 1500ms` 再发送，无就绪复核。慢网/大图/长上下文下可能附件未绑定就触发发送，被站点忽略。需真机慢/大图场景观测上传中 DOM 后再补条件等待。
-  - `debugger-busy` 避让：`net-identity` 为指纹/代理/时区常驻持有 debugger，`cdp-attach` 检测到已 attach 即避让，DeepSeek 实际走合成事件兜底（日志实测 `CDP 上传结果: debugger-busy`）。属设计现状，非缺陷。
-  - `doSendToChat` 开头 `findInputArea` 为 null 即返回 false，无有界等待；导航/加载态偶发踩中会直接失败。`sendAndConfirm` 观察窗 1500ms，站点慢时清空晚于该窗可能被误判残留。均待对应场景真机复现后再处理。
+- **DeepSeek 发送按钮真实事件序列强化**：除补齐 DIV 入口外，`triggerSend` 派发由单一 `btn.click()` 升级为派发完整 `pointerdown -> mousedown -> pointerup -> mouseup -> click` 真实事件序列，全面兼容 Vue 响应式数据绑定与清空时序。
+
+### 1.3 随机长暂停解耦、回传重试延时与双端状态闭环（2026-11-11 深度修复）
+
+- **彻底根除回传重试导致的二次延时超标**：
+  - 工具结果回传重试（`attempt > 1`）时，`sendCombinedJsResultsToChat` 显式传入 `isRetry = true`，延迟锁定为 `300ms` 快速重发，杜绝二次重新计算 10~20s 拟人化延迟。
+  - 输入框防残留保护：重试期间或输入框内容已包含工具回传前缀时，严禁当作用户输入重复拼接翻倍（杜绝 5061 字符翻倍为 10127 字符）。
+- **长暂停与常规发送延迟解耦**：
+  - 一旦触发并完成了随机长暂停，拟人与避风控效果已极其充分，直接将 `reactionMs` 与 `hesitationMs` 置 0，长暂停结束后直接填入并发送，不再产生任何二次叠加等待。
+  - harness 视图在进入与退出长暂停时均重置 `sendStartAt`，隔离长暂停与常规延迟的计时域。
+- **纯净模式顶部状态栏与宠物气泡同步**：
+  - `renderSendTick` 状态栏文字跟随 `sendPauseActive` 实时显示 `随机长暂停中（第X次 · 共Xs · 等待Ys）`；
+  - 收到激活事件时自动起跑 `startSendTick(0)`，确保纯净模式在任何阶段进入长暂停都能实时每秒刷新倒计时。
+- **原生页面遮罩对接长暂停状态**：
+  - `panel.ts` 引入 `updateMaskSendPause(active, durationMs, onCancel)`，原生遮罩同步展示长暂停倒计时与取消入口。
 
 ### 2. 随机长暂停 + 宠物通知（任务 B）
 
@@ -74,13 +85,14 @@ updated: 2026-11-10
 | 门禁 | 命令 | 结果 |
 |---|---|---|
 | typecheck | `npm run typecheck` | EXIT=0 |
-| test | `npm test` | EXIT=0，145 files / **1461 tests passed**（2026-11-11 本轮，+3 发送按钮兜底回归） |
-| lint | `npm run lint` | EXIT=0，0 errors，70 warnings（历史遗留） |
+| test | `npm test` | EXIT=0，146 files / **1474 tests passed**（2026-11-11 本轮，全量单测通过） |
+| lint | `npm run lint` | EXIT=0，0 errors，71 warnings（历史遗留） |
 | compile | `npm run compile` | EXIT=0，生成物已重建 |
 
 真机验证清单（用户执行，本窗口未启动 Electron、未打包、未发布）：
 - [ ] 工具循环中纯净模式回车只发用户消息、无残留
 - [ ] 偶发投递失败时原草稿回填输入框；失败后接着打字不被覆盖
 - [ ] 发首条消息触发站点新建会话（URL 变化）不被误判失败、不双发
-- [ ] 壳设置页改暂停 → 日志「随机长暂停 Xs」；长暂停宠物文案
+- [ ] 壳设置页改暂停 → 日志「随机长暂停 Xs」；长暂停宠物文案与状态栏倒计时同步
 - [ ] Token 页低阈值触发弹窗 → 文案正确 → 关源窗留一窗；限流弹窗文案回归不变
+

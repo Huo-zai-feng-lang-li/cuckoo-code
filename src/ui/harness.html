@@ -3147,8 +3147,10 @@
   function renderSendTick() {
     if (!statusText) { stopSendTick(); return; }
     if (statusEl) statusEl.classList.add('sending');
-    var sendSec = Math.floor((Date.now() - sendStartAt) / 1000);
-    statusText.innerHTML = '结果待发送（工具 ' + escapeSecHtml(sendExecSec) + ' · 延迟 ' + escapeSecHtml(sendSec) + '）';
+    var totalPauseSec = Math.max(1, Math.round(pauseDurationMs / 1000));
+    statusText.innerHTML = sendPauseActive
+      ? ('随机长暂停中（第 ' + escapeSecHtml(pauseCount || 1) + ' 次 · 共 ' + escapeSecHtml(totalPauseSec) + 's · 等待 ' + escapeSecHtml(sendSec) + 's）')
+      : ('结果待发送（工具 ' + escapeSecHtml(sendExecSec) + ' · 延迟 ' + escapeSecHtml(sendSec) + '）');
     // 先算出本轮动画名，再冒泡：桌面宠物浮窗（独立 BrowserWindow，无法共享 pet 实例）
     // 需要同一动画名才能与纯净模式逐帧同步。经 petBubble 的 hint 通道下发，
     // 分派方式（react: / state:）直接复用下面的 SEND_ONESHOT，保持单一真相源。
@@ -4358,7 +4360,11 @@
             sendStartAt = Date.now();
           }
           syncPet();
-          if (sendTickTimer) renderSendTick();
+          if (sendTickTimer) {
+            renderSendTick();
+          } else if (sendPauseActive) {
+            startSendTick(0);
+          }
           break;
         }
         // 投递回执（事件通道兜底，与 invoke 返回二选一到达）：按 requestId 配对 settle 草稿，幂等

@@ -108,7 +108,7 @@
 | 113 | feature | [停止双向同步、新会话开关预设与指纹字段清理](./113-stop-sync-and-session-preset.md) | done | feat/113-stop-sync-and-session-preset | 2026-11-10 |
 | 114 | fix | [发送延迟分布改造与默认值统一](./114-send-delay-distribution.md) | done | feat/114-send-delay-distribution | 2026-11-10 |
 | 115 | fix | [长文本回传改走附件通道（降低脚本特征）](./115-long-text-attachment.md) | doing | fix/115-long-text-attachment | 2026-11-10 |
-| 116 | feat | [接续发送与暂停闭环及上下文阈值切换](./116-context-switch-and-send-closure.md) | doing | fix/115-long-text-attachment | 2026-11-10 |
+| 116 | feat | [接续发送与暂停闭环及上下文阈值切换](./116-context-switch-and-send-closure.md) | completed | fix/115-long-text-attachment | 2026-11-11 |
 | 117 | fix | [排除 Cloudflare 挑战域名注入与 RTC 实例属性隐身](./117-cf-turnstile-bypass.md) | done | fix/115-long-text-attachment | 2026-11-11 |
 
 共 105 个需求。

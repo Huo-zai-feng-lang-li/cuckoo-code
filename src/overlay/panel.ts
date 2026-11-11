@@ -199,6 +199,9 @@ let maskLabel = '工具调用执行中';
  */
 let maskExecSec = 0;
 let maskSendStartAt = 0;
+let maskPauseActive = false;
+let maskPauseDurationMs = 0;
+let maskPauseStartAt = 0;
 /** 遮罩默认最长显示时长（普通工具）；子代理等长任务由调用方传更长的值。 */
 const MASK_TIMEOUT_MS = MASK_DEFAULT_TIMEOUT_MS;
 /** 当前遮罩的超时值（由 showToolMask 传入，供降级态计算） */
@@ -213,6 +216,9 @@ function stopMaskTick(): void {
   // 阶段快照随遮罩生命周期复位，避免残留到下一次遮罩
   maskExecSec = 0;
   maskSendStartAt = 0;
+  maskPauseActive = false;
+  maskPauseDurationMs = 0;
+  maskPauseStartAt = 0;
 }
 /**
  * 把秒数与单位一起包成强调样式（加大 + 加粗 + 主题色，见 overlay.css 的 .cuckoo-tool-mask-text b）。
@@ -230,6 +236,12 @@ function renderMaskText(): void {
   const label = escapeHtml(maskLabel);
   const totalSec = Math.floor((Date.now() - maskStartAt) / 1000);
   const sendSec = maskSendStartAt > 0 ? Math.floor((Date.now() - maskSendStartAt) / 1000) : 0;
+  if (maskPauseActive) {
+    const pauseSec = Math.round((maskPauseDurationMs || 0) / 1000);
+    const waitSec = maskPauseStartAt > 0 ? Math.floor((Date.now() - maskPauseStartAt) / 1000) : 0;
+    el.innerHTML = '触发随机概率延迟（共 ' + emphSec(pauseSec) + ' · 已等 ' + emphSec(waitSec) + '），可点下方停止';
+    return;
+  }
   if (maskDegraded) {
     // 降级态同样区分阶段：发送阶段也输出「工具 Xs · 延迟 Ys」，
     // 否则降级路径又把两个数字糊回一个总时长，正好抵消本次改动（而超时恰恰是用户最焦虑的场景）。
@@ -349,6 +361,40 @@ function hideToolMask(): void {
   disableMaskBlock();
   const btn = document.getElementById('cuckoo-tool-mask-cancel') as any;
   if (btn) { btn.classList.add('cuckoo-hidden'); btn.onclick = null; }
+}
+
+/**
+ * 响应随机长暂停状态：在原生页面顶部遮罩上呈现「触发随机概率延迟（共 Xs · 已等 Ys）」
+ */
+function updateMaskSendPause(active: boolean, durationMs: number, onCancel?: () => void): void {
+  maskPauseActive = !!active;
+  maskPauseDurationMs = active ? (durationMs || 0) : 0;
+  if (maskPauseActive) {
+    maskPauseStartAt = Date.now();
+    const el = document.getElementById('cuckoo-tool-mask');
+    if (el) el.classList.remove('cuckoo-hidden');
+    enableMaskBlock();
+    if (onCancel) {
+      const btn = document.getElementById('cuckoo-tool-mask-cancel') as any;
+      if (btn) {
+        btn.classList.remove('cuckoo-hidden');
+        btn.onclick = () => {
+          try { onCancel(); } catch (_) { /* ignore */ }
+        };
+      }
+    }
+    if (!maskTickTimer) {
+      maskStartAt = Date.now();
+      maskTickTimer = setInterval(() => {
+        const tEl = document.querySelector('#cuckoo-tool-mask .cuckoo-tool-mask-text');
+        if (!tEl) { stopMaskTick(); return; }
+        renderMaskText();
+      }, 1000);
+    }
+  } else {
+    maskPauseStartAt = 0;
+  }
+  renderMaskText();
 }
 
 /**
@@ -578,4 +624,5 @@ export {
   hideFirstTimeDialog,
   forceShowOverlay,
   startOverlayWatcher,
+  updateMaskSendPause,
 };

@@ -4,9 +4,9 @@
  * 设置弹窗 → panels/settings、悬浮球拖动 → fab.js。
  */
 import { state } from './state.js';
-import { hideOverlay, showOverlay, renderHistory, commandHistory, showToast, hideFirstTimeDialog } from './panel.js';
+import { hideOverlay, showOverlay, renderHistory, commandHistory, showToast, hideFirstTimeDialog, updateMaskSendPause } from './panel.js';
 import { handleInitProject, renderSessions } from './session-list.js';
-import { sendToChat } from './chat-input.js';
+import { sendToChat, onSendPause, cancelPendingSend } from './chat-input.js';
 import { runCompaction, checkPendingCompact, checkPendingInit, checkPendingSwitchShare, checkPendingTruncate } from '../session/compaction.js';
 import { renderWindowList, openWindowManager, closeWindowManager, handleGenerateDoc } from './panels/window-manager.js';
 import { loadMcpConfigToJson, renderMcpList, openMcpManager, closeMcpManager, handleMcpSave } from './panels/mcp-manager.js';
@@ -524,6 +524,13 @@ function bindEvents() {
   // 防止重复绑定（SPA 导航或 preload 重载时可能导致多次执行）
   if (eventsBound) return;
   eventsBound = true;
+
+  // 随机长暂停：原生页面顶部悬浮条同步长暂停状态与倒计时
+  onSendPause((info) => {
+    updateMaskSendPause(info.active, info.durationMs, () => {
+      cancelPendingSend();
+    });
+  });
 
   // ===== 左侧活动栏：标签页切换 =====
   const abItems = document.querySelectorAll('.cuckoo-ab-item');

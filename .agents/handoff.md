@@ -38,15 +38,45 @@
   - 在 `case 'send-pause'` 中，无论长暂停触发进入（`sendPauseActive=true`）还是暂停结束恢复常规延迟（`wasPauseActive=true`），均立即重置 `sendStartAt = Date.now()`；
   - 恢复常规延迟时立即调用 `renderSendTick()` 刷新视图，使长暂停与常规发送延迟的计时域完全隔离，常规延迟严格落在用户配置的 4~20 秒内。
 
-### 1.3 下层状态气泡数字统一黄色高亮 (`<b>...</b>`)
+### 1.3 消除随机长暂停后常规延迟二次叠加（体验与性能最优）
+- **现象**：长暂停结束后，状态气泡又显示“等待发送 N秒”，需要再等 4~20 秒才发，总等待时间长达近 1 分钟。
+- **根因**：`chat-input.ts` 在长暂停执行完后，仍无条件执行 `reactionMs`（反应停顿）与 `hesitationMs`（犹豫停顿），导致走神几十秒后又二次等待。
+- **修复**（`src/overlay/chat-input.ts`）：
+  - 标记 `didLongPause = true`；
+  - 一旦触发并完成了随机长暂停，拟人与避风控效果已极其充分，直接将 `reactionMs` 与 `hesitationMs` 置 0，长暂停结束后直接分块填入输入框并发送，不再产生任何二次叠加等待。
+
+### 1.4 原生页面遮罩对接随机长暂停状态（状态可见性修复）
+- **现象**：原生 DeepSeek/ChatGPT 页面顶部悬浮条在长暂停时没有任何专用文案，用户看不到长暂停状态。
+- **修复**（`src/overlay/panel.ts` & `src/overlay/events.ts`）：
+  - `panel.ts` 引入 `updateMaskSendPause(active, durationMs, onCancel)`；
+  - 长暂停激活时确保移除 `cuckoo-hidden` 显示遮罩，文案精准渲染为 `触发随机概率延迟（共 <b>Xs</b> · 已等 <b>Ys</b>），可点下方停止`；
+  - 顶部取消按钮绑定 `cancelPendingSend()`，允许用户随时中断长暂停；
+  - 结束时复位长暂停状态，发送完成后平滑隐藏。
+
+### 1.5 下层状态气泡数字统一黄色高亮 (`<b>...</b>`)
 - **实现**（`src/ui/harness.html`）：
   - 改造 `pauseStatusText(waitSec)`，将触发次数、总时长、等待秒数全部包裹进 `<b>` 标签：
     `触发随机概率延迟 第<b>{count}</b>次 · 共<b>{pauseSec}秒</b> · 等待发送 <b>{wait}秒</b>`；
   - 在 `renderSendTick` 及 `syncPet` 时传递 `html: true`，使其完美命中 `.ck-pet-bubble b` 的金黄色发光胶囊样式，与常规 `等待发送 <b>{N}秒</b>` 保持视觉统一。
 
-### 1.4 加长输入框
+### 1.6 加长输入框
 - **优化**（`src/ui/harness.html`）：
   - 将 `.composer` 的横向 padding 从 32px 缩减至 20px（`padding: 24px 20px 40px;`），释放更多水平排版空间，防止长文本局促。
+
+### 1.7 彻底根除回传失败重试导致的二次延时超标与内容翻倍
+- **现象**：用户配置发送延迟 4~20 秒，真机实测等待耗时却达 30 多秒，且宠物气泡未提示随机长暂停，依然显示“等待发送 32s”。
+- **真实根因**（真机日志确证）：
+  1. **首次发送失败判定**：工具执行完后初次拟人化等待 16 秒，由于发送按钮点击仅通过 `btn.click()`，或受控输入框清空慢，2.5s 观察窗内输入框未完全清空，`sendAndConfirm` 判定第 1 次发送失败。
+  2. **重试重新计算拟人延迟**：`sendToolResultWithRetry` 触发第 2 次重试，但调用 `sendCombinedJsResultsToChat` 时未传入重试标记，导致重新计算了一次完整的 12 秒拟人化反应和犹豫延迟！两次延迟叠加：`16s + 12s = 28s`，加上执行和检测开销，纯净页面和宠物看到的就是 30 多秒！
+  3. **输入框旧工具回传重复拼接翻倍**：初次填入输入框但未发出的 5061 字符，在第 2 次重试时被误当成“用户已输入内容”追加在前面，导致消息长度翻倍至 10127 字符，恶性循环。
+  4. **纯净模式顶部状态栏文案未跟随**：`renderSendTick` 中 `statusText` 死板硬编码为【结果待发送】，长暂停时只有气泡变，状态栏不变。
+- **修复**：
+  - `src/bridge/intercept/observer.ts`：在 `sendToolResultWithRetry` 中，重试（`attempt > 1`）传递 `isRetry = true`；
+  - `src/overlay/chat-input.ts`：
+    - `sendCombinedJsResultsToChat` 增加 `isRetry?: boolean` 参数，重试走 300ms 快速通道，杜绝二次叠加拟人延迟；
+    - 输入框防残留保护：重试期间或输入框内容已包含工具回传前缀时，严禁当作用户输入重复拼接翻倍；
+  - `src/providers/deepseek.ts`：`triggerSend` 派发完整的 PointerEvent + MouseEvent 序列并执行 DOM click，确保 Vue 状态机 100% 响应；
+  - `src/ui/harness.html`：`renderSendTick` 状态栏文字跟随 `sendPauseActive` 实时显示 `随机长暂停中（第X次 · 共Xs · 等待Ys）`，并在接收到激活事件时自动起跑 `startSendTick(0)` 倒计时。
 
 ---
 

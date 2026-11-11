@@ -173,7 +173,7 @@ async function sendToolResultWithRetry(results: any, onSent?: () => void, contex
       console.log('[Cuckoo Code][拦截] 重试期间已请求中止，放弃工具结果回传');
       return false;
     }
-    const sent = await sendCombinedJsResultsToChat(results, onSent, contextLen).catch(() => false);
+    const sent = await sendCombinedJsResultsToChat(results, onSent, contextLen, attempt > 1).catch(() => false);
     if (sent) return true;
     console.warn('[Cuckoo Code][拦截] 工具结果回传失败（第 ' + attempt + '/' + MAX_ATTEMPTS + ' 次）');
     if (attempt < MAX_ATTEMPTS) await sleep(RETRY_DELAY_MS);

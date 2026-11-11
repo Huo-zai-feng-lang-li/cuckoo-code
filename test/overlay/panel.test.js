@@ -269,3 +269,22 @@ test('遮罩：隐藏后重新显示从 0 开始（不残留上一轮快照）',
   });
 });
 
+test('遮罩：长暂停激活时显示随机概率延迟与倒计时，结束时复位', async () => {
+  await withRealMaskDom(async ({ textEl, maskEl, btnEl, sleep }) => {
+    let cancelCalled = false;
+    ui.updateMaskSendPause(true, 45000, () => { cancelCalled = true; });
+    assert.strictEqual(maskEl.classList.contains('cuckoo-hidden'), false, '长暂停激活时应显示遮罩');
+    assert.strictEqual(btnEl.classList.contains('cuckoo-hidden'), false, '应显示取消按钮');
+    assert.match(textEl.textContent, /触发随机概率延迟（共 45s · 已等 0s），可点下方停止/);
+
+    btnEl.onclick();
+    assert.strictEqual(cancelCalled, true, '点击按钮应触发取消回调');
+
+    await sleep(1100);
+    assert.match(textEl.textContent, /触发随机概率延迟（共 45s · 已等 [12]s），可点下方停止/);
+
+    ui.updateMaskSendPause(false, 0);
+    assert.ok(!textEl.textContent.includes('触发随机概率延迟'), '长暂停停用后文案应脱离长暂停模式');
+  });
+});
+

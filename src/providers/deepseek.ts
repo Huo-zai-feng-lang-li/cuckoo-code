@@ -121,8 +121,17 @@ const deepseek = {
 
     if (btn) {
       try {
+        const rect = btn.getBoundingClientRect ? btn.getBoundingClientRect() : null;
+        const cx = rect && rect.width > 0 ? Math.round(rect.left + rect.width / 2) : 0;
+        const cy = rect && rect.height > 0 ? Math.round(rect.top + rect.height / 2) : 0;
+        const win = window;
+        const opts = { bubbles: true, cancelable: true, view: win, clientX: cx, clientY: cy, button: 0 };
+        try { btn.dispatchEvent(new win.PointerEvent('pointerdown', opts)); } catch (_) {}
+        try { btn.dispatchEvent(new win.MouseEvent('mousedown', opts)); } catch (_) {}
+        try { btn.dispatchEvent(new win.PointerEvent('pointerup', opts)); } catch (_) {}
+        try { btn.dispatchEvent(new win.MouseEvent('mouseup', opts)); } catch (_) {}
         btn.click();
-        console.log('[Cuckoo Code][DeepSeek] 已通过 DOM click 点击发送按钮');
+        console.log('[Cuckoo Code][DeepSeek] 已通过完整 Pointer/Mouse 序列及 DOM click 点击发送按钮');
         return true;
       } catch (_) {}
     }
