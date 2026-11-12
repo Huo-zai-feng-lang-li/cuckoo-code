@@ -196,6 +196,26 @@ test('切会话/新对话清零暂停次数（按当前会话计数）', () => {
   assert.ok(body.includes('pauseCount = 0'), '切会话/新对话应清零暂停次数');
 });
 
+test('长暂停结束不重置 sendStartAt（避免幽灵「等待发送」窗口）', () => {
+  // 回归背景：暂停结束分支原先把 sendStartAt 重置为当前时刻；
+  // 但 chat-input 在 didLongPause 分支已清零常规延迟，消息即刻发出，
+  // 真实不存在「等待发送」窗口，UI 却从 0 计秒，显示一段幽灵等待。
+  const eventIdx = script.indexOf("case 'send-pause'");
+  assert.ok(eventIdx > 0, '应处理 send-pause');
+  const eventBody = script.slice(eventIdx, eventIdx + 900);
+  const branchStart = eventBody.indexOf('else if (wasPauseActive) {');
+  assert.ok(branchStart > 0, 'send-pause 应有暂停结束分支');
+  const branchBody = eventBody.slice(branchStart, branchStart + 300);
+  assert.ok(
+    branchBody.includes('stopSendTick()'),
+    '暂停结束必须停表，否则会显示不存在的「等待发送 Ns」'
+  );
+  assert.ok(
+    !branchBody.includes('sendStartAt = Date.now()'),
+    '暂停结束不得重置 sendStartAt（会造成幽灵计时）'
+  );
+});
+
 test('静默兜底有界：不允许数分钟级卡在运行态', () => {
   const m = script.match(/var limit = Date\.now\(\) < frameworkDriveUntil \? (\d+) : (\d+);/);
   assert.ok(m, '应能找到静默兜底的容忍上限');

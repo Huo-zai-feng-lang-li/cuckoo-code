@@ -589,11 +589,30 @@ function applyResultTransform(text: string, provider: any): string {
 }
 // 回传前缀随机化：真人不会每轮都说同一句话，固定文案本身就是机器特征。
 // 注意：前缀本身不能省 —— 真机验证过裸 <path> 结果会让 AI 认不出是工具返回而停止工作。
-const SINGLE_PREFIXES = ['跑完了，结果：', '执行结果：', '好了：', '搞定：', '结果出来了：'];
-const MULTI_PREFIXES = ['跑完了，结果如下：', '执行完了，结果是这样：', '好了，结果如下：', '搞定，结果如下：', '结果出来了：'];
+// 扩充到 18 条并做「最近用过的避开」，避免一轮多轮回传时同一句反复出现（真人不会）。
+const SINGLE_PREFIXES = [
+  '跑完了，结果：', '执行结果：', '好了：', '搞定：', '结果出来了：',
+  '弄好了：', '跑好了：', '完事了：', '结果在这：', '好了，看下：',
+  '执行完毕：', '跑通了：', '结果如下：', '搞定了：', '给你结果：',
+  '出来了：', '跑完了：', '弄完了：',
+];
+const MULTI_PREFIXES = [
+  '跑完了，结果如下：', '执行完了，结果是这样：', '好了，结果如下：', '搞定，结果如下：', '结果出来了：',
+  '弄好了，几段结果：', '跑好了，结果如下：', '完事了，结果看这：', '结果都在这：', '执行完毕，结果如下：',
+  '跑通了，结果：', '搞定了，结果如下：', '给你结果：', '出来了，结果如下：', '都跑完了：',
+  '弄完了，结果如下：', '跑完了，看下：', '结果汇总如下：',
+];
+// 最近用过的前缀（跨单段/多段共用一份记忆，避免两种模式各自撞车）
+const recentPrefixes: string[] = [];
+const PREFIX_MEMORY = 8;
 function pickPrefix(multi: boolean): string {
   const arr = multi ? MULTI_PREFIXES : SINGLE_PREFIXES;
-  return arr[Math.floor(Math.random() * arr.length)];
+  const fresh = arr.filter((p) => recentPrefixes.indexOf(p) === -1);
+  const pool = fresh.length ? fresh : arr;
+  const picked = pool[Math.floor(Math.random() * pool.length)];
+  recentPrefixes.push(picked);
+  if (recentPrefixes.length > PREFIX_MEMORY) recentPrefixes.shift();
+  return picked;
 }
 
 /**
@@ -639,9 +658,10 @@ async function sendCombinedJsResultsToChat(results: any, onSent?: () => void, co
   const input = findInputArea();
   if (input) {
     const current = (getInputText(input) || '').trim();
+    // 单一真相源：前缀列表即判据。原先额外硬编码的 includes('跑完了，结果') /
+    // includes('执行结果：') 与 some(startsWith) 重复，扩列表时极易漏改，已移除。
     const isToolResidual = SINGLE_PREFIXES.some(p => current.startsWith(p)) ||
       MULTI_PREFIXES.some(p => current.startsWith(p)) ||
-      current.includes('跑完了，结果') || current.includes('执行结果：') ||
       current.includes('代码有问题，请修正');
     if (current && !isRetry && !isToolResidual) {
       msg = current + sep + sep + msg;

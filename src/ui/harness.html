@@ -4358,7 +4358,10 @@
             pauseCount++;
             sendStartAt = Date.now();
           } else if (wasPauseActive) {
-            sendStartAt = Date.now();
+            // 长暂停结束：chat-input 在 didLongPause 分支已把常规延迟清零，消息即刻发出，
+            // 不存在"等待发送"窗口。必须在此停表——否则 sendStartAt 被重置为当前时刻，
+            // renderSendTick 会从 0 重新计秒，显示一段并不存在的「等待发送 Ns」。
+            stopSendTick();
           }
           syncPet();
           if (sendTickTimer) {

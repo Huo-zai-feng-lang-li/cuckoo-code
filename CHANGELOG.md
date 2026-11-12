@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.10.225] - 2026-11-12
+
+### 优化
+
+- **工具结果回传话术池扩充并避开近期重复（降低固定句式指纹）**
+  - `src/overlay/chat-input.ts`：单段前缀 5 条 → 18 条，多段前缀 5 条 → 18 条；
+  - 新增模块级 `recentPrefixes` 记忆（容量 8，单段/多段共用），优先从"近 8 次未用过"的话术中抽取，抽空再回落到全量池，保证连续两轮回传不会撞同一句；
+  - 判据去冗余：移除 `current.includes('跑完了，结果')` / `includes('执行结果：')` 两条与 `some(startsWith)` 重复的硬编码，改为以前缀列表为单一真相源，避免扩充话术时漏改；
+  - 顺带修正语义：残留判定由"内容任意位置命中"收窄为"开头命中"，不再误删用户真实输入。
+
+### 修复
+
+- **纯净模式长暂停结束后显示幽灵「等待发送」计时**
+  - 根因：`src/ui/harness.html` 的 `send-pause` 暂停结束分支把 `sendStartAt` 重置为当前时刻；而 `chat-input.ts` 在 `didLongPause` 分支已把 `reactionMs` / `hesitationMs` 清零，消息暂停一结束即填充发送，真实不存在"等待发送"窗口。UI 却从 0 重新计秒，显示一段并不存在的等待。
+  - 修复：暂停结束分支改为 `stopSendTick()`，直接停表并移除 `sending` 配色类。
+
+### 验证
+
+- `npm run typecheck` 0 错误；`npm run lint` 0 errors（73 条历史 warning，均为未使用变量，非本次引入）；`npm test` 146 测试文件 / 1481 用例 100% 通过；`npm run compile` 全量重建成功。
+- 新增回归测试：
+  - `test/overlay/chat-input.test.js`：10 次连续回传应出现 ≥6 种不同前缀，且相邻两次不得相同；
+  - `test/ui/harness-page.test.js`：暂停结束分支必须含 `stopSendTick()` 且不得含 `sendStartAt = Date.now()`。
+
 ## [0.10.223] - 2026-11-12
 
 ### 修复

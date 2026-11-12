@@ -623,3 +623,32 @@ test('sendCombinedJsResultsToChat 在重试时走快速通道并不重复拼接�
   assert.ok(sent[0].includes('新结果'), '应包含本次新执行结果');
 });
 
+test('回传前缀扩充到多套话术且避开连续重复（真人不会每轮同一句）', async () => {
+  const { sent } = composer();
+  state.sendDelayMin = state.sendDelayMax = 0;
+  state.pauseEnabled = false;
+
+  const prefixes = [];
+  for (let i = 0; i < 10; i++) {
+    await chat.sendCombinedJsResultsToChat(
+      [{ code: 'log(1)', result: { success: true, output: 'r' + i } }],
+      undefined,
+      0,
+      false
+    );
+    const last = sent[sent.length - 1];
+    prefixes.push(last.split('\n')[0]);
+  }
+
+  // 旧实现只有 5 条 SINGLE_PREFIXES 且纯随机，10 次抽最多 5 种；
+  // 扩充到 18 条后应明显多于 5 种（阈值 6 可同时区分两版实现）。
+  assert.ok(
+    new Set(prefixes).size >= 6,
+    '10 次回传应出现至少 6 种不同前缀（实际: ' + JSON.stringify(prefixes) + '）'
+  );
+  // 新增的「最近用过的避开」必须保证连续两次不同
+  for (let i = 1; i < prefixes.length; i++) {
+    assert.notStrictEqual(prefixes[i], prefixes[i - 1], '连续两次回传不应复用同一前缀');
+  }
+});
+
