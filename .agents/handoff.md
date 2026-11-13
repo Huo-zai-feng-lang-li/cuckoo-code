@@ -1,50 +1,63 @@
-# 最新接续状态 (2026-11-12 v0.10.225 回传话术池扩充与暂停计时修复)
+# 最新接续状态 (2026-11-12 v0.10.226 初始化提示词上下文瘦身)
 
 > 本文档为多任务接续文档。新窗口开工前**完整读一遍**。
-> 当前分支：`master`（已打 tag `v0.10.225` 并推送到远程）
-> 当前版本：`0.10.225`（下一版 `0.10.226`，版本号任意位置禁含数字 4）
+> 当前分支：`refactor/119-context-slim`（待合并 master）
+> 当前版本：`0.10.226`（下一版 `0.10.227`，版本号任意位置禁含数字 4）
 
 ---
 
 ## 0. 总览
 
-四门禁全绿（146 个测试文件、1481 个用例 100% passed，编译/类型检查/代码规范全绿）。
+四门禁全绿（146 个测试文件、1484 个用例 100% passed，编译/类型检查/代码规范全绿）。
 
 | 任务线 | 代码状态 | 备注 |
 |---|---|---|
-| A 工具结果回传话术池扩充 + 避开近期重复 | ✅ 已闭环 | 单/多段各 18 条，recentPrefixes 容量 8 |
-| B 纯净模式长暂停结束幽灵「等待发送」计时 | ✅ 已闭环 | send-pause 结束分支改 stopSendTick() |
+| 119 初始化提示词上下文瘦身 | ✅ 已闭环（待提交） | 总省 3892 字符（-24%） |
+| A 工具结果回传话术池扩充 | ✅ 已闭环（v0.10.225） | 单/多段各 18 条，recentPrefixes 容量 8 |
+| B 纯净模式长暂停幽灵计时 | ✅ 已闭环（v0.10.225） | send-pause 结束分支改 stopSendTick() |
 
 ---
 
-## 1. 本轮改动详情
+## 1. 本轮改动详情（需求 119）
 
-### 1.1 回传前缀反模式化（`src/overlay/chat-input.ts`）
+### 1.1 技能章节路径压缩（`src/skills/prompt.ts`）
 
-- **问题**：工具结果回传每轮开头都是固定 5 句话随机一句（"跑完了，结果："等），几十轮后形成稳定句式，属典型机器指纹。
+- **问题**：`buildSkillsSection` 给每条技能都输出完整绝对路径（`C:\\Users\\Administrator\\.agents\\skills\\<name>\\SKILL.md`），24 条用户级技能路径占 1632 字符。
 - **改动**：
-  - `SINGLE_PREFIXES` 5 条 → 18 条；`MULTI_PREFIXES` 5 条 → 18 条。
-  - 新增模块级 `recentPrefixes`（`PREFIX_MEMORY = 8`，单段/多段**共用一份**记忆）。`pickPrefix` 先从"近 8 次未用过"的池里抽，抽空回落全量池，抽中即记录。
-  - 判据去冗余：删除 `current.includes('跑完了，结果')` 与 `includes('执行结果：')` 两条与 `some(startsWith)` 重复的硬编码，改为前缀列表单一真相源（扩列表时不会漏改）。
-  - 副作用（有意）：残留判定从"任意位置命中"收窄为"开头命中"，不再误删用户真实输入。
+  - 按 `source`（project/user/plugin）分组，每组用 `commonRoot()` 算出公共目录，**目录前缀只声明一次**；
+  - 每条只输出 `<name>/SKILL.md` 相对路径，分隔符统一转 `/`；
+  - 测试同步补充 3 条断言（前缀只出现一次 / 多来源分组 / 分隔符统一）。
+- **效果**：技能章节 4104 → 2633 字符（-1471），能力零损失。
 
-### 1.2 长暂停结束幽灵计时（`src/ui/harness.html`）
+### 1.2 规则去重（4 个文件）
 
-- **问题**：`send-pause` 的暂停结束分支执行 `sendStartAt = Date.now()`，把计时起点重置为当前时刻。
-- **为何是幽灵**：`chat-input.ts` L433 的 `else if (didLongPause)` 已把 `reactionMs` / `hesitationMs` 全部置 0，长暂停结束后消息**立刻填充并发送**，物理上不存在"等待发送"窗口。但 `renderSendTick` 会从 0 重新计秒，界面上凭空多出一段"等待发送 Ns"。
-- **修复**：该分支改为 `stopSendTick()`，立即停表（同时移除 `sending` 配色类）。
+- `.agents/rules/README.md`（2226→1899）、`project.md`（1562→1137）、`subagent-dispatch.md`（1444→1181）、`.cuckoo/CUCKOO.md`（4538→3812）。
+- 删除同一纪律的多份副本（验证四件套、交付报告、开工读 handoff、需求流程），保留单一真相源。
+- `subagent-dispatch.md` 删除幻觉「并发派发规范」（引用不存在的 `invoke_subagents_parallel` / `agnes-3.0-flash`），替换为真实 `runAgents` 用法。
+
+### 1.3 技能停用（`~/.agents/skills/_disabled/`）
+
+- `using-superpowers`、`find-skills`、`dispatching-parallel-agents`、`subagent-driven-development`（依赖不存在的 superpowers 生态）、`taste-skill`（与 `impeccable` 重叠）。
+- 项目级示例 `hello` 同步移入 `.agents/skills/_disabled/`。
+
+### 1.4 全局规则精简（项目外，需手动同步）
+
+- `~/.agents/rules/rule.md`：2234 → 1554 字符。
+- 删除「自动加载 Skills 套件」段（指向不存在的 superpowers，且与 Cuckoo 渐进式技能机制冲突）、「修改后验证要求」写死的 npm/Makefile/Cargo 三选一、「交付前自检清单」重复项。
+- 原始备份：`~/.agents/rules/rule.md.bak-20261112`。
 
 ---
 
 ## 2. 关键上下文
 
 - 根目录：`d:\Desktop\Super-File\cuckoo-code`
+- 需求档案：`docs/requirements/119-context-slim.md`
+- 改动前快照：`snap-1794555766748-0z5ktb`（1213 文件）
 - 核心文件：
-  - `src/overlay/chat-input.ts`：`SINGLE_PREFIXES` / `MULTI_PREFIXES` / `recentPrefixes` / `pickPrefix` / `sendCombinedJsResultsToChat`
-  - `src/ui/harness.html`：`send-pause` 分支、`renderSendTick` / `startSendTick` / `stopSendTick`
-  - `test/overlay/chat-input.test.js`：前缀多样性 + 相邻不重复断言
-  - `test/ui/harness-page.test.js`：暂停结束分支源码切片断言
-- 注意：`package-lock.json` 版本字段停留在 `0.10.218`（历史发版均未同步，保持惯例）。
+  - `src/skills/prompt.ts`：`buildSkillsSection` / `groupBySource` / `commonRoot` / `formatSkillLine`
+  - `test/skills/skills.test.js`：技能章节路径压缩断言
+  - `.agents/rules/{README,project,subagent-dispatch}.md`
+  - `.cuckoo/CUCKOO.md`
 
 ## 3. 历史遗留待办（上一轮 handoff 转入）
 
@@ -56,5 +69,7 @@
 
 ## 4. 后续建议
 
-- 可考虑给 `recentPrefixes` 加容量上限测试（边界：池子被抽空时的回落路径）。
-- 长暂停相关的状态机分支较多（start/stop/自停/中止），可考虑补一条"暂停中用户主动中止"的回归测试。
+- `recentPrefixes` 可加容量上限测试（边界：池子被抽空时的回落路径）。
+- 长暂停状态机分支较多（start/stop/自停/中止），可补"暂停中用户主动中止"回归测试。
+- 全局 `rule.md` 不进项目 git，换机器需手动同步；可考虑抽成一份可版本化的模板。
+- `_disabled/` 可加 `README.md` 写明每个技能的停用理由，避免以后误删。

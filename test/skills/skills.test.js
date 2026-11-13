@@ -112,6 +112,31 @@ test('buildSkillsSection: 包含 name 与路径', () => {
   assert.ok(s.includes('## 可用技能'));
 });
 
+test('buildSkillsSection: 同源技能只声明一次目录前缀，条目路径为相对路径', () => {
+  const s = buildSkillsSection([mk('a', 'user'), mk('b', 'user')]);
+  // 目录前缀行只出现一次
+  const prefixLines = s.split('\n').filter((l) => l.startsWith('用户级技能目录：'));
+  assert.strictEqual(prefixLines.length, 1);
+  // 条目里是相对路径，不含重复的绝对前缀
+  assert.ok(s.includes('路径：a/SKILL.md'));
+  assert.ok(s.includes('路径：b/SKILL.md'));
+  assert.ok(!s.includes('/x/a/SKILL.md'));
+});
+
+test('buildSkillsSection: 不同来源分组并各自声明目录', () => {
+  const s = buildSkillsSection([mk('p', 'project'), mk('u', 'user'), mk('pl', 'plugin')]);
+  assert.ok(s.includes('项目级技能目录：'));
+  assert.ok(s.includes('用户级技能目录：'));
+  assert.ok(s.includes('插件级技能目录：'));
+});
+
+test('buildSkillsSection: 路径分隔符统一为 /', () => {
+  const win = { name: 'w', description: 'd', skillPath: 'C:\\root\\w\\SKILL.md', dir: 'C:\\root\\w', source: 'user' };
+  const s = buildSkillsSection([win]);
+  assert.ok(s.includes('路径：w/SKILL.md'), '应输出正斜杠相对路径');
+  assert.ok(!s.includes('C:\\root\\w\\SKILL.md'));
+});
+
 test('buildSkillsSection: description 超长截断', () => {
   const long = { name: 'x', description: 'a'.repeat(2000), skillPath: '/x/SKILL.md', dir: '/x', source: 'project' };
   const s = buildSkillsSection([long]);
