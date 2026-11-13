@@ -112,5 +112,6 @@
 | 117 | fix | [排除 Cloudflare 挑战域名注入与 RTC 实例属性隐身](./117-cf-turnstile-bypass.md) | done | fix/115-long-text-attachment | 2026-11-11 |
 | 118 | fix | [纯净模式发送状态同步与长文本/初始化提示词附件通道修复](./118-pure-mode-status-and-prompt-attachment.md) | done | fix/117-pure-mode-status-and-prompt-attachment | 2026-11-11 |
 | 119 | refactor | [初始化提示词上下文瘦身（规则去重 + 技能路径压缩）](./119-context-slim.md) | doing | refactor/119-context-slim | 2026-11-12 |
+| 120 | refactor | [CHANGELOG 按月拆分 + 内容规范收紧](./120-changelog-split.md) | doing | refactor/120-changelog-split | 2026-11-13 |
 
-共 107 个需求。
+共 108 个需求。
