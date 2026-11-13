@@ -1,45 +1,55 @@
-# 最新接续状态 (2026-11-13 v0.10.226+ CHANGELOG 按月拆分)
+# 最新接续状态 (2026-11-13 v0.10.227 需求 121 代码块增强已发布)
 
 > 本文档为多任务接续文档。新窗口开工前**完整读一遍**。
-> 当前分支：`refactor/120-changelog-split`（待合并 master）
-> 当前版本：`0.10.226`（下一版 `0.10.227`，版本号任意位置禁含数字 4）
+> 当前分支：`master`（121 已合并并发布）
+> 当前版本：`0.10.227`（版本号任意位置禁含数字 4）
 
 ---
 
 ## 0. 总览
 
-四门禁全绿（146 测试文件 / 1484 用例，编译/类型检查/规范全绿）。
+四门禁全绿（146 测试文件 / 1490 用例，编译/类型检查/规范全绿）。
 
 | 任务线 | 代码状态 | 备注 |
 |---|---|---|
-| 120 CHANGELOG 按月拆分 + 内容规范 | ✅ 已闭环（待提交） | 根文件 184KB → 6.4KB |
+| 121 纯净模式代码块增强 | ✅ 已发布 v0.10.227 | 语法着色 + 独立复制；用户真机验证通过 |
+| 120 CHANGELOG 按月拆分 + 内容规范 | ✅ 已合并 master | 根文件 184KB → 6.4KB |
 | 119 初始化提示词上下文瘦身 | ✅ 已发布 v0.10.226 | 总省 3892 字符 |
 
 ---
 
-## 1. 本轮改动（需求 120）
+## 1A. 最近一轮改动（需求 121，已发布）
 
-### 1.1 结构拆分
+详见 `docs/requirements/121-harness-code-block-enhance.md`。
 
-- 新增 `changelogs/{2026-08,09,10,11}.md`，340 个版本按发布月份归档，**内容逐字节零差异**（脚本校验）。
-- 根 `CHANGELOG.md` 重建为：说明 + 版本索引表 + 最近 5 版（3693 行 → 135 行）。
-- 发版轮转无决策成本：看当天日期追加到 `changelogs/YYYY-MM.md` 顶部。
-- GitHub Release 不受影响（源码/脚本均不读该文件，已 grep 确认）。
+- `scripts/build-hljs.mjs`：esbuild 打包 hljs core + 24 种语言 → `src/ui/vendor/hljs/hljs.min.js`（126KB，挂 `window.hljs`），已接入 `npm run compile`，产物随仓库跟踪。
+- `src/ui/harness.html`：
+  - `highlightCodeEl` / `decorateCodeBlocks` / `enhanceCodeBlocksHtml`，在 `renderMarkdown` 的 sanitizer + 数学恢复之后统一增强（6 个渲染入口全覆盖）；
+  - 复制走 `#stream` 事件委托（流式重建不丢监听）；未知语言/高亮异常/空块一律降级不丢代码；
+  - 新增 `plainBodyText()`：整条复制与「按文本匹配历史」不再被头栏（语言标签/复制文案）污染；实现要点是克隆后临时离屏挂进文档量 `innerText`（脱离文档会退化为 textContent 丢换行）；
+  - 配色用 `--hl-*` CSS 变量两套，不引 hljs 主题。
+- `src/bridge/harness-bridge.ts`：`stripToolBlocks` 收窄为只剥 ````cuckoo（js/javascript 块是正常示例代码，此前被误吞）。
+  - ⚠️ `src/bridge/intercept/observer.ts` 里另有一份同名 `stripToolBlocks`，仍剥 js/javascript —— 那是**格式误报检测**语义，用途不同，**有意保留**，勿"统一"。
+- 用户真机验证通过；四门禁全绿。
 
-### 1.2 新增脚本
+### 1.1 已知待办（本轮观察，非阻塞）
 
-- `scripts/migrate-changelog.mjs`：一次性迁移（支持 `--dry-run`）。
-- `scripts/changelog-locate.mjs <version>`：按版本号定位文件与行号（支持 `v` 前缀）。
+- 无语言标签的代码块走 `hljs.highlightAuto`，中文目录树/日志类内容有概率被染成杂乱颜色。属产品取舍，若用户反馈再考虑改为"仅显式语言才着色"。
 
-### 1.3 规则更新（`.agents/rules/project.md` 发版纪律）
+---
 
-- 条目写入当月归档文件；根文件只维护索引 + 最近 5 版；
-- 内容粒度：只写用户可感知变更，不写内部验证/重构细节，单版 ≤15 行；
-- 分类只用标准六类 `Added/Changed/Fixed/Removed/Performance/Security`，禁止自造与中英混用。
+## 1B. 更早一轮（需求 120）
+
+- 新增 `changelogs/{2026-08,09,10,11}.md`，340 个版本按发布月份归档，内容零差异。
+- 根 `CHANGELOG.md` 重建为：说明 + 版本索引表 + 最近 5 版。
+- 新增 `scripts/migrate-changelog.mjs`、`scripts/changelog-locate.mjs`。
+- 规则更新（`.agents/rules/project.md` 发版纪律）：条目写当月归档、根文件只维护索引 + 最近 5 版、单版 ≤15 行、只用标准六类。
+
+---
 
 ## 2. 已知限制
 
-- `changelogs/2026-10.md` 2716 行（当月 293 个版本），仍超 `readLines` 默认 2000 行上限。
+- `changelogs/2026-10.md` 2716 行（当月 293 个版本），超 `readLines` 默认 2000 行上限。
   查历史用 `node scripts/changelog-locate.mjs <ver>` 定位后再分段读，不要读全量。
 
 ## 3. 历史遗留待办（转入）
