@@ -113,5 +113,6 @@
 | 118 | fix | [纯净模式发送状态同步与长文本/初始化提示词附件通道修复](./118-pure-mode-status-and-prompt-attachment.md) | done | fix/117-pure-mode-status-and-prompt-attachment | 2026-11-11 |
 | 119 | refactor | [初始化提示词上下文瘦身（规则去重 + 技能路径压缩）](./119-context-slim.md) | doing | refactor/119-context-slim | 2026-11-12 |
 | 120 | refactor | [CHANGELOG 按月拆分 + 内容规范收紧](./120-changelog-split.md) | doing | refactor/120-changelog-split | 2026-11-13 |
+| 121 | feat | [纯净模式代码块增强（语法着色 + 独立复制）](./121-harness-code-block-enhance.md) | done | feat/121-harness-code-block-enhance | 2026-11-13 |
 
-共 108 个需求。
+共 109 个需求。

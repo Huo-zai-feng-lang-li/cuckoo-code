@@ -516,3 +516,71 @@ test('回执草稿：requestId 贯穿 sendMessage 调用，override 投递不存
   const calls = script.match(/api\.sendMessage\([^,]+,\s*draftRequestId\)/g);
   assert.ok(calls && calls.length >= 1, 'sendMessage 应携带 requestId 配对回执');
 });
+
+// ===== 代码块增强（需求 121：语法着色 + 独立复制）=====
+
+test('代码块增强：结构函数与 renderMarkdown 出口接线', () => {
+  assert.ok(/function highlightCodeEl\s*\(/.test(script), '应有语法着色函数');
+  assert.ok(/function decorateCodeBlocks\s*\(/.test(script), '应有代码块结构增强函数');
+  assert.ok(/function enhanceCodeBlocksHtml\s*\(/.test(script), '应有 HTML 字符串增强入口');
+  // renderMarkdown 必须在返回前增强：否则 6 个渲染入口全部拿不到头栏/着色
+  const idx = script.indexOf('function renderMarkdown');
+  const body = script.slice(idx, script.indexOf('\n  }', script.indexOf('return enhanceCodeBlocksHtml', idx)));
+  assert.ok(body.includes('return enhanceCodeBlocksHtml(src)'), 'renderMarkdown 成功分支应经增强后返回');
+  // 增强必须在 sanitizer 之后（先净化再插结构，避免增强产物被 sanitizer 剥掉或绕过净化）
+  assert.ok(body.indexOf('CuckooSanitize.sanitizeHtml') < body.indexOf('enhanceCodeBlocksHtml'), '增强应在 sanitizer 之后');
+});
+
+test('代码块复制：事件委托绑在 #stream（流式重建不丢监听）', () => {
+  assert.ok(/function bindCodeCopyDelegation\s*\(/.test(script), '应有复制委托绑定函数');
+  assert.ok(/bindCodeCopyDelegation\(stream\)/.test(script), '委托应绑在 #stream 上');
+  const idx = script.indexOf('function bindCodeCopyDelegation');
+  const body = script.slice(idx, idx + 1400);
+  assert.ok(body.includes("closest('.code-copy-btn')"), '应按按钮类名识别点击目标');
+  assert.ok(body.includes('pre code'), '复制内容应取自 code 元素');
+  // 委托函数自己绑一次；关键是结构增强函数不得给每个按钮绑监听
+  const dIdx = script.indexOf('function decorateCodeBlocks');
+  const dBody = script.slice(dIdx, dIdx + 1200);
+  assert.ok(!dBody.includes('addEventListener'), '结构增强不得给每个按钮绑监听（会被流式重建冲掉）');
+});
+
+test('代码块增强：未知语言与空块降级不丢内容', () => {
+  const idx = script.indexOf('function highlightCodeEl');
+  const body = script.slice(idx, script.indexOf('function decorateCodeBlocks', idx));
+  // 未知语言（如 cuckoo）不高亮，保留原文本
+  assert.ok(body.includes('hl.getLanguage(lang)'), '应校验语言是否已注册，未注册不硬高亮');
+  assert.ok(body.includes('if (!out || typeof out.value'), '高亮失败须直接返回，不改动原文本');
+  assert.ok(/catch \(e\) \{ out = null; \}/.test(body), '高亮异常须被吞掉并降级');
+  // 空 pre 不增强（避免残留只有头栏的空壳）
+  const dIdx = script.indexOf('function decorateCodeBlocks');
+  const dBody = script.slice(dIdx, script.indexOf('function bindCodeCopyDelegation', dIdx));
+  assert.ok(dBody.includes("pre.textContent || ''"), '应跳过空代码块');
+});
+
+test('代码块复制/删除匹配：取正文时剔除代码块头栏', () => {
+  // 头栏含语言标签与「复制/已复制」文案，若用 body.innerText 取文本，
+  // 整条复制与"按文本匹配历史"都会被污染 → 必须走剥离头栏的 plainBodyText
+  assert.ok(/function plainBodyText\s*\(/.test(script), '应有剔除头栏的取文函数');
+  const idx = script.indexOf('function plainBodyText');
+  const body = script.slice(idx, script.indexOf('function attachAssistantActions', idx));
+  assert.ok(body.includes("querySelectorAll('.code-header')"), '应移除头栏节点');
+  assert.ok(!/body\.innerText/.test(script), '正文取文不得直接用 body.innerText');
+});
+
+test('代码块增强：页面加载 highlight.js 且与 CSP 兼容', () => {
+  assert.ok(html.includes('vendor/hljs/hljs.min.js'), '页面应加载本地 hljs 产物');
+  const csp = html.match(/Content-Security-Policy" content="([^"]+)"/);
+  assert.ok(csp, '应有 CSP');
+  assert.ok(/script-src[^;]*'self'/.test(csp[1]), 'CSP 应允许同源脚本');
+  assert.ok(!/script-src[^;]*https?:/.test(csp[1]), '不应为着色放宽到远程脚本');
+});
+
+test('代码块增强：样式与明暗主题 token 齐备', () => {
+  assert.ok(/\.msg\.assistant \.body \.code-wrapper \{/.test(html), '应有 .code-wrapper 样式');
+  assert.ok(/\.msg\.assistant \.body \.code-header \{/.test(html), '应有 .code-header 样式');
+  assert.ok(/\.msg\.assistant \.body \.code-copy-btn \{/.test(html), '应有 .code-copy-btn 样式');
+  assert.ok(/\.msg\.assistant \.body \.code-wrapper > pre \{/.test(html), 'wrapper 内 pre 需去掉自带边框背景（防双框）');
+  assert.ok(/--hl-keyword:/.test(html), '应有 hljs token 浅色配色');
+  const darkIdx = html.indexOf('body[data-ck-dark]');
+  assert.ok(darkIdx > 0 && html.indexOf('--hl-keyword:', darkIdx) > darkIdx, '深色主题应覆盖 hljs 配色');
+});

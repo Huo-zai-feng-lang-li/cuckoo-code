@@ -1,13 +1,13 @@
 {
   "name": "cuckoo-code",
-  "version": "0.10.226",
+  "version": "0.10.227",
   "description": "DeepSeek 桌面应用——内嵌浏览器，自动识别 AI 回复中的命令和工具调用并执行",
   "type": "module",
   "main": "out/src/app/entry.js",
   "scripts": {
     "start": "node scripts/fetch-runtime.mjs && node scripts/copy-monaco.mjs && node start.js",
     "dev": "node scripts/fetch-runtime.mjs && node scripts/copy-monaco.mjs && node start.js --dev",
-    "compile": "node scripts/copy-monaco.mjs && node scripts/build-hooks.mjs && node scripts/build-sanitizer.mjs && tsc -p tsconfig.build.json && node scripts/copy-remote-pwa.mjs && node scripts/copy-sandbox-worker.mjs && node scripts/build-pets.mjs && node scripts/copy-pets.mjs && node scripts/build-tool-api.mjs && node scripts/build-shell.mjs",
+    "compile": "node scripts/copy-monaco.mjs && node scripts/build-hooks.mjs && node scripts/build-sanitizer.mjs && node scripts/build-hljs.mjs && tsc -p tsconfig.build.json && node scripts/copy-remote-pwa.mjs && node scripts/copy-sandbox-worker.mjs && node scripts/build-pets.mjs && node scripts/copy-pets.mjs && node scripts/build-tool-api.mjs && node scripts/build-shell.mjs",
     "copy-monaco": "node scripts/copy-monaco.mjs",
     "fetch-runtime": "node scripts/fetch-runtime.mjs",
     "test": "vitest run",
@@ -61,6 +61,7 @@
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
+    "highlight.js": "^11.12.0",
     "katex": "^0.18.9",
     "sharp": "^0.35.5",
     "typescript": "^7.0.2",

@@ -32,7 +32,11 @@ import { setSuspended as setWatchdogSuspended } from './loop/watchdog.js';
 const require = createRequire(import.meta.url);
 const { ipcRenderer } = require('electron');
 
-/** 移除文本中的 cuckoo / js 工具代码块（工具调用改由卡片展示） */
+/** 移除文本中的 cuckoo 工具代码块（工具调用改由卡片展示）
+ *  ⚠️ 只剥 cuckoo 块。js/javascript 块可能是普通示例代码（如 Promise 演示），
+ *  无差别剥离会把用户正常看到的内容吞掉（见 1.6 验证 Worker 伪装的案例）。
+ *  真正会被执行的 js 工具块极罕见（extractJsToolBlocks 要求整条回复仅含代码块且调用工具），
+ *  保留在正文仅轻微冗余，可接受。 */
 function stripToolBlocks(text: string): string {
   if (!text) return '';
   // 快速路径：正文无代码围栏 → 无需跑 3 个全文正则。
@@ -40,10 +44,10 @@ function stripToolBlocks(text: string): string {
   // 绝大多数帧不含围栏，跳过正则可显著降低长回复下的累积开销。
   if (text.indexOf('```') === -1) return text.trim();
   let out = text;
-  out = out.replace(/```(?:cuckoo|javascript|js)\s*\n[\s\S]*?```/gi, '');
+  out = out.replace(/```cuckoo\s*\n[\s\S]*?```/gi, '');
   // 流式输出中途：代码块尚未闭合 → 从开标记起全部隐藏，避免 ```cuckoo 内容闪现
-  out = out.replace(/```(?:cuckoo|javascript|js)\s*\n[\s\S]*$/gi, '');
-  out = out.replace(/```(?:cuckoo|javascript|js)\s*$/gi, '');
+  out = out.replace(/```cuckoo\s*\n[\s\S]*$/gi, '');
+  out = out.replace(/```cuckoo\s*$/gi, '');
   // 流式边界兜底：开标记行未收全（如 ```cuck / ```cuckoo 尚未换行）→ 也隐藏，
   // 否则这几个字符会作为普通文本闪现在流式输出尾部。
   // B-009：要求反引号后至少带一个字母——即"半截开标记"才剥；回复若以普通语言代码块

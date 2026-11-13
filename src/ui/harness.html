@@ -38,6 +38,7 @@
     --user-bg: var(--ck-surface-hover, #eef0f4);
     --code-bg: var(--ck-surface, #f5f6f8);
     --code-text: #b5451f;
+    --code-header-bg: rgba(16, 24, 40, 0.03);
     --think-bg: var(--ck-surface, rgba(0,0,0,0.02));
     --hover-soft: var(--ck-surface-hover, rgba(0,0,0,0.05));
     --scroll-thumb: var(--ck-scroll-thumb, rgba(0, 0, 0, 0.14));
@@ -71,6 +72,7 @@
     --user-bg: var(--ck-surface-hover, rgba(255, 255, 255, 0.10));
     --code-bg: var(--ck-surface, rgba(0, 0, 0, 0.35));
     --code-text: #e0a58a;
+    --code-header-bg: rgba(255, 255, 255, 0.035);
     --think-bg: var(--ck-surface, rgba(255,255,255,0.025));
     --hover-soft: var(--ck-surface-hover, rgba(255,255,255,0.10));
     --scroll-thumb: var(--ck-scroll-thumb, rgba(255, 255, 255, 0.16));
@@ -237,7 +239,64 @@
     background: var(--code-bg); border: 1px solid var(--border);
     border-radius: 9px; padding: 12px 14px; overflow-x: auto; margin: 12px 0;
   }
+  /* 代码块：wrapper + 头栏（语言标签 + 复制）。pre 自带背景/边框在 wrapper 内需去掉，
+     否则双框重叠（与 PWA 端 .msg.ai pre 的处理一致）。 */
+  .msg.assistant .body .code-wrapper {
+    margin: 12px 0; border: 1px solid var(--border); border-radius: 9px;
+    background: var(--code-bg); overflow: hidden;
+  }
+  .msg.assistant .body .code-wrapper > pre {
+    margin: 0; border: none; border-radius: 0; background: transparent;
+    padding: 11px 14px; overflow-x: auto;
+  }
+  .msg.assistant .body .code-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 10px 6px 14px;
+    background: var(--code-header-bg); border-bottom: 1px solid var(--border);
+  }
+  .msg.assistant .body .code-lang {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    letter-spacing: .7px; text-transform: uppercase; color: var(--text-dim);
+  }
+  .msg.assistant .body .code-copy-btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: none; border: none; cursor: pointer;
+    color: var(--text-dim); font-family: inherit; font-size: 11px;
+    padding: 3px 6px; border-radius: 6px;
+    transition: color .15s, background .15s;
+  }
+  .msg.assistant .body .code-copy-btn svg { width: 12px; height: 12px; }
+  .msg.assistant .body .code-copy-btn:hover { color: var(--text); background: var(--hover-soft); }
+  .msg.assistant .body .code-copy-btn.copied { color: var(--green); }
   .msg.assistant .body pre code { background: none; padding: 0; color: var(--text-2); font-size: 12.5px; line-height: 1.62; }
+  /* highlight.js token 配色：不引 hljs 自带主题（写死颜色，与 --ck-* 明暗主题冲突），
+     统一用 --hl-* 变量定义两套。 */
+  :root {
+    --hl-keyword: #a626a4; --hl-string: #50a14f; --hl-number: #986801;
+    --hl-comment: #a0a1a7; --hl-function: #4078f2; --hl-type: #c18401;
+    --hl-attr: #986801; --hl-builtin: #c18401; --hl-meta: #4078f2;
+  }
+  body[data-ck-dark] {
+    --hl-keyword: #c678dd; --hl-string: #98c379; --hl-number: #d19a66;
+    --hl-comment: #7f848e; --hl-function: #61afef; --hl-type: #e5c07b;
+    --hl-attr: #d19a66; --hl-builtin: #e5c07b; --hl-meta: #61afef;
+  }
+  .msg.assistant .body .hljs-keyword, .msg.assistant .body .hljs-selector-tag,
+  .msg.assistant .body .hljs-literal, .msg.assistant .body .hljs-doctag { color: var(--hl-keyword); }
+  .msg.assistant .body .hljs-string, .msg.assistant .body .hljs-regexp,
+  .msg.assistant .body .hljs-addition { color: var(--hl-string); }
+  .msg.assistant .body .hljs-number, .msg.assistant .body .hljs-symbol,
+  .msg.assistant .body .hljs-bullet { color: var(--hl-number); }
+  .msg.assistant .body .hljs-comment, .msg.assistant .body .hljs-quote { color: var(--hl-comment); font-style: italic; }
+  .msg.assistant .body .hljs-title, .msg.assistant .body .hljs-section,
+  .msg.assistant .body .hljs-name { color: var(--hl-function); }
+  .msg.assistant .body .hljs-type, .msg.assistant .body .hljs-class .hljs-title { color: var(--hl-type); }
+  .msg.assistant .body .hljs-attr, .msg.assistant .body .hljs-attribute,
+  .msg.assistant .body .hljs-variable, .msg.assistant .body .hljs-template-variable { color: var(--hl-attr); }
+  .msg.assistant .body .hljs-built_in, .msg.assistant .body .hljs-params { color: var(--hl-builtin); }
+  .msg.assistant .body .hljs-meta, .msg.assistant .body .hljs-tag { color: var(--hl-meta); }
+  .msg.assistant .body .hljs-emphasis { font-style: italic; }
+  .msg.assistant .body .hljs-strong { font-weight: 600; }
   .msg.assistant .body strong { color: var(--text-strong); font-weight: 600; }
   .msg.assistant .body em { font-style: italic; }
   .msg.assistant .body ul, .msg.assistant .body ol { margin: 10px 0; padding-left: 22px; }
@@ -1181,6 +1240,8 @@
 </div>
 <script src="vendor/marked.umd.js"></script>
 <script src="vendor/cuckoo-sanitize.js"></script>
+<!-- 代码着色（core + 24 种常用语言，scripts/build-hljs.mjs 生成） -->
+<script src="vendor/hljs/hljs.min.js"></script>
 <!-- 宠物（移植自 dsh-go）：数据由 scripts/build-pets.mjs 从 src/ui/pets/<id>/pack.json 生成 -->
 <script src="pets/pets.generated.js"></script>
 <script src="pets/pet.js"></script>
@@ -1189,6 +1250,8 @@
   var api = window.harnessAPI || {};
 
   var stream = document.getElementById('stream');
+  // 代码块复制按钮：委托绑一次（流式每帧重建 innerHTML 也不会丢监听）
+  bindCodeCopyDelegation(stream);
   var empty = document.getElementById('empty');
   var input = document.getElementById('input');
   var sendBtn = document.getElementById('send');
@@ -1651,7 +1714,7 @@
       var at = history.indexOf(histItem);
       if (at >= 0) { history.splice(at, 1); saveHist(); }
     } else {
-      var text = (msgEl.querySelector('.body') || {}).innerText || '';
+      var text = plainBodyText(msgEl);
       for (var i = history.length - 1; i >= 0; i--) {
         if (history[i].t === 'assistant' && (history[i].text === text || (text && history[i].text && history[i].text.indexOf(text.slice(0, 30)) >= 0))) {
           history.splice(i, 1);
@@ -1665,6 +1728,34 @@
     settleScrollBottom(true);
     var remaining = stream.querySelectorAll('.msg, .tool');
     if (!remaining.length) showEmptyState();
+  }
+
+  /** 取正文纯文本：剔除代码块头栏（语言标签 / 复制按钮），避免污染整条复制与删除匹配 */
+  function plainBodyText(msgEl) {
+    if (!msgEl) return '';
+    var body = msgEl.querySelector ? msgEl.querySelector('.body') : null;
+    if (!body) return msgEl.innerText || '';
+    var clone = body.cloneNode(true);
+    var heads = clone.querySelectorAll('.code-header');
+    for (var i = 0; i < heads.length; i++) {
+      if (heads[i].parentNode) heads[i].parentNode.removeChild(heads[i]);
+    }
+    // 脱离文档的节点取 innerText 会退化为 textContent（段落之间、块级元素之间的换行与空行
+    // 全部丢失），所以必须临时挂进文档量取，量完立刻移除；离屏 + 隐藏，不触发可见闪烁。
+    clone.style.position = 'absolute';
+    clone.style.left = '-99999px';
+    clone.style.top = '0';
+    clone.style.width = (body.clientWidth || 600) + 'px';
+    clone.style.visibility = 'hidden';
+    clone.style.pointerEvents = 'none';
+    var text = '';
+    try {
+      document.body.appendChild(clone);
+      text = clone.innerText || '';
+    } finally {
+      if (clone.parentNode) clone.parentNode.removeChild(clone);
+    }
+    return text;
   }
 
   function attachAssistantActions(msgEl, getText, histItem) {
@@ -1743,7 +1834,7 @@
     if (thinkEl) {
       thinkEl.querySelector('.think-head').addEventListener('click', function () { thinkEl.classList.toggle('open'); });
     }
-    attachAssistantActions(d, function () { return (d.querySelector('.body') || {}).innerText || ''; }, histItem);
+    attachAssistantActions(d, function () { return plainBodyText(d); }, histItem);
     stream.appendChild(d);
     return d;
   }
@@ -2633,7 +2724,7 @@
   /**
    * 模型偶尔会把计划写成裸 JSON 正文（而不是走 cuckoo 代码块协议）。
    * 这里仅做「结构化识别」：把这类 JSON 认成计划条目，让面板仍然可用。
-   * 不修改、不屏蔽正文 —— 正文显示交给 bridge 的 stripToolBlocks（只剥 cuckoo/js 块）。
+   * 不修改、不屏蔽正文 —— 正文显示交给 bridge 的 stripToolBlocks（只剥 cuckoo 块）。
    */
   function tryParseTodoJson(raw) {
     var s = String(raw == null ? '' : raw).trim();
@@ -2837,6 +2928,117 @@
     _cuckooSanitizeWarned = true;
     console.warn('[cuckoo] HTML 消毒器不可用，渲染降级为纯文本（fail-closed）');
   }
+  // ===== 代码块增强（语法着色 + 语言标签 + 独立复制）=====
+  // 为什么统一挂在 renderMarkdown 出口：正文渲染有 6 个入口（流式节流帧、finished 帧、
+  // assistant-done、历史恢复等），全部走 innerHTML 全量重建。若在每个入口分别加后处理，
+  // 必然漏一处；复制按钮的监听也会随每帧重建丢失。故：
+  //   - 结构增强（包 wrapper + 头栏）在出口一次做完，所有入口自动生效；
+  //   - 点击走 #stream 上的事件委托（绑一次），重建不影响。
+  var CODE_COPY_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V3.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg>';
+
+  /** 对单个 <code> 做语法着色；失败一律降级（绝不让高亮异常吞掉代码） */
+  function highlightCodeEl(codeEl) {
+    var hl = window.hljs;
+    if (!hl || typeof hl.highlight !== 'function') return;
+    var raw = codeEl.textContent || '';
+    if (!raw.trim()) return;
+    var cls = codeEl.className || '';
+    var m = /language-([a-zA-Z0-9_+-]+)/.exec(cls);
+    var lang = m ? m[1].toLowerCase() : '';
+    var out = null;
+    try {
+      if (lang && typeof hl.getLanguage === 'function' && hl.getLanguage(lang)) {
+        out = hl.highlight(raw, { language: lang, ignoreIllegals: true });
+      } else if (!lang) {
+        out = hl.highlightAuto(raw);
+      }
+    } catch (e) { out = null; }
+    // 未知语言（如 cuckoo）→ 不高亮，保留原样文本
+    if (!out || typeof out.value !== 'string') return;
+    codeEl.innerHTML = out.value;
+    codeEl.classList.add('hljs');
+    if (out.language) codeEl.setAttribute('data-lang', out.language);
+  }
+
+  /** 把 marked 产出的 <pre><code> 包成「头栏 + 代码」结构；幂等 */
+  function decorateCodeBlocks(container) {
+    if (!container) return;
+    var pres = container.querySelectorAll('pre');
+    for (var i = 0; i < pres.length; i++) {
+      var pre = pres[i];
+      var parent = pre.parentNode;
+      if (!parent) continue;
+      if (parent.classList && parent.classList.contains('code-wrapper')) continue; // 已增强
+      // 空代码块（剥离工具块后常见的残留）不增强，交给 removeEmptyPres 清掉，
+      // 否则会留下一个只有头栏、没有内容的空壳
+      if (!String(pre.textContent || '').trim()) continue;
+      var codeEl = pre.querySelector('code');
+      var langLabel = 'CODE';
+      if (codeEl) {
+        var m = /language-([a-zA-Z0-9_+-]+)/.exec(codeEl.className || '');
+        if (m) langLabel = m[1].toUpperCase();
+        highlightCodeEl(codeEl);
+      }
+      var wrapper = document.createElement('div');
+      wrapper.className = 'code-wrapper';
+      var header = document.createElement('div');
+      header.className = 'code-header';
+      header.innerHTML = '<span class="code-lang">' + esc(langLabel) + '</span>' +
+        '<button class="code-copy-btn" type="button" data-ck-copy="1" aria-label="复制代码">' +
+        CODE_COPY_ICON + '<span>复制</span></button>';
+      parent.insertBefore(wrapper, pre);
+      wrapper.appendChild(header);
+      wrapper.appendChild(pre);
+    }
+  }
+
+  /** 复制按钮的事件委托（#stream 只需绑一次） */
+  function bindCodeCopyDelegation(root) {
+    if (!root) return;
+    root.addEventListener('click', function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest('.code-copy-btn') : null;
+      if (!btn) return;
+      e.stopPropagation();
+      var wrap = btn.closest('.code-wrapper');
+      var codeEl = wrap ? wrap.querySelector('pre code') : null;
+      var text = codeEl ? codeEl.textContent : '';
+      if (!text) return;
+      var done = function (ok) {
+        var label = btn.querySelector('span');
+        btn.classList.toggle('copied', ok);
+        if (label) label.textContent = ok ? '已复制' : '复制失败';
+        setTimeout(function () {
+          btn.classList.remove('copied');
+          if (label) label.textContent = '复制';
+        }, 1500);
+      };
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
+        } else {
+          var ta = document.createElement('textarea');
+          ta.value = text; document.body.appendChild(ta); ta.select();
+          document.execCommand('copy'); document.body.removeChild(ta);
+          done(true);
+        }
+      } catch (_) { done(false); }
+    });
+  }
+
+  // 给已生成的 HTML 字符串做代码块增强：用 <template> 解析 → 增强 → 序列化
+  var _codeTpl = null;
+  function enhanceCodeBlocksHtml(html) {
+    if (!html || html.indexOf('<pre') === -1) return html; // 无代码块：零开销
+    try {
+      if (!_codeTpl) _codeTpl = document.createElement('template');
+      _codeTpl.innerHTML = html;
+      decorateCodeBlocks(_codeTpl.content);
+      return _codeTpl.innerHTML;
+    } catch (e) {
+      return html; // 增强失败不影响正文展示
+    }
+  }
+
   function renderMarkdown(text) {
     var src = String(text == null ? '' : text);
     if (!src) return '';
@@ -2866,7 +3068,10 @@
         // E-002：marked 输出先过白名单 sanitizer。此时 @@MATHn@@ 是纯文本占位，
         // 会被完整保留；随后才恢复 KaTeX 受信 HTML（顺序不可调换）。
         src = window.CuckooSanitize.sanitizeHtml(src);
-        return src.replace(/@@MATH(\d+)@@/g, function (m, idx) { return maths[+idx] || ''; });
+        src = src.replace(/@@MATH(\d+)@@/g, function (m, idx) { return maths[+idx] || ''; });
+        // 代码块增强放在 sanitizer 与数学恢复之后：此时 HTML 已可信，
+        // 增强只会插入固定的头栏结构，不引入外部内容。
+        return enhanceCodeBlocksHtml(src);
       }
     } catch (e) { /* 解析失败回退纯文本 */ }
     // 回退：还原数学为字面文本（剥掉 KaTeX HTML 标签）
@@ -3674,7 +3879,7 @@
         '<div class="think-body"></div>' +
       '</div>' +
       '<div class="body" style="display:none"></div>';
-    attachAssistantActions(d, function () { return (d.querySelector('.body') || {}).innerText || ''; });
+    attachAssistantActions(d, function () { return plainBodyText(d); });
     stream.appendChild(d);
     var thinkEl = d.querySelector('.think');
     thinkEl.querySelector('.think-head').addEventListener('click', function () { thinkEl.classList.toggle('open'); });
@@ -4308,7 +4513,7 @@
         case 'stream': cancelGoalNudge(); onStream(payload.think, payload.text, payload.finished); break;
         case 'assistant-done': {
           var adRaw = payload.text || '';
-          // 正文不做任何删改：工具调用块由 bridge 的 stripToolBlocks 负责剥离。
+          // 正文不做任何删改：工具调用块由 bridge 的 stripToolBlocks 负责剥离（仅剥 cuckoo 块，js 示例保留）。
           // 这里仅在「计划模式草拟阶段」识别模型偶尔写出的裸 JSON 计划，让面板仍可用。
           if (planState && planState.phase === 'draft') {
             var adTodos = tryParseTodoJson(adRaw);
