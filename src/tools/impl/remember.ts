@@ -21,7 +21,7 @@ export const apiMetas: ToolApiMeta[] = [
     order: 18,
     category: '记忆',
     name: 'forgetMemory',
-    doc: '按 id 删除一条长期记忆（当用户要求"忘掉"某事，或记忆已过时）。可用 listMemories 查看现有记忆及其 id。',
+    doc: '按 id 删除一条长期记忆（当用户要求"忘掉"某事，或记忆已过时）。id 来自 remember 的返回值；删除前先确认该 id 确实存在。',
     params: 'id: string',
     returns: 'Promise<string>',
     paramDocs: {

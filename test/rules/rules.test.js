@@ -158,6 +158,17 @@ test('buildUnscopedRulesSection：有规则生成章节', () => {
   assert.ok(section.includes('无路径规则正文'));
 });
 
+test('buildUnscopedRulesSection：indexOnly 只输出名字与路径，不含正文', () => {
+  writeProjRule('c.md', '---\nname: c\n---\nSECRET_RULE_BODY');
+  const unscoped = rules.getUnscopedRules(rules.scanRules(PROJ));
+  const section = rules.buildUnscopedRulesSection(unscoped, { indexOnly: true });
+  assert.ok(section.includes('## 项目规则'));
+  assert.ok(section.includes('c：'));
+  assert.ok(section.includes('.md'));
+  assert.ok(!section.includes('SECRET_RULE_BODY'), '索引模式不得包含规则正文');
+  assert.ok(section.includes('read'), '必须提示模型按需 read 全文');
+});
+
 // ========== 插件扫描根 ==========
 
 test('scanRules：额外扫描根被识别且 source=plugin', () => {

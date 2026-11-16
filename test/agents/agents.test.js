@@ -83,6 +83,12 @@ test('buildAgentsSection: 多个代理都列出', () => {
   assert.ok(s.includes('- b：'));
 });
 
+test('buildAgentsSection: namesOnly 只保留名字，不保留描述', () => {
+  const s = buildAgentsSection([mk('a', 'project')], { namesOnly: true });
+  assert.ok(s.includes('- a'));
+  assert.ok(!s.includes('a desc'));
+});
+
 // ===== tools 字段解析（fail-closed）=====
 
 /** 建一个临时 agents 目录并写入指定 md 文件，返回目录路径 */

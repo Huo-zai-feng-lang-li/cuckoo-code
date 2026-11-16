@@ -143,3 +143,18 @@ test('buildSkillsSection: description 超长截断', () => {
   assert.ok(s.length < 3000);
   assert.ok(s.includes('…'));
 });
+
+test('buildSkillsSection: namesOnly 只保留名字与路径', () => {
+  const s = buildSkillsSection([mk('a', 'user')], { namesOnly: true });
+  assert.ok(s.includes('- a'));
+  assert.ok(s.includes('路径：a/SKILL.md'));
+  assert.ok(!s.includes('desc'), '降级模式不得保留 description');
+});
+
+test('buildSkillsSection: maxDesc 压缩单条描述', () => {
+  const long = { name: 'x', description: 'a'.repeat(2000), skillPath: '/x/SKILL.md', dir: '/x', source: 'project' };
+  const s = buildSkillsSection([long], { maxDesc: 120 });
+  assert.ok(s.includes('a'.repeat(100)), '应保留描述前段');
+  assert.ok(!s.includes('a'.repeat(200)), '应截掉超长部分');
+  assert.ok(s.length < 800);
+});

@@ -234,7 +234,7 @@ declare function mcpGetTools(serverName: string): Promise<string>;
 
 // ================= 记忆 =================
 
-/** 按 id 删除一条长期记忆（当用户要求"忘掉"某事，或记忆已过时）。可用 listMemories 查看现有记忆及其 id。 @param id 要删除的记忆 id @returns 确认消息 @throws id 为空或记忆不存在时抛出异常 */
+/** 按 id 删除一条长期记忆（当用户要求"忘掉"某事，或记忆已过时）。id 来自 remember 的返回值；删除前先确认该 id 确实存在。 @param id 要删除的记忆 id @returns 确认消息 @throws id 为空或记忆不存在时抛出异常 */
 declare function forgetMemory(id: string): Promise<string>;
 
 

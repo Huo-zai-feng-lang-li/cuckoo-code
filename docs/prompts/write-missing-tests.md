@@ -12,7 +12,7 @@
 - `loadTemplate` 的模板选择优先级（provider.getPromptTemplate() > `src/prompt/{id}.md` > `default.md`）
 - 未知 providerId 回退 default.md
 - 不存在的模板 → 返回 `error`（失败路径）
-- `buildPrompt` 的占位符替换：`{{TOOLS_LIST}}`、`{{TOOL_SECTIONS}}`、`{{PLATFORM_INFO}}`、`{{PROJECT_DIR}}`、`{{MCP_SECTION}}`、`{{TOOL_API_TYPES}}`、`{{PROJECT_INTRO_SECTION}}`
+- `buildPrompt` 的占位符替换：`{{TOOL_SECTIONS}}`、`{{PLATFORM_INFO}}`、`{{PROJECT_DIR}}`、`{{MCP_SECTION}}`、`{{TOOL_API_TYPES}}`、`{{PROJECT_INTRO_SECTION}}`；以及 36,000 字符总预算与各分段降级
 - `isCompaction: true` 时末尾追加"请继续你之前的工作"
 - 读不到 `.cuckooCode/CUCKOO.md` 时 `{{PROJECT_INTRO_SECTION}}` 为空（用临时目录测）
 - **失败路径**：模板文件不存在、目录不存在

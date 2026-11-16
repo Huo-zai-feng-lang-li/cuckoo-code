@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { state } from './state.js';
 import { BT } from '../infra/markdown.js';
 import { getProviderByUrl } from '../providers/registry.js';
+import { budgetPerItem, clipToolText, fitDraftAndResult, MAX_MESSAGE_CHARS, TRUNC_MARKER } from './result-budget.js';
 
 // electron 特殊：其 index.js 导出字符串，须用 createRequire（见 P3a 手册 1.5）
 const require = createRequire(import.meta.url);
@@ -128,6 +129,24 @@ function interruptibleWait(ms: number, token: PendingSend): Promise<boolean> {
 }
 
 /**
+ * 校验输入框是否完整接收了预期文本。
+ * 站点静默截断时先丢尾部（项目路径/记忆/错误栈都在尾部），这里读回长度做最后防线。
+ * @param input 输入框
+ * @param expected 期望字符数
+ * @param stage 失败阶段（用于日志归因）
+ * @returns 是否完整
+ */
+function verifyInputLength(input: any, expected: number, stage: string): boolean {
+  const actual = (getInputText(input) || '').length;
+  // 允许站点归一化空白/换行造成的少量偏差；超过 0.5%（至少 16 字符）视为截断。
+  const tolerance = Math.max(16, Math.floor(expected * 0.005));
+  if (actual >= expected - tolerance) return true;
+  lastSendError = '输入框内容未完整填入（' + stage + '：期望 ' + expected + ' 字符，实际 ' + actual + ' 字符），已取消发送';
+  console.warn('[Cuckoo Code] ' + lastSendError);
+  return false;
+}
+
+/**
  * 将文本填入输入框（React 兼容：使用原生 value setter）
  * @param input - 输入框元素
  * @param msg - 要填入的文本
@@ -210,7 +229,7 @@ async function setInputContent(input: any, msg: string, token?: PendingSend): Pr
         input.value = msg;
       }
       input.dispatchEvent(new Event('input', { bubbles: true }));
-      return true;
+      return verifyInputLength(input, msg.length, 'DOM 填充');
     }
     if (isContentEdit) {
       input.focus();
@@ -235,7 +254,7 @@ async function setInputContent(input: any, msg: string, token?: PendingSend): Pr
           await new Promise(resolve => setTimeout(resolve, 50));
         }
       }
-      return true;
+      return verifyInputLength(input, msg.length, 'DOM 粘贴');
     }
     return false;
   } catch (err: any) {
@@ -348,6 +367,13 @@ function sendUserMessageToChat(msg: string): Promise<boolean> {
 async function doSendToChat(msg: string, token: PendingSend, fixedDelay?: number, afterSent?: () => void, contextLen?: number): Promise<boolean> {
   lastSendError = '';
   const tag = token.tag;
+  // 站点单次输入约 4 万字（DeepSeek 网页/App 2026-11 起），超限会被静默截断。
+  // 这里做硬拦截，宁可失败也不发半截消息。
+  if (msg.length > MAX_MESSAGE_CHARS) {
+    lastSendError = '消息超长（' + msg.length + ' 字符，超过单次输入上限 ' + MAX_MESSAGE_CHARS + '），已阻止发送';
+    console.warn('[Cuckoo Code] ' + lastSendError);
+    return false;
+  }
   const waitMs = tag === 'harness' ? 4000 : 0;
   const input = findInputArea() || (waitMs > 0 ? await waitForInputArea(token, waitMs) : null);
   if (!input) {
@@ -452,7 +478,8 @@ async function doSendToChat(msg: string, token: PendingSend, fixedDelay?: number
   // T：填充内容（原生分块注入，自带自然耗时）
   // fillMsg 默认 = msg；走附件时是短提示词（附件已在输入区）
   if (!(await setInputContent(input, fillMsg, token))) {
-    lastSendError = '填入输入框失败';
+    // 保留 verifyInputLength 写入的详细原因（长度不符/截断），只在没有原因时兜底。
+    if (!lastSendError) lastSendError = '填入输入框失败';
     if (pendingSend === token) pendingSend = null;
     return false;
   }
@@ -621,7 +648,8 @@ function pickPrefix(multi: boolean): string {
 async function sendCombinedJsResultsToChat(results: any, onSent?: () => void, contextLen?: number, isRetry?: boolean): Promise<boolean> {
   if (!Array.isArray(results) || results.length === 0) return false;
 
-  const MAX_OUTPUT = 15000;
+  // 多段结果按总预算均分：单段仍为 15,000，多段自动收紧，避免 3 段就冲破网页端 4 万字上限。
+  const perItem = budgetPerItem(results.length);
   const sep = String.fromCharCode(10);
 
   // 前缀不能省：真机验证过「单段直接给 <path> 裸结果」会让 AI 认不出这是工具返回，
@@ -634,8 +662,8 @@ async function sendCombinedJsResultsToChat(results: any, onSent?: () => void, co
     if (multi) msg += '第 ' + (i + 1) + ' 段：' + sep;
     if (item && item.result && item.result.success) {
       let out = (item.result.output || '').trim();
-      if (out.length > MAX_OUTPUT) {
-        out = out.slice(0, MAX_OUTPUT) + sep + '...[输出过长已截断]...\n⚠️ 警告：回传内容超出长度上限被系统截断。严禁再次尝试输出全量内容，请立即改用 read 的 offset/limit 分段读取，或在 JS 脚本中使用 slice/filter 提取关键片段后再 log。';
+      if (out.length > perItem) {
+        out = clipToolText(out, perItem, TRUNC_MARKER);
       }
       // 多段必须保留「成功」锚点：失败段有「失败了」兜底，成功段若无标记则结构不对称，
       // AI 得靠输出首字符推断。单段不需要（前缀已表明这是结果）。
@@ -650,12 +678,13 @@ async function sendCombinedJsResultsToChat(results: any, onSent?: () => void, co
   }
 
   // provider 可自定义回传格式（某些平台对格式敏感，如触发风控）
-  msg = applyResultTransform(msg, getCurrentProvider());
+  const resultMsg = applyResultTransform(msg, getCurrentProvider());
 
   // 追加（不覆盖）：保留用户已输入的内容，工具结果拼在其后一起发送。
   // 注意：重试期间（isRetry=true）或输入框内容本身为历史工具回传残留文本时，
   // 严禁当作用户输入重复拼接，否则会导致消息长度翻倍并恶性累积。
   const input = findInputArea();
+  let draft = '';
   if (input) {
     const current = (getInputText(input) || '').trim();
     // 单一真相源：前缀列表即判据。原先额外硬编码的 includes('跑完了，结果') /
@@ -664,9 +693,14 @@ async function sendCombinedJsResultsToChat(results: any, onSent?: () => void, co
       MULTI_PREFIXES.some(p => current.startsWith(p)) ||
       current.includes('代码有问题，请修正');
     if (current && !isRetry && !isToolResidual) {
-      msg = current + sep + sep + msg;
-      console.log('[Cuckoo Code] 工具结果追加在用户已输入内容之后（保留 ' + current.length + ' 字符）');
+      draft = current;
+      console.log('[Cuckoo Code] 工具结果追加在用户已输入内容之后（保留 ' + draft.length + ' 字符）');
     }
+  }
+  // 用户草稿优先保留：超长时只收结果段，绝不丢用户已输入内容。
+  msg = fitDraftAndResult(draft, resultMsg);
+  if (msg.length > MAX_MESSAGE_CHARS) {
+    console.warn('[Cuckoo Code] 回填消息超出单次上限，最终长度=' + msg.length + '（草稿过长，发送前会被拦截）');
   }
   // 重试快速重发（300ms），绝不再次叠加 4~20s 拟人延迟；初次发送保持 undefined 走拟人延迟
   const retryFixedDelay = isRetry ? 300 : undefined;
@@ -786,6 +820,12 @@ async function trySendInitialPrompt(attempt: number, epoch: number): Promise<voi
   let ok = false;
   try { ok = await sendInitialPromptToInput(); } catch (_) { /* 进入有界重试 */ }
   if (ok || epoch !== initialPromptEpoch || !state.pendingInitialPrompt) return;
+  // 长度类失败重试也不会变好（站点上限/输入框截断），直接终止，避免 30 次无效重发。
+  const fatal = getLastSendError();
+  if (fatal && (fatal.indexOf('未完整填入') >= 0 || fatal.indexOf('消息超长') >= 0)) {
+    finishInitialPrompt(false, epoch);
+    return;
+  }
   if (attempt >= INITIAL_PROMPT_MAX_ATTEMPTS) {
     finishInitialPrompt(false, epoch);
     return;
