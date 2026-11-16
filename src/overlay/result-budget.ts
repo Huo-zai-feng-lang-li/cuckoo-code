@@ -5,6 +5,7 @@
  * 单条工具结果此前按 15,000 字符截断，但多段汇总没有总预算：3 段就能到 45,000+，
  * 再加用户草稿必然越过站点上限。这里统一按总预算均分，并保留头尾关键部分。
  */
+import { clipMiddleText, OUTPUT_TRUNC_MARKER } from '../infra/text-clip.js';
 
 /** 单条工具结果上限（保持原行为） */
 export const MAX_ITEM_CHARS = 15000;
@@ -13,9 +14,8 @@ export const MAX_RESULT_TOTAL_CHARS = 26000;
 /** 单条消息硬上限：站点约 4 万字，留 1,000 字符安全余量 */
 export const MAX_MESSAGE_CHARS = 39000;
 
-/** 截断标记：必须保留 `...[输出过长已截断]...` 原文，系统提示词的「截断自救纪律」依赖它 */
-export const TRUNC_MARKER =
-  '...[输出过长已截断]...（已保留头尾关键部分；严禁再次输出全量，请改用 read 的 offset/limit 分段读取，或在脚本中 slice/filter 后 log）';
+/** 截断标记：与工具源头共用同一份真源 */
+export const TRUNC_MARKER = OUTPUT_TRUNC_MARKER;
 
 /**
  * 计算每条结果的可用预算：多段均分，最少 200 字符。
@@ -40,12 +40,7 @@ export function budgetPerItem(
  * @param marker 截断标记
  */
 export function clipToolText(text: string, max: number, marker: string = TRUNC_MARKER): string {
-  if (!text || text.length <= max) return text;
-  const keep = max - marker.length - 2;
-  if (keep <= 0) return text.slice(0, max);
-  const head = Math.floor(keep * 0.65);
-  const tail = keep - head;
-  return text.slice(0, head) + '\n' + marker + '\n' + text.slice(text.length - tail);
+  return clipMiddleText(text, max, marker);
 }
 
 /**

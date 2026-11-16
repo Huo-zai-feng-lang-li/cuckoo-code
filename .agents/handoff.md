@@ -10,7 +10,7 @@
 
 | 任务线 | 代码状态 | 备注 |
 |---|---|---|
-| 123 提示词/回填 4 万字上限防护 | 🟡 代码完成，待合并发版 | 36k 总预算 + 四级降级；回填 26k 总预算 + 头尾截断；四门禁全绿 |
+| 123 提示词/回填 4 万字上限防护 | 🟡 代码完成，待合并发版 | 36k 总预算 + 四级降级；回填 26k 总预算 + 头尾截断；JsRunner 源头截断同步改头尾；四门禁全绿 |
 | 122 系统提示词工具段去重 | ✅ 已发布 v0.10.228 | 工具段 18,029 → 15,036（省 2,993）；四门禁全绿 |
 | 121 纯净模式代码块增强 | ✅ 已发布 v0.10.227 | |
 | 120 CHANGELOG 按月拆分 | ✅ 已合并 master | |
@@ -50,11 +50,12 @@
 - `prompt-builder.ts`：总预算 36,000 字符 + 4 级降级；分段上限 CUCKOO.md 6,000 / 规则 7,000 / 技能 4,000 / 子代理 1,200 / 记忆 2,500 / DSH 3,000；工具契约永不裁剪。
 - `rules/prompt.ts`、`skills/prompt.ts`、`agents/prompt.ts`：增加 `indexOnly` / `maxDesc` / `namesOnly` 降级渲染。
 - `overlay/result-budget.ts`：单条仍 15,000，多段按 26,000 均分；截断改头尾保留（65/35）+ 自救标记。
+- `infra/text-clip.ts`：头尾截断共用实现；`JsRunner` 的 20,000 源头截断也改为头尾保留，避免回填层保尾被源头抵消。
 - `chat-input.ts`：发送前 39,000 硬拦截；DOM 回退读回长度校验；初始提示遇长度类失败不再重试 30 次。
 - 文档：`chatgpt.md` 不再指向不存在的 `systemPrompt.md`；`forgetMemory` 不再提示不存在的 `listMemories` 工具；清理 backlog/arch/prompts 的 `{{TOOLS_LIST}}` 残留。
 
 **实测**：本项目 35,053 / 空项目 26,438 / 胖项目 27,579（25KB CUCKOO.md + 18KB 规则，已信任）。
-**门禁**：typecheck 0 错 / 147 文件 1505 用例 / lint 0 error（73 既有 warning）/ compile 通过；`api.d.ts` 重跑 SHA256 稳定。
+**门禁**：typecheck 0 错 / 148 文件 1509 用例 / lint 0 error（73 既有 warning）/ compile 通过；`api.d.ts` 重跑 SHA256 稳定。
 **未做**：真机 `npm start` 验证首条提示词完整填入、无长度告警。
 
 ---

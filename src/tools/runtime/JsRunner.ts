@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { buildBootstrapScript, buildDynamicToolsBootstrap } from './bootstrap-build.js';
 import { logRun, ToolFailure } from '../../infra/tool-error-log.js';
+import { clipMiddleText, OUTPUT_TRUNC_MARKER } from '../../infra/text-clip.js';
 import { scanRules, getScopedRules, getInjectedSet, markInjected } from '../../rules/index.js';
 import { getPluginScanRoots } from '../../plugins/roots.js';
 import { matchRulesForPath } from '../../rules/matcher.js';
@@ -270,7 +271,8 @@ class JsRunner {
           const rulesInjection = buildRulesInjection(readFiles, projectDir, settings);
           if (rulesInjection) output = rulesInjection + '\n\n' + output;
           if (output.length > OUTPUT_LIMIT) {
-            output = output.slice(0, OUTPUT_LIMIT) + '\n...[输出过长已截断]...\n⚠️ 警告：回传内容超出长度上限被系统截断。严禁再次尝试输出全量内容，请立即改用 read 的 offset/limit 分段读取，或在 JS 脚本中使用 slice/filter 提取关键片段后再 log。';
+            // 源头也必须是头尾保留：此前只留头部，尾部错误栈/结论在到达回填层前就已丢失。
+            output = clipMiddleText(output, OUTPUT_LIMIT, OUTPUT_TRUNC_MARKER);
           }
           logRun(code, toolFailures, null, { projectDir: projectDir || '(未设置)', windowId: windowId, 耗时ms: Date.now() - startTime });
           finish({ success: true, output: output || '（没有输出）\n如需输出请使用 log() 方法' }, 'done', logs);
