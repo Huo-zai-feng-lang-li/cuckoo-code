@@ -87,22 +87,17 @@ function render(metas) {
       L.push(m.types);
       L.push('');
     }
-    L.push('/**');
-    for (const line of m.doc.split(NL)) {
-      L.push(' * ' + line);
-    }
+    // 压缩 JSDoc：多行 doc 合并为一行（空白折叠），语义一字不删；仅一条内容时压成单行
+    const docOneLine = m.doc.split(NL).map((s) => s.trim()).filter(Boolean).join(' ');
+    const parts = [];
+    if (docOneLine) parts.push(docOneLine);
     if (m.paramDocs) {
-      for (const k of Object.keys(m.paramDocs)) {
-        L.push(' * @param ' + k + ' ' + m.paramDocs[k]);
-      }
+      for (const k of Object.keys(m.paramDocs)) parts.push('@param ' + k + ' ' + m.paramDocs[k]);
     }
-    if (m.returnsDoc) {
-      L.push(' * @returns ' + m.returnsDoc);
-    }
-    if (m.throws) {
-      L.push(' * @throws ' + m.throws);
-    }
-    L.push(' */');
+    if (m.returnsDoc) parts.push('@returns ' + m.returnsDoc);
+    if (m.throws) parts.push('@throws ' + m.throws);
+    // 所有 JSDoc 一律压成单行（语义不变，仅去格式字符）
+    L.push('/** ' + parts.join(' ') + ' */');
     L.push('declare function ' + m.name + '(' + m.params + '): ' + m.returns + ';');
     L.push('');
   }

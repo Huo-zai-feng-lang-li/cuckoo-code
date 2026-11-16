@@ -130,13 +130,6 @@ await write("src/utils/helper.js", content.replace("formatDate", "formatTime"));
 6. 相对路径基于当前项目根目录解析
 7. 需要把中间结果告诉用户或下一步时，使用 log() 输出
 
-### 可用工具函数
-
-{{TOOLS_LIST}}
-
-> 每个工具函数都是异步的，必须用 await 调用。log() 用于输出中间结果，脚本最后的 return 值也会作为结果返回。
-
-
 ### 读取文件内容
 
 - **优先使用 read 工具**读取文件内容。它返回带行号的窗口，支持 offset/limit 分段读取大文件；读取后根据 footer 提示决定是否继续。

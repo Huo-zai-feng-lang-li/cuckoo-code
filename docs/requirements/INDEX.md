@@ -114,5 +114,6 @@
 | 119 | refactor | [初始化提示词上下文瘦身（规则去重 + 技能路径压缩）](./119-context-slim.md) | doing | refactor/119-context-slim | 2026-11-12 |
 | 120 | refactor | [CHANGELOG 按月拆分 + 内容规范收紧](./120-changelog-split.md) | doing | refactor/120-changelog-split | 2026-11-13 |
 | 121 | feat | [纯净模式代码块增强（语法着色 + 独立复制）](./121-harness-code-block-enhance.md) | done | feat/121-harness-code-block-enhance | 2026-11-13 |
+| 122 | refactor | [系统提示词工具段去重（api.d.ts JSDoc 压缩 + 删除 TOOLS_LIST）](./122-prompt-dedup.md) | done | refactor/122-prompt-dedup | 2026-11-16 |
 
-共 109 个需求。
+共 110 个需求。
