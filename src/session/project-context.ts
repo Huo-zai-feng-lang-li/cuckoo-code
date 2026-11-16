@@ -8,6 +8,8 @@ import { createRequire } from 'node:module';
 import * as windowState from '../app/window.js';
 import { buildPrompt, PROMPT_DIR } from './prompt-builder.js';
 import { ensureWorkspaceTrust } from '../app/workspace-trust-prompt.js';
+import { fitExtraPrompt } from '../infra/text-clip.js';
+import { MAX_MESSAGE_CHARS } from '../infra/limits.js';
 
 const require = createRequire(import.meta.url);
 const { app, dialog } = require('electron');
@@ -228,10 +230,12 @@ async function initProject(skipPrompt: boolean = false, windowContext: any = nul
   }
   stepLog('提示词组装完成');
 
-  let combined = built.prompt;
-  // 子代理等场景：在完整系统提示词末尾追加"代理系统提示 + 任务"
-  if (extraPrompt) {
-    combined += '\n\n---\n\n' + extraPrompt;
+  // 附加内容（压缩摘要/子代理任务）必须给单条硬上限让路：
+  // 基础提示词与工具契约永不裁剪，只裁附加段，避免整条消息被发送前拦截。
+  const combined = fitExtraPrompt(built.prompt, extraPrompt, MAX_MESSAGE_CHARS);
+  if (extraPrompt && combined.length < built.prompt.length + extraPrompt.length) {
+    console.warn('[Cuckoo Code] 附加内容超长已截断：' + extraPrompt.length + ' → ' +
+      Math.max(0, combined.length - built.prompt.length - '\n\n---\n\n'.length));
   }
   console.log('[Cuckoo Code] 准备发送初始提示（不含目录树），长度:', combined.length);
   if (!view || !view.webContents || view.webContents.isDestroyed()) {

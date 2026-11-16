@@ -23,3 +23,27 @@ export function clipMiddleText(text: string, max: number, marker: string = OUTPU
   const tail = keep - head;
   return text.slice(0, head) + '\n' + marker + '\n' + text.slice(text.length - tail);
 }
+
+/**
+ * 把附加内容（压缩摘要、子代理任务）拼到基础提示词末尾，并保证总长不超过单条上限。
+ * 超出时只裁附加内容，基础提示词（工具契约）永远不裁。
+ *
+ * @param base 基础提示词
+ * @param extra 附加内容
+ * @param max 单条消息硬上限
+ * @param sep 基础与附加内容之间的分隔符
+ */
+export function fitExtraPrompt(
+  base: string,
+  extra: string,
+  max: number,
+  sep: string = '\n\n---\n\n'
+): string {
+  if (!extra) return base;
+  const room = max - base.length - sep.length;
+  if (room <= 0) return base;
+  const fitted = extra.length <= room
+    ? extra
+    : clipMiddleText(extra, room, '……（附加内容过长已截断）……');
+  return base + sep + fitted;
+}

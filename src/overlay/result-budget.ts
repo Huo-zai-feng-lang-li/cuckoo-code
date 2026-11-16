@@ -6,13 +6,14 @@
  * 再加用户草稿必然越过站点上限。这里统一按总预算均分，并保留头尾关键部分。
  */
 import { clipMiddleText, OUTPUT_TRUNC_MARKER } from '../infra/text-clip.js';
+import { MAX_MESSAGE_CHARS } from '../infra/limits.js';
+
+export { MAX_MESSAGE_CHARS };
 
 /** 单条工具结果上限（保持原行为） */
 export const MAX_ITEM_CHARS = 15000;
 /** 回填消息总预算：低于站点约 4 万字，给用户草稿与分隔符留余量 */
 export const MAX_RESULT_TOTAL_CHARS = 26000;
-/** 单条消息硬上限：站点约 4 万字，留 1,000 字符安全余量 */
-export const MAX_MESSAGE_CHARS = 39000;
 
 /** 截断标记：与工具源头共用同一份真源 */
 export const TRUNC_MARKER = OUTPUT_TRUNC_MARKER;

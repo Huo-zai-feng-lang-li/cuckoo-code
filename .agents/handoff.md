@@ -55,7 +55,7 @@
 - 文档：`chatgpt.md` 不再指向不存在的 `systemPrompt.md`；`forgetMemory` 不再提示不存在的 `listMemories` 工具；清理 backlog/arch/prompts 的 `{{TOOLS_LIST}}` 残留。
 
 **实测**：本项目 35,053 / 空项目 26,438 / 胖项目 27,579（25KB CUCKOO.md + 18KB 规则，已信任）。
-**门禁**：typecheck 0 错 / 148 文件 1509 用例 / lint 0 error（73 既有 warning）/ compile 通过；`api.d.ts` 重跑 SHA256 稳定。
+**门禁**：typecheck 0 错 / 148 文件 1511 用例 / lint 0 error（73 既有 warning）/ compile 通过；`api.d.ts` 重跑 SHA256 稳定。
 **未做**：真机 `npm start` 验证首条提示词完整填入、无长度告警。
 
 ---
