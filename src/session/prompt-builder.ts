@@ -168,7 +168,6 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
     console.error('[Cuckoo Code] 读取 cuckoo-tools.d.ts 失败:', resolveToolSpec());
   }
 
-  const toolsDescription = toolRegistry.getFormattedJsApiForPrompt();
   // C4：DSH 插件注册的提示词段（与工具 section 合并）
   let dshSections = '';
   try {
@@ -209,7 +208,6 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
 
   const placeholders: Record<string, string> = {
     '{{TOOL_API_TYPES}}': toolApiTypes,
-    '{{TOOLS_LIST}}': toolsDescription,
     '{{TOOL_SECTIONS}}': promptSections,
     '{{PLATFORM_INFO}}': platformInfo,
     '{{PROJECT_DIR}}': selectedDir,
