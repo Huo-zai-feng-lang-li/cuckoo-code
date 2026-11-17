@@ -13,6 +13,14 @@ import type { SkillMeta, SkillSource } from './types.js';
 /** description + when_to_use 合计上限（对齐 Claude Code） */
 const DESC_LIMIT = 1536;
 
+/** 技能章节渲染选项 */
+export interface SkillsSectionOptions {
+  /** 单条 description + when_to_use 上限；缺省 DESC_LIMIT */
+  maxDesc?: number;
+  /** 只输出「名字 + 路径」，用于超预算降级 */
+  namesOnly?: boolean;
+}
+
 /** 来源中文名（用于分组标题） */
 const SOURCE_LABEL: Record<SkillSource, string> = {
   project: '项目级',
@@ -49,19 +57,24 @@ function commonRoot(list: SkillMeta[]): string {
 }
 
 /** 拼单条技能的展示文本（name：description） */
-function formatSkillLine(s: SkillMeta, root: string): string {
+function formatSkillLine(s: SkillMeta, root: string, opts?: SkillsSectionOptions): string {
+  const rel = root ? path.relative(root, s.skillPath) : s.skillPath;
+  if (opts && opts.namesOnly) {
+    return '- ' + s.name + '\n  路径：' + rel.split(path.sep).join('/');
+  }
   let desc = s.description;
   if (s.whenToUse) desc += '；适用场景：' + s.whenToUse;
-  if (desc.length > DESC_LIMIT) desc = desc.slice(0, DESC_LIMIT) + '…';
-  const rel = root ? path.relative(root, s.skillPath) : s.skillPath;
+  const limit = opts && opts.maxDesc ? opts.maxDesc : DESC_LIMIT;
+  if (desc.length > limit) desc = desc.slice(0, limit) + '…';
   return '- ' + s.name + '：' + desc + '\n  路径：' + rel.split(path.sep).join('/');
 }
 
 /**
  * 生成「可用技能」章节。无技能时返回空串。
  * @param skills 技能列表
+ * @param opts 降级选项（压缩描述 / 只列名字路径）
  */
-export function buildSkillsSection(skills: SkillMeta[]): string {
+export function buildSkillsSection(skills: SkillMeta[], opts?: SkillsSectionOptions): string {
   const list = skills || [];
   const lines: string[] = [];
   lines.push('## 可用技能（Skills）');
@@ -75,7 +88,7 @@ export function buildSkillsSection(skills: SkillMeta[]): string {
     for (const [source, group] of groupBySource(list)) {
       const root = commonRoot(group);
       if (root) lines.push(SOURCE_LABEL[source] + '技能目录：' + root);
-      for (const s of group) lines.push(formatSkillLine(s, root));
+      for (const s of group) lines.push(formatSkillLine(s, root, opts));
       lines.push('');
     }
   } else {

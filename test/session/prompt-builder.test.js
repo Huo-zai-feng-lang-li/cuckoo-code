@@ -105,6 +105,9 @@ test('buildPrompt 替换核心占位符', () => {
     assert.ok(!p.includes('{{MCP_SECTION}}'));
     assert.ok(!p.includes('{{TOOL_API_TYPES}}'));
     assert.ok(!p.includes('{{PROJECT_INTRO_SECTION}}'));
+    // 正向守护：工具契约必须真实注入，否则模型无法调用任何工具
+    assert.ok(p.includes('declare function read(filePath: string'), '必须注入工具签名');
+    assert.ok(p.includes('## 可用技能（Skills）'), '必须注入技能章节');
     // 项目目录被写入
     assert.ok(p.includes(tmp));
   } finally {
@@ -153,6 +156,38 @@ test('buildPrompt 读取 CUCKOO.md 并注入项目介绍', () => {
     const r = pb.buildPrompt({ providerId: 'deepseek', selectedDir: tmp });
     assert.ok(r.prompt.includes('## 项目介绍'));
     assert.ok(r.prompt.includes('这是一个测试项目的介绍内容'));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('buildPrompt 超长 CUCKOO.md 被截断，且提示按需 read', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cuckoo-pb-'));
+  try {
+    const dir = path.join(tmp, '.cuckoo');
+    fs.mkdirSync(dir, { recursive: true });
+    const tail = 'TAIL_SENTINEL_SHOULD_NOT_APPEAR';
+    fs.writeFileSync(path.join(dir, 'CUCKOO.md'), '项目说明。'.repeat(3000) + tail, 'utf-8');
+    const r = pb.buildPrompt({ providerId: 'deepseek', selectedDir: tmp });
+    assert.ok(r.prompt.includes('## 项目介绍'));
+    assert.ok(r.prompt.includes('内容过长已截断'), '必须给出截断说明');
+    assert.ok(r.prompt.includes('read ' + path.join(dir, 'CUCKOO.md')), '必须提示按需 read 全文');
+    assert.ok(!r.prompt.includes(tail), '截断后不应包含尾部哨兵');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('buildPrompt 极端项目文档下总长度不超 36,000 字符预算', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cuckoo-pb-'));
+  try {
+    const dir = path.join(tmp, '.cuckoo');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'CUCKOO.md'), 'A'.repeat(30000), 'utf-8');
+    const r = pb.buildPrompt({ providerId: 'deepseek', selectedDir: tmp });
+    assert.ok(r.prompt.length <= 36000, '实际长度 ' + r.prompt.length);
+    // 预算再紧也不能裁掉工具契约
+    assert.ok(r.prompt.includes('declare function read(filePath: string'));
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

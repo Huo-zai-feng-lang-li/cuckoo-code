@@ -7,15 +7,17 @@
 import type { AgentMeta } from './types.js';
 
 /** 拼单条代理的展示文本 */
-function formatAgentLine(a: AgentMeta): string {
+function formatAgentLine(a: AgentMeta, namesOnly?: boolean): string {
+  if (namesOnly) return '- ' + a.name;
   return '- ' + a.name + '：' + a.description;
 }
 
 /**
  * 生成「可用子代理」章节。无代理时返回空串（不占用提示词）。
  * @param agents 代理列表
+ * @param opts.namesOnly 只列名字，用于超预算降级
  */
-export function buildAgentsSection(agents: AgentMeta[]): string {
+export function buildAgentsSection(agents: AgentMeta[], opts?: { namesOnly?: boolean }): string {
   const list = agents || [];
   if (list.length === 0) return '';
   const lines: string[] = [];
@@ -25,7 +27,7 @@ export function buildAgentsSection(agents: AgentMeta[]): string {
   lines.push('子代理在独立上下文中完成，只把结果摘要返回给你。');
   lines.push('适合委派：大范围搜索/分析、独立子任务，避免污染当前上下文。');
   lines.push('');
-  for (const a of list) lines.push(formatAgentLine(a));
+  for (const a of list) lines.push(formatAgentLine(a, opts && opts.namesOnly));
   lines.push('');
   return lines.join('\n');
 }

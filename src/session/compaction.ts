@@ -480,11 +480,10 @@ function checkPendingInit(): void {
   try { compactSummary = localStorage.getItem(COMPACT_SUMMARY_KEY) || ''; } catch (_) {}
   let compactTitle = '';
   try { compactTitle = localStorage.getItem(COMPACT_TITLE_KEY) || ''; } catch (_) {}
-  // 总长度保护：基础提示词约 44100，加摘要后若超过 52000 就按需缩减。
-  // 实测 47175 能正常发送，52000 留了余量；比之前固定砍到 3000 合理得多
-  // （3000 会丢 15%~48% 的摘要信息）。
-  const BASE_PROMPT_EST = 44100;
-  const MAX_TOTAL_LEN = 49500;
+  // 总长度保护：123 后基础提示词上限 36,000，chat-input 另有 39,000 硬上限。
+  // 旧值 44,100/49,500 是 123 之前的口径，会让 5,000 摘要 + 提示词被发送前拦截。
+  const BASE_PROMPT_EST = 36000;
+  const MAX_TOTAL_LEN = 38900;
   let effectiveSummary = compactSummary;
   if (effectiveSummary && BASE_PROMPT_EST + effectiveSummary.length > MAX_TOTAL_LEN) {
     const room = Math.max(2000, MAX_TOTAL_LEN - BASE_PROMPT_EST);

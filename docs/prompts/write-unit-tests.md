@@ -53,7 +53,7 @@
 
 ### P1 —— 逻辑较独立
 
-5. `src/session/prompt-builder.ts` —— 占位符替换（`{{TOOLS_LIST}}` 等）、模板选择优先级
+5. `src/session/prompt-builder.ts` —— 占位符替换（`{{TOOL_SECTIONS}}` 等）、模板选择优先级、36,000 字符总预算与降级阶梯
 6. `src/overlay/panels/settings.ts` —— 配置校验（`openSettings`/`saveSettings`/`resetSettings` 的边界与非法值）
 7. `src/providers/validate.ts` —— provider 字段校验（D14）
 8. `src/providers/registry.ts` —— `getProvider` / `getProviderByUrl` / 自定义加载

@@ -89,7 +89,7 @@ await write("src/utils/helper.js", content.replace("formatDate", "formatTime"));
 ### 可用工具函数
 
 > 每个工具函数都是异步的，必须用 await 调用。log() 用于输出中间结果，脚本最后的 return 值也会作为结果返回。
-> 完整的类型声明（每个函数的参数、返回值、抛错行为）见 systemPrompt.md 末尾的「工具 API 类型定义（TypeScript）」。
+> 完整的类型声明（每个函数的参数、返回值、抛错行为）见本消息开头的「工具 API 类型定义（TypeScript）」。这段声明没有结尾锚点，请按函数名直接检索。
 
 ### 读取文件内容
 

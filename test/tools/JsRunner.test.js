@@ -37,6 +37,15 @@ test('JsRunner 执行简单 JS 代码', async () => {
   assert.ok(r.output.includes('3'));
 });
 
+test('JsRunner 超长输出在源头保留头尾', async () => {
+  const runner = new JsRunner(registry);
+  const r = await runner.run("log('HEAD_MARK' + 'a'.repeat(25000) + 'TAIL_MARK');", process.cwd());
+  assert.strictEqual(r.success, true);
+  assert.ok(r.output.includes('HEAD_MARK'));
+  assert.ok(r.output.includes('TAIL_MARK'), '尾部结论不能在 JsRunner 源头被砍掉');
+  assert.ok(r.output.length <= 20000);
+});
+
 test('JsRunner 空代码报错', async () => {
   const runner = new JsRunner(registry);
   const r = await runner.run('', null);

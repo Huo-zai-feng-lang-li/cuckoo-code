@@ -657,6 +657,39 @@
         if (!isMyProfile(msg.profileId)) break;
         onToolEvent(msg.phase);
         break;
+      case 'send-pause': {
+        // 随机长暂停（30~75s 拟人化"走神"）：桌面端 harness 早已消费该事件
+        // （harness.html 的 case 'send-pause' → 宠物 pausing 情绪 + 执行条文案），
+        // 手机端此前完全忽略 —— 整段暂停期宠物停在上一状态，执行条只有笼统倒计时。
+        //
+        // 两个分支都按窗口过滤：暂停态是「A 窗口的可见进度」，与 B 窗口无关。
+        // 若用户切走再切回 A，selectProfile → resetView()（L735-745）会清掉 A 残留的
+        // 执行条，不需要在这里做「无条件收尾」来防僵尸 —— 那样反而会误伤 B 的
+        // sending 态（B 的 sendTick + 硬超时被清、执行条被藏）。
+        if (!isMyProfile(msg.profileId)) break;
+        if (!msg.active) {
+          // 暂停结束：chat-input 在 didLongPause 分支已把常规延迟清零，消息即刻发出，
+          // 不存在"等待发送"窗口。收尾四件套与 ai-stop/ai-error 对齐（清表 + 隐藏执行条
+          // + 复位按钮）；任务仍在进行，靠后续 ai-start / framework-send 重建执行态。
+          stopSendTick();
+          stopToolTick();
+          hideExec();
+          setExecuting(false);
+          petEvent('waiting');
+          break;
+        }
+        // 暂停开始：先停两个计时器。
+        // - sendTick 带 SEND_TICK_MAX_MS（45s）硬超时，而长暂停 30~75s，不停表会在暂停
+        //   中途被强制收尾（执行条消失、发送按钮恢复 → 用户误判结束而重复发送）
+        // - toolTick 在多工具并行 + 回传交错时会把「随机长暂停中…」覆盖回「工具运行中 Ns…」
+        stopSendTick();
+        stopToolTick();
+        const pauseSec = Math.round((Number(msg.durationMs) || 0) / 1000);
+        showExec(pauseSec > 0 ? ('随机长暂停中 约 ' + pauseSec + 's…') : '随机长暂停中…');
+        setExecuting(true);
+        petEvent('pausing');
+        break;
+      }
       case 'sys':
         // 拆开处理：复位动作（停表/隐藏执行条）属于收尾语义，必须无条件执行；
         // 而提示文案会串窗口，仍按当前窗口过滤后再显示。
@@ -1274,9 +1307,12 @@
       startToolTick();
       petEvent('working');
     } else if (phase === 'sending') {
-      // 最后一个工具跑完 → 进入拟人化延迟窗口
+      // 最后一个工具跑完 → 进入拟人化延迟窗口（6~16s 后回传结果）
       stopToolTick();
       startSendTick();
+      // 对齐桌面端：这段窗口既不是"在跑工具"也不是"没任务"，宠物切到 waiting
+      // （「模型在喝水 / 等它出字」）。此前不给事件，宠物会一直停在 working。
+      petEvent('waiting');
     }
     // 'end' 不处理：多工具并行时首个 end 不代表全部结束；等 sending 或下一轮事件接管
   }

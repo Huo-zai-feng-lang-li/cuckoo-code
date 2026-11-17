@@ -28,6 +28,9 @@
     thinking: 'thinking',
     working: 'working',
     waiting: 'waiting',
+    // 随机长暂停（30~75s 拟人化"走神"）：桌面端 harness 用同一分组，
+    // 既不是"等模型出字"也不是"没任务"，文案是「去倒杯水 / 活动下筋骨」这类。
+    pausing: 'pausing',
     idle: 'idle',
     done: 'done',
     error: 'error',
@@ -113,7 +116,7 @@
 
   /**
    * 应用一个对话事件。
-   * @param {string} kind 'thinking' | 'working' | 'waiting' | 'idle' | 'done' | 'error'
+   * @param {string} kind 'thinking' | 'working' | 'waiting' | 'pausing' | 'idle' | 'done' | 'error'
    * @param {number} [workers] 并行工具数（决定 working 的动画档位）
    */
   function apply(kind, workers) {
@@ -129,8 +132,10 @@
       } else if (kind === 'error') {
         pet.setState('idle');
         pet.flash('error');
-      } else if (kind === 'waiting') {
-        // 等模型出字：视觉上仍属空闲，不切忙碌动画
+      } else if (kind === 'waiting' || kind === 'pausing') {
+        // 等模型出字 / 随机长暂停：视觉上仍属空闲，不切忙碌动画。
+        // 两者区别只在情绪文案（MOOD_BY_STATE 分组），动画一律 idle —— 与桌面端
+        // pet-window.html 的 pausing → setState('idle') 映射保持一致。
         pet.setState('idle');
       } else {
         pet.setState(kind, typeof workers === 'number' ? workers : 0);

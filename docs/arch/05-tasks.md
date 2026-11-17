@@ -141,7 +141,7 @@ export { MyTool };
 
 模板在 `src/prompt/{id}.md`，占位符：
 - `{{TOOL_API_TYPES}}`：工具 API 类型（自动填 api.d.ts）
-- `{{TOOLS_LIST}}` / `{{TOOL_SECTIONS}}`：工具列表 / 使用指导（registry 生成）
+- `{{TOOL_SECTIONS}}`：工具使用指导（registry 生成）
 - `{{PLATFORM_INFO}}`：OS/命令差异（自动）
 - `{{PROJECT_DIR}}` / `{{PROJECT_INTRO_SECTION}}` / `{{MCP_SECTION}}`（自动）
 

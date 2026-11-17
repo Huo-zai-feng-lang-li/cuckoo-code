@@ -115,5 +115,7 @@
 | 120 | refactor | [CHANGELOG 按月拆分 + 内容规范收紧](./120-changelog-split.md) | doing | refactor/120-changelog-split | 2026-11-13 |
 | 121 | feat | [纯净模式代码块增强（语法着色 + 独立复制）](./121-harness-code-block-enhance.md) | done | feat/121-harness-code-block-enhance | 2026-11-13 |
 | 122 | refactor | [系统提示词工具段去重（api.d.ts JSDoc 压缩 + 删除 TOOLS_LIST）](./122-prompt-dedup.md) | done | refactor/122-prompt-dedup | 2026-11-16 |
+| 123 | refactor | [提示词与工具回填的 4 万字输入上限防护（总预算 + 降级阶梯）](./123-prompt-budget.md) | doing | refactor/123-prompt-budget | 2026-11-16 |
+| 124 | fix | [手机端宠物补齐延迟状态同步](./124-mobile-pet-delay-sync.md) | done | fix/124-mobile-pet-delay-sync | 2026-11-17 |
 
-共 110 个需求。
+共 112 个需求。
