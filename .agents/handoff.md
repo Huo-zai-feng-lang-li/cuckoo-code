@@ -1,8 +1,8 @@
-# 最新接续状态 (2026-11-17 v0.10.229 已发布)
+# 最新接续状态 (2026-11-17 v0.10.230 已发布)
 
 > 本文档为多任务接续文档。新窗口开工前**完整读一遍**。
-> 当前分支：`master`（123 / 124 均已合并发版）
-> 当前版本：`0.10.229`（版本号任意位置禁含数字 4）
+> 当前分支：`master`（123 / 124 / 125 均已合并发版）
+> 当前版本：`0.10.230`（版本号任意位置禁含数字 4）
 
 ---
 
@@ -10,6 +10,7 @@
 
 | 任务线 | 代码状态 | 备注 |
 |---|---|---|
+| 125 技能/MCP 菜单删除 + 子代理卡片展开修复 | ✅ 已发布 v0.10.230 | 后端白名单删除 + 事件委托；四门禁全绿，CI coverage 修复 |
 | 124 手机端宠物延迟状态同步 | ✅ 已发布 v0.10.229 | 补齐 send-pause 上报链路 + 宠物 pausing/waiting 映射；四门禁全绿 |
 | 123 提示词/回填 4 万字上限防护 | ✅ 已发布 v0.10.229 | 36k 总预算 + 四级降级；回填 26k 总预算 + 头尾截断 |
 | 122 系统提示词工具段去重 | ✅ 已发布 v0.10.228 | 工具段 18,029 → 15,036（省 2,993） |
@@ -18,7 +19,21 @@
 
 ---
 
-## 1A. 最近一轮改动（需求 124）
+## 1. 最近一轮改动（需求 125）
+
+详见 `docs/requirements/125-skill-mcp-menu-delete.md`。
+
+**三件事**：① 技能/MCP 菜单补删除；② 子代理卡片完成后点击不展开；③ CI（coverage / ubuntu）稳定失败。
+
+**③ CI 根因**：`src/skills/prompt.ts` 用平台相关的 `path.dirname/relative`，Linux 把 `C:\root\w\SKILL.md` 当单段文件名，输出带反斜杠。现统一 `toPosix` + `path.posix`，`posix.dirname('')` 的 `'.'` 归一为空串。
+
+**② 展开根因（两处）**：`harness.html` 逐卡 `addEventListener`，历史恢复/动态补卡会丢监听；点击守卫用「当前有没有选区」，而 `.tool-head` 是 `user-select:none`，点它不清旧选区 → 后续点击全被吞。现改 `#stream` 统一委托（`closestIn` 手工上溯兼容 SVG）+ `mousedown` 选区快照；`agents.ts` 运行中卡片同款守卫。
+
+**① 删除能力**：技能走 `src/skills/delete-guard.ts` 白名单（绝对路径 / 直接子目录 / 含 SKILL.md / 非软链）+ `shell.trashItem` 回收站（失败直接报错，不降级 rm -rf）；MCP 按 `source` 精确删（`removeServer(name, projectDir)` 返回实际作用域）+ `disconnectServerByName` 单点断连（不再 `disconnectAll` 掐别的项目）。
+
+**验证**：typecheck ✓ / 151 文件 1535 用例 ✓ / lint 0 error 73 warning ✓ / compile ✓ / docs:index 112 需求 ✓；真实 `~/.agents/skills` 白名单实测通过。
+
+## 1A. 上一轮改动（需求 124）
 
 详见 `docs/requirements/124-mobile-pet-delay-sync.md`。
 

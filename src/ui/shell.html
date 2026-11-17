@@ -519,6 +519,7 @@
   /* 子代理卡片操作按钮（悬停显示，复用提示词卡样式） */
   .ck-agent-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; opacity: 0; pointer-events: none; transition: opacity .15s; }
   .ck-skill-item:hover .ck-agent-actions { opacity: 1; pointer-events: auto; }
+  .ck-mcp-item:hover .ck-agent-actions { opacity: 1; pointer-events: auto; }
   .ck-skill-top { display: flex; align-items: center; gap: 8px; min-height: 26px; }
   /* 子代理卡片：描述默认隐藏，悬停才显示（逐渐变高动画�?*/
   .ck-agent-item .ck-skill-desc {
@@ -7890,6 +7891,8 @@ paths:            # 可选；省略 = 始终生效
 
   // src/ui/shell/scripts/pages/skills.ts
   init_shared();
+  var ICON_FOLDER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+  var ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
   async function loadSkills() {
     const listEl2 = document.getElementById("skill-list");
     if (!listEl2 || !api.listSkills) return;
@@ -7900,7 +7903,7 @@ paths:            # 可选；省略 = 始终生效
         listEl2.innerHTML = '<div class="ck-list-empty">\u672A\u53D1\u73B0\u6280\u80FD<br>\uFF08.agents/skills/ \u6216 ~/.agents/skills/\uFF09</div>';
         return;
       }
-      const skillCard = (s) => '<div class="ck-skill-item" data-name="' + escapeHtml(s.name) + '"><div class="ck-skill-top"><span class="ck-skill-name">' + escapeHtml(s.name) + '</span></div><div class="ck-skill-desc">' + escapeHtml(s.description || "\uFF08\u65E0\u63CF\u8FF0\uFF09") + "</div></div>";
+      const skillCard = (s) => '<div class="ck-skill-item" data-name="' + escapeHtml(s.name) + '"><div class="ck-skill-top"><span class="ck-skill-name">' + escapeHtml(s.name) + '</span><div class="ck-agent-actions"><button class="ck-snip-icon-btn" data-open-skill="' + escapeAttr(s.skillPath || "") + '" title="\u6253\u5F00\u6240\u5728\u76EE\u5F55">' + ICON_FOLDER + '</button><button class="ck-snip-icon-btn danger" data-del-skill="' + escapeAttr(s.skillPath || "") + '" title="\u5220\u9664\u6280\u80FD\uFF08\u79FB\u5165\u56DE\u6536\u7AD9\uFF09">' + ICON_TRASH + '</button></div></div><div class="ck-skill-desc">' + escapeHtml(s.description || "\uFF08\u65E0\u63CF\u8FF0\uFF09") + "</div></div>";
       const userSkills = skills.filter((s) => s.source !== "project");
       const projSkills = skills.filter((s) => s.source === "project");
       let html = "";
@@ -7908,7 +7911,8 @@ paths:            # 可选；省略 = 始终生效
       if (projSkills.length) html += '<div class="ck-mcp-group-title">\u9879\u76EE\u7EA7</div>' + projSkills.map(skillCard).join("");
       listEl2.innerHTML = html;
       listEl2.querySelectorAll(".ck-skill-item").forEach((el2) => {
-        el2.addEventListener("click", async () => {
+        el2.addEventListener("click", async (e) => {
+          if (e.target.closest("[data-open-skill]") || e.target.closest("[data-del-skill]")) return;
           if (api.appendSnippet) {
             try {
               await api.appendSnippet("\u8BF7\u4F7F\u7528 " + el2.dataset.name + " \u6280\u80FD");
@@ -7916,6 +7920,35 @@ paths:            # 可选；省略 = 始终生效
             }
           }
           addRecent("skill", el2.dataset.name);
+        });
+      });
+      listEl2.querySelectorAll("[data-open-skill]").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          if (!api.openSkillDir) return;
+          try {
+            const rr = await api.openSkillDir(btn.dataset.openSkill);
+            if (rr && !rr.success) await ckAlert(rr && rr.error || "\u6253\u5F00\u76EE\u5F55\u5931\u8D25");
+          } catch (err) {
+            await ckAlert("\u6253\u5F00\u76EE\u5F55\u5931\u8D25: " + (err.message || err));
+          }
+        });
+      });
+      listEl2.querySelectorAll("[data-del-skill]").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const cardEl = btn.closest(".ck-skill-item");
+          const name = cardEl ? cardEl.dataset.name : "";
+          const ok = await ckConfirm("\u786E\u5B9A\u5220\u9664\u6280\u80FD\u300C" + name + "\u300D\uFF1F\n\u6280\u80FD\u76EE\u5F55\u4F1A\u79FB\u5165\u7CFB\u7EDF\u56DE\u6536\u7AD9\uFF0C\u53EF\u4ECE\u56DE\u6536\u7AD9\u6062\u590D\u3002", "\u5220\u9664\u6280\u80FD");
+          if (!ok) return;
+          if (!api.deleteSkillDir) return;
+          try {
+            const rr = await api.deleteSkillDir(btn.dataset.delSkill);
+            if (rr && rr.success) loadSkills();
+            else await ckAlert(rr && rr.error || "\u5220\u9664\u5931\u8D25");
+          } catch (err) {
+            await ckAlert("\u5220\u9664\u5931\u8D25: " + (err.message || err));
+          }
         });
       });
     } catch (_) {
@@ -7964,7 +7997,7 @@ paths:            # 可选；省略 = 始终生效
         const isRunning = s.status !== "done" && s.status !== "error";
         const remainText = isRunning ? "\u5269\u4F59 " + fmtSec(remain) : "";
         const statusText = s.status === "done" ? "\u5B8C\u6210" : s.status === "error" ? "\u51FA\u9519" : "\u8FD0\u884C\u4E2D";
-        const preview = escapeHtml((s.preview || "").slice(-160));
+        const preview = (s.preview || "").slice(-160);
         if (!node) {
           const stopBtn = s.status === "starting" || s.status === "running" ? '<button class="ck-snip-icon-btn danger ck-agent-stop" data-stop-agent="' + s.windowId + '" title="\u505C\u6B62\u8BE5\u5B50\u4EE3\u7406"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>' : "";
           const html = '<div class="ck-agent-running" data-agent-window="' + s.windowId + '"><div class="ck-skill-top"><span class="ck-skill-name" title="' + escapeAttr(s.agentName) + '">' + escapeHtml(s.agentName) + '</span><span class="ck-agent-running-status">' + statusText + " \xB7 " + elapsed + "s" + (s.turn ? " \xB7 \u7B2C " + s.turn + " \u8F6E" : "") + (remainText ? " \xB7 " + remainText : "") + "</span>" + stopBtn + '<svg class="ck-agent-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-left:6px;flex-shrink:0;transition:transform .2s;opacity:.5;"><path d="M6 9l6 6 6-6"/></svg></div><div class="ck-skill-desc">' + escapeHtml(s.task || "") + '</div><div class="ck-agent-running-preview"></div></div>';
@@ -8003,10 +8036,19 @@ paths:            # 可选；省略 = 始终生效
       el2.querySelectorAll(".ck-agent-running").forEach((card) => {
         if (card.dataset.boundClick === "1") return;
         card.dataset.boundClick = "1";
+        card.addEventListener("mousedown", (e) => {
+          card.dataset.selAtDown = "0";
+          const sel = window.getSelection();
+          if (sel && sel.toString().length > 0 && sel.containsNode && sel.containsNode(card, true)) {
+            card.dataset.selAtDown = "1";
+          }
+        });
         card.addEventListener("click", (e) => {
           if (e.target.closest(".ck-agent-stop")) return;
-          const sel = window.getSelection();
-          if (sel && sel.toString().length > 0) return;
+          if (card.dataset.selAtDown === "1") {
+            card.dataset.selAtDown = "0";
+            return;
+          }
           const pre = card.querySelector(".ck-agent-running-preview");
           if (pre) {
             const wasCollapsed = !pre.classList.contains("open");
@@ -8279,6 +8321,9 @@ paths:            # 可选；省略 = 始终生效
 
   // src/ui/shell/scripts/pages/mcp.ts
   init_shared();
+  var ICON_POWER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v9"/><path d="M6.5 7a8 8 0 1 0 11 0"/></svg>';
+  var ICON_FILE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>';
+  var ICON_TRASH2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
   async function loadMcpServers() {
     const listEl2 = document.getElementById("mcp-list");
     if (!listEl2 || !api.listMcpServers) return;
@@ -8291,7 +8336,9 @@ paths:            # 可选；省略 = 始终生效
       }
       const cardHtml = (s) => {
         const dotCls = s.connected ? "ck-mcp-dot on" : "ck-mcp-dot";
-        return '<div class="ck-mcp-item" data-name="' + escapeHtml(s.name) + '"><div class="ck-mcp-top"><span class="' + dotCls + '"></span><span class="ck-mcp-name">' + escapeHtml(s.name) + '</span></div><div class="ck-mcp-bottom"><span class="ck-mcp-tag">' + escapeHtml(s.type || "stdio") + '</span><span class="ck-mcp-tag">' + (s.toolCount || 0) + " \u5DE5\u5177</span></div></div>";
+        const scope = s.source === "project" ? "project" : "user";
+        const powerTitle = s.connected ? "\u65AD\u5F00" : "\u8FDE\u63A5";
+        return '<div class="ck-mcp-item" data-name="' + escapeAttr(s.name) + '" data-scope="' + scope + '"><div class="ck-mcp-top"><span class="' + dotCls + '"></span><span class="ck-mcp-name">' + escapeHtml(s.name) + '</span><div class="ck-agent-actions"><button class="ck-snip-icon-btn" data-power-mcp="' + escapeAttr(s.name) + '" data-on="' + (s.connected ? "1" : "0") + '" title="' + powerTitle + '">' + ICON_POWER + '</button><button class="ck-snip-icon-btn" data-open-mcp="' + scope + '" title="\u6253\u5F00\u914D\u7F6E\u6587\u4EF6">' + ICON_FILE + '</button><button class="ck-snip-icon-btn danger" data-del-mcp="' + escapeAttr(s.name) + '" title="\u5220\u9664">' + ICON_TRASH2 + '</button></div></div><div class="ck-mcp-bottom"><span class="ck-mcp-tag">' + escapeHtml(s.type || "stdio") + '</span><span class="ck-mcp-tag">' + (s.toolCount || 0) + " \u5DE5\u5177</span></div></div>";
       };
       const userServers = servers.filter((s) => s.source !== "project");
       const projServers = servers.filter((s) => s.source === "project");
@@ -8300,7 +8347,8 @@ paths:            # 可选；省略 = 始终生效
       if (projServers.length) html += '<div class="ck-mcp-group-title">\u9879\u76EE\u7EA7</div>' + projServers.map(cardHtml).join("");
       listEl2.innerHTML = html;
       listEl2.querySelectorAll(".ck-mcp-item").forEach((el2) => {
-        el2.addEventListener("click", async () => {
+        el2.addEventListener("click", async (e) => {
+          if (e.target.closest("[data-power-mcp]") || e.target.closest("[data-open-mcp]") || e.target.closest("[data-del-mcp]")) return;
           if (api.appendSnippet) {
             try {
               await api.appendSnippet("\u8BF7\u4F7F\u7528 " + el2.dataset.name + " \u8FD9\u4E2A MCP");
@@ -8308,6 +8356,51 @@ paths:            # 可选；省略 = 始终生效
             }
           }
           addRecent("mcp", el2.dataset.name);
+        });
+      });
+      listEl2.querySelectorAll("[data-power-mcp]").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const name = btn.dataset.powerMcp;
+          const connected = btn.dataset.on === "1";
+          try {
+            const rr = connected ? await api.disableMcpServer?.(name) : await api.enableMcpServer?.(name);
+            if (rr && !rr.success) await ckAlert(rr && rr.error || "\u64CD\u4F5C\u5931\u8D25");
+          } catch (err) {
+            await ckAlert("\u64CD\u4F5C\u5931\u8D25: " + (err.message || err));
+          }
+          loadMcpServers();
+        });
+      });
+      listEl2.querySelectorAll("[data-open-mcp]").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          if (!api.openMcpConfig) return;
+          try {
+            const rr = await api.openMcpConfig(btn.dataset.openMcp);
+            if (rr && !rr.success) await ckAlert(rr && rr.error || "\u6253\u5F00\u914D\u7F6E\u5931\u8D25");
+          } catch (err) {
+            await ckAlert("\u6253\u5F00\u914D\u7F6E\u5931\u8D25: " + (err.message || err));
+          }
+        });
+      });
+      listEl2.querySelectorAll("[data-del-mcp]").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const cardEl = btn.closest(".ck-mcp-item");
+          const name = btn.dataset.delMcp;
+          const isProject = cardEl ? cardEl.dataset.scope === "project" : false;
+          const scopeTip = isProject ? "\u53EA\u5220\u9664\u5F53\u524D\u9879\u76EE\u7EA7\u914D\u7F6E\uFF08.agents/mcp.json\uFF09\uFF0C\u4E0D\u5F71\u54CD\u5176\u5B83\u9879\u76EE\u3002" : "\u7528\u6237\u7EA7\u914D\u7F6E\u5168\u5C40\u751F\u6548\uFF0C\u5220\u9664\u540E\u6240\u6709\u9879\u76EE\u90FD\u4E0D\u518D\u4F7F\u7528\u8BE5 server\u3002";
+          const ok = await ckConfirm("\u786E\u5B9A\u5220\u9664 MCP server\u300C" + name + "\u300D\uFF1F\n" + scopeTip, "\u5220\u9664 MCP");
+          if (!ok) return;
+          if (!api.removeMcpServer) return;
+          try {
+            const rr = await api.removeMcpServer(name, isProject ? "project" : "user");
+            if (rr && rr.success) loadMcpServers();
+            else await ckAlert(rr && rr.error || "\u5220\u9664\u5931\u8D25");
+          } catch (err) {
+            await ckAlert("\u5220\u9664\u5931\u8D25: " + (err.message || err));
+          }
         });
       });
     } catch (_) {
@@ -10078,7 +10171,7 @@ paths:            # 可选；省略 = 始终生效
   var pluginFavorites = [];
   var pluginNotes = {};
   var pluginGroups = {};
-  var ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
+  var ICON_TRASH3 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
   async function loadPlugins() {
     await loadMarketState();
     await loadInstalledPlugins();
@@ -10167,7 +10260,7 @@ paths:            # 可选；省略 = 始终生效
         if (p.repo) meta.push(escapeHtml(p.repo));
         const contrib = pluginContribSummary(p.contributes);
         if (contrib) meta.push(escapeHtml(contrib));
-        return '<div class="ck-plugin-item" data-plugin="' + escapeAttr(p.id) + '"><div class="ck-plugin-head"><span class="ck-plugin-name">' + escapeHtml(p.name || p.id) + "</span>" + (hasExec ? '<span class="ck-plugin-badge update" title="\u542B\u53EF\u6267\u884C\u5185\u5BB9">\u542B\u53EF\u6267\u884C</span>' : "") + '<div class="ck-plugin-switch-row"><span class="ck-plugin-switch-label">' + (p.enabled ? "\u5DF2\u542F\u7528" : "\u5DF2\u7981\u7528") + "</span>" + sw + '</div><div class="ck-plugin-actions">' + (p.hasConfig ? '<button class="ck-snip-icon-btn" data-config="' + escapeAttr(p.id) + '" title="\u914D\u7F6E">\u2699</button>' : '<span class="ck-snip-icon-btn ck-snip-icon-placeholder" aria-hidden="true"></span>') + '<button class="ck-snip-icon-btn danger" data-uninstall="' + escapeAttr(p.id) + '" title="\u5378\u8F7D">' + ICON_TRASH + '</button></div></div><div class="ck-plugin-desc">' + escapeHtml(p.description || "\uFF08\u65E0\u63CF\u8FF0\uFF09") + "</div>" + pluginMetaHtml(meta) + "</div>";
+        return '<div class="ck-plugin-item" data-plugin="' + escapeAttr(p.id) + '"><div class="ck-plugin-head"><span class="ck-plugin-name">' + escapeHtml(p.name || p.id) + "</span>" + (hasExec ? '<span class="ck-plugin-badge update" title="\u542B\u53EF\u6267\u884C\u5185\u5BB9">\u542B\u53EF\u6267\u884C</span>' : "") + '<div class="ck-plugin-switch-row"><span class="ck-plugin-switch-label">' + (p.enabled ? "\u5DF2\u542F\u7528" : "\u5DF2\u7981\u7528") + "</span>" + sw + '</div><div class="ck-plugin-actions">' + (p.hasConfig ? '<button class="ck-snip-icon-btn" data-config="' + escapeAttr(p.id) + '" title="\u914D\u7F6E">\u2699</button>' : '<span class="ck-snip-icon-btn ck-snip-icon-placeholder" aria-hidden="true"></span>') + '<button class="ck-snip-icon-btn danger" data-uninstall="' + escapeAttr(p.id) + '" title="\u5378\u8F7D">' + ICON_TRASH3 + '</button></div></div><div class="ck-plugin-desc">' + escapeHtml(p.description || "\uFF08\u65E0\u63CF\u8FF0\uFF09") + "</div>" + pluginMetaHtml(meta) + "</div>";
       }).join("");
       listEl2.querySelectorAll("[data-config]").forEach((btn) => {
         btn.addEventListener("click", async (e) => {

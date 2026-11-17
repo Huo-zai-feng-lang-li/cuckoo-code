@@ -4125,14 +4125,8 @@
         '</div>';
       stream.appendChild(wrap);
       var stopBtn = wrap.querySelector('.tool-stop-btn');
-      var cardEl = wrap.querySelector('.tool-card');
-      // 点击整个卡片即可折叠（但点击停止按钮或选中文字时不折叠）
-      cardEl.addEventListener('click', function (e) {
-        if (e.target.closest('.tool-stop-btn')) return;
-        var sel = window.getSelection();
-        if (sel && sel.toString().length > 0) return;
-        cardEl.classList.toggle('open');
-      });
+      // 展开/折叠由 #stream 上的统一委托处理（见下方「工具卡片展开/折叠」），
+      // 这里只绑停止按钮：逐卡绑定 click 在历史恢复/动态补卡时容易漏，点击就没反应。
       stopBtn.addEventListener('click', function (e) {
         e.stopPropagation();
         var card = wrap.querySelector('.tool-card');
@@ -4168,10 +4162,50 @@
         '</div>' +
       '</div>';
     stream.appendChild(wrap);
-    wrap.querySelector('.tool-head').addEventListener('click', function () { wrap.querySelector('.tool-card').classList.toggle('open'); });
+    // 展开/折叠交给 #stream 上的统一委托（见「工具卡片展开/折叠」）
     scrollBottom(false);
     return id;
   }
+
+  // ===== 工具卡片展开/折叠（事件委托）=====
+  // 逐卡 addEventListener 有个致命弱点：卡片一旦被重建（历史恢复、动态补卡、
+  // 重新渲染）就会丢监听，表现为"任务完成后点卡片没反应"。
+  // 统一委托到 #stream，任何时期创建的卡片都必然有响应。
+  function closestIn(node, sel) {
+    // 部分 WebView 对 SVG 元素调用 closest 会抛错，这里手工上溯
+    while (node && node !== stream) {
+      if (node.nodeType === 1 && node.matches && node.matches(sel)) return node;
+      node = node.parentNode;
+    }
+    return null;
+  }
+  // 选区快照只在 mousedown 时取一次。原因：`.tool-head` 是 user-select:none，
+  // 点它不会清掉别处的旧选区，用"当前还有没有选区"作守卫会让后续点击全被吞掉。
+  var cardSelAtDown = null;
+  stream.addEventListener('mousedown', function (e) {
+    var card = closestIn(e.target, '.tool-card');
+    cardSelAtDown = null;
+    if (!card) return;
+    var sel = window.getSelection();
+    if (sel && sel.toString().length > 0 && sel.containsNode && sel.containsNode(card, true)) {
+      cardSelAtDown = card; // 用户正在卡片内选文字 → 这次点击不折叠
+    }
+  });
+  stream.addEventListener('click', function (e) {
+    if (closestIn(e.target, '.tool-stop-btn')) return;
+    var card = closestIn(e.target, '.tool-card');
+    if (!card) return;
+    var isAgentCard = card.classList.contains('tool-card-subagent');
+    // 普通工具卡沿用"点标题行折叠"的旧交互；子代理卡整卡可点
+    if (!isAgentCard && !closestIn(e.target, '.tool-head')) return;
+    if (cardSelAtDown === card) { cardSelAtDown = null; return; }
+    cardSelAtDown = null;
+    // 拖选文字后松手也会触发 click：选区落在本卡片内时视为"在选字"，不折叠。
+    // 选区在别处（旧选区）不算，避免把点击吞掉。
+    var selNow = window.getSelection();
+    if (selNow && selNow.toString().length > 0 && selNow.containsNode && selNow.containsNode(card, true)) return;
+    card.classList.toggle('open');
+  });
 
   function addToolEnd(success, output, error, code) {
     // 匹配策略（按优先级）：
@@ -4358,14 +4392,7 @@
     stream.appendChild(wrap);
     var card = wrap.querySelector('.tool-card');
     var stopBtn = wrap.querySelector('.tool-stop-btn');
-    if (card) {
-      card.addEventListener('click', function (e) {
-        if (e.target.closest('.tool-stop-btn')) return;
-        var sel = window.getSelection();
-        if (sel && sel.toString().length > 0) return;
-        card.classList.toggle('open');
-      });
-    }
+    // 展开/折叠交给 #stream 的委托；这里只绑停止按钮
     stopBtn.addEventListener('click', function (e) {
       e.stopPropagation();
       var wid = parseInt(card.getAttribute('data-subagent-id'), 10);

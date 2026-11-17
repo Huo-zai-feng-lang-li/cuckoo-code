@@ -1825,13 +1825,38 @@ ipcMainForProfile.handle('upsert-mcp-server', async (_event: any, { server }: an
   return { success: true };
 });
 
-// 删除 MCP server
-ipcMainForProfile.handle('remove-mcp-server', async (event: any, { name }: any) => {
+// 删除 MCP server（source='project' 时只删当前项目级；缺省按用户级处理）
+ipcMainForProfile.handle('remove-mcp-server', async (event: any, { name, source }: any) => {
+  if (!name) return { success: false, error: '缺少 server 名' };
   const projectDir = getProjectDirOfEvent(event);
-  // 断开可能存在的连接
-  await mcpClient.disconnectAll().catch(() => {});
-  mcpConfig.removeServer(name);
-  return { success: true };
+  // 精确断开该 server 的连接：不能 disconnectAll，否则会掐掉其它项目正在用的 MCP
+  await mcpClient.disconnectServerByName(name, projectDir).catch(() => {});
+  const scope = mcpConfig.removeServer(name, source === 'project' ? projectDir : null);
+  if (!scope) {
+    return { success: false, error: source === 'project' ? '项目级未找到该 server（可能只在用户级）' : '未找到该 MCP server' };
+  }
+  return { success: true, scope };
+});
+
+// 打开 MCP 配置文件（缺文件时补一个空壳，避免 shell.openPath 报错）
+ipcMainForProfile.handle('open-mcp-config', async (event: any, { scope }: any = {}) => {
+  const projectDir = getProjectDirOfEvent(event);
+  let file = mcpConfig.getUserConfigFile();
+  if (scope === 'project') {
+    if (!projectDir) return { success: false, error: '当前没有项目目录' };
+    file = mcpConfig.getProjectConfigFile(projectDir);
+  }
+  try {
+    if (!fs.existsSync(file)) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify({ mcpServers: {} }, null, 2), 'utf-8');
+    }
+    const { shell } = require('electron');
+    const err = await shell.openPath(file);
+    return err ? { success: false, error: err } : { success: true, file };
+  } catch (e: any) {
+    return { success: false, error: e && e.message ? e.message : String(e) };
+  }
 });
 
 // 启用 MCP server（连接并拉取工具）

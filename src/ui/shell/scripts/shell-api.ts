@@ -163,6 +163,8 @@ export interface ShellAPI {
   onSnippetsChanged?: (cb: () => void) => void;
   // 技能 / 子代理
   listSkills?: () => Promise<any>;
+  deleteSkillDir?: (skillPath: string) => Promise<any>;
+  openSkillDir?: (skillPath: string) => Promise<any>;
   listAgents?: () => Promise<any>;
   listRunningSubagents?: (parentWindowId?: number) => Promise<any>;
   cancelSubagents?: (windowId?: number) => Promise<{ success: boolean; cancelled: number }>;
@@ -175,6 +177,8 @@ export interface ShellAPI {
   listMcpServers?: () => Promise<any>;
   enableMcpServer?: (name: string) => Promise<any>;
   disableMcpServer?: (name: string) => Promise<any>;
+  removeMcpServer?: (name: string, source?: string) => Promise<any>;
+  openMcpConfig?: (scope?: string) => Promise<any>;
   // 窗口
   listProfiles?: () => Promise<any>;
   createProfileWindow?: () => Promise<any>;

@@ -159,6 +159,7 @@
   /* 子代理卡片操作按钮（悬停显示，复用提示词卡样式） */
   .ck-agent-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; opacity: 0; pointer-events: none; transition: opacity .15s; }
   .ck-skill-item:hover .ck-agent-actions { opacity: 1; pointer-events: auto; }
+  .ck-mcp-item:hover .ck-agent-actions { opacity: 1; pointer-events: auto; }
   .ck-skill-top { display: flex; align-items: center; gap: 8px; min-height: 26px; }
   /* 子代理卡片：描述默认隐藏，悬停才显示（逐渐变高动画�?*/
   .ck-agent-item .ck-skill-desc {

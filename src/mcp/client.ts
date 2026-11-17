@@ -388,6 +388,25 @@ async function getToolsByServer(name: string, projectDir: string | null, windowI
   }));
 }
 
+/**
+ * 精确断开某个 server 的连接（删除配置后调用）。
+ * 只断这一个 key，绝不 disconnectAll——用户级 server 被多个项目共用，
+ * 全量断连会把别的窗口正在跑的工具一起掐掉。
+ * @param name server 名
+ * @param projectDir 当前项目目录（用于拼项目级 key，可为 null）
+ */
+async function disconnectServerByName(name: string, projectDir: string | null = null): Promise<void> {
+  if (!name) return;
+  // 两种来源都可能存在同名连接，逐个尝试；断不存在的 key 是空操作
+  const keys = ['user::' + name];
+  if (projectDir) keys.push('project:' + projectDir + '::' + name);
+  for (const key of keys) {
+    try {
+      await disconnectByKey(key);
+    } catch (_) { /* 单个 key 失败不影响另一个 */ }
+  }
+}
+
 export {
   connectServer,
   connectServerByName,
@@ -395,6 +414,7 @@ export {
   autoConnectForWindow,
   forgetWindow,
   disconnectAll,
+  disconnectServerByName,
   releaseWindow,
   releaseProject,
   callMcpTool,

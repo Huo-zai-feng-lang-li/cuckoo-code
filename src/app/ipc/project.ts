@@ -8,8 +8,9 @@ import os from 'node:os';
 import * as windowState from '../window.js';
 import * as mcpClient from '../../mcp/client.js';
 import { initProject } from '../../session/project-context.js';
-import { scanSkills } from '../../skills/index.js';
+import { scanSkills, getUserSkillsDir, getProjectSkillsDir } from '../../skills/index.js';
 import { buildSkillsSection } from '../../skills/prompt.js';
+import { checkDeletableSkillDir } from '../../skills/delete-guard.js';
 import { scanAgents } from '../../agents/index.js';
 import { buildAgentsSection } from '../../agents/prompt.js';
 import { getPluginScanRoots } from '../../plugins/roots.js';
@@ -26,6 +27,19 @@ function filterProjectScoped<T extends { source?: string }>(items: T[], projectD
 }
 
 function registerProjectIpc(): void {
+  /**
+   * 当前窗口允许操作的技能根目录。
+   * 只认用户级 + 已信任的项目级：未信任项目里的技能连扫描都被过滤，更不能被删。
+   */
+  function skillRootsOfEvent(event: any): string[] {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const store = ctx ? ctx.sessionStore : null;
+    const projectDir = store ? store.state.selectedProjectDir : null;
+    const roots = [getUserSkillsDir()];
+    if (projectDir && isWorkspaceTrusted(projectDir)) roots.push(getProjectSkillsDir(projectDir));
+    return roots;
+  }
+
   // 初始化项目
   ipcMain.handle('init-project', async (event: any, { skipPrompt = false, projectDir = null, isCompaction = false, extraPrompt = '', noDialog = false, parentSessionId = null }: any = {}) => {
     const ctx = windowState.getContextByWebContents(event.sender);
@@ -188,6 +202,43 @@ function registerProjectIpc(): void {
       if (!fs.existsSync(agentPath)) return { success: false, error: '文件不存在' };
       fs.unlinkSync(agentPath);
       return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // 删除技能目录（进系统回收站，可恢复）。
+  // 只允许删用户级/项目级扫描根的直接子目录；插件自带的技能请走插件卸载。
+  ipcMain.handle('delete-skill-dir', async (event: any, { skillPath }: any) => {
+    try {
+      const roots = skillRootsOfEvent(event);
+      const check = checkDeletableSkillDir(skillPath, roots);
+      if (!check.ok || !check.dir) {
+        const pluginDirs = getPluginScanRoots().skillDirs || [];
+        const inPlugin = pluginDirs.some((d) => checkDeletableSkillDir(skillPath, [d]).ok);
+        return { success: false, error: inPlugin ? '插件自带技能，请在插件页卸载对应插件' : (check.error || '路径不合法') };
+      }
+      try {
+        await shell.trashItem(check.dir);
+      } catch (err: any) {
+        // Linux 等没有回收站的环境会失败：明确报错，绝不退化成 rm -rf
+        return { success: false, error: '移入回收站失败：' + (err && err.message ? err.message : String(err)) };
+      }
+      return { success: true, dir: check.dir };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // 打开技能目录（交给系统文件管理器，用户在那边自行管理）
+  // 只读操作，额外放行插件技能目录（删不了但能看）
+  ipcMain.handle('open-skill-dir', async (event: any, { skillPath }: any) => {
+    try {
+      const roots = skillRootsOfEvent(event).concat(getPluginScanRoots().skillDirs || []);
+      const check = checkDeletableSkillDir(skillPath, roots);
+      if (!check.ok || !check.dir) return { success: false, error: check.error || '路径不合法' };
+      const err = await shell.openPath(check.dir);
+      return err ? { success: false, error: err } : { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };
     }

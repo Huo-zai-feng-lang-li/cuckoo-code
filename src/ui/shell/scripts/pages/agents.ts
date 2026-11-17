@@ -54,7 +54,7 @@ export async function loadRunningSubagents(): Promise<void> {
       const isRunning = s.status !== 'done' && s.status !== 'error';
       const remainText = isRunning ? ('剩余 ' + fmtSec(remain)) : '';
       const statusText = s.status === 'done' ? '完成' : (s.status === 'error' ? '出错' : '运行中');
-      const preview = escapeHtml((s.preview || '').slice(-160));
+      const preview = (s.preview || '').slice(-160); // 写 textContent，不能再 escape（会显示 &lt; 之类）
 
       if (!node) {
         // 新建
@@ -117,11 +117,18 @@ export async function loadRunningSubagents(): Promise<void> {
     el.querySelectorAll('.ck-agent-running').forEach((card: any) => {
       if (card.dataset.boundClick === '1') return;
       card.dataset.boundClick = '1';
+      // 选区判定只在 mousedown 取一次快照：点击不可选中的元素（标题行 user-select:none）
+      // 不会清掉别处的旧选区，用"此刻有没有选区"当守卫会把后续点击全吞掉。
+      card.addEventListener('mousedown', (e: any) => {
+        card.dataset.selAtDown = '0';
+        const sel = window.getSelection();
+        if (sel && sel.toString().length > 0 && sel.containsNode && sel.containsNode(card, true)) {
+          card.dataset.selAtDown = '1'; // 用户正在卡片内选文字
+        }
+      });
       card.addEventListener('click', (e: any) => {
         if (e.target.closest('.ck-agent-stop')) return;
-        // 用户正在选中文字时不触发折叠
-        const sel = window.getSelection();
-        if (sel && sel.toString().length > 0) return;
+        if (card.dataset.selAtDown === '1') { card.dataset.selAtDown = '0'; return; }
         const pre = card.querySelector('.ck-agent-running-preview');
         if (pre) {
           const wasCollapsed = !pre.classList.contains('open');

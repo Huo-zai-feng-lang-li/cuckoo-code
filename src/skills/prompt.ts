@@ -40,9 +40,18 @@ function groupBySource(skills: SkillMeta[]): Array<[SkillSource, SkillMeta[]]> {
   return order.filter((k) => groups.has(k)).map((k) => [k, groups.get(k)!]);
 }
 
+/**
+ * 统一为正斜杠。
+ * 提示词里必须输出平台无关的路径：CI（Linux）上跑到的 Windows 磁盘路径若交给
+ * 平台相关的 path 模块，dirname/relative 都会算错（曾致 coverage 任务稳定失败）。
+ */
+function toPosix(p: string): string {
+  return String(p || '').replace(/\\/g, '/');
+}
+
 /** 计算该来源技能的公共根目录（即每个技能目录的父目录） */
 function commonRoot(list: SkillMeta[]): string {
-  const parents = list.map((s) => path.dirname(s.dir));
+  const parents = list.map((s) => path.posix.dirname(toPosix(s.dir)));
   const first = parents[0] || '';
   let end = first.length;
   for (const p of parents) {
@@ -53,20 +62,22 @@ function commonRoot(list: SkillMeta[]): string {
     const idx = Math.max(first.lastIndexOf('/', end), first.lastIndexOf('\\', end));
     end = idx >= 0 ? idx : 0;
   }
-  return first.slice(0, end);
+  const root = first.slice(0, end);
+  return root === '.' ? '' : root; // 空 dir 时 posix.dirname 返回 '.'，不能当目录前缀
 }
 
 /** 拼单条技能的展示文本（name：description） */
 function formatSkillLine(s: SkillMeta, root: string, opts?: SkillsSectionOptions): string {
-  const rel = root ? path.relative(root, s.skillPath) : s.skillPath;
+  const abs = toPosix(s.skillPath);
+  const rel = root ? path.posix.relative(root, abs) : abs;
   if (opts && opts.namesOnly) {
-    return '- ' + s.name + '\n  路径：' + rel.split(path.sep).join('/');
+    return '- ' + s.name + '\n  路径：' + rel;
   }
   let desc = s.description;
   if (s.whenToUse) desc += '；适用场景：' + s.whenToUse;
   const limit = opts && opts.maxDesc ? opts.maxDesc : DESC_LIMIT;
   if (desc.length > limit) desc = desc.slice(0, limit) + '…';
-  return '- ' + s.name + '：' + desc + '\n  路径：' + rel.split(path.sep).join('/');
+  return '- ' + s.name + '：' + desc + '\n  路径：' + rel;
 }
 
 /**

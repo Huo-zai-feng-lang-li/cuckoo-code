@@ -221,6 +221,8 @@ const shellAPI = {
   },
   // ========== 技能 ==========
   listSkills: () => ipcRenderer.invoke('list-skills'),
+  deleteSkillDir: (skillPath: string) => ipcRenderer.invoke('delete-skill-dir', { skillPath }),
+  openSkillDir: (skillPath: string) => ipcRenderer.invoke('open-skill-dir', { skillPath }),
   // ========== 子代理 ==========
   listAgents: () => ipcRenderer.invoke('list-agents'),
   createAgentFile: (name: string, scope: string) => ipcRenderer.invoke('create-agent-file', { name, scope }),
@@ -231,6 +233,8 @@ const shellAPI = {
   listMcpServers: () => ipcRenderer.invoke('list-mcp-servers', {}),
   enableMcpServer: (name: string) => ipcRenderer.invoke('enable-mcp-server', { name }),
   disableMcpServer: (name: string) => ipcRenderer.invoke('disable-mcp-server', { name }),
+  removeMcpServer: (name: string, source?: string) => ipcRenderer.invoke('remove-mcp-server', { name, source }),
+  openMcpConfig: (scope?: string) => ipcRenderer.invoke('open-mcp-config', { scope }),
   appendSnippet: (text: string) => ipcRenderer.invoke('append-to-input', { text }),
   // ========== 底部「最近使用」（全局存储，跨窗口同步）==========
   recentList: () => ipcRenderer.invoke('recent-list'),

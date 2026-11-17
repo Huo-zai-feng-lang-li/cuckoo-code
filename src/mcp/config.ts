@@ -243,17 +243,38 @@ function upsertServer(server: any): any {
   return server;
 }
 
-/** 删除 server：从用户级配置删除；项目级同名的由用户手动处理 */
-function removeServer(name: string): boolean {
+/**
+ * 删除 server 定义（按来源精确删除，避免删错层级）。
+ *  - 传 projectDir 且该项目级配置里有同名 server → 只删项目级（不动用户级）
+ *  - 否则删用户级（用户级全局共享，会影响所有项目，调用方需在确认框里说明）
+ * @param name server 名
+ * @param projectDir 当前项目目录（null = 只处理用户级）
+ * @returns 实际删除的作用域；未找到返回 null
+ */
+function removeServer(name: string, projectDir: string | null = null): 'project' | 'user' | null {
+  if (projectDir) {
+    const projFile = getProjectConfigFile(projectDir);
+    const projCfg = readJson(projFile);
+    if (projCfg && projCfg.mcpServers && projCfg.mcpServers[name]) {
+      delete projCfg.mcpServers[name];
+      writeJson(projFile, projCfg);
+      const projState = readStateAt(getProjectStateFile(projectDir));
+      delete projState[name];
+      writeJson(getProjectStateFile(projectDir), projState);
+      return 'project';
+    }
+  }
+
   const file = getUserConfigFile();
   const cfg = readJson(file) || {};
-  if (cfg.mcpServers) delete cfg.mcpServers[name];
+  if (!cfg.mcpServers || !cfg.mcpServers[name]) return null;
+  delete cfg.mcpServers[name];
   writeJson(file, cfg);
   // 用户级状态
   const state = readStateAt(getUserStateFile());
   delete state[name];
   writeJson(getUserStateFile(), state);
-  return true;
+  return 'user';
 }
 
 /**
