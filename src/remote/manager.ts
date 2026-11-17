@@ -381,6 +381,26 @@ function onAiError(profileId: string, error?: string): void {
 }
 
 /**
+ * 随机长暂停（拟人化"走神"）→ 广播 send-pause。
+ * 语义与桌面端 harness 的 send-pause 一致：active=true 期间宠物为 pausing 情绪、
+ * 执行条显示暂停倒计时；active=false 时消息即刻发出，不存在"等待发送"窗口。
+ * 必须带 profileId：手机端 handleServerMessage 的窗口过滤依赖它（isMyProfile）。
+ */
+function onSendPause(active: boolean, durationMs: number, profileId: string): void {
+  if (!remoteServer.isRunning()) return;
+  const s = getStreamState(profileId || '');
+  // 刷新活动时间戳仅为语义完整性：长暂停发生在 doSendToChat 之前，此刻上一轮已 onAiReply
+  // （s.active=false），busyWatchdogTick 首行就 continue 跳过了，不依赖这里续命。
+  s.lastAt = Date.now();
+  remoteServer.broadcast({
+    type: 'send-pause',
+    profileId: profileId || '',
+    active: !!active,
+    durationMs: durationMs || 0,
+  });
+}
+
+/**
  * 任务整体结束（工具循环退出）→ 广播 task-done。
  * 与 onAiReply 的区别：onAiReply 每轮工具调用后都会触发（用于渲染气泡），
  * onTaskDone 只在 AI 给出最终普通文本、不再调工具时触发一次（用于手机通知）。
@@ -495,4 +515,4 @@ async function stopRemote(): Promise<void> {
   broadcastRemoteMode(false);
 }
 
-export { initRemote, stopRemote, onAiStream, onAiReply, onAiStop, onAiError, onTool, onTaskDone, getTunnelStatus, broadcastRemoteMode };
+export { initRemote, stopRemote, onAiStream, onAiReply, onAiStop, onAiError, onTool, onTaskDone, onSendPause, getTunnelStatus, broadcastRemoteMode };

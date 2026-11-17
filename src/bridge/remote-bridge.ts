@@ -12,7 +12,7 @@
 import { createRequire } from 'node:module';
 import { onInterceptedResponse, onToolCall, onStream, onUserStop, onAiError, onTaskIdle, clearAbort } from './intercept/observer.js';
 import { looksLikeToolScript } from './parser/js-detector.js';
-import { sendToChat } from '../overlay/chat-input.js';
+import { sendToChat, onSendPause } from '../overlay/chat-input.js';
 
 const require = createRequire(import.meta.url);
 const { ipcRenderer } = require('electron');
@@ -150,6 +150,15 @@ export function initRemoteBridge(): void {
   onToolCall((ev: any) => {
     if (!enabled || !ev) return;
     report({ type: 'tool', phase: ev.phase || '' });
+  });
+
+  // 5.1 随机长暂停（拟人化"走神"）→ 上报。
+  // 手机端此前完全感知不到这段 30~75s：宠物停在 working、执行条也只有笼统倒计时。
+  // 桌面端 harness 早已消费该事件（harness.html 的 case 'send-pause' → pausing 情绪），
+  // 手机端补齐同一语义。
+  onSendPause((info: any) => {
+    if (!enabled || !info) return;
+    report({ type: 'send-pause', active: !!info.active, durationMs: info.durationMs || 0 });
   });
 
   // 6. 手机来消息 → 主进程转发到此 → 发给 AI

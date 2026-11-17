@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { readConfig, writeConfig, resetToken } from '../../remote/config.js';
 import { getPort, isRunning, getClientCount, getClientList } from '../../remote/server.js';
-import { initRemote, stopRemote, onAiStream, onAiReply, onAiStop, onAiError, onTool, onTaskDone, getTunnelStatus, broadcastRemoteMode } from '../../remote/manager.js';
+import { initRemote, stopRemote, onAiStream, onAiReply, onAiStop, onAiError, onTool, onTaskDone, onSendPause, getTunnelStatus, broadcastRemoteMode } from '../../remote/manager.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -152,6 +152,7 @@ function registerRemoteIpc(): void {
       else if (type === 'ai-error') onAiError(profileId, String(payload.error || ''));
       else if (type === 'tool') onTool(String(payload.phase || ''), String(payload.name || ''), profileId);
       else if (type === 'task-done') onTaskDone(profileId, String(payload.text || ''));
+      else if (type === 'send-pause') onSendPause(!!payload.active, Number(payload.durationMs) || 0, profileId);
     } catch (_) { /* ignore */ }
     return { success: true };
   });
