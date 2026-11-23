@@ -152,8 +152,9 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
           // 纯文本文件卡片被误判为未就绪，进而触发兜底二次上传。
           var consumed = false;
           try {
-            // 只认本次注入过的 input（带标记），避免页面其它空 file input 造成误判
-            var fi: any = document.querySelector('input[data-cuckoo-attach-input]');
+            // 只认本次注入过的 input（用页面全局引用，不占用 provider 的定位属性
+            // data-cuckoo-attach-input，避免两种语义互相污染）。
+            var fi: any = (window as any).__cuckooAttachInput;
             if (fi && (!fi.files || fi.files.length === 0)) consumed = true;
           } catch (_e) { /* ignore */ }
           return { ready: (preview > 0 || chipVis > 0 || consumed), via: 'preview=' + preview + ',chip=' + chipVis + ',consumed=' + consumed };
@@ -161,6 +162,9 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
       };
       const deadline = Date.now() + timeoutMs;
       let last: any = null;
+      // 图片缩略图出现后上传仍在跑（provider 会报 image-uploading）：最多再等 5s，
+      // 超时就按「站点已接受」处理，避免像早期版本那样干等 12s 还判失败。
+      let firstUploadingAt = 0;
       while (Date.now() < deadline) {
         try {
           // 统一传 (document, window)：provider 自定义源码按此签名取值；
@@ -168,6 +172,13 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
           const readySrc = customReadySrc || fn.toString();
           last = await wc.executeJavaScript('(' + readySrc + ')(document, window, ' + fileInfo + ')', true);
           if (last && last.ready) { pageLog('附件就绪: ' + last.via); return true; }
+          if (last && last.via === 'image-uploading') {
+            if (!firstUploadingAt) firstUploadingAt = Date.now();
+            else if (Date.now() - firstUploadingAt > 5000) {
+              pageLog('图片仍在上传，超过 5s 按已接受处理');
+              return true;
+            }
+          }
           if (last && last.via && last.via.indexOf('upload-fail') === 0) {
             pageLog('上传失败，不再等待: ' + last.via);
             return false;
@@ -228,13 +239,14 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
           await wc.debugger.sendCommand('DOM.setFileInputFiles', { files: [tmpPath], backendNodeId: bnid });
           console.log('[Cuckoo Attach] 文件已注入: ' + tmpPath);
           pageLog('文件已注入 ' + file.name);
-          // 给本次注入的 input 打标记：就绪判定用它判断「站点是否已读走文件」，
-          // 避免页面里其它空 file input 被误判成"已消费"。
+          // 记录本次注入的 input（页面全局引用）：就绪判定用它判断「站点是否已读走文件」。
+          // 不复用 data-cuckoo-attach-input —— 那是 provider 用来定位注入目标的属性，
+          // 两种语义共用会被后续探测覆盖/误判。
           try {
             await wc.executeJavaScript(
               '(function(){try{' +
               'var ls=document.querySelectorAll("input[type=file]");' +
-              'for(var i=0;i<ls.length;i++){var f=ls[i].files;if(f&&f.length)f.setAttribute("data-cuckoo-attach-input","1");}' +
+              'for(var i=0;i<ls.length;i++){var f=ls[i].files;if(f&&f.length){window.__cuckooAttachInput=ls[i];}}' +
               '}catch(e){}})()',
               true
             );
@@ -348,8 +360,17 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
     try { removeChooserListener?.(); } catch (_) { /* ignore */ }
     try { if (attached) await wc.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: false }); } catch (_) { /* ignore */ }
     try { if (ownsDebugger && wc.debugger.isAttached()) wc.debugger.detach(); } catch (_) { /* ignore */ }
-    try { if (tmpPath && fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) { /* ignore */ }
-    try { if (tmpDir) fs.rmdirSync(tmpDir); } catch (_) { /* ignore */ }
+    // 站点是在 setFileInputFiles 之后、异步读取该临时路径再上传的。
+    // 立刻删除会让上传 100% 失败（真机 2026-11-23：注入后 20ms 判就绪 → 立即清理 →
+    // 页面显示 "Upload failed"，提示 "Remove failed files to submit."）。
+    // 保留 2 分钟足以覆盖任何上传；进程异常退出时 %TEMP% 由系统回收。
+    if (tmpDir) {
+      const dirToClean = tmpDir;
+      const timer = setTimeout(() => {
+        try { fs.rmSync(dirToClean, { recursive: true, force: true }); } catch (_) { /* ignore */ }
+      }, 120000);
+      if (typeof (timer as any).unref === 'function') (timer as any).unref();
+    }
   }
 }
 

@@ -70,3 +70,14 @@
 - `chat-insert-text` 依赖 `win.__ckHarnessVisible`，若纯净模式开关与窗口状态不同步，会退回原生通道（日志可查 `isHarnessActive` 分支）。
 - `attachFn` 的 `injected` 直接信任 CDP 结果，若站点随后静默丢弃文件（无缩略图且清空 input 属误判），会得到一份未就绪附件；`waitComposerReady` 的 12s 与 UI 20s 之间仍有窗口。
 
+## 自审记录（对项目审计 checklist）
+1. 未弱化测试：仅新增 3 条断言真实行为的用例，未有跳过/硬编码；`observer.test.js` 超时问题靠回退实现解决，未改断言。
+2. 改动最小化：`AttachResult` 只加可选字段（不破坏契约）；`chat-send-enter` / `chat-insert-text` 行为变化仅在纯净模式；`onFrameworkSend` 加可选参数。
+3. 边界与异常：`isHarnessActive` / `document.hasFocus` / `ctx.win` 均有 try-catch 或兜底；`alreadyFilled` 不匹配时退回正常填充。
+4. 并发：初始提示词仍由 `initialPromptRun` 串行化，冷启动标志只在 `cancelInitialPrompt` 复位。
+5. 安全：新增注入脚本全部为常量字符串，无文件名/用户内容拼进 JS。
+6. 命名与注释：`isHarnessActive`、`AttachResult.injected` 带 JSDoc；关键判断均有「为什么」注释。
+7. 性能：10s 冷等待仅一次；其余标签维持 0ms；幂等守卫最多上溯 12 层。
+8. 焦点主链路未受影响：发送优先走 `simulateMouse`（视图内坐标 `sendInputEvent`），与视图是否离屏无关；键盘仅作兜底。
+
+

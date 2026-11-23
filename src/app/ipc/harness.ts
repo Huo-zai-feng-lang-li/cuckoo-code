@@ -87,12 +87,16 @@ function attachFn(doc: any, win: any, b64: any, fileName: any, mimeType: any, ti
       }
       if (!input) return { success: false, error: '未找到文件上传输入框（已尝试点击上传按钮）' };
       // 幂等守卫：输入框附近已出现同名附件（说明上一次其实已注入成功）→ 不再重复注入。
-      // 只查输入框向上 12 层、且跳过可编辑元素本身，避免"用户正文里提到该文件名"造成误判。
+      // 只认「叶子元素 + 短文本」，且跳过可编辑元素：祖先容器的 innerText 会包含
+      // 输入框正文与历史消息文本，用子串匹配会把「用户正文里提到文件名」误判成已上传。
       try {
         var up = input, dup = false;
         for (var du = 0; du < 12 && up; du++) {
           var editable = !!(up.isContentEditable || up.tagName === 'TEXTAREA' || up.tagName === 'INPUT');
-          if (!editable && up.innerText && up.innerText.indexOf(fileName) !== -1) { dup = true; break; }
+          if (!editable && up.children && up.children.length === 0 && up.innerText) {
+            var dtxt = String(up.innerText).trim();
+            if (dtxt.length <= 80 && dtxt.indexOf(fileName) !== -1) { dup = true; break; }
+          }
           up = up.parentElement;
         }
         if (dup) return { success: true, fileName: fileName, deduped: true };
@@ -328,7 +332,21 @@ async function stopGeneration(ctx: any): Promise<any> {
       try { return await wc.executeJavaScript(code); } catch (_) { return null; }
     };
 
-    const r = await locate();
+    // 宽限轮询：刚点完发送/刚切到"停止"方块时，站点按钮可能还是箭头形状，
+    // 直接判 generating=false 会漏点，用户感知为「点了停止但原版网页继续跑」。
+    // 真机日志（DeepSeek，2026-11-23）：停止在发送后 0.6s 触发 → 定位到 no-primary-button → 未点击。
+    const locateWithGrace = async (maxMs = 3000): Promise<any> => {
+      const deadline = Date.now() + maxMs;
+      let last: any = null;
+      while (Date.now() < deadline) {
+        last = await locate();
+        if (last && last.found && typeof last.x === 'number') return last;
+        await new Promise((res) => setTimeout(res, 300));
+      }
+      return last;
+    };
+
+    const r = await locateWithGrace();
     console.log('[Cuckoo Harness] stopGeneration 定位结果: ' + JSON.stringify(r));
 
     // 守卫：定位函数明确表示「当前没有在生成」→ 不点击（避免误点发送按钮）

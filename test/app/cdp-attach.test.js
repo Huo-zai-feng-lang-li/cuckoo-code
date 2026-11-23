@@ -60,6 +60,10 @@ test('已打开选择器后等待完整上传，不能重复点击或提前删�
   expect(await pending).toMatchObject({ success: true, mode: 'cdp' });
   expect(result.contents).toEqual(['完整工具结果']);
   expect(result.attached).toBe(false);
+  // 站点是异步读取临时文件再上传的：返回时必须仍保留文件，否则页面报 Upload failed。
+  // 延迟清理（2 分钟后）才允许删除。
+  expect(fs.existsSync(result.paths[0])).toBe(true);
+  await vi.advanceTimersByTimeAsync(120000);
   expect(fs.existsSync(result.paths[0])).toBe(false);
   expect(debuggerApi.listenerCount('message')).toBe(0);
   expect(vi.getTimerCount()).toBe(0);
