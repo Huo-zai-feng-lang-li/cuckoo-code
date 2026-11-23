@@ -8,10 +8,10 @@
 
 ### 发版结果（已核验）
 
-- master 合并提交 `4d50d36`（`merge: 纯净模式投递/焦点/附件链路修复（v0.10.231）`），功能分支末提交 `07c007a`。
-- 已推送 `origin/master` 与 tag `v0.10.231`；GitHub Actions：Quality ✓、Coverage ✓、Build and Release ✓。
-- Release `v0.10.231` 已发布，资产：`cuckoo-code-win-v0.10.231.exe`(201.6MB)、`cuckoo-remote-android-v0.10.231.apk`(28.5MB)、`latest.yml`。
-- 推送环境注记：本会话 PowerShell 的 PATH 不含 Git，git 在 `C:\Git\cmd\git.exe`；本机 51081 代理未开，但 github.com:443 可直连，推送时用 `-c http.proxy= -c https.proxy= -c http.https://github.com.proxy= -c https.https://github.com.proxy=` 绕过全局代理配置。
+- 需求 130 修复提交 `9651929`，发版提交 `a944505`（`chore(release): v0.10.235`）。
+- 已推送 `origin/master` 与 tag `v0.10.235`；GitHub Actions：Quality ✓、Coverage ✓、Build and Release ✓。
+- Release `v0.10.235` 已发布，资产：`cuckoo-code-win-v0.10.235.exe`(201.6MB)、`cuckoo-remote-android-v0.10.235.apk`(28.5MB)、`latest.yml`。
+- 推送环境注记：git 在 `C:\Git\cmd\git.exe`；github.com:443 可直连，推送时用 `-c http.proxy= -c https.proxy= -c http.https://github.com.proxy= -c https.https://github.com.proxy=` 绕过全局代理配置。
 
 ## 0. 总览
 
