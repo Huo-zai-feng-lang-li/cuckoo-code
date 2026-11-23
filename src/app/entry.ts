@@ -90,7 +90,7 @@ import { injectWindowGroupDeps, requestShareFromWindow, requestHarnessExport, st
 import { seedDefaultRules } from '../rules/index.js';
 import { initProject } from '../session/project-context.js';
 import * as windowGroups from './window-groups.js';
-import { normalizeProxyConfig, toChromiumProxyRules, applyNetIdentity, releaseDebugger, detectExitGeo, checkProxyReachable } from './net-identity.js';
+import { normalizeProxyConfig, toChromiumProxyRules, applyNetIdentity, resetNetIdentityDoc, releaseDebugger, detectExitGeo, checkProxyReachable } from './net-identity.js';
 
 // 退出前需要 flush 的 sessions
 const sessionsToFlush = new Set<any>();
@@ -203,6 +203,9 @@ function createWindow(profile: any) {
       sandbox: false,
       partition: profileData.partition,
       backgroundThrottling: false,
+      // 启用内置 PDF viewer：真 Chrome 的 navigator.plugins / mimeTypes 非空，
+      // Electron 默认 false 会留下"空插件列表"这一行可查的硬特征。
+      plugins: true,
       additionalArguments: subagentArg
         ? ['--cuckoo-user-data=' + app.getPath('userData'), subagentArg]
         : ['--cuckoo-user-data=' + app.getPath('userData')],
@@ -744,6 +747,9 @@ function createWindow(profile: any) {
   });
 
   view.webContents.on('did-navigate', (_event: any, url: string) => {
+    // 主帧整页文档已更换（含同 URL 刷新）：递增盾/指纹的文档代次，
+    // 让随后的 did-finish-load 只对本文档补一次 Runtime.evaluate。
+    try { resetNetIdentityDoc(view.webContents); } catch (_) { /* ignore */ }
     if (url && url.indexOf('proxy-error.html') >= 0) return;
     sessionStore.handleUrlChange(url, view);
     pushUrlState(view);

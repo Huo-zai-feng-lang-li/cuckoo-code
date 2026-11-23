@@ -62,15 +62,19 @@ function maskAsNative(fn: any, name?: string, nativeLength?: number): any {
       nativeStringMap.set(fn, nativeStr);
     } catch (_) {}
   }
-  try {
-    Object.defineProperty(fn, 'toString', {
-      value: function () {
-        return nativeStr;
-      },
-      configurable: true,
-      writable: true,
-    });
-  } catch (e) { /* ignore */ }
+  // 只在全局 toString 补丁不可用时退回自有 toString。
+  // 真原生函数没有自有 toString，无条件挂上会变成新的可检测特征。
+  if (!isToStringPatched) {
+    try {
+      Object.defineProperty(fn, 'toString', {
+        value: function () {
+          return nativeStr;
+        },
+        configurable: true,
+        writable: true,
+      });
+    } catch (e) { /* ignore */ }
+  }
   return fn;
 }
 

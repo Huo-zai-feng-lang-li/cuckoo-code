@@ -459,7 +459,7 @@ function install(): void {
   // ---------- fetch 拦截 ----------
   var origFetch = window.fetch;
   if (typeof origFetch === 'function') {
-    window.fetch = maskAsNative(function (input: any, init: any) {
+    window.fetch = maskAsNative(({ fetch(input: any, init: any) {
       var url = typeof input === 'string' ? input
         : (input && input.url) ? input.url
         : (input && input.href) ? input.href : '';
@@ -540,7 +540,7 @@ function install(): void {
         dispatch('', 'error', null, null, { reason: 'network', name: err && err.name, sessionId: fetchSessionId }, { path: 'network-error', name: err && err.name });
         throw err;
       });
-    }, 'fetch', 1);
+    } }).fetch, 'fetch', 1);
   }
 
   // ---------- XHR 拦截（被动读取 responseText）----------
@@ -548,7 +548,7 @@ function install(): void {
   var origSend = XMLHttpRequest.prototype.send;
   var origSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
   var xhrInfo = new WeakMap();
-  XMLHttpRequest.prototype.setRequestHeader = maskAsNative(function (name, value) {
+  XMLHttpRequest.prototype.setRequestHeader = maskAsNative(({ setRequestHeader(name, value) {
     try {
       var inf = xhrInfo.get(this) || {};
       if (!inf.headers) inf.headers = {};
@@ -558,8 +558,8 @@ function install(): void {
       // 改到 send 时统一缓存一次。
     } catch (e) { /* ignore */ }
     return origSetRequestHeader.apply(this, arguments);
-  }, 'setRequestHeader', 2);
-  XMLHttpRequest.prototype.open = maskAsNative(function (method, url) {
+  } }).setRequestHeader, 'setRequestHeader', 2);
+  XMLHttpRequest.prototype.open = maskAsNative(({ open(method, url) {
     try { xhrInfo.set(this, { url: url, method: method }); } catch (e) { /* ignore */ }
     // 拦截 stop_stream：用户主动停止的直接证据
     try {
@@ -569,8 +569,8 @@ function install(): void {
       }
     } catch (e) { /* ignore */ }
     return origOpen.apply(this, arguments);
-  }, 'open', 2);
-  XMLHttpRequest.prototype.send = maskAsNative(function (body) {
+  } }).open, 'open', 2);
+  XMLHttpRequest.prototype.send = maskAsNative(({ send(body) {
     var info = xhrInfo.get(this);
     // 统一在此缓存请求头（此时所有 setRequestHeader 已调用完，一次搞定）
     if (info && info.headers) cacheHeaders(info.headers);
@@ -580,7 +580,7 @@ function install(): void {
       try { observeXhr(this); } catch (e) { console.error('[Cuckoo Code][hook] observeXhr 异常: ' + e.message); }
     }
     return origSend.apply(this, arguments);
-  }, 'send', 0);
+  } }).send, 'send', 0);
 
 
   function observeXhr(xhr) {

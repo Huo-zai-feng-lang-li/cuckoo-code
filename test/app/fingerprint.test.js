@@ -51,7 +51,7 @@ test('buildFingerprintScript: 未启用返回空，启用时生成包含原生�
 
   const fp = generateFingerprint('profile-test-1');
   const script = buildFingerprintScript(fp);
-  assert.ok(script.includes('window.__cuckooFpInjected'), '必须包含幂等保护');
+  assert.ok(!script.includes('__cuckoo'), '页面内不得留品牌幂等标记（幂等由主进程文档代次控制）');
   assert.ok(script.includes('[native code]'), '必须包含原生 toString 伪装');
   assert.ok(script.includes('hardwareConcurrency'), '必须覆盖 CPU 核心数');
   assert.ok(script.includes('deviceMemory'), '必须覆盖设备内存');
@@ -215,15 +215,16 @@ test('buildFingerprintScript: Cloudflare Turnstile 挑战域名下直接跳过�
   ];
 
   for (const hostname of cfDomains) {
+    class MockNavigator {}
     const mockWindow = {
       location: { hostname },
       navigator: { hardwareConcurrency: 2 },
       document: {},
     };
     const fn = new Function('window', 'Screen', 'Navigator', 'Window', script);
-    fn(mockWindow, {}, mockWindow.navigator, {});
+    fn(mockWindow, {}, MockNavigator, {});
 
-    assert.strictEqual(mockWindow.__cuckooFpInjected, undefined, `${hostname} 下不得注入 fp 标记`);
+    assert.strictEqual(MockNavigator.prototype.hardwareConcurrency, undefined, `${hostname} 下不得改写 Navigator.prototype`);
   }
 });
 

@@ -20,7 +20,10 @@ test('maskAsNative: 包装后的方法伪装成原生 [native code] 且无 proto
   // 3. 原生方法无自有 prototype
   assert.strictEqual(Object.prototype.hasOwnProperty.call(masked, 'prototype'), false);
 
-  // 4. name 和 length 对齐
+  // 4. 原生函数没有自有 toString（不能靠挂自有 toString 伪装）
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(masked, 'toString'), false);
+
+  // 5. name 和 length 对齐
   assert.strictEqual(masked.name, 'fetch');
   assert.strictEqual(masked.length, 1);
 });

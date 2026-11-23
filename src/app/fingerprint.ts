@@ -199,11 +199,8 @@ export function buildFingerprintScript(fp: FingerprintConfig): string {
       }
     } catch (_) {}
 
-    if (window.__cuckooFpInjected) return;
-    // 不可枚举，避免 Reflect.ownKeys/Object.keys(window) 枚举到伪装标记
-    try {
-      Object.defineProperty(window, '__cuckooFpInjected', { value: true, enumerable: false, configurable: true, writable: true });
-    } catch (_) { window.__cuckooFpInjected = true; }
+    // 幂等由主进程按"文档代次"控制（见 net-identity 的 CdpState / resetNetIdentityDoc）。
+    // 页面内不再留任何品牌幂等标记：Object.getOwnPropertyNames(window) 一行可查。
 
     var FP = ${cfgJson};
 

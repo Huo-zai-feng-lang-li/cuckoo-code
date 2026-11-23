@@ -117,5 +117,6 @@
 | 122 | refactor | [系统提示词工具段去重（api.d.ts JSDoc 压缩 + 删除 TOOLS_LIST）](./122-prompt-dedup.md) | done | refactor/122-prompt-dedup | 2026-11-16 |
 | 123 | refactor | [提示词与工具回填的 4 万字输入上限防护（总预算 + 降级阶梯）](./123-prompt-budget.md) | doing | refactor/123-prompt-budget | 2026-11-16 |
 | 124 | fix | [手机端宠物补齐延迟状态同步](./124-mobile-pet-delay-sync.md) | done | fix/124-mobile-pet-delay-sync | 2026-11-17 |
+| 127 | fix | [登录/运行环境特征修复（阶段 1+2：指纹、UA 与登录页隔离）](./127-env-fingerprint-hardening.md) | doing | fix/127-env-fingerprint-hardening | 2026-11-23 |
 
-共 112 个需求。
+共 113 个需求。

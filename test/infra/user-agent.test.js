@@ -7,7 +7,7 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { buildChromeUserAgent, chromeMajor, buildUserAgentDataFix } from '../../src/infra/user-agent.js';
+import { buildChromeUserAgent, chromeMajor, buildUserAgentDataFix, winPlatformVersionForBuild, formatUniversalApiContract } from '../../src/infra/user-agent.js';
 
 test('chromeMajor 取主版本号', () => {
   const prev = process.versions.chrome;
@@ -65,15 +65,105 @@ test('buildUserAgentDataFix 修正 webdriver 原型链且补齐 window.chrome', 
     navigator: fakeNav,
   };
 
-  const fn = new Function('window', 'navigator', 'Navigator', script);
-  fn(fakeWin, fakeNav, FakeNavigator);
+  const origFnToString = Function.prototype.toString;
+  try {
+    const fn = new Function('window', 'navigator', 'Navigator', script);
+    fn(fakeWin, fakeNav, FakeNavigator);
 
-  assert.strictEqual(fakeNav.webdriver, false);
-  assert.strictEqual(Object.prototype.hasOwnProperty.call(fakeNav, 'webdriver'), false, 'navigator 实例自身不应含有 webdriver 属性');
-  assert.strictEqual('webdriver' in fakeNav, true);
-  assert.strictEqual(FakeNavigator.prototype.webdriver, false, '原型链上应提供 webdriver getter 返回 false');
-  const desc = Object.getOwnPropertyDescriptor(FakeNavigator.prototype, 'webdriver');
-  assert.strictEqual(desc.get.toString(), 'function get webdriver() { [native code] }');
-  assert.ok(fakeWin.chrome && fakeWin.chrome.runtime, '应补齐 window.chrome.runtime');
+    assert.strictEqual(fakeNav.webdriver, false);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(fakeNav, 'webdriver'), false, 'navigator 实例自身不应含有 webdriver 属性');
+    assert.strictEqual('webdriver' in fakeNav, true);
+    assert.strictEqual(FakeNavigator.prototype.webdriver, false, '原型链上应提供 webdriver getter 返回 false');
+    const desc = Object.getOwnPropertyDescriptor(FakeNavigator.prototype, 'webdriver');
+    assert.strictEqual(desc.get.toString(), 'function get webdriver() { [native code] }');
+    assert.strictEqual(
+      Function.prototype.toString.call(desc.get),
+      'function get webdriver() { [native code] }',
+      'Function.prototype.toString.call 不得读出 getter 源码',
+    );
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(desc.get, 'toString'), false, '原生函数不得有自有 toString');
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(desc.get, 'prototype'), false, '原生 getter 不得有自有 prototype');
+    assert.ok(fakeWin.chrome && fakeWin.chrome.runtime, '应补齐 window.chrome.runtime');
+  } finally {
+    Function.prototype.toString = origFnToString;
+  }
+});
+
+test('buildUserAgentDataFix 的 brands / getHighEntropyValues 同样注册全局 toString', () => {
+  const script = buildUserAgentDataFix();
+
+  class FakeUAD {
+    get brands() {
+      return [
+        { brand: 'Chromium', version: '152' },
+        { brand: 'Not_A Brand', version: '24' },
+      ];
+    }
+    getHighEntropyValues() {
+      return Promise.resolve({ brands: this.brands, fullVersionList: [] });
+    }
+  }
+  class FakeNavigator {
+    constructor() { this.userAgentData = new FakeUAD(); }
+  }
+
+  const fakeNav = new FakeNavigator();
+  const origFnToString = Function.prototype.toString;
+  try {
+    const fn = new Function('window', 'navigator', 'Navigator', script);
+    fn({ chrome: {} }, fakeNav, FakeNavigator);
+
+    const proto = Object.getPrototypeOf(fakeNav.userAgentData);
+    const brandsDesc = Object.getOwnPropertyDescriptor(proto, 'brands');
+    assert.ok(brandsDesc, '必须在 userAgentData 原型上安装 brands getter');
+    assert.strictEqual(
+      Function.prototype.toString.call(brandsDesc.get),
+      'function get brands() { [native code] }',
+      'brands getter 不得被全局 toString 读出源码',
+    );
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(brandsDesc.get, 'toString'), false);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(brandsDesc.get, 'prototype'), false, 'brands getter 不得有自有 prototype');
+
+    const hevDesc = Object.getOwnPropertyDescriptor(proto, 'getHighEntropyValues');
+    assert.ok(hevDesc, '必须包装 getHighEntropyValues');
+    assert.strictEqual(
+      Function.prototype.toString.call(hevDesc.value),
+      'function getHighEntropyValues() { [native code] }',
+    );
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(hevDesc.value, 'toString'), false);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(hevDesc.value, 'prototype'), false, 'getHighEntropyValues 不得有自有 prototype');
+
+    assert.ok(
+      fakeNav.userAgentData.brands.some((b) => b.brand === 'Google Chrome'),
+      '必须补齐 Google Chrome 品牌',
+    );
+  } finally {
+    Function.prototype.toString = origFnToString;
+  }
+});
+
+test('Windows platformVersion 兜底映射（Win11 23H2 = 15.0.0）', () => {
+  // Chromium UA-CH 对 Windows build 的公开映射；本机 Win11 22631 实测 15.0.0。
+  assert.strictEqual(winPlatformVersionForBuild(22631), '15.0.0');
+  assert.strictEqual(winPlatformVersionForBuild(22621), '14.0.0');
+  assert.strictEqual(winPlatformVersionForBuild(22000), '13.0.0');
+  assert.strictEqual(winPlatformVersionForBuild(26100), '16.0.0');
+  assert.strictEqual(winPlatformVersionForBuild(19045), '10.0.0');
+});
+
+test('Windows platformVersion 对异常 build 兜底 10.0.0', () => {
+  assert.strictEqual(winPlatformVersionForBuild(0), '10.0.0');
+  assert.strictEqual(winPlatformVersionForBuild(NaN), '10.0.0');
+  assert.strictEqual(winPlatformVersionForBuild(-1), '10.0.0');
+});
+
+test('UniversalApiContract DWORD 按 HIWORD/LOWORD 转 platformVersion', () => {
+  // 本机 Win11 22631 注册表值 0x000f0000 → 真 Chrome 返回 15.0.0。
+  assert.strictEqual(formatUniversalApiContract(0x000f0000), '15.0.0');
+  assert.strictEqual(formatUniversalApiContract(0x00100000), '16.0.0');
+  assert.strictEqual(formatUniversalApiContract(0x000a0000), '10.0.0');
+  assert.strictEqual(formatUniversalApiContract(0), null);
+  assert.strictEqual(formatUniversalApiContract(-1), null);
+  assert.strictEqual(formatUniversalApiContract(0.5), null);
 });
 

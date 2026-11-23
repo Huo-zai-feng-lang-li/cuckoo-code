@@ -179,7 +179,7 @@ function install(): void {
   // ---------- fetch 拦截 ----------
   var origFetch = window.fetch;
   if (typeof origFetch === 'function') {
-    window.fetch = maskAsNative(function (input: any, init: any) {
+    window.fetch = maskAsNative(({ fetch(input: any, init: any) {
       var url = typeof input === 'string' ? input
         : (input && input.url) ? input.url
         : (input && input.href) ? input.href : '';
@@ -192,24 +192,24 @@ function install(): void {
         } catch (e) { /* ignore */ }
         return response;
       });
-    }, 'fetch', 1);
+    } }).fetch, 'fetch', 1);
   }
 
   // ---------- XHR 拦截（被动读取 responseText）----------
   var origOpen = XMLHttpRequest.prototype.open;
   var origSend = XMLHttpRequest.prototype.send;
   var xhrInfo = new WeakMap();
-  XMLHttpRequest.prototype.open = maskAsNative(function (method, url) {
+  XMLHttpRequest.prototype.open = maskAsNative(({ open(method, url) {
     try { xhrInfo.set(this, { url: url, method: method }); } catch (e) { /* ignore */ }
     return origOpen.apply(this, arguments);
-  }, 'open', 2);
-  XMLHttpRequest.prototype.send = maskAsNative(function () {
+  } }).open, 'open', 2);
+  XMLHttpRequest.prototype.send = maskAsNative(({ send() {
     var info = xhrInfo.get(this);
     if (info && isCompletion(info.url, info.method)) {
       try { observeXhr(this); } catch (e) { /* ignore */ }
     }
     return origSend.apply(this, arguments);
-  }, 'send', 0);
+  } }).send, 'send', 0);
 
   function observeXhr(xhr) {
     var lastLen = 0;

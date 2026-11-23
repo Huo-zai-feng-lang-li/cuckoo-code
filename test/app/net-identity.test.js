@@ -5,6 +5,7 @@ import {
   toChromiumProxyRules,
   normalizeProxyConfig,
   applyNetIdentity,
+  resetNetIdentityDoc,
   buildAcceptLanguageList,
   DEFAULT_PROXY,
 } from '../../src/app/net-identity.js';
@@ -455,12 +456,78 @@ describe('applyNetIdentity WebRTC 底层防 DNS 泄露策略', () => {
       const exec = new Function('window', 'document', 'RTCPeerConnection', script);
       exec(sandboxWindow, sandboxWindow.document, MockNativePC);
 
-      assert.strictEqual(sandboxWindow.__cuckooShieldInjected, undefined, `${hostname} 下不得注入 shield 标记`);
       assert.strictEqual(sandboxWindow.RTCPeerConnection, MockNativePC, `${hostname} 下不得替换 RTCPeerConnection`);
     }
   });
 });
 
+
+describe('applyNetIdentity 文档代次幂等（替代页面内 __cuckoo 标记）', () => {
+  function makeDocMock(addScriptResult) {
+    const commands = [];
+    const mockWc = {
+      session: { setProxy: async () => {} },
+      isDestroyed: () => false,
+      debugger: {
+        isAttached: () => false,
+        attach: async () => {},
+        detach: async () => {},
+        sendCommand: async (method, params) => {
+          commands.push({ method, params });
+          if (method === 'Page.addScriptToEvaluateOnNewDocument') return addScriptResult;
+          return {};
+        },
+      },
+      setWebRTCIPHandlingPolicy: () => {},
+    };
+    return { mockWc, commands };
+  }
+  // 只统计盾脚本的 evaluate；ensureDebugger 的连通性校验（expression: '1'）不算
+  const countEval = (commands) => commands.filter(
+    (c) => c.method === 'Runtime.evaluate' && String((c.params && c.params.expression) || '').includes('x-dns-prefetch-control'),
+  ).length;
+  const cfg = normalizeProxyConfig({ enabled: true, rules: 'http://127.0.0.1:51081', webrtc: 'spoof' });
+
+  test('同文档重复应用只 evaluate 一次；导航时已注册脚本覆盖新文档，不重复 evaluate', async () => {
+    const { mockWc, commands } = makeDocMock({ identifier: 'shield-doc-1' });
+    const view = { webContents: mockWc };
+
+    await applyNetIdentity(view, cfg);
+    await applyNetIdentity(view, cfg);
+    assert.strictEqual(countEval(commands), 1, '同文档重复应用不得二次 evaluate');
+
+    resetNetIdentityDoc(mockWc); // 模拟 did-navigate：脚本已在 document-start 覆盖新文档
+    await applyNetIdentity(view, cfg);
+    assert.strictEqual(countEval(commands), 1, '已注册脚本覆盖的文档不得再次 evaluate');
+  });
+
+  test('文档启动时没有已注册脚本 → 必须 evaluate（首次加载/注册失败路径）', async () => {
+    const { mockWc, commands } = makeDocMock({}); // 没有 identifier：脚本未成功注册
+    const view = { webContents: mockWc };
+
+    await applyNetIdentity(view, cfg);
+    assert.strictEqual(countEval(commands), 1);
+
+    resetNetIdentityDoc(mockWc);
+    await applyNetIdentity(view, cfg);
+    assert.strictEqual(countEval(commands), 2, '新文档没有已注册脚本时必须补一次 evaluate');
+  });
+
+  test('同文档配置变更（脚本全文不同）→ 必须重新 evaluate，新盾才会作用于当前页', async () => {
+    const { mockWc, commands } = makeDocMock({ identifier: 'shield-doc-2' });
+    const view = { webContents: mockWc };
+
+    await applyNetIdentity(view, cfg);
+    assert.strictEqual(countEval(commands), 1);
+
+    const cfgChanged = normalizeProxyConfig({ enabled: true, rules: 'http://127.0.0.1:51081', webrtc: 'disable' });
+    await applyNetIdentity(view, cfgChanged);
+    assert.strictEqual(countEval(commands), 2, '配置变更后不得因"同文档"而跳过 evaluate');
+
+    await applyNetIdentity(view, cfgChanged);
+    assert.strictEqual(countEval(commands), 2, '变更后的同一配置再应用不得重复 evaluate');
+  });
+});
 
 describe('applyNetIdentity 代理切换：失败传播与连接池幂等关闭', () => {
   function makeMockSession(overrides = {}) {
@@ -509,7 +576,10 @@ describe('applyNetIdentity 代理切换：失败传播与连接池幂等关闭',
       closeAllConnections: () => { closeCount++; },
     };
     const view = makeMockView(ses);
-    try { await applyNetIdentity(view, normalizeProxyConfig({ enabled: true, rules: 'http://127.0.0.1:9999' })); } catch (_) {}
+    await assert.rejects(
+      () => applyNetIdentity(view, normalizeProxyConfig({ enabled: true, rules: 'http://127.0.0.1:9999' })),
+      /设置代理失败/,
+    );
     assert.strictEqual(closeCount, 0, '代理未生效却关闭所有连接，只会让页面更糟');
   });
 

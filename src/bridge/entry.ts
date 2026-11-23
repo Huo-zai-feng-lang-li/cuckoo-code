@@ -26,6 +26,7 @@ import { initProbeIfNeeded } from './probe.js';
 import { initRemoteBridge } from './remote-bridge.js';
 import { initPlugins, bindPluginReload } from './plugin-system.js';
 import { buildUserAgentDataFix } from '../infra/user-agent.js';
+import { isAuthPage } from './auth-page.js';
 import { startScrollFollow, resetScrollFollow } from './scroll-follow.js';
 
 const require = createRequire(import.meta.url);
@@ -53,20 +54,36 @@ try {
 // ========== 主世界注入（拦截模式）==========
 // 必须在页面脚本执行前把 hook 注入到主世界，才能覆盖到 window.fetch / XHR。
 // preload 早于页面脚本执行，此处的 executeJavaScript 落在主世界。
-if (useIntercept) {
+//
+// 注意：登录/OAuth 页必须跳过。不能只靠 init() 里的守卫——
+// init() 只负责 overlay，hook 在这里的模块顶层执行，漏加守卫就会把
+// fetch/XHR hook 注进登录页（平台风控最敏感的位置）。
+let providerHookInjected = false;
+function injectProviderHook(): void {
+  if (providerHookInjected) return;
+  const provider = getProviderByUrl(window.location.href);
+  if (!provider || !provider.useIntercept) return;
+  if (isAuthPage(window.location.href)) return;
+  providerHookInjected = true;
   try {
-    if (typeof currentProvider.getHookSource === 'function') {
-      webFrame.executeJavaScript(currentProvider.getHookSource()).then(
-        () => console.log('[Cuckoo Code] 主世界拦截器注入成功 (' + currentProvider.id + ')'),
-        (err: any) => console.error('[Cuckoo Code] 主世界拦截器注入失败:', err && err.message)
+    if (typeof provider.getHookSource === 'function') {
+      webFrame.executeJavaScript(provider.getHookSource()).then(
+        () => console.log('[Cuckoo Code] 主世界拦截器注入成功 (' + provider.id + ')'),
+        (err: any) => {
+          providerHookInjected = false;
+          console.error('[Cuckoo Code] 主世界拦截器注入失败:', err && err.message);
+        }
       );
     } else {
-      console.warn('[Cuckoo Code] 平台 ' + currentProvider.id + ' 未提供 getHookSource()');
+      providerHookInjected = false;
+      console.warn('[Cuckoo Code] 平台 ' + provider.id + ' 未提供 getHookSource()');
     }
   } catch (err) {
+    providerHookInjected = false;
     console.error('[Cuckoo Code] 加载拦截器失败:', err);
   }
 }
+injectProviderHook();
 
 // 注册主进程消息监听（与原 preload.js 顶层注册时机一致）
 chatInput.registerIpcListeners();
@@ -144,10 +161,64 @@ function handleUrlChanged(): void {
 }
 
 /**
+ * 登录页等待退出：只在 auth 页面启动，登录成功或 SPA 跳到正常页后
+ * 补注入 hook + 补初始化 overlay。不 patch history.pushState/replaceState
+ * （那会把原生函数换成有源码的包装函数，等于新增指纹）；优先用原生
+ * Navigation API 的 navigatesuccess，popstate/hashchange 兜底，最后 1.5s 轮询。
+ */
+let authWatchStarted = false;
+let authWatchTimer: any = null;
+function watchAuthExit(): void {
+  if (authWatchStarted) return;
+  authWatchStarted = true;
+
+  function stop(): void {
+    if (!authWatchStarted) return;
+    authWatchStarted = false;
+    if (authWatchTimer) {
+      clearInterval(authWatchTimer);
+      authWatchTimer = null;
+    }
+    window.removeEventListener('popstate', check);
+    window.removeEventListener('hashchange', check);
+    const nav = (window as any).navigation;
+    if (nav && typeof nav.removeEventListener === 'function') {
+      nav.removeEventListener('navigatesuccess', check);
+    }
+  }
+
+  function check(): void {
+    if (isAuthPage(window.location.href)) return;
+    stop();
+    injectProviderHook();
+    init();
+  }
+
+  window.addEventListener('popstate', check);
+  window.addEventListener('hashchange', check);
+  const nav = (window as any).navigation;
+  if (nav && typeof nav.addEventListener === 'function') {
+    // Navigation API 覆盖 pushState/replaceState，且不需要改写原生 history 方法。
+    nav.addEventListener('navigatesuccess', check);
+  }
+  authWatchTimer = setInterval(check, 1500);
+  check();
+}
+
+/**
  * 初始化 Cuckoo Code 扩展
  * 注入样式、覆盖层 HTML，绑定事件，启动回复监听（拦截或 DOM 观察）
  */
+let overlayInitialized = false;
 function init(): void {
+  if (overlayInitialized) return;
+  // 登录/OAuth 页不注入 overlay / 插件 / 监听器；UA 修正已在本文件顶层单独注入。
+  // 这是登录页最容易被 `document.querySelectorAll('[id^=cuckoo]')` 抓到的特征。
+  if (isAuthPage(window.location.href)) {
+    watchAuthExit();
+    return;
+  }
+  overlayInitialized = true;
   // 子代理窗口：注册完成判定（onInterceptedResponse 计数），但 overlay 照常初始化
   const subCfg = initSubagentIfNeeded();
   if (subCfg) {

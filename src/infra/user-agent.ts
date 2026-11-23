@@ -11,6 +11,8 @@
  *
  * 主进程可用（依赖 process.versions / process.platform）。preload 同样可用。
  */
+import { release as osRelease } from 'node:os';
+import { execFileSync } from 'node:child_process';
 
 /** 取主版本号（如 "152.0.7977.130" → "152"） */
 function chromeMajor(): string {
@@ -31,6 +33,66 @@ function platformKind(): 'win' | 'mac' | 'linux' {
   if (p === 'darwin') return 'mac';
   if (p === 'linux') return 'linux';
   return 'win';
+}
+
+/**
+ * Windows build → Chromium UA-CH platformVersion 的**兜底**映射。
+ *
+ * 真 Chrome 并不按 build 硬编码，而是读取注册表
+ * `Windows.Foundation.UniversalApiContract` 的 HIWORD/LOWORD；
+ * 本机 Win11 22631 实测返回 "15.0.0"。这里仅在注册表读取失败时兜底。
+ */
+function winPlatformVersionForBuild(build: number): string {
+  if (!Number.isFinite(build) || build <= 0) return '10.0.0';
+  if (build >= 26100) return '16.0.0'; // Win11 24H2
+  if (build >= 22631) return '15.0.0'; // Win11 23H2
+  if (build >= 22621) return '14.0.0'; // Win11 22H2
+  if (build >= 22000) return '13.0.0'; // Win11 21H2
+  return '10.0.0';                     // Win10 及以下
+}
+
+/** 把注册表 DWORD 转成 UA-CH 的 "major.minor.0"；非法/零值返回 null。 */
+function formatUniversalApiContract(dword: number): string | null {
+  if (!Number.isInteger(dword) || dword <= 0) return null;
+  const major = (dword >>> 16) & 0xffff;
+  const minor = dword & 0xffff;
+  if (major <= 0) return null;
+  return major + '.' + minor + '.0';
+}
+
+const WIN_CONTRACT_KEY = 'HKLM\\SOFTWARE\\Microsoft\\WindowsRuntime\\WellKnownContracts';
+const WIN_CONTRACT_VALUE = 'Windows.Foundation.UniversalApiContract';
+const WIN_REG_EXE = (process.env.SystemRoot || 'C:\\Windows') + '\\System32\\reg.exe';
+
+function readWinPlatformVersion(): string | null {
+  try {
+    const out = execFileSync(WIN_REG_EXE, ['query', WIN_CONTRACT_KEY, '/v', WIN_CONTRACT_VALUE, '/reg:64'], {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 1000,
+    });
+    const m = out.match(/UniversalApiContract\s+REG_DWORD\s+0x([0-9a-f]+)/i);
+    if (!m) return null;
+    return formatUniversalApiContract(parseInt(m[1], 16));
+  } catch (_) {
+    return null;
+  }
+}
+
+let cachedWinPlatformVersion: string | null = null;
+function winPlatformVersion(): string {
+  if (cachedWinPlatformVersion) return cachedWinPlatformVersion;
+  const fromRegistry = readWinPlatformVersion();
+  if (fromRegistry) {
+    cachedWinPlatformVersion = fromRegistry;
+    return fromRegistry;
+  }
+  let build = 0;
+  try {
+    build = parseInt(osRelease().split('.')[2] || '0', 10);
+  } catch (_) { /* ignore */ }
+  cachedWinPlatformVersion = winPlatformVersionForBuild(build);
+  return cachedWinPlatformVersion;
 }
 
 /**
@@ -87,6 +149,45 @@ function buildUserAgentDataFix(): string {
     var hevPatched = false;
     var uadDone = false;
 
+    // ---------- 原生函数伪装：WeakMap 对接 Function.prototype.toString ----------
+    // 为什么必须走全局补丁：Function.prototype.toString.call(fn) 不会读取 fn.toString，
+    // 只挂自有 toString 挡不住这一行检测（getBrands / getWd 此前就是这个问题）。
+    var nativeToString = Function.prototype.toString;
+    var nativeStrings = typeof WeakMap !== "undefined" ? new WeakMap() : null;
+    var toStringPatched = false;
+    function markNative(fn, name) {
+      if (typeof fn !== "function") return fn;
+      var nativeStr = "function " + (name || "") + "() { [native code] }";
+      if (name) {
+        try { Object.defineProperty(fn, "name", { value: name, configurable: true }); } catch (e0) {}
+      }
+      if (nativeStrings) {
+        try { nativeStrings.set(fn, nativeStr); } catch (e1) {}
+      }
+      if (!toStringPatched) {
+        // 兜底：全局补丁不可用时，至少挡住 fn.toString() 直调
+        try {
+          Object.defineProperty(fn, "toString", {
+            value: function() { return nativeStr; },
+            configurable: true,
+            writable: true
+          });
+        } catch (e2) {}
+      }
+      return fn;
+    }
+    if (nativeStrings) {
+      try {
+        var hookedToString = ({ toString() {
+          if (nativeStrings.has(this)) return nativeStrings.get(this);
+          return nativeToString.apply(this, arguments);
+        } }).toString;
+        Function.prototype.toString = hookedToString;
+        toStringPatched = true;
+        markNative(hookedToString, "toString");
+      } catch (e3) {}
+    }
+
     function makeBrands() {
       return [
         { brand: "Google Chrome", version: MAJOR },
@@ -113,13 +214,10 @@ function buildUserAgentDataFix(): string {
     function patchBrands(obj) {
       if (!obj) return false;
       try {
-        var getBrands = function() { return makeBrands(); };
-        // 与 webdriver / getHighEntropyValues 保持一致：getter 也要伪装成原生，
-        // 否则 Object.getOwnPropertyDescriptor(proto,'brands').get.toString() 一行露馅。
-        try {
-          Object.defineProperty(getBrands, "name", { value: "get brands", configurable: true });
-          getBrands.toString = function() { return "function get brands() { [native code] }"; };
-        } catch (e0) {}
+        // 与 webdriver / getHighEntropyValues 保持一致：getter 也要伪装成原生。
+        // 必须注册进全局 WeakMap，否则 Function.prototype.toString.call(getBrands)
+        // 一行就能读出源码；单挂自有 toString 挡不住全局调用。
+        var getBrands = markNative(Object.getOwnPropertyDescriptor({ get brands() { return makeBrands(); } }, "brands").get, "get brands");
         Object.defineProperty(obj, "brands", {
           get: getBrands,
           enumerable: true,
@@ -135,7 +233,7 @@ function buildUserAgentDataFix(): string {
         if (hevPatched) return;
         var orig = obj.getHighEntropyValues;
         if (typeof orig !== "function") return;
-        var patched = function(hints) {
+        var patched = markNative(({ getHighEntropyValues(hints) {
           // 用 apply 保留调用时的 this：原生方法要求 this 是 NavigatorUAData 实例，
           // 若固化 obj（可能是原型）会抛 "Illegal invocation"。
           return orig.apply(this, arguments).then(function(r) {
@@ -146,8 +244,7 @@ function buildUserAgentDataFix(): string {
             } catch (e2) {}
             return r;
           });
-        };
-        try { patched.toString = function() { return "function getHighEntropyValues() { [native code] }"; }; } catch (e3) {}
+        } }).getHighEntropyValues, "getHighEntropyValues");
         // 必须用 defineProperty：原生 getHighEntropyValues 是原型上的只读方法，
         // 实例上的普通赋值在非严格模式下会静默失败（此前 fullVersionList 一直没被补就是这原因）。
         try {
@@ -155,9 +252,6 @@ function buildUserAgentDataFix(): string {
             value: patched, writable: true, configurable: true, enumerable: false
           });
         } catch (e5) {}
-        try {
-          Object.defineProperty(patched, "name", { value: "getHighEntropyValues", configurable: true });
-        } catch (e6) {}
         hevPatched = true;
       } catch (e) {}
     }
@@ -205,11 +299,7 @@ function buildUserAgentDataFix(): string {
       if (navProto) {
         try {
           if (nav2.webdriver !== false) {
-            var getWd = function() { return false; };
-            try {
-              Object.defineProperty(getWd, "name", { value: "get webdriver" });
-              getWd.toString = function() { return "function get webdriver() { [native code] }"; };
-            } catch (e) {}
+            var getWd = markNative(Object.getOwnPropertyDescriptor({ get webdriver() { return false; } }, "webdriver").get, "get webdriver");
             Object.defineProperty(navProto, "webdriver", {
               get: getWd,
               enumerable: true,
@@ -328,7 +418,7 @@ function buildUserAgentMetadata(): Record<string, any> {
     fullVersionList,
     fullVersion: full,
     platform: plat,
-    platformVersion: k === 'mac' ? '10.15.7' : (k === 'linux' ? '6.0.0' : '10.0.0'),
+    platformVersion: k === 'mac' ? '10.15.7' : (k === 'linux' ? '6.0.0' : winPlatformVersion()),
     architecture: 'x86',
     model: '',
     mobile: false,
@@ -337,5 +427,5 @@ function buildUserAgentMetadata(): Record<string, any> {
   };
 }
 
-export { buildChromeUserAgent, chromeMajor, buildClientHintsHeaders, buildUserAgentDataFix, ensureClientHints, buildUserAgentMetadata };
+export { buildChromeUserAgent, chromeMajor, buildClientHintsHeaders, buildUserAgentDataFix, ensureClientHints, buildUserAgentMetadata, winPlatformVersionForBuild, formatUniversalApiContract };
 

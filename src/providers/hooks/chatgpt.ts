@@ -470,7 +470,7 @@ function install(): void {
   // ---------- fetch 拦截 ----------
   var origFetch = window.fetch;
   if (typeof origFetch === 'function') {
-    window.fetch = maskAsNative(function (input: any, init: any) {
+    window.fetch = maskAsNative(({ fetch(input: any, init: any) {
       var url = typeof input === 'string' ? input
         : (input && input.url) ? input.url
         : (input && input.href) ? input.href : '';
@@ -525,14 +525,14 @@ function install(): void {
         dispatch('', 'error', null, null, { reason: 'network', name: err && err.name, sessionId: fetchSessionId }, { path: 'network-error', name: err && err.name });
         throw err;
       });
-    }, 'fetch', 1);
+    } }).fetch, 'fetch', 1);
   }
 
   // ---------- XHR 拦截（被动读取 responseText） ----------
   var origOpen = XMLHttpRequest.prototype.open;
   var origSend = XMLHttpRequest.prototype.send;
   var xhrInfo = new WeakMap();
-  XMLHttpRequest.prototype.open = maskAsNative(function (method, url) {
+  XMLHttpRequest.prototype.open = maskAsNative(({ open(method, url) {
     try { xhrInfo.set(this, { url: url, method: method }); } catch (e) { /* ignore */ }
     // 停止类请求：不走正文观察，只置标志
     try {
@@ -542,8 +542,8 @@ function install(): void {
       }
     } catch (e) { /* ignore */ }
     return origOpen.apply(this, arguments);
-  }, 'open', 2);
-  XMLHttpRequest.prototype.send = maskAsNative(function (body) {
+  } }).open, 'open', 2);
+  XMLHttpRequest.prototype.send = maskAsNative(({ send(body) {
     var info = xhrInfo.get(this);
     if (info && isCompletion(info.url, info.method)) {
       userStopped = false; // 新的会话流开始：复位用户停止标志
@@ -551,7 +551,7 @@ function install(): void {
       try { observeXhr(this, info); } catch (e) { /* ignore */ }
     }
     return origSend.apply(this, arguments);
-  }, 'send', 0);
+  } }).send, 'send', 0);
 
   function observeXhr(xhr, info) {
     var lastLen = 0;

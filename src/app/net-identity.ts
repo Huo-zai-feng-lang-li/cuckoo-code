@@ -575,8 +575,8 @@ function buildShieldScript(cfg: ProxyConfig, fp?: FingerprintConfig): string {
         }
       } catch (_) {}
 
-      if (window.__cuckooShieldInjected) return;
-      try { Object.defineProperty(window, '__cuckooShieldInjected', { value: true, enumerable: false, configurable: true, writable: true }); } catch (_) { window.__cuckooShieldInjected = true; }
+      // 幂等由主进程按"文档代次"控制（见 CdpState.docEpoch / resetNetIdentityDoc）。
+      // 页面内不再留任何品牌幂等标记：Object.getOwnPropertyNames(window) 一行可查。
 
       // ===== Native Cloaking 引擎：让被替换的构造函数 toString 返回 [native code]。
       // 否则页面用 Function.prototype.toString.call(RTCPeerConnection) 可直读伪造源码全文。=====
@@ -606,8 +606,35 @@ function buildShieldScript(cfg: ProxyConfig, fp?: FingerprintConfig): string {
 interface CdpState {
   attached: boolean;
   scriptId: string | null;
+  /** 文档代次：每次主帧跨文档导航（含同 URL 刷新）递增 */
+  docEpoch: number;
+  /** 已处理（已评估或确认由已注册脚本覆盖）的文档代次；-1 表示尚未处理 */
+  evaluatedEpoch: number;
+  /** 已对当前文档生效的脚本全文；null 表示本文档尚未执行过任何盾脚本 */
+  evaluatedScript: string | null;
+  /** 当前已注册脚本的全文（remove/add 后更新） */
+  registeredSource: string | null;
+  /** 本文档 document-start 阶段自动执行的脚本全文（由 did-navigate 快照） */
+  armedSourceAtDocStart: string | null;
 }
 const cdpStates = new WeakMap<any, CdpState>();
+
+/**
+ * 标记"整页文档已更换"（主帧 did-navigate 时调用）。
+ *
+ * 为什么需要：addScriptToEvaluateOnNewDocument 只对**后续**文档生效，
+ * 当前文档必须靠 Runtime.evaluate 补一次；而 DevTools 关闭、设置热更新等
+ * 同一文档内的重应用不能重复 patch（会二次包裹 fetch/canvas）。
+ * 用主进程代次替代页面内 __cuckoo 标记，避免给页面留下可枚举特征。
+ */
+function resetNetIdentityDoc(wc: any): void {
+  const st = cdpStates.get(wc);
+  if (!st) return;
+  st.docEpoch++;
+  // 关键快照：导航前已注册的脚本会在新文档 document-start 自动执行。
+  // 记录其全文，后续 apply 只有在"新脚本与已自动执行的完全一致"时才跳过 evaluate。
+  st.armedSourceAtDocStart = st.scriptId ? st.registeredSource : null;
+}
 
 const attachingPromises = new WeakMap<any, Promise<CdpState | null>>();
 
@@ -618,7 +645,7 @@ async function ensureDebugger(wc: any): Promise<CdpState | null> {
 
   const p = (async () => {
     let st = cdpStates.get(wc);
-    if (!st) { st = { attached: false, scriptId: null }; cdpStates.set(wc, st); }
+    if (!st) { st = { attached: false, scriptId: null, docEpoch: 0, evaluatedEpoch: -1, evaluatedScript: null, registeredSource: null, armedSourceAtDocStart: null }; cdpStates.set(wc, st); }
 
     try {
       const curUrl = typeof wc.getURL === 'function' ? wc.getURL() : '';
@@ -670,7 +697,7 @@ function releaseDebugger(wc: any): void {
   if (!wc || wc.isDestroyed()) return;
   try { if (wc.debugger.isAttached()) wc.debugger.detach(); } catch (_) {}
   const st = cdpStates.get(wc);
-  if (st) { st.attached = false; st.scriptId = null; }
+  if (st) { st.attached = false; st.scriptId = null; st.registeredSource = null; }
 }
 
 // ========== 5. 统一入口 ==========
@@ -784,6 +811,7 @@ async function applyNetIdentity(view: any, cfg: ProxyConfig, fpCfg?: Fingerprint
       await withTimeout(dbg.sendCommand('Page.removeScriptToEvaluateOnNewDocument', { identifier: st.scriptId }), 3000, 'removeScript');
     } catch (_) {}
     st.scriptId = null;
+    st.registeredSource = null;
   }
   if (needShield) {
     let fullScript = '';
@@ -797,10 +825,24 @@ async function applyNetIdentity(view: any, cfg: ProxyConfig, fpCfg?: Fingerprint
       try {
         const res: any = await withTimeout(dbg.sendCommand('Page.addScriptToEvaluateOnNewDocument', { source: fullScript }), 3000, 'addScript');
         st.scriptId = (res && res.identifier) || null;
-        // 立即在当前文档上下文执行一次
-        try {
-          await withTimeout(dbg.sendCommand('Runtime.evaluate', { expression: fullScript }), 1000, 'evalShield');
-        } catch (_) {}
+        st.registeredSource = fullScript;
+        // 只补执行当前文档一次：
+        //  - 文档启动时已自动执行过同一份脚本 → 跳过 evaluate；
+        //  - 首次加载 / 脚本注册失败 → 必须 evaluate 一次；
+        //  - DevTools 关闭、设置热更新属同一文档 → 同配置不重复 patch；
+        //    配置变更（脚本全文不同）必须重新执行，否则新盾不会作用于当前页。
+        const alreadyApplied = st.evaluatedEpoch === st.docEpoch && st.evaluatedScript === fullScript;
+        const armedAtDocStart = st.armedSourceAtDocStart === fullScript;
+        if (!alreadyApplied && !armedAtDocStart) {
+          try {
+            await withTimeout(dbg.sendCommand('Runtime.evaluate', { expression: fullScript }), 1000, 'evalShield');
+            st.evaluatedEpoch = st.docEpoch;
+            st.evaluatedScript = fullScript;
+          } catch (_) { /* 下次 applyNetIdentity 会重试 */ }
+        } else {
+          st.evaluatedEpoch = st.docEpoch;
+          st.evaluatedScript = fullScript;
+        }
         console.log('[NetIdentity] 隐私与指纹盾已就绪 (DNS=' + (hasProxy ? 'on' : 'off') + ', WebRTC=' + cfg.webrtc + ', 指纹=' + (hasFingerprint ? fp?.presetId : 'off') + ')');
       } catch (err: any) {
         console.warn('[NetIdentity] 注入盾牌脚本失败:', err && err.message);
@@ -821,6 +863,7 @@ export {
   normalizeProxyConfig,
   checkProxyReachable,
   applyNetIdentity,
+  resetNetIdentityDoc,
   releaseDebugger,
   detectExitGeo,
   countryToLocale,
