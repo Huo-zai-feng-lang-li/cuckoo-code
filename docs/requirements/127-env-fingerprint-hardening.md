@@ -13,7 +13,7 @@ updated: 2026-11-23
 - 状态：阶段 1+2 代码完成（待真机回归）；阶段 2 已按实测证据修正任务书
 - 分支：`fix/127-env-fingerprint-hardening`
 - 日期：2026-11-23
-- 版本：`v0.10.232`（已发布）
+- 版本：`v0.10.232`（已发布）；UA-CH 品牌部分于 `v0.10.233` 修复
 
 ## 背景
 
@@ -73,6 +73,15 @@ updated: 2026-11-23
 - `init()` 顶部先判 auth 再置 `overlayInitialized`，避免重复注册 IPC；顶层 `buildUserAgentDataFix()` 保持无条件注入（登录页仍需 UA 修正）。
 
 残余：登录页同源的 `localStorage` 历史 `cuckoo-*` 键不会被跳过注入清掉；要清零需迁移设置存储，另立需求，不在本阶段冒充解决。
+
+### v0.10.233 补充：UA-CH 品牌 GREASE / 顺序
+
+阶段 1 的 `Function.prototype.toString` 伪装只解决了“函数源码暴露”，没有解决
+`navigator.userAgentData.brands` 缺 `Google Chrome`：原实现把 GREASE 品牌写死为
+`Not_A Brand`、顺序写死，Chrome 152 真值是 `Not?A_Brand` 且 Chromium 排第一；
+同时 `applyUad()` 在 CDP 已注入 Google Chrome 时跳过 JS 补丁，打开 DevTools
+后 CDP detach 就露出原生列表。已在需求 129 / `v0.10.233` 中修复，详见
+`docs/requirements/129-ua-ch-brand-grease.md`。
 
 ## 边界
 

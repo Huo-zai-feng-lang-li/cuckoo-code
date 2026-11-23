@@ -7,7 +7,7 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { buildChromeUserAgent, chromeMajor, buildUserAgentDataFix, winPlatformVersionForBuild, formatUniversalApiContract } from '../../src/infra/user-agent.js';
+import { buildChromeUserAgent, chromeMajor, buildUserAgentDataFix, buildClientHintsHeaders, buildUserAgentMetadata, winPlatformVersionForBuild, formatUniversalApiContract } from '../../src/infra/user-agent.js';
 
 test('chromeMajor 取主版本号', () => {
   const prev = process.versions.chrome;
@@ -139,6 +139,175 @@ test('buildUserAgentDataFix 的 brands / getHighEntropyValues 同样注册全局
     );
   } finally {
     Function.prototype.toString = origFnToString;
+  }
+});
+
+test('Chrome 152 的品牌顺序、GREASE 与 Sec-CH-UA 和真 Chrome 一致', () => {
+  const prev = process.versions.chrome;
+  try {
+    Object.defineProperty(process.versions, 'chrome', { value: '152.0.7977.130', configurable: true });
+
+    const meta = buildUserAgentMetadata();
+    assert.deepStrictEqual(meta.brands, [
+      { brand: 'Chromium', version: '152' },
+      { brand: 'Not?A_Brand', version: '24' },
+      { brand: 'Google Chrome', version: '152' },
+    ]);
+    assert.deepStrictEqual(meta.fullVersionList, [
+      { brand: 'Chromium', version: '152.0.7977.130' },
+      { brand: 'Not?A_Brand', version: '24.0.0.0' },
+      { brand: 'Google Chrome', version: '152.0.7977.130' },
+    ]);
+
+    const hints = buildClientHintsHeaders();
+    assert.strictEqual(
+      hints['sec-ch-ua'],
+      '"Chromium";v="152", "Not?A_Brand";v="24", "Google Chrome";v="152"',
+    );
+  } finally {
+    Object.defineProperty(process.versions, 'chrome', { value: prev, configurable: true });
+  }
+});
+
+test('Chrome 153 的品牌顺序、GREASE 与 Sec-CH-UA 和真 Chrome 一致', () => {
+  const prev = process.versions.chrome;
+  try {
+    Object.defineProperty(process.versions, 'chrome', { value: '153.0.1.2', configurable: true });
+    const meta = buildUserAgentMetadata();
+    assert.deepStrictEqual(meta.brands, [
+      { brand: 'Google Chrome', version: '153' },
+      { brand: 'Not_A Brand', version: '8' },
+      { brand: 'Chromium', version: '153' },
+    ]);
+    assert.strictEqual(
+      buildClientHintsHeaders()['sec-ch-ua'],
+      '"Google Chrome";v="153", "Not_A Brand";v="8", "Chromium";v="153"',
+    );
+  } finally {
+    Object.defineProperty(process.versions, 'chrome', { value: prev, configurable: true });
+  }
+});
+
+test('Chrome 154 的品牌顺序、GREASE 与 Sec-CH-UA 和真 Chrome 一致', () => {
+  const prev = process.versions.chrome;
+  try {
+    Object.defineProperty(process.versions, 'chrome', { value: '154.0.1.2', configurable: true });
+    const meta = buildUserAgentMetadata();
+    assert.deepStrictEqual(meta.brands, [
+      { brand: 'Chromium', version: '154' },
+      { brand: 'Google Chrome', version: '154' },
+      { brand: 'Not A(Brand', version: '99' },
+    ]);
+    assert.strictEqual(
+      buildClientHintsHeaders()['sec-ch-ua'],
+      '"Chromium";v="154", "Google Chrome";v="154", "Not A(Brand";v="99"',
+    );
+  } finally {
+    Object.defineProperty(process.versions, 'chrome', { value: prev, configurable: true });
+  }
+});
+
+test('buildUserAgentDataFix 保留原生 GREASE、顺序正确，且不凭空加未请求的 fullVersionList', async () => {
+  const prev = process.versions.chrome;
+  try {
+    Object.defineProperty(process.versions, 'chrome', { value: '152.0.7977.130', configurable: true });
+    const script = buildUserAgentDataFix();
+
+    class FakeUAD {
+      get brands() {
+        // Electron 原生值：没有 Google Chrome，GREASE 是 Not?A_Brand
+        return [
+          { brand: 'Not?A_Brand', version: '24' },
+          { brand: 'Chromium', version: '152' },
+        ];
+      }
+      getHighEntropyValues(hints) {
+        const r = { brands: this.brands, mobile: false, platform: 'Windows', platformVersion: '15.0.0' };
+        if (hints.includes('fullVersionList')) {
+          r.fullVersionList = [
+            { brand: 'Not?A_Brand', version: '24.0.0.0' },
+            { brand: 'Chromium', version: '152.0.7977.130' },
+          ];
+        }
+        return Promise.resolve(r);
+      }
+    }
+    class FakeNavigator {
+      constructor() { this.userAgentData = new FakeUAD(); }
+    }
+
+    const fakeNav = new FakeNavigator();
+    const origFnToString = Function.prototype.toString;
+    try {
+      const fn = new Function('window', 'navigator', 'Navigator', script);
+      fn({ chrome: {} }, fakeNav, FakeNavigator);
+
+      const expectedBrands = [
+        { brand: 'Chromium', version: '152' },
+        { brand: 'Not?A_Brand', version: '24' },
+        { brand: 'Google Chrome', version: '152' },
+      ];
+      assert.deepStrictEqual(fakeNav.userAgentData.brands, expectedBrands);
+
+      const onlyPlatform = await fakeNav.userAgentData.getHighEntropyValues(['platformVersion']);
+      assert.deepStrictEqual(onlyPlatform.brands, expectedBrands);
+      assert.strictEqual(
+        Object.prototype.hasOwnProperty.call(onlyPlatform, 'fullVersionList'),
+        false,
+        '未请求 fullVersionList 时不得凭空返回',
+      );
+
+      const withFull = await fakeNav.userAgentData.getHighEntropyValues(['fullVersionList']);
+      assert.deepStrictEqual(withFull.fullVersionList, [
+        { brand: 'Chromium', version: '152.0.7977.130' },
+        { brand: 'Not?A_Brand', version: '24.0.0.0' },
+        { brand: 'Google Chrome', version: '152.0.7977.130' },
+      ]);
+    } finally {
+      Function.prototype.toString = origFnToString;
+    }
+  } finally {
+    Object.defineProperty(process.versions, 'chrome', { value: prev, configurable: true });
+  }
+});
+
+test('buildUserAgentDataFix 即使原生已含 Google Chrome 也强制归一化（防 CDP 断开后露原生顺序）', async () => {
+  const prev = process.versions.chrome;
+  try {
+    Object.defineProperty(process.versions, 'chrome', { value: '152.0.7977.130', configurable: true });
+    const script = buildUserAgentDataFix();
+
+    class FakeUAD {
+      get brands() {
+        return [
+          { brand: 'Google Chrome', version: '152' },
+          { brand: 'Chromium', version: '152' },
+          { brand: 'Not_A Brand', version: '24' },
+        ];
+      }
+      getHighEntropyValues() {
+        return Promise.resolve({ brands: this.brands, mobile: false, platform: 'Windows', platformVersion: '15.0.0' });
+      }
+    }
+    class FakeNavigator {
+      constructor() { this.userAgentData = new FakeUAD(); }
+    }
+
+    const fakeNav = new FakeNavigator();
+    const origFnToString = Function.prototype.toString;
+    try {
+      const fn = new Function('window', 'navigator', 'Navigator', script);
+      fn({ chrome: {} }, fakeNav, FakeNavigator);
+      assert.deepStrictEqual(fakeNav.userAgentData.brands, [
+        { brand: 'Chromium', version: '152' },
+        { brand: 'Not?A_Brand', version: '24' },
+        { brand: 'Google Chrome', version: '152' },
+      ]);
+    } finally {
+      Function.prototype.toString = origFnToString;
+    }
+  } finally {
+    Object.defineProperty(process.versions, 'chrome', { value: prev, configurable: true });
   }
 });
 

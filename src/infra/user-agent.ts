@@ -27,6 +27,50 @@ function chromeFullVersion(): string {
   return v || (chromeMajor() + '.0.0.0');
 }
 
+/**
+ * Chromium 的 UA-CH GREASE 算法（与 user_agent_utils.cc 同源）：
+ * - 假品牌：Not + chars[seed % 11] + A + chars[(seed + 1) % 11] + Brand
+ * - 假版本：["8", "99", "24"][seed % 3]
+ * - 品牌顺序：由 seed % 6 决定，输入顺序为 [GREASE, Chromium, Google Chrome]
+ *
+ * 写死 "Not_A Brand" 只在部分主版本碰巧正确；Chrome 152 实际是
+ * "Not?A_Brand" 且 Chromium 排第一。品牌名、版本、顺序任一硬编码错，
+ * 都会和真 Chrome 的 Sec-CH-UA / navigator.userAgentData 对不上。
+ */
+const GREASE_CHARS = [' ', '(', ':', '-', '.', '/', ')', ';', '=', '?', '_'];
+const GREASE_VERSIONS = ['8', '99', '24'];
+const BRAND_ORDER = [
+  [0, 1, 2],
+  [0, 2, 1],
+  [1, 0, 2],
+  [2, 0, 1],
+  [1, 2, 0],
+  [2, 1, 0],
+];
+
+/** 生成指定主版本的真实 Chrome 品牌数组；fullVersion=true 时带完整版本号。 */
+function buildChromeBrands(
+  major: string,
+  full: string,
+  fullVersion: boolean,
+): Array<{ brand: string; version: string }> {
+  const seed = parseInt(major, 10) || 0;
+  const greaseBrand = 'Not' + GREASE_CHARS[seed % 11] + 'A' + GREASE_CHARS[(seed + 1) % 11] + 'Brand';
+  const greaseVersion = GREASE_VERSIONS[seed % 3] + (fullVersion ? '.0.0.0' : '');
+  const version = fullVersion ? full : major;
+  const base = [
+    { brand: greaseBrand, version: greaseVersion },
+    { brand: 'Chromium', version },
+    { brand: 'Google Chrome', version },
+  ];
+  return BRAND_ORDER[seed % 6].map((i) => base[i]);
+}
+
+/** 按 Sec-CH-UA 的 `"brand";v="version"` 格式输出品牌列表。 */
+function formatBrandHeader(list: Array<{ brand: string; version: string }>): string {
+  return list.map((b) => '"' + b.brand + '";v="' + b.version + '"').join(', ');
+}
+
 /** 平台类别（与 navigator.platform 保持同一来源，避免自相矛盾） */
 function platformKind(): 'win' | 'mac' | 'linux' {
   const p = process.platform;
@@ -119,7 +163,7 @@ function buildClientHintsHeaders(): Record<string, string> {
   const k = platformKind();
   const plat = k === 'mac' ? '"macOS"' : (k === 'linux' ? '"Linux"' : '"Windows"');
   return {
-    'sec-ch-ua': '"Google Chrome";v="' + m + '", "Chromium";v="' + m + '", "Not_A Brand";v="24"',
+    'sec-ch-ua': formatBrandHeader(buildChromeBrands(m, chromeFullVersion(), false)),
     'sec-ch-ua-mobile': '?0',
     'sec-ch-ua-platform': plat,
   };
@@ -140,10 +184,12 @@ function buildClientHintsHeaders(): Record<string, string> {
 function buildUserAgentDataFix(): string {
   const m = chromeMajor();
   const full = chromeFullVersion();
+  const brands = buildChromeBrands(m, full, false);
+  const fullVersionList = buildChromeBrands(m, full, true);
   return `(function(){
   try {
-    var MAJOR = "${m}";
-    var FULL = "${full}";
+    var BRANDS = ${JSON.stringify(brands)};
+    var FULL_VERSION_LIST = ${JSON.stringify(fullVersionList)};
     // 幂等标记必须放闭包内：挂到 window 或原型上等于给页面留了个
     // "本页被 Cuckoo 改过指纹" 的显式标签，是比原问题更明显的特征。
     var hevPatched = false;
@@ -189,28 +235,12 @@ function buildUserAgentDataFix(): string {
     }
 
     function makeBrands() {
-      return [
-        { brand: "Google Chrome", version: MAJOR },
-        { brand: "Chromium", version: MAJOR },
-        { brand: "Not_A Brand", version: "24" }
-      ];
+      return BRANDS.map(function(b) { return { brand: b.brand, version: b.version }; });
     }
     function makeFullList() {
-      return [
-        { brand: "Google Chrome", version: FULL },
-        { brand: "Chromium", version: FULL },
-        { brand: "Not_A Brand", version: "24.0.0.0" }
-      ];
+      return FULL_VERSION_LIST.map(function(b) { return { brand: b.brand, version: b.version }; });
     }
-    function hasGoogleChrome(arr) {
-      try {
-        for (var i = 0; i < arr.length; i++) {
-          if (arr[i] && arr[i].brand === "Google Chrome") return true;
-        }
-      } catch (e) {}
-      return false;
-    }
-    // 覆盖 brands getter；对象不可写时静默失败
+    // 覆盖 brands getter；对象不可写时返回 false，交给外层重试。
     function patchBrands(obj) {
       if (!obj) return false;
       try {
@@ -226,54 +256,56 @@ function buildUserAgentDataFix(): string {
         return true;
       } catch (e) { return false; }
     }
-    // 包装 getHighEntropyValues，只补 fullVersionList；幂等（不重复包装）
+    // 包装 getHighEntropyValues：高熵 brands / fullVersionList 也要与低熵一致。
+    // 关键：只改“响应里本来就有”的字段，不能给未请求 fullVersionList 的调用凭空补字段。
     function patchHighEntropy(obj) {
-      if (!obj) return;
+      if (!obj) return false;
       try {
-        if (hevPatched) return;
+        if (hevPatched) return true;
         var orig = obj.getHighEntropyValues;
-        if (typeof orig !== "function") return;
+        if (typeof orig !== "function") return false;
         var patched = markNative(({ getHighEntropyValues(hints) {
           // 用 apply 保留调用时的 this：原生方法要求 this 是 NavigatorUAData 实例，
           // 若固化 obj（可能是原型）会抛 "Illegal invocation"。
           return orig.apply(this, arguments).then(function(r) {
             try {
-              if (!r.fullVersionList || !hasGoogleChrome(r.fullVersionList)) {
-                r.fullVersionList = makeFullList();
+              if (r && typeof r === "object") {
+                if (Object.prototype.hasOwnProperty.call(r, "brands")) r.brands = makeBrands();
+                if (Object.prototype.hasOwnProperty.call(r, "fullVersionList")) r.fullVersionList = makeFullList();
               }
             } catch (e2) {}
             return r;
           });
         } }).getHighEntropyValues, "getHighEntropyValues");
         // 必须用 defineProperty：原生 getHighEntropyValues 是原型上的只读方法，
-        // 实例上的普通赋值在非严格模式下会静默失败（此前 fullVersionList 一直没被补就是这原因）。
-        try {
-          Object.defineProperty(obj, "getHighEntropyValues", {
-            value: patched, writable: true, configurable: true, enumerable: false
-          });
-        } catch (e5) {}
+        // 实例上的普通赋值在非严格模式下会静默失败。
+        Object.defineProperty(obj, "getHighEntropyValues", {
+          value: patched, writable: true, configurable: true, enumerable: false
+        });
         hevPatched = true;
-      } catch (e) {}
+        return true;
+      } catch (e) { return false; }
     }
 
-    // ---------- 1) userAgentData：最小覆盖，只补 Google Chrome 品牌 ----------
-    // 原型 getter 对所有实例生效，优先打原型；实例再兜一次（防浏览器把 brands
-    // 变成实例自有属性）。轮询重试解决 preload 早期 userAgentData 尚未初始化的问题。
+    // ---------- 1) userAgentData：统一归一化 brands / 高熵字段 ----------
+    // 原型 getter 对所有实例生效；只打原型，避免每次访问返回的新实例把补丁丢掉。
+    // 轮询重试解决 preload 早期 userAgentData 尚未初始化的问题。
+    // 即使原生已含 Google Chrome 也必须打补丁：CDP/DevTools 断开后，原生顺序或
+    // GREASE 值会重新露出来，这正是 DevTools 打开后品牌列表“变回原生”的根因。
     function applyUad() {
       var nav = (typeof navigator !== "undefined") ? navigator : null;
       if (!nav) return false;
       var uad = nav.userAgentData;
       if (!uad) return false;
-      var cur = null;
-      try { cur = uad.brands; } catch (e) {}
-      // 若已含 Google Chrome（真实 Chrome 或此前已打过补丁），不必再伪造
-      if (hasGoogleChrome(cur)) { uadDone = true; return true; }
       var proto = null;
       try { proto = Object.getPrototypeOf(uad); } catch (e) {}
       // ⚠️ 必须只打原型：实测 navigator.userAgentData 每次访问返回**新对象**，
       // 打在实例上的补丁随对象一起丢弃（此前 brands 生效只是因为它走原型 getter）。
       // 高熵方法打原型也安全，前提是包装里用 apply 保留调用时的 this（见 patchHighEntropy）。
-      if (proto) { patchBrands(proto); patchHighEntropy(proto); }
+      if (!proto) return false;
+      var brandsOk = patchBrands(proto);
+      var hevOk = patchHighEntropy(proto);
+      if (!brandsOk || !hevOk) return false;
       uadDone = true;
       return true;
     }
@@ -378,8 +410,7 @@ function ensureClientHints(ses: any): void {
         const major = chromeMajor();
         if (hadFullVersion) h['sec-ch-ua-full-version'] = '"' + full + '"';
         if (hadFullVersionList) {
-          h['sec-ch-ua-full-version-list'] =
-            '"Google Chrome";v="' + full + '", "Chromium";v="' + full + '", "Not_A Brand";v="24.0.0.0"';
+          h['sec-ch-ua-full-version-list'] = formatBrandHeader(buildChromeBrands(major, full, true));
         }
         callback({ requestHeaders: h });
       } catch (_) {
@@ -403,16 +434,8 @@ function buildUserAgentMetadata(): Record<string, any> {
   const full = chromeFullVersion();
   const k = platformKind();
   const plat = k === 'mac' ? 'macOS' : (k === 'linux' ? 'Linux' : 'Windows');
-  const brands = [
-    { brand: 'Google Chrome', version: m },
-    { brand: 'Chromium', version: m },
-    { brand: 'Not_A Brand', version: '24' },
-  ];
-  const fullVersionList = [
-    { brand: 'Google Chrome', version: full },
-    { brand: 'Chromium', version: full },
-    { brand: 'Not_A Brand', version: '24.0.0.0' },
-  ];
+  const brands = buildChromeBrands(m, full, false);
+  const fullVersionList = buildChromeBrands(m, full, true);
   return {
     brands,
     fullVersionList,

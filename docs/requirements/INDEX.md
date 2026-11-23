@@ -119,5 +119,6 @@
 | 124 | fix | [手机端宠物补齐延迟状态同步](./124-mobile-pet-delay-sync.md) | done | fix/124-mobile-pet-delay-sync | 2026-11-17 |
 | 127 | fix | [登录/运行环境特征修复（阶段 1+2：指纹、UA 与登录页隔离）](./127-env-fingerprint-hardening.md) | doing | fix/127-env-fingerprint-hardening | 2026-11-23 |
 | 128 | fix | [纯净模式长暂停结束后的发送状态顺序修复](./128-harness-send-state-order.md) | doing | fix/127-env-fingerprint-hardening | 2026-11-23 |
+| 129 | fix | [Chrome UA-CH 品牌 GREASE / 顺序与高熵字段一致性修复](./129-ua-ch-brand-grease.md) | doing | master | 2026-11-23 |
 
-共 114 个需求。
+共 115 个需求。
