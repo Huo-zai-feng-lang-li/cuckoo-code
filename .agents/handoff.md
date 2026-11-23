@@ -1,8 +1,8 @@
-# 最新接续状态 (2026-11-22 v0.10.231 已发版并推送)
+# 最新接续状态 (2026-11-23 需求 127 阶段 1+2 与 128 发布 v0.10.232)
 
 > 本文档为多任务接续文档。新窗口开工前**完整读一遍**。
-> 当前分支：`feat/126-volcengine-web-integration`（与 master 同 commit `fded1b1`；126 的 volcengine 改动已全部撤回，`git ls-files | grep volcengine` 无结果）
-> 当前版本：`0.10.231`（版本号任意位置禁含数字 4）
+> 当前分支：`fix/127-env-fingerprint-hardening`（已合并 master，tag `v0.10.232`）
+> 当前版本：`0.10.232`（版本号任意位置禁含数字 4）
 
 ---
 
@@ -17,6 +17,8 @@
 
 | 任务线 | 代码状态 | 备注 |
 |---|---|---|
+| 127 登录/运行环境特征修复（阶段 1+2） | ✅ 已发布 v0.10.232 | 四门禁全绿；登录页探针通过，完整 app 待回归 |
+| 128 长暂停结束后的发送状态顺序 | ✅ 已发布 v0.10.232 | 153 文件 1556 用例全绿；真机三帧顺序待复验 |
 | 纯净模式初始化投递 / 焦点隔离 / 附件链路 修复 | ✅ 已发布 v0.10.231 | 长度校验归一化 + 发送前闸门 + 停止宽限轮询 |
 | 125 技能/MCP 菜单删除 + 子代理卡片展开修复 | ✅ 已发布 v0.10.230 | 后端白名单删除 + 事件委托；四门禁全绿，CI coverage 修复 |
 | 124 手机端宠物延迟状态同步 | ✅ 已发布 v0.10.229 | 补齐 send-pause 上报链路 + 宠物 pausing/waiting 映射；四门禁全绿 |
@@ -26,6 +28,21 @@
 | 120 CHANGELOG 按月拆分 | ✅ 已合并 master | |
 
 ---
+
+## 0A. 需求 127 阶段 1+2（v0.10.232 已发布）
+
+详见 `.agents/plan-登录环境与运行环境异常修复.md` v3 与 `docs/requirements/127-env-fingerprint-hardening.md`。
+
+- **A1**：AI view `webPreferences.plugins: true`，补 `navigator.plugins`。
+- **A5**：`user-agent.ts` 脚本内 WeakMap + 全局 `Function.prototype.toString` 补丁；`getBrands` / `getHighEntropyValues` / `getWd` 统一 `markNative`。
+- **B2**：`maskAsNative` 不再无条件加自有 `toString`；10 个 hook 包装函数改对象方法简写（去 `prototype`）。
+- **B1**：删 `__cuckooFpInjected` / `__cuckooShieldInjected`；`CdpState` 按「文档代次 + 脚本全文」幂等，`did-navigate` 调 `resetNetIdentityDoc`。同文档配置变更仍会重新 `evaluate`，不会漏新盾。
+- **阶段 2（P0）**：新增 `src/bridge/auth-page.ts`；`entry.ts` 的 hook 注入改为 `injectProviderHook()`（顶层执行但先判 auth），`init()` 加 `overlayInitialized` + auth 守卫，`watchAuthExit()` 用 Navigation API/popstate/hashchange + 1.5s 轮询，不 patch history。登录页不跑 overlay/插件/监听器，登录后补注入。`/sign_in`、`/signup`、微信/Google 登录页已覆盖。
+- **阶段 2（P1-B）**：`platformVersion` 改读 Windows 注册表 `Windows.Foundation.UniversalApiContract`（与 Chromium `GetUniversalApiContractVersion()` 同源），缓存一次；失败才按 build 兜底。本机 22631 编译产物实测 `15.0.0`。
+- **阶段 2（P1-A）否掉**：真 Chrome 实测 `window.hasOwnProperty('fetch')=true`、`Window.prototype.hasOwnProperty('fetch')=false`；任务书说反，不改。
+- **验证**：typecheck ✓ / 153 文件 1556 用例 ✓ / lint 0 error ✓ / compile ✓ / docs:index 114 需求 ✓。新增 auth 判定 6 条、auth 接线 3 条、platformVersion 映射/注册表解析 3 条。真实 preload 探针：`/sign_in` overlayIds=0 且无 hook 注入日志；正常页 overlayIds=6 且 hook 成功；同文档 pushState 退出 auth 后 2s 内 overlay 补上。
+- **未做**：真机回归；A2/A4/B3/B4/C/D 未动；登录页同源 `localStorage` 的 `cuckoo-*` 历史键仍在。`window.fetch` 是 `window` 自有属性，已实测与真 Chrome 一致。同文档 SPA 从正常页进入 auth 时已注入的 hook 无法撤回；auth 作为文档入口、auth 退出补注入均已验证。
+- **附带修复 128（真机测试中发现）**：长暂停结束后宠物先「生成中」后「结果发给模型」。根因是 `tool-end` 为保活 sendTick 把 `generating` 置 true，暂停结束 `syncPet()` 命中生成分支；且 `harness-bridge` 先报 `ai-state` 再报 `framework-send`。已改为暂停结束先显示「正在发送…」+ 宠物 waiting/「把结果发给 AI…」，bridge 先报 `framework-send` 再报 `ai-state`。新增 2 条回归用例，四门禁全绿（153 文件 1556 用例），真机待复验。详见 `docs/requirements/128-harness-send-state-order.md`。
 
 ## 1. 最近一轮改动（纯净模式投递/焦点/附件，v0.10.231）
 
