@@ -86,6 +86,21 @@ function attachFn(doc: any, win: any, b64: any, fileName: any, mimeType: any, ti
         }
       }
       if (!input) return { success: false, error: '未找到文件上传输入框（已尝试点击上传按钮）' };
+      // 幂等守卫：输入框附近已出现同名附件（说明上一次其实已注入成功）→ 不再重复注入。
+      // 只认「叶子元素 + 短文本」，且跳过可编辑元素：祖先容器的 innerText 会包含
+      // 输入框正文与历史消息文本，用子串匹配会把「用户正文里提到文件名」误判成已上传。
+      try {
+        var up = input, dup = false;
+        for (var du = 0; du < 12 && up; du++) {
+          var editable = !!(up.isContentEditable || up.tagName === 'TEXTAREA' || up.tagName === 'INPUT');
+          if (!editable && up.children && up.children.length === 0 && up.innerText) {
+            var dtxt = String(up.innerText).trim();
+            if (dtxt.length <= 80 && dtxt.indexOf(fileName) !== -1) { dup = true; break; }
+          }
+          up = up.parentElement;
+        }
+        if (dup) return { success: true, fileName: fileName, deduped: true };
+      } catch (e) { /* ignore */ }
       var dt = new win.DataTransfer();
       dt.items.add(file);
       input.files = dt.files;
@@ -297,7 +312,10 @@ async function stopGeneration(ctx: any): Promise<any> {
 
   try {
     try { wc.send('harness-stop-signal'); } catch (_) { /* ignore */ }
-    try { wc.focus(); } catch (_) { /* ignore */ }
+    // 纯净模式下功夫全在页面内合成事件，不需要键盘焦点；这里 focus 只会把焦点从
+    // harness 输入框抢到离屏网页，导致用户接着打的字串进原版输入框。
+    const harnessVisible = !!(ctx.win && !ctx.win.isDestroyed() && (ctx.win as any).__ckHarnessVisible);
+    if (!harnessVisible) { try { wc.focus(); } catch (_) { /* ignore */ } }
     let locateFn = attachStopFn;
     try {
       const provider = ctx.providerId ? getProvider(ctx.providerId) : null;
@@ -314,7 +332,21 @@ async function stopGeneration(ctx: any): Promise<any> {
       try { return await wc.executeJavaScript(code); } catch (_) { return null; }
     };
 
-    const r = await locate();
+    // 宽限轮询：刚点完发送/刚切到"停止"方块时，站点按钮可能还是箭头形状，
+    // 直接判 generating=false 会漏点，用户感知为「点了停止但原版网页继续跑」。
+    // 真机日志（DeepSeek，2026-11-23）：停止在发送后 0.6s 触发 → 定位到 no-primary-button → 未点击。
+    const locateWithGrace = async (maxMs = 3000): Promise<any> => {
+      const deadline = Date.now() + maxMs;
+      let last: any = null;
+      while (Date.now() < deadline) {
+        last = await locate();
+        if (last && last.found && typeof last.x === 'number') return last;
+        await new Promise((res) => setTimeout(res, 300));
+      }
+      return last;
+    };
+
+    const r = await locateWithGrace();
     console.log('[Cuckoo Harness] stopGeneration 定位结果: ' + JSON.stringify(r));
 
     // 守卫：定位函数明确表示「当前没有在生成」→ 不点击（避免误点发送按钮）
@@ -374,9 +406,23 @@ async function stopGeneration(ctx: any): Promise<any> {
       return { success: false, reason: 'still-generating' };
     }
 
-    // 定位失败：尝试 Escape 兜底（部分站点可用）
-    wc.sendInputEvent({ type: 'keyDown', keyCode: 'Escape', key: 'Escape' });
-    wc.sendInputEvent({ type: 'keyUp', keyCode: 'Escape', key: 'Escape' });
+    // 定位失败：尝试 Escape 兜底（部分站点可用）。
+    // 纯净模式下网页没有键盘焦点，sendInputEvent 会被静默丢弃 → 改为页面内合成键盘事件。
+    if (harnessVisible) {
+      try {
+        await wc.executeJavaScript(
+          '(function(){try{' +
+          'var el=document.querySelector("[data-cuckoo-stop-target]")||document.activeElement||document.body;' +
+          'var o={bubbles:true,cancelable:true,key:"Escape",code:"Escape",keyCode:27,which:27};' +
+          'try{el.dispatchEvent(new KeyboardEvent("keydown",o));}catch(e){}' +
+          'try{el.dispatchEvent(new KeyboardEvent("keyup",o));}catch(e){}' +
+          '}catch(e){}})()'
+        );
+      } catch (_) { /* ignore */ }
+    } else {
+      wc.sendInputEvent({ type: 'keyDown', keyCode: 'Escape', key: 'Escape' });
+      wc.sendInputEvent({ type: 'keyUp', keyCode: 'Escape', key: 'Escape' });
+    }
     return { success: true, method: 'escape' };
   } catch (err: any) {
     console.log('[Cuckoo Harness] stopGeneration 异常: ' + err.message);
@@ -573,6 +619,18 @@ function registerHarnessIpc(): void {
         const cr = await cdpAttach(ctx as any, { name: f.name, data: f.data, mime: f.mime });
         console.log('[Cuckoo Harness] CDP 上传结果: ' + JSON.stringify(cr));
         if (cr && cr.success) { results.push({ success: true, name: f.name }); continue; }
+        // 文件已经进了输入区、只是没在时限内确认"就绪"：绝不能再走兜底注入，
+        // 否则同一个文件会被上传两次（页面出现两份附件）。
+        if (cr && (cr as any).injected) {
+          console.log('[Cuckoo Harness] CDP 已注入但未确认就绪，不再兜底注入: ' + f.name);
+          results.push({
+            success: true,
+            injected: true,
+            name: f.name,
+            warning: (cr.error || 'attachment-not-ready'),
+          });
+          continue;
+        }
       } catch (cdpErr: any) {
         console.log('[Cuckoo Harness] CDP 通道异常，转合成事件兜底: ' + (cdpErr && cdpErr.message));
       }

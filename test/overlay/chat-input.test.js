@@ -652,3 +652,74 @@ test('回传前缀扩充到多套话术且避开连续重复（真人不会每�
   }
 });
 
+// ===== 纯净模式焦点隔离 / 重试幂等（需求：输入框不串、初始化即时投递）=====
+
+/** 可读写 value 的假 textarea（走原型访问器，模拟真实 DOM 的 set/get） */
+function fakeTextarea(initial) {
+  let val = initial || '';
+  class FakeTextarea {}
+  Object.defineProperty(FakeTextarea.prototype, 'value', {
+    set(v) { val = v; },
+    get() { return val; },
+    configurable: true,
+  });
+  const el = Object.assign(new FakeTextarea(), {
+    tagName: 'TEXTAREA',
+    focus() { el.__focus = (el.__focus || 0) + 1; },
+    dispatchEvent() {},
+    getAttribute: () => null,
+    __style: { display: 'block', visibility: 'visible', opacity: '1' },
+  });
+  window.HTMLTextAreaElement = FakeTextarea;
+  window.HTMLInputElement = FakeTextarea;
+  return el;
+}
+
+test('纯净模式（页面无键盘焦点）跳过原生 IME 注入，改走 DOM 填充且不抢焦点', async () => {
+  const input = fakeTextarea();
+  document.hasFocus = () => false; // 纯净模式：harness 持有键盘焦点
+  const nativeCalls = [];
+  window.electronAPI = { insertTextToChat: async (t) => { nativeCalls.push(t); return true; } };
+
+  const ok = await chat.setInputContent(input, '提示词内容');
+
+  assert.strictEqual(ok, true);
+  assert.deepStrictEqual(nativeCalls, [], '无焦点时不得走 insertTextToChat（它会 sender.focus 抢焦点）');
+  assert.strictEqual(input.value, '提示词内容', 'DOM 填充必须照常写入');
+  assert.strictEqual(input.__focus, undefined, '无焦点时不应再调用页面内 focus');
+});
+
+test('网页模式（页面持有键盘焦点）仍走原生 IME 注入，不回归', async () => {
+  const input = fakeTextarea();
+  document.hasFocus = () => true;
+  const nativeCalls = [];
+  window.electronAPI = {
+    insertTextToChat: async (t) => { nativeCalls.push(t); input.value += t; return true; },
+  };
+
+  const ok = await chat.setInputContent(input, '正常模式内容');
+
+  assert.strictEqual(ok, true);
+  assert.ok(nativeCalls.length > 0, '有焦点时应优先用原生物理注入（isTrusted）');
+  assert.strictEqual(input.value, '正常模式内容');
+});
+
+test('输入框已是目标内容时跳过重复灌注（重试不重灌长提示词）', async () => {
+  const input = fakeTextarea('系统提示词正文');
+  document.hasFocus = () => true;
+  window.location.href = 'https://example.invalid/chat'; // 无 provider → 走通用兜底发送
+  const nativeCalls = [];
+  window.electronAPI = {
+    insertTextToChat: async (t) => { nativeCalls.push(t); return true; },
+    sendEnterToChat: async () => { input.value = ''; return true; },
+  };
+  document.querySelectorAll = () => [input];
+  state.sendDelayMin = state.sendDelayMax = 0;
+  state.pauseEnabled = false;
+
+  const ok = await chat.sendToChat('系统提示词正文', '系统提示词', 0);
+
+  assert.strictEqual(ok, true);
+  assert.deepStrictEqual(nativeCalls, [], '内容已在输入框时不应二次注入');
+});
+

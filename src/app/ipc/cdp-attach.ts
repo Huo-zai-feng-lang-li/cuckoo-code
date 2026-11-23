@@ -16,7 +16,18 @@ import { getProvider } from '../../providers/registry.js';
 
 /** 上传请求参数：文件名 / base64 数据 / MIME 类型 */
 export interface AttachPayload { name: string; data: string; mime: string; }
-export interface AttachResult { success: boolean; mode?: string; error?: string; probe?: any; }
+export interface AttachResult {
+  success: boolean;
+  mode?: string;
+  error?: string;
+  probe?: any;
+  /**
+   * 文件是否已经真正写进页面（setFileInputFiles 成功）。
+   * success=false 但 injected=true 表示「已注入、但没在时限内确认就绪」——
+   * 调用方必须据此跳过任何兜底注入，否则同一文件会被上传两次。
+   */
+  injected?: boolean;
+}
 
 /** 该 AI 视图对应窗口上下文的最小接口（避免循环依赖 window.js） */
 export interface AttachCtx { providerId?: string; view: { webContents: any }; }
@@ -136,11 +147,24 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
             var cr = chips[k].getBoundingClientRect();
             if (cr.width > 0 && cr.height > 0 && cr.top > vh * 0.5) chipVis++;
           }
-          return { ready: (preview > 0 || chipVis > 0), via: 'preview=' + preview + ',chip=' + chipVis };
+          // 通用信号：注入的 file input 已被站点清空 = 站点读走了该文件（开始上传/建卡片）。
+          // 这一条覆盖「无预览图、无已知类名」的新站点，避免像 volcengine/DeepSeek 这类
+          // 纯文本文件卡片被误判为未就绪，进而触发兜底二次上传。
+          var consumed = false;
+          try {
+            // 只认本次注入过的 input（用页面全局引用，不占用 provider 的定位属性
+            // data-cuckoo-attach-input，避免两种语义互相污染）。
+            var fi: any = (window as any).__cuckooAttachInput;
+            if (fi && (!fi.files || fi.files.length === 0)) consumed = true;
+          } catch (_e) { /* ignore */ }
+          return { ready: (preview > 0 || chipVis > 0 || consumed), via: 'preview=' + preview + ',chip=' + chipVis + ',consumed=' + consumed };
         } catch (e: any) { return { ready: false, via: 'error:' + (e && e.message) }; }
       };
       const deadline = Date.now() + timeoutMs;
       let last: any = null;
+      // 图片缩略图出现后上传仍在跑（provider 会报 image-uploading）：最多再等 5s，
+      // 超时就按「站点已接受」处理，避免像早期版本那样干等 12s 还判失败。
+      let firstUploadingAt = 0;
       while (Date.now() < deadline) {
         try {
           // 统一传 (document, window)：provider 自定义源码按此签名取值；
@@ -148,6 +172,13 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
           const readySrc = customReadySrc || fn.toString();
           last = await wc.executeJavaScript('(' + readySrc + ')(document, window, ' + fileInfo + ')', true);
           if (last && last.ready) { pageLog('附件就绪: ' + last.via); return true; }
+          if (last && last.via === 'image-uploading') {
+            if (!firstUploadingAt) firstUploadingAt = Date.now();
+            else if (Date.now() - firstUploadingAt > 5000) {
+              pageLog('图片仍在上传，超过 5s 按已接受处理');
+              return true;
+            }
+          }
           if (last && last.via && last.via.indexOf('upload-fail') === 0) {
             pageLog('上传失败，不再等待: ' + last.via);
             return false;
@@ -208,11 +239,23 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
           await wc.debugger.sendCommand('DOM.setFileInputFiles', { files: [tmpPath], backendNodeId: bnid });
           console.log('[Cuckoo Attach] 文件已注入: ' + tmpPath);
           pageLog('文件已注入 ' + file.name);
+          // 记录本次注入的 input（页面全局引用）：就绪判定用它判断「站点是否已读走文件」。
+          // 不复用 data-cuckoo-attach-input —— 那是 provider 用来定位注入目标的属性，
+          // 两种语义共用会被后续探测覆盖/误判。
+          try {
+            await wc.executeJavaScript(
+              '(function(){try{' +
+              'var ls=document.querySelectorAll("input[type=file]");' +
+              'for(var i=0;i<ls.length;i++){var f=ls[i].files;if(f&&f.length){window.__cuckooAttachInput=ls[i];}}' +
+              '}catch(e){}})()',
+              true
+            );
+          } catch (_) { /* ignore */ }
           // 诊断与上传共用生命周期，避免结束后遗留页面操作。
           await dumpComposer('注入后立即');
           // 关键：等附件真正就绪再返回成功，否则 harness 立刻发送会被站点拒绝
           const ready = await waitComposerReady(12000);
-          resolveChooser && resolveChooser({ success: ready, mode: 'cdp', error: ready ? undefined : 'attachment-not-ready' });
+          resolveChooser && resolveChooser({ success: ready, mode: 'cdp', injected: true, error: ready ? undefined : 'attachment-not-ready' });
         } catch (err: any) {
           pageLog('注入失败: ' + ((err && err.message) || 'setFileInputFiles-failed'));
           resolveChooser && resolveChooser({ success: false, error: (err && err.message) || 'setFileInputFiles-failed' });
@@ -290,7 +333,7 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
             } catch (_) { /* ignore */ }
             await dumpComposer('直接注入后立即');
             const ready = await waitComposerReady(12000);
-            return { success: ready, mode: 'cdp-direct', error: ready ? undefined : 'attachment-not-ready', probe };
+            return { success: ready, mode: 'cdp-direct', injected: true, error: ready ? undefined : 'attachment-not-ready', probe };
           }
           pageLog('未按标记定位到 file input，回退到点击流程');
         } catch (e: any) {
@@ -317,8 +360,17 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
     try { removeChooserListener?.(); } catch (_) { /* ignore */ }
     try { if (attached) await wc.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: false }); } catch (_) { /* ignore */ }
     try { if (ownsDebugger && wc.debugger.isAttached()) wc.debugger.detach(); } catch (_) { /* ignore */ }
-    try { if (tmpPath && fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) { /* ignore */ }
-    try { if (tmpDir) fs.rmdirSync(tmpDir); } catch (_) { /* ignore */ }
+    // 站点是在 setFileInputFiles 之后、异步读取该临时路径再上传的。
+    // 立刻删除会让上传 100% 失败（真机 2026-11-23：注入后 20ms 判就绪 → 立即清理 →
+    // 页面显示 "Upload failed"，提示 "Remove failed files to submit."）。
+    // 保留 2 分钟足以覆盖任何上传；进程异常退出时 %TEMP% 由系统回收。
+    if (tmpDir) {
+      const dirToClean = tmpDir;
+      const timer = setTimeout(() => {
+        try { fs.rmSync(dirToClean, { recursive: true, force: true }); } catch (_) { /* ignore */ }
+      }, 120000);
+      if (typeof (timer as any).unref === 'function') (timer as any).unref();
+    }
   }
 }
 

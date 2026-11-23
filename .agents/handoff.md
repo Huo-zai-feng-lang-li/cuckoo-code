@@ -1,8 +1,8 @@
-# 最新接续状态 (2026-11-17 v0.10.230 已发布)
+# 最新接续状态 (2026-11-22 v0.10.231 已发版)
 
 > 本文档为多任务接续文档。新窗口开工前**完整读一遍**。
-> 当前分支：`master`（123 / 124 / 125 均已合并发版）
-> 当前版本：`0.10.230`（版本号任意位置禁含数字 4）
+> 当前分支：`feat/126-volcengine-web-integration`（与 master 同 commit `fded1b1`；126 的 volcengine 改动已全部撤回，`git ls-files | grep volcengine` 无结果）
+> 当前版本：`0.10.231`（版本号任意位置禁含数字 4）
 
 ---
 
@@ -10,6 +10,7 @@
 
 | 任务线 | 代码状态 | 备注 |
 |---|---|---|
+| 纯净模式初始化投递 / 焦点隔离 / 附件链路 修复 | ✅ 已发布 v0.10.231 | 长度校验归一化 + 发送前闸门 + 停止宽限轮询 |
 | 125 技能/MCP 菜单删除 + 子代理卡片展开修复 | ✅ 已发布 v0.10.230 | 后端白名单删除 + 事件委托；四门禁全绿，CI coverage 修复 |
 | 124 手机端宠物延迟状态同步 | ✅ 已发布 v0.10.229 | 补齐 send-pause 上报链路 + 宠物 pausing/waiting 映射；四门禁全绿 |
 | 123 提示词/回填 4 万字上限防护 | ✅ 已发布 v0.10.229 | 36k 总预算 + 四级降级；回填 26k 总预算 + 头尾截断 |
@@ -19,7 +20,21 @@
 
 ---
 
-## 1. 最近一轮改动（需求 125）
+## 1. 最近一轮改动（纯净模式投递/焦点/附件，v0.10.231）
+
+详见 `.agents/plan-纯净模式投递焦点附件修复.md`（含根因、逐文件改动、未覆盖风险）。
+
+**三个用户现象 → 三条根因**（证据：`%APPDATA%\cuckoo-ai-pro-session\wyp\log\volcengine.log` 03:31 段、`temp_log.txt` 11-11 段）：
+
+1. **初始化提示词空转 5.37s**：`chat-input.ts` 的 `waitMs = tag === 'harness' ? 4000 : 0`，系统提示词等待窗口为 0，靠外层 500ms×30 硬重试；且 `project-context.ts` 在「下发」时就发 `framework-send('系统提示词')`，界面立刻显示「已发送，等待 AI 响应」。现：冷启动首次 10s 就绪窗口、重试收敛 8 次、`alreadyFilled` 幂等跳过重复灌注、提前事件改 `framework-preparing`（界面显示「正在准备…」，不建空气泡）。
+2. **附件偶发失败 + 两份**：`cdp-attach` 已 `setFileInputFiles` 成功但 12s 内没认出缩略图时返回 `success:false` → `harness-attach` 无条件 `attachFn` 兜底再注入一次。现：`AttachResult.injected` 契约（`injected:true` 一律不再兜底）+ `attachFn` 同名附件幂等守卫（查输入框向上 12 层、跳过可编辑元素）+ file input 打 `data-cuckoo-attach-input` 标记，用「站点已清空该 input」作通用就绪信号 + UI 附件超时改 `20000 + 18000 * files.length`。
+3. **打字串进原版输入框**：纯净模式**没有真正隐藏** AI 网页（`entry.ts` 保持 `setVisible(true)`，只把 bounds 移到 -20000），所以仍可被 focus。三条抢焦点路径：`renderer.ts` 的 `chat-insert-text` 注入前 `sender.focus()`、`harness.ts` 停止后 `wc.focus()`、`project-context.ts` 选目录后 `view.webContents.focus()`。现：`renderer.ts` 新增 `isHarnessActive()`（读 `win.__ckHarnessVisible`），纯净模式下两条注入 IPC 直接返回 false；`stopGeneration` 纯净模式不聚焦、Escape 改页面内合成 `KeyboardEvent`；选目录后焦点优先给 harness；`chat-input` 只在 `document.hasFocus()` 时才走 `insertTextToChat` 且才 `input.focus()`。
+
+**验证**：typecheck 0 错 / 151 文件 1538 用例 ✓（新增 3 条 `chat-input.test.js` 用例）。中途一次回归：把非系统提示词统一提到 1200ms 导致 `observer.test.js` 超时，已回退为 0ms。
+
+**真机验证（已完成）**：初始化提示词 1 秒内发出；附件上传不再报 Upload failed；停止能在按钮切换后点中。**遗留**：附件链路仍依赖 `webContents.debugger`，单测无法覆盖，回归靠真机日志（`stopGeneration 定位结果` / `CDP 上传结果` / `附件就绪`）。
+
+## 1A. 需求 125（v0.10.230）
 
 详见 `docs/requirements/125-skill-mcp-menu-delete.md`。
 
@@ -33,7 +48,7 @@
 
 **验证**：typecheck ✓ / 151 文件 1535 用例 ✓ / lint 0 error 73 warning ✓ / compile ✓ / docs:index 112 需求 ✓；真实 `~/.agents/skills` 白名单实测通过。
 
-## 1A. 上一轮改动（需求 124）
+## 1B. 需求 124（v0.10.229）
 
 详见 `docs/requirements/124-mobile-pet-delay-sync.md`。
 
@@ -62,7 +77,7 @@
 
 ---
 
-## 1B. 需求 123（同版本发布）
+## 1C. 需求 123（同版本发布，v0.10.229）
 
 详见 `docs/requirements/123-prompt-budget.md`。
 
@@ -77,7 +92,8 @@
 
 ## 2. 待办
 
-- **需求 124 真机验证**：手机端连远程后，触发一次工具循环，确认「延迟发送」期间宠物切到「等它出字」类文案；确认随机长暂停期间宠物显示「走个神 / 去倒杯水」等，执行条显示「随机长暂停中 约 Ns…」。
+- **v0.10.231 真机验证（优先）**：① 新建对话，观察 harness 状态先显示「正在准备…」再切换，日志确认 `initial-prompt` 到「已点击发送按钮」间隔不再有 4~5 次「找不到输入框」；② 纯净模式连续上传 2~3 张图，日志里 `CDP 上传结果` 带 `injected:true` 且每个文件只出现一条上传结果，页面只出现一份附件；③ 纯净模式输入框连续打字 + 中途点停止生成，确认字不再串进原版输入框。
+- **需求 124 真机验证**：手机端连远程后，触发一次工具循环，确认「延迟发送」期间宠物切到「等出字」类文案；确认随机长暂停期间宠物显示「走个神 / 去倒杯水」等，执行条显示「随机长暂停中 约 Ns…」。
 - **需求 123 真机验证**：新建对话确认首条提示词完整填入；多段工具结果确认总长度与截断提示。
 - **真机验证待补（v0.10.222）**：启用代理/指纹时附件通道恢复需真机复验（v0.10.223 已改 `shouldAttach` 纯文本恒 false，前提已变）。
 - **附件失败静默降级**：建议至少记录显式告警。

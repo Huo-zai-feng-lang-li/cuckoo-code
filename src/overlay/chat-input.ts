@@ -129,18 +129,53 @@ function interruptibleWait(ms: number, token: PendingSend): Promise<boolean> {
 }
 
 /**
+ * 归一化文本，用于「内容是否完整」比较。
+ * Windows 文件读进来带 \r\n，粘进 contenteditable 会被站点归一成 \n（每行少 1 字符）；
+ * 折叠空白/不可见字符同理。真机实测 24,210 字符的系统提示词因此「少」458 字符，
+ * 被长度校验误判为截断 → 整次初始化被取消。归一后一致即视为完整。
+ * @param text 原始文本
+ * @returns 归一化结果
+ */
+function normalizeForCompare(text: string): string {
+  return String(text || '')
+    .replace(/\r/g, '')
+    .replace(/[\u200b\u200c\u200d\ufeff]/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{2,}/g, '\n')
+    .replace(/^\s+|\s+$/g, '');
+}
+
+/**
  * 校验输入框是否完整接收了预期文本。
  * 站点静默截断时先丢尾部（项目路径/记忆/错误栈都在尾部），这里读回长度做最后防线。
  * @param input 输入框
- * @param expected 期望字符数
+ * @param msg 期望写入的完整文本
  * @param stage 失败阶段（用于日志归因）
  * @returns 是否完整
  */
-function verifyInputLength(input: any, expected: number, stage: string): boolean {
-  const actual = (getInputText(input) || '').length;
+function verifyInputLength(input: any, msg: string, stage: string): boolean {
+  const raw = getInputText(input) || '';
+  const expected = msg.length;
+  const actual = raw.length;
   // 允许站点归一化空白/换行造成的少量偏差；超过 0.5%（至少 16 字符）视为截断。
   const tolerance = Math.max(16, Math.floor(expected * 0.005));
   if (actual >= expected - tolerance) return true;
+  // 换行符/不可见空白被站点归一（CRLF → LF）时长度必然变短，但内容其实一字不少。
+  const normActual = normalizeForCompare(raw);
+  const normExpected = normalizeForCompare(msg);
+  if (normActual === normExpected) return true;
+  // 归一化后仍不等 → 定位首个差异（诊断用：区分"站点吞字符"还是"填充被截断"）
+  let diffAt = -1;
+  for (let i = 0; i < Math.min(normActual.length, normExpected.length); i++) {
+    if (normActual[i] !== normExpected[i]) { diffAt = i; break; }
+  }
+  console.warn('[Cuckoo Code] 长度不符明细: 原始 ' + actual + '/' + expected
+    + '，归一化 ' + normActual.length + '/' + normExpected.length
+    + '，首个差异位置 ' + diffAt
+    + (diffAt >= 0
+      ? '，期望…' + JSON.stringify(normExpected.slice(diffAt, diffAt + 24))
+        + ' 实际…' + JSON.stringify(normActual.slice(diffAt, diffAt + 24))
+      : '，实际是期望的前缀被截断'));
   lastSendError = '输入框内容未完整填入（' + stage + '：期望 ' + expected + ' 字符，实际 ' + actual + ' 字符），已取消发送';
   console.warn('[Cuckoo Code] ' + lastSendError);
   return false;
@@ -172,9 +207,13 @@ async function setInputContent(input: any, msg: string, token?: PendingSend): Pr
     const api = (window as any).electronAPI;
     const isTextareaOrInput = input.tagName === 'TEXTAREA' || input.tagName === 'INPUT';
     const isContentEdit = !!input.isContentEditable || (typeof input.getAttribute === 'function' && input.getAttribute('contenteditable') === 'true');
+    // AI 页面是否自己持有键盘焦点。纯净模式下 harness 持有焦点、网页只是移到屏幕外，
+    // 此时绝不能走原生 IME 通道（chat-insert-text 会 sender.focus() 把焦点抢到网页），
+    // 否则用户在纯净输入框后续打的字会串进原版输入框。
+    const pageFocused = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
 
-    // 优先尝试 Chromium 原生物理级文本输入管线（isTrusted=true）
-    if (api && typeof api.insertTextToChat === 'function') {
+    // 优先尝试 Chromium 原生物理级文本输入管线（isTrusted=true）；仅在页面有焦点时使用
+    if (pageFocused && api && typeof api.insertTextToChat === 'function') {
       try {
         input.focus();
         if (isTextareaOrInput) {
@@ -206,7 +245,8 @@ async function setInputContent(input: any, msg: string, token?: PendingSend): Pr
         if (nativeOk) {
           // 校验完整性：注入后文本长度不得少于原消息长度（允许站点归一化空白导致少量偏差）
           const currentText = getInputText(input);
-          if (currentText && currentText.length >= msg.length - 16) {
+          if (currentText && (currentText.length >= msg.length - 16
+            || normalizeForCompare(currentText) === normalizeForCompare(msg))) {
             return true;
           }
           console.warn('[Cuckoo Code] 原生注入后长度不符（期望 ' + msg.length + '，实际 ' + (currentText ? currentText.length : 0) + '），回退 DOM 填充');
@@ -218,7 +258,8 @@ async function setInputContent(input: any, msg: string, token?: PendingSend): Pr
 
     if (token?.cancelled) return false;
     if (isTextareaOrInput) {
-      input.focus();
+      // 页面无焦点时不抢页面内焦点：DOM 填充不依赖它，留着只会让焦点落到原版输入框
+      if (pageFocused) input.focus();
       const desc = Object.getOwnPropertyDescriptor(
         input.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
         'value'
@@ -229,11 +270,24 @@ async function setInputContent(input: any, msg: string, token?: PendingSend): Pr
         input.value = msg;
       }
       input.dispatchEvent(new Event('input', { bubbles: true }));
-      return verifyInputLength(input, msg.length, 'DOM 填充');
+      return verifyInputLength(input, msg, 'DOM 填充');
     }
     if (isContentEdit) {
-      input.focus();
-      document.execCommand('selectAll', false, undefined);
+      if (pageFocused) {
+        input.focus();
+        document.execCommand('selectAll', false, undefined);
+      } else {
+        // 无键盘焦点时 selectAll 会选中整页：改为把选区精确落到输入框内容上
+        try {
+          const sel = window.getSelection();
+          if (sel) {
+            const range = document.createRange();
+            range.selectNodeContents(input);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+        } catch (_) { /* ignore */ }
+      }
       document.execCommand('delete', false, undefined);
 
       // 分段 Paste：每段 ≤6000 字符，不会触发 ChatGPT 的附件行为，且每段都很快。
@@ -254,7 +308,7 @@ async function setInputContent(input: any, msg: string, token?: PendingSend): Pr
           await new Promise(resolve => setTimeout(resolve, 50));
         }
       }
-      return verifyInputLength(input, msg.length, 'DOM 粘贴');
+      return verifyInputLength(input, msg, 'DOM 粘贴');
     }
     return false;
   } catch (err: any) {
@@ -374,13 +428,30 @@ async function doSendToChat(msg: string, token: PendingSend, fixedDelay?: number
     console.warn('[Cuckoo Code] ' + lastSendError);
     return false;
   }
-  const waitMs = tag === 'harness' ? 4000 : 0;
-  const input = findInputArea() || (waitMs > 0 ? await waitForInputArea(token, waitMs) : null);
+  // 输入框等待窗口：只有系统提示词需要（冷页面 SPA 首屏还没挂载输入框，volcengine 实测空转 5.3s）。
+  // 首个系统提示词给 10s 冷启动窗口，失败重试时缩到 1.5s（页面已醒，短窗口足够）；
+  // 其余框架消息自带外层重试，保持 0ms 立即失败，避免真的没输入框时把串行链堵住。
+  const coldInitWait = tag === '系统提示词' && !initialPromptColdWaitUsed;
+  // 立刻置位再等待：否则「等 10s 仍没等到输入框」会提前 return，标志永远不置真，
+  // 8 次重试每次再等满 10s（最坏 83.5s 堵死串行链）。
+  if (coldInitWait) initialPromptColdWaitUsed = true;
+  const waitMs = tag === 'harness' ? 4000 : (coldInitWait ? 10000 : (tag === '系统提示词' ? 1500 : 0));
+  let input = findInputArea() || (waitMs > 0 ? await waitForInputArea(token, waitMs) : null);
   if (!input) {
     lastSendError = '网页未找到输入框（可能在分享页或页面加载中）';
     console.log('[Cuckoo Code] 找不到输入框，无法发送消息');
     return false;
   }
+  // 附件注入会让站点重渲染输入区：旧引用可能已脱离文档，读回的是残留/空白，
+  // 继续用它填充+发送 = 写进幽灵节点，原网页永远收不到。
+  if (typeof (input as any).isConnected === 'boolean' && !(input as any).isConnected) {
+    const fresh = findInputArea();
+    if (fresh && fresh !== input) {
+      console.log('[Cuckoo Code] 输入框已被站点重渲染，改用新节点');
+      input = fresh;
+    }
+  }
+  // 冷启动长等待只用一次：输入框定位成功；失败路径已在上面提前置位（不再重复等 10s）
   token.input = input;
   pendingSend = token;
 
@@ -477,7 +548,16 @@ async function doSendToChat(msg: string, token: PendingSend, fixedDelay?: number
 
   // T：填充内容（原生分块注入，自带自然耗时）
   // fillMsg 默认 = msg；走附件时是短提示词（附件已在输入区）
-  if (!(await setInputContent(input, fillMsg, token))) {
+  // 上一次尝试可能已把内容完整灌进输入框（只是发送未被确认）：直接复用，
+  // 避免重试时重复注入 2 万字级文本（每次 2~5s，用户感知就是"填了不发"）。
+  // 注意必须要求输入框真的非空：站点重渲染后旧引用可能读回残留/空白，
+  // 误判成"已填好"会跳过填充，随后点一个 disabled 按钮 → 界面一直"发送中"。
+  const currentRaw = getInputText(input) || '';
+  const alreadyFilled = !!fillMsg && currentRaw.trim().length > 0
+    && normalizeForCompare(currentRaw) === normalizeForCompare(fillMsg);
+  if (alreadyFilled) {
+    console.log('[Cuckoo Code] 输入框已是目标内容，跳过重复填充');
+  } else if (!(await setInputContent(input, fillMsg, token))) {
     // 保留 verifyInputLength 写入的详细原因（长度不符/截断），只在没有原因时兜底。
     if (!lastSendError) lastSendError = '填入输入框失败';
     if (pendingSend === token) pendingSend = null;
@@ -505,9 +585,55 @@ async function doSendToChat(msg: string, token: PendingSend, fixedDelay?: number
   return sent;
 }
 
+/** 站点自报的附件失败文案（DeepSeek 实测：卡片红框 + Upload failed + Remove failed files to submit） */
+function findAttachFailureHint(): string | null {
+  try {
+    const nodes = document.querySelectorAll('div, span');
+    const limit = Math.min(nodes.length, 2000);
+    for (let i = 0; i < limit; i++) {
+      const t = String((nodes[i] as any).textContent || '').trim();
+      if (!t || t.length > 40) continue;
+      if (/Upload failed|上传失败|Remove failed files/i.test(t)) return t;
+    }
+  } catch (_) { /* ignore */ }
+  return null;
+}
+
+/**
+ * 等站点「真正可以发送」再点。
+ * 判据不猜缩略图/进度条，直接用站点自己的发送按钮状态：
+ * 文本为空、附件还在上传、附件上传失败时，站点都会把主按钮置为 disabled；
+ * 按钮亮起 = 文本 + 附件都被站点接受了。这比任何启发式都准，且跨平台通用
+ * （provider 没有 findSendButton 的平台直接放行，行为不变）。
+ * @param maxMs 最长等待时间
+ * @returns ok=false 时 reason 给出原因（附件失败/按钮一直不可用）
+ */
+async function waitSiteSendReady(maxMs = 8000): Promise<{ ok: boolean; reason?: string }> {
+  const provider = getCurrentProvider();
+  if (!provider || typeof provider.findSendButton !== 'function') return { ok: true };
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    const failed = findAttachFailureHint();
+    if (failed) return { ok: false, reason: '附件上传失败：' + failed };
+    try {
+      if (provider.findSendButton()) return { ok: true };
+    } catch (_) { /* 继续等 */ }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return { ok: false, reason: '站点发送按钮一直不可用（文本或附件未就绪）' };
+}
+
 /** 原生发送完成前保持队列占用；取消只能停止后续步骤，不能撤回已派发的 Enter。 */
 async function sendAndConfirm(input: any, token: PendingSend): Promise<boolean> {
   try {
+    // 发送前闸门：文本 + 附件都就绪（站点按钮亮）才点，否则点了也是空转，
+    // 用户看到的就是「一直发送中、原网页没反应」。
+    const ready = await waitSiteSendReady(8000);
+    if (!ready.ok) {
+      lastSendError = '发送前置检查未通过：' + (ready.reason || '');
+      console.warn('[Cuckoo Code] ' + lastSendError);
+      return false;
+    }
     if (!(await triggerSend(input))) {
       lastSendError = '触发发送失败（发送按钮不可点击或按键派发失败）';
       return false;
@@ -775,6 +901,8 @@ let initialPromptEpoch = 0;
 let initialPromptRequestId = '';
 let initialPromptRun: Promise<boolean> | null = null;
 let initialPromptRetryTimer: ReturnType<typeof setTimeout> | null = null;
+/** 首个系统提示词是否已经用过冷启动长等待（新一次初始化在 cancelInitialPrompt 里复位） */
+let initialPromptColdWaitUsed = false;
 
 function finishInitialPrompt(success: boolean, epoch: number): void {
   if (epoch !== initialPromptEpoch) return;
@@ -790,6 +918,8 @@ function cancelInitialPrompt(): void {
   finishInitialPrompt(false, initialPromptEpoch);
   initialPromptEpoch++;
   initialPromptRun = null;
+  // 新一次初始化 = 新的冷页面，重新给一次长等待
+  initialPromptColdWaitUsed = false;
 }
 
 function sendInitialPromptToInput(): Promise<boolean> {
@@ -808,8 +938,8 @@ function sendInitialPromptToInput(): Promise<boolean> {
   initialPromptRun = run;
   return run;
 }
-/** 初始提示发送的最大尝试次数（跨"等输入框"与"等发送成功"共用） */
-const INITIAL_PROMPT_MAX_ATTEMPTS = 30;
+/** 初始提示发送的最大尝试次数（单次已带 10s 等输入框，30 次会让失败兜底拖到几分钟） */
+const INITIAL_PROMPT_MAX_ATTEMPTS = 8;
 
 /**
  * 尝试发送初始提示；失败则重试，直到成功或达上限。
@@ -820,9 +950,16 @@ async function trySendInitialPrompt(attempt: number, epoch: number): Promise<voi
   let ok = false;
   try { ok = await sendInitialPromptToInput(); } catch (_) { /* 进入有界重试 */ }
   if (ok || epoch !== initialPromptEpoch || !state.pendingInitialPrompt) return;
-  // 长度类失败重试也不会变好（站点上限/输入框截断），直接终止，避免 30 次无效重发。
+  // 超长（站点上限）重试无意义，直接终止。
   const fatal = getLastSendError();
-  if (fatal && (fatal.indexOf('未完整填入') >= 0 || fatal.indexOf('消息超长') >= 0)) {
+  if (fatal && fatal.indexOf('消息超长') >= 0) {
+    finishInitialPrompt(false, epoch);
+    return;
+  }
+  // 长度不符要重试：站点首屏刚挂载时输入框可能吃掉一段内容，重灌一次通常就好；
+  // 但最多重灌 2 次，避免 2 万字来回注入拖成几分钟。
+  const lengthIssue = !!(fatal && fatal.indexOf('未完整填入') >= 0);
+  if (lengthIssue && attempt >= 2) {
     finishInitialPrompt(false, epoch);
     return;
   }

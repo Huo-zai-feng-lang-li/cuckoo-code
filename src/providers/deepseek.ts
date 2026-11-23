@@ -214,31 +214,60 @@ const deepseek = {
    * 必须自包含：被序列化后注入页面主世界执行。
    */
   getAttachProbeSource() {
-    return function (doc: any, win: any) {
+    return function (doc: any, win: any, fileInfo?: any) {
       try {
         // 清掉上一次的标记，避免多轮探测选错元素
         var olds = doc.querySelectorAll('input[data-cuckoo-attach-input]');
         for (var oi = 0; oi < olds.length; oi++) {
           try { olds[oi].removeAttribute('data-cuckoo-attach-input'); } catch (e) {}
         }
+        // 页面里不止一个 file input：真机 2026-11-23 命中过 accept 为
+        // ".wxml,.wxss,.wxs,..." 的输入（非聊天上传口），图片塞进去站点报
+        // "Upload failed"。按文件类型挑 accept 匹配的那一个才对。
         var inputs = doc.querySelectorAll('input[type=file]');
+        var list: any[] = [];
         for (var i = 0; i < inputs.length; i++) {
           var el = inputs[i];
           if (!el) continue;
-          var accept = String(el.getAttribute('accept') || '');
-          // 只认支持纯文本的入口（长工具输出走 .txt）
-          if (accept && accept.indexOf('.txt') === -1 && accept.indexOf('.md') === -1) continue;
-          try { el.setAttribute('data-cuckoo-attach-input', '1'); } catch (e) {}
+          list.push({ el: el, accept: String(el.getAttribute('accept') || '') });
+        }
+        var isImg = !!(fileInfo && (
+          /image\//.test(String(fileInfo.mime || '')) ||
+          /\.(png|jpe?g|gif|webp|bmp)$/i.test(String(fileInfo.name || ''))
+        ));
+        var hit: any = null;
+        var mismatch = false;
+        for (var k = 0; k < list.length; k++) {
+          var acc = list[k].accept;
+          if (!acc) { if (!hit) hit = list[k]; continue; } // 不限类型：作为次选
+          if (isImg) {
+            if (/image\/|\.png|\.jpg|\.jpeg|\.gif|\.webp|\.bmp/i.test(acc)) { hit = list[k]; break; }
+          } else if (acc.indexOf('.txt') !== -1 || acc.indexOf('.md') !== -1) {
+            hit = list[k]; break;
+          }
+        }
+        // 兜底：只有这一个输入口（accept 列表可能很长、被截断后看不全），
+        // 硬按类型过滤会让图片上传直接失败，退回「有就用」。
+        if (!hit && list.length) { hit = list[0]; mismatch = true; }
+        var diag = list.slice(0, 5).map(function (x: any) { return x.accept.slice(0, 40); });
+        if (hit) {
+          try { hit.el.setAttribute('data-cuckoo-attach-input', '1'); } catch (e) {}
           return {
             found: true,
             isFileInput: true,
             x: 0,
             y: 0,
             tag: 'INPUT[type=file]',
-            accept: accept.slice(0, 60),
+            accept: hit.accept.slice(0, 80),
+            acceptMismatch: mismatch || undefined,
+            candidates: diag,
           };
         }
-        return { found: false, reason: 'no-file-input' };
+        return {
+          found: false,
+          reason: 'no-file-input',
+          candidates: diag,
+        };
       } catch (e) {
         return { found: false, reason: 'error:' + String(e) };
       }
@@ -257,15 +286,39 @@ const deepseek = {
    * 必须自包含：被序列化后注入页面主世界执行。
    */
   getAttachReadySource() {
-    return function (doc: any, win: any, fileInfo?: { name?: string }) {
+    return function (doc: any, win: any, fileInfo?: { name?: string; mime?: string }) {
       try {
         var name = fileInfo && fileInfo.name;
+        var mime = fileInfo && fileInfo.mime;
         if (!name) return { ready: false, via: 'missing-file-name' };
         var vh = win.innerHeight || 800;
         var box = doc.querySelector('#chat-input, textarea, [contenteditable="true"]');
         var boxRect = box && box.getBoundingClientRect ? box.getBoundingClientRect() : null;
         var boxTop = boxRect ? boxRect.top : vh * 0.7;
         var boxBottom = boxRect ? boxRect.bottom : boxTop + 100;
+        // 图片附件不显示文件名，只有输入区上方的缩略图；只认文件名会 12s 空转到超时
+        // （真机：注入后立刻 previewImgs=1 + 进度条，却被判 no-attachment）。
+        if (mime && String(mime).indexOf('image/') === 0) {
+          var imgs = doc.querySelectorAll('img, [style*="background-image"]');
+          var foundImg = false;
+          for (var ii = 0; ii < imgs.length; ii++) {
+            var ir = imgs[ii].getBoundingClientRect ? imgs[ii].getBoundingClientRect() : null;
+            if (!ir || ir.width < 16 || ir.height < 16) continue;
+            if (ir.top < boxTop - 260 || ir.top > boxBottom + 120) continue;
+            foundImg = true;
+            break;
+          }
+          if (!foundImg) return { ready: false, via: 'no-image-preview' };
+          // 缩略图先出现、上传还在跑：此时发送可能被站点拒绝，等进度消失再放行
+          var progs = doc.querySelectorAll('[class*="progress"],[class*="uploading"]');
+          var busy = 0;
+          for (var pi = 0; pi < progs.length; pi++) {
+            var pr = progs[pi].getBoundingClientRect ? progs[pi].getBoundingClientRect() : null;
+            if (pr && pr.width > 0 && pr.height > 0) busy++;
+          }
+          if (busy > 0) return { ready: false, via: 'image-uploading' };
+          return { ready: true, via: 'image-preview' };
+        }
         var all = doc.querySelectorAll('div, span');
         for (var k = 0; k < all.length; k++) {
           var el = all[k];

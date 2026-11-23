@@ -28,6 +28,20 @@ function bringWindowToFront(win: any): void {
   } catch (_) { /* ignore */ }
 }
 
+/**
+ * 当前窗口是否处于纯净模式（harness 视图在前台）。
+ * 纯净模式下 AI 网页只是被移到屏幕外、setVisible 仍为 true，照样能被 focus，
+ * 所以主进程绝不能在这条路径上主动抢键盘焦点。
+ */
+function isHarnessActive(event: any): boolean {
+  try {
+    const ctx: any = windowState.getContextByWebContents(event.sender);
+    return !!(ctx && ctx.win && !ctx.win.isDestroyed() && ctx.win.__ckHarnessVisible);
+  } catch (_) {
+    return false;
+  }
+}
+
 function registerRendererIpc(): void {
   // AI 回复完成时：窗口已聚焦则不打扰；否则弹通知并让任务栏/Dock 闪烁
   ipcMain.handle('show-ai-notification', async (event: any, { summary }: any = {}) => {
@@ -98,6 +112,9 @@ function registerRendererIpc(): void {
     if (!assertSenderOk(event).ok) return false;
     const sender = event.sender;
     if (!sender || sender.isDestroyed()) return false;
+    // 纯净模式：AI 网页没有键盘焦点，sendInputEvent 会被 Chromium 静默丢弃（却返回 true 造成假阳性）。
+    // 直接返回 false，让页面侧走 DOM 点击发送。
+    if (isHarnessActive(event)) return false;
     try {
       sender.sendInputEvent({ type: 'keyDown', keyCode: 'Return', key: 'Enter' });
       sender.sendInputEvent({ type: 'char', keyCode: 'Return', key: '\r' });
@@ -114,6 +131,9 @@ function registerRendererIpc(): void {
     if (!assertSenderOk(event).ok) return false;
     const sender = event.sender;
     if (!sender || sender.isDestroyed()) return false;
+    // 纯净模式：不聚焦、不注入。返回 false 让页面侧走 DOM 填充（不依赖键盘焦点），
+    // 否则 sender.focus() 会把焦点抢到离屏网页，用户在纯净输入框打的字会串进原版输入框。
+    if (isHarnessActive(event)) return false;
     try {
       if (typeof text === 'string' && typeof sender.insertText === 'function') {
         if (typeof sender.isFocused === 'function' && !sender.isFocused()) {

@@ -3641,7 +3641,10 @@
     '系统提示词': '准备一下…', 'JSON工具调用提示': '格式不对，纠正一下',
     'XML工具调用提示': '格式不对，纠正一下',
   };
-  function onFrameworkSend(tag) {
+  /**
+   * @param preparing true=框架刚把内容下发给页面，输入框可能还没就绪（不能报"已发送"）
+   */
+  function onFrameworkSend(tag, preparing) {
     if (aborted()) return; // 用户已主动中止：丢弃迟到的框架指令，防止被旧工具结果重新激活或回显
     var label = FW_LABELS[tag] || tag || '框架指令';
     // 压缩流程启动：标记 pending，待新会话（空历史）到达时显示"已压缩续接"提示
@@ -3651,14 +3654,16 @@
     frameworkDriveUntil = Date.now() + FRAMEWORK_DRIVE_MS;
     lastActivityAt = Date.now();
     stopSendTick(); // 框架已把消息投递出去，「结果待发送」窗口结束
-    setStatus('已发送，等待 AI 响应…（' + label + '）', 'busy');
+    // 准备阶段只说明"正在灌提示词"，等真正的投递回报（bridge onMessageDelivered）才切"已发送"，
+    // 否则可出现界面已宣称发出、输入框里却一个字都没有的错觉。
+    setStatus(preparing ? ('正在准备…（' + label + '）') : ('已发送，等待 AI 响应…（' + label + '）'), 'busy');
     // 有专属说明就用它，否则沿用「已发送」文案（setStatus 已冒泡）
     petBubble(FW_BUBBLE[tag] || label, true);
     petMood('waiting');
     // 必须放在 setStatus 之后：setStatus 会清这个状态位（任何状态改写都算离开过渡态）
     inFrameworkPhase = true;
-    if (!cur) {
-      // 无助手气泡时补占位（正文随后由流式事件填充），让"正在跑"看得见
+    if (!cur && !preparing) {
+      // 无助手气泡时补占位（正文随后由流式事件填充），让"正在跑"看得见；准备阶段不建空气泡
       cur = createAssistant();
       cur.pending = true;
       cur.body.innerHTML = '<span class="pending-dots"><i></i><i></i><i></i></span>';
@@ -4582,6 +4587,7 @@
         // 框架侧投递（系统提示词 / 工具结果回传 / 看门狗 / 重试 / 压缩等）：
         // 内容不显示（底层指令），但必须体现"AI 页面正在被驱动"。
         case 'framework-send': onFrameworkSend(payload.tag); break;
+        case 'framework-preparing': onFrameworkSend(payload.tag, true); break;
         case 'send-pause': {
           var wasPauseActive = sendPauseActive;
           sendPauseActive = !!payload.active;
@@ -5196,8 +5202,11 @@
     if (files.length && api.attach) {
       setStatus('上传附件…', 'busy');
       var attachP = api.attach(files);
+      // 单文件的 CDP 链路本身可达 ~19.5s（3 轮探测×2.5s + 12s 就绪等待）。
+      // 写死 15s 会在"附件其实已注入"时先报失败，用户重试 → 同一文件被传两份。
+      var attachTimeoutMs = 20000 + 18000 * files.length;
       var timeoutP = new Promise(function (resolve) {
-        setTimeout(function () { resolve({ success: false, uploaded: 0, results: [{ error: '上传超时（15 秒无响应）' }] }); }, 15000);
+        setTimeout(function () { resolve({ success: false, uploaded: 0, results: [{ error: '上传超时（' + Math.round(attachTimeoutMs / 1000) + ' 秒无响应）' }] }); }, attachTimeoutMs);
       });
       Promise.race([attachP, timeoutP]).then(function (res) {
         var ok = res && res.uploaded ? res.uploaded : 0;
