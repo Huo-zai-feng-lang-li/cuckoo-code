@@ -197,9 +197,13 @@ export function initHarnessBridge(): void {
     // 投递即视为活动：从"消息发出"到"首个流式帧"之间可能隔着拟人化延迟（6~16s）
     // 乃至模型排队，不续命的话看门狗可能把这段正常等待误判为陈旧残留。
     markAiActivity();
+    // 必须先报 framework-send，再报 ai-state=true。
+    // 两者都经 IPC 异步到达 harness；反过来会让「生成中…」先于「已发送，等待 AI 响应…」，
+    // 用户看到的状态顺序就是「生成中 → 结果发给模型」，与真实因果相反。
+    if (info.tag !== 'harness') {
+      report({ type: 'framework-send', tag: info.tag || '', system: !!info.isSystem });
+    }
     setAiGenerating(true); // 有消息投递 = AI 页面即将工作
-    if (info.tag === 'harness') return;
-    report({ type: 'framework-send', tag: info.tag || '', system: !!info.isSystem });
   });
 
   // 用户在 harness 输入 → 主进程转发到此 → 发到 AI

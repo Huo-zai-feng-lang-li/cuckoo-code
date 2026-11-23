@@ -145,6 +145,23 @@ test('框架投递上报 framework-send，harness 自身消息不报', async () 
   assert.strictEqual(fw[0].tag, '系统提示词');
 });
 
+test('框架投递先报 framework-send，再报 ai-state（状态顺序不可颠倒）', async () => {
+  // 真实表现：先收到 ai-state=true → harness 切「生成中…」，
+  // 随后才收到 framework-send → 又切「已发送，等待 AI 响应…」。
+  // 用户看到的就是「生成中 → 结果发给模型」，与真实因果相反。
+  deliveredCb({ text: '工具结果...', tag: 'JS汇总', isSystem: true });
+  await new Promise((r) => setTimeout(r, 0));
+  const order = S.reported.map((p) => p.type);
+  const fwIdx = order.indexOf('framework-send');
+  const aiIdx = order.indexOf('ai-state');
+  assert.ok(fwIdx >= 0, '应上报 framework-send');
+  assert.ok(aiIdx >= 0, '应上报 ai-state');
+  assert.ok(
+    fwIdx < aiIdx,
+    `应先报 framework-send 再报 ai-state，实际顺序: ${order.join(' → ')}`,
+  );
+});
+
 // ===== ai-state：权威生成状态 =====
 
 test('心跳定时器已注册（周期上报，harness 中途创建也能拿到状态）', () => {

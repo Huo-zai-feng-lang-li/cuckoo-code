@@ -144,7 +144,7 @@ test('过渡态用状态位而非文案前缀匹配', () => {
   );
 });
 
-test('暂停通知在运行态同步期间保持优先，并在暂停结束后复位宠物', () => {
+test('暂停通知在运行态同步期间保持优先，并在暂停结束后切等待投递', () => {
   assert.ok(/var sendPauseActive = false;/.test(script), '应记录长暂停活动状态');
   const syncIdx = script.indexOf('function syncPet');
   const syncEnd = script.indexOf('\n  function ', syncIdx + 10);
@@ -153,9 +153,30 @@ test('暂停通知在运行态同步期间保持优先，并在暂停结束后�
   assert.ok(syncBody.includes("petMood('pausing')"), '同步期间内嵌宠物应保持暂停情绪');
   assert.ok(syncBody.includes("state: 'pausing'"), '同步期间独立宠物应保持暂停状态');
   const eventIdx = script.indexOf("case 'send-pause'");
-  const eventBody = script.slice(eventIdx, eventIdx + 600);
+  const eventBody = script.slice(eventIdx, eventIdx + 900);
   assert.ok(eventBody.includes('sendPauseActive = !!payload.active'), '暂停开始和结束都应更新状态');
-  assert.ok(eventBody.includes('syncPet()'), '暂停结束应恢复到当前生成状态');
+  assert.ok(eventBody.includes("petMood('waiting')"), '暂停结束应先切等待投递情绪');
+});
+
+test('长暂停结束先进入等待投递态，不能回落「生成中」', () => {
+  // 回归背景：tool-end 为了保活 sendTick 把 generating 置为 true；
+  // 暂停结束直接 syncPet() 会命中 generating 分支，宠物先冒「生成中…」，
+  // 随后 framework-send 才冒「把结果发给 AI…」，用户看到的状态顺序颠倒。
+  const eventIdx = script.indexOf("case 'send-pause'");
+  assert.ok(eventIdx > 0, '应处理 send-pause');
+  const eventEnd = script.indexOf("case 'send-result'", eventIdx);
+  assert.ok(eventEnd > eventIdx, 'send-pause 分支后应有 send-result 分支');
+  const eventBody = script.slice(eventIdx, eventEnd);
+  const branchStart = eventBody.indexOf('else if (wasPauseActive) {');
+  assert.ok(branchStart > 0, 'send-pause 应有暂停结束分支');
+  const branchEnd = eventBody.indexOf('if (sendPauseActive)', branchStart);
+  assert.ok(branchEnd > branchStart, '暂停结束分支后应有运行态分支');
+  const branchBody = eventBody.slice(branchStart, branchEnd);
+  assert.ok(branchBody.includes('stopSendTick()'), '暂停结束必须停表');
+  assert.ok(branchBody.includes("petMood('waiting')"), '暂停结束应切等待投递情绪');
+  assert.ok(branchBody.includes('把结果发给 AI'), '暂停结束应提示结果正在发给模型');
+  assert.ok(/正在发送/.test(branchBody), '状态栏应进入正在发送态，不能停在上一个暂停文案');
+  assert.ok(!/^\s+syncPet\(\);/m.test(branchBody), '暂停结束不能直接 syncPet（会被 generating 按回生成中）');
 });
 
 test('长暂停下排显示次数/总时长/等待秒数，不走等待发送旧文案', () => {

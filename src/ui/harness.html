@@ -4600,12 +4600,19 @@
             // 不存在"等待发送"窗口。必须在此停表——否则 sendStartAt 被重置为当前时刻，
             // renderSendTick 会从 0 重新计秒，显示一段并不存在的「等待发送 Ns」。
             stopSendTick();
+            // 但 tool-end 为了保活 sendTick 仍把 generating 置为 true；
+            // 此时若直接 syncPet() 会命中 generating 分支，宠物先冒「生成中…」，
+            // 等 framework-send 到达才冒「把结果发给 AI…」，状态顺序颠倒。
+            // 所以先进入明确的等待投递态，真正的「已发送」交给 framework-send 接管。
+            if (statusText) statusText.textContent = '正在发送…（工具结果）';
+            petMood('waiting');
+            petBubble('把结果发给 AI…', true);
           }
-          syncPet();
-          if (sendTickTimer) {
-            renderSendTick();
-          } else if (sendPauseActive) {
+          if (sendPauseActive) {
+            syncPet();
             startSendTick(0);
+          } else if (sendTickTimer) {
+            renderSendTick();
           }
           break;
         }
