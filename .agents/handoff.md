@@ -1,8 +1,8 @@
-# 最新接续状态 (2026-11-23 需求 127 阶段 1+2 与 128 发布 v0.10.232)
+# 最新接续状态 (2026-11-23 需求 129 UA-CH 品牌修复 v0.10.233)
 
 > 本文档为多任务接续文档。新窗口开工前**完整读一遍**。
-> 当前分支：`fix/127-env-fingerprint-hardening`（已合并 master，tag `v0.10.232`）
-> 当前版本：`0.10.232`（版本号任意位置禁含数字 4）
+> 当前分支：`master`（`fix/129-ua-ch-brand-grease` 已合并）
+> 当前版本：`0.10.233`（版本号任意位置禁含数字 4）
 
 ---
 
@@ -17,6 +17,7 @@
 
 | 任务线 | 代码状态 | 备注 |
 |---|---|---|
+| 129 Chrome UA-CH 品牌 GREASE / 顺序 | ✅ 已发布 v0.10.233 | 单测 14 条 + Electron CDP 探针；真机待验收 |
 | 127 登录/运行环境特征修复（阶段 1+2） | ✅ 已发布 v0.10.232 | 四门禁全绿；登录页探针通过，完整 app 待回归 |
 | 128 长暂停结束后的发送状态顺序 | ✅ 已发布 v0.10.232 | 153 文件 1556 用例全绿；真机三帧顺序待复验 |
 | 纯净模式初始化投递 / 焦点隔离 / 附件链路 修复 | ✅ 已发布 v0.10.231 | 长度校验归一化 + 发送前闸门 + 停止宽限轮询 |
@@ -28,6 +29,17 @@
 | 120 CHANGELOG 按月拆分 | ✅ 已合并 master | |
 
 ---
+
+## 0B. 需求 129（v0.10.233 已发布）
+
+详见 `docs/requirements/129-ua-ch-brand-grease.md`。
+
+- **现象**：DeepSeek 页面 DevTools 里 `brands` 只有 `Not?A_Brand` + `Chromium`，缺 `Google Chrome`；控制台已打印「主世界指纹修正已注入」。
+- **根因 1**：`Not_A Brand` 和品牌顺序写死；Chrome 152 真值是 `Not?A_Brand` 24，顺序 `[Chromium, Not?A_Brand, Google Chrome]`。按 Chromium GREASE 算法改为随 `process.versions.chrome` 计算，`Sec-CH-UA` / `userAgentMetadata` / JS 补丁三处共用。
+- **根因 2**：`applyUad()` 见原生 `brands` 已含 `Google Chrome` 就跳过安装 getter；CDP 在 DevTools 打开时 detach，原生值重新露出。现改为无论原生是否含 `Google Chrome` 都安装补丁。
+- **根因 3**：高熵只补 `fullVersionList`，不补 `r.brands`，且会给未请求的调用凭空加 `fullVersionList`。现两者都按响应自有字段修正，不再新增未请求字段。
+- **验证**：`test/infra/user-agent.test.js` 14 条全绿；Electron 探针在注入 / CDP override / detach 三个阶段都返回 `[Chromium 152, Not?A_Brand 24, Google Chrome 152]`，且 `getHighEntropyValues(['platformVersion'])` 不含 `fullVersionList`。待用户真机复验。
+- **残余**：打开 DevTools 本身仍可能被 debugger 计时探测；控制台日志非本次根因，生产静音未做。
 
 ## 0A. 需求 127 阶段 1+2（v0.10.232 已发布）
 

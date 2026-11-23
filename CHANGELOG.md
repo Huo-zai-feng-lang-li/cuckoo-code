@@ -8,12 +8,20 @@
 
 | 月份 | 版本区间 | 版本数 | 文件 |
 |---|---|---|---|
-| 2026-11 | 0.10.203 ~ 0.10.232 | 27 | [changelogs/2026-11.md](changelogs/2026-11.md) |
+| 2026-11 | 0.10.203 ~ 0.10.233 | 28 | [changelogs/2026-11.md](changelogs/2026-11.md) |
 | 2026-10 | 0.8.7 ~ 0.10.202 | 293 | [changelogs/2026-10.md](changelogs/2026-10.md) |
 | 2026-09 | 0.2.5-beta.1 ~ 0.8.6 | 24 | [changelogs/2026-09.md](changelogs/2026-09.md) |
 | 2026-08 | 1.0.0 ~ 0.2.0 | 2 | [changelogs/2026-08.md](changelogs/2026-08.md) |
 
 ## 最近 5 个版本
+
+## [0.10.233] - 2026-11-23
+
+### Fixed
+
+- **AI 页面 `navigator.userAgentData.brands` 缺 `Google Chrome`**：品牌名、GREASE 假版本和顺序改为按真实 Chrome 主版本计算（Chrome 152 为 `Not?A_Brand` 24，顺序 `Chromium → Not?A_Brand → Google Chrome`），并让 `Sec-CH-UA`、`Sec-CH-UA-Full-Version-List` 与网页值三处一致。
+- **打开 DevTools 后品牌列表回退原生值**：CDP 已注入 `Google Chrome` 时不再跳过 JS 补丁；DevTools 释放 debugger 后仍由原型补丁兜住。
+- **高熵 `brands` 不一致 / 凭空多字段**：同时修正 `brands` 与 `fullVersionList`，且只改响应里本来存在的字段；未请求时不再额外返回 `fullVersionList`。
 
 ## [0.10.232] - 2026-11-23
 
@@ -55,11 +63,3 @@
 ### Fixed
 
 - **手机端宠物延迟状态不同步**：工具跑完的 6~16s 回传延迟期间宠物停在「跑起来了」，30~75s 随机长暂停期间完全无响应。现与电脑端一致切换为「等它出字 / 走个神」等情绪文案，执行条同步显示随机长暂停倒计时。
-
-## [0.10.228] - 2026-11-16
-
-### Changed
-
-- **系统提示词工具段去重**：工具契约段由 18,029 字符降至 15,036（-16.6%），新对话首屏提示词约 41KB → 38KB。
-  - 工具 API 声明的注释压缩为单行排版，函数签名、参数说明、返回值与异常说明全部保留，工具调用能力不受影响；
-  - 移除与工具 API 声明完全重复的「可用工具函数」速览段。
