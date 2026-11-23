@@ -172,9 +172,13 @@ async function setInputContent(input: any, msg: string, token?: PendingSend): Pr
     const api = (window as any).electronAPI;
     const isTextareaOrInput = input.tagName === 'TEXTAREA' || input.tagName === 'INPUT';
     const isContentEdit = !!input.isContentEditable || (typeof input.getAttribute === 'function' && input.getAttribute('contenteditable') === 'true');
+    // AI 页面是否自己持有键盘焦点。纯净模式下 harness 持有焦点、网页只是移到屏幕外，
+    // 此时绝不能走原生 IME 通道（chat-insert-text 会 sender.focus() 把焦点抢到网页），
+    // 否则用户在纯净输入框后续打的字会串进原版输入框。
+    const pageFocused = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
 
-    // 优先尝试 Chromium 原生物理级文本输入管线（isTrusted=true）
-    if (api && typeof api.insertTextToChat === 'function') {
+    // 优先尝试 Chromium 原生物理级文本输入管线（isTrusted=true）；仅在页面有焦点时使用
+    if (pageFocused && api && typeof api.insertTextToChat === 'function') {
       try {
         input.focus();
         if (isTextareaOrInput) {
@@ -218,7 +222,8 @@ async function setInputContent(input: any, msg: string, token?: PendingSend): Pr
 
     if (token?.cancelled) return false;
     if (isTextareaOrInput) {
-      input.focus();
+      // 页面无焦点时不抢页面内焦点：DOM 填充不依赖它，留着只会让焦点落到原版输入框
+      if (pageFocused) input.focus();
       const desc = Object.getOwnPropertyDescriptor(
         input.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
         'value'
@@ -232,8 +237,21 @@ async function setInputContent(input: any, msg: string, token?: PendingSend): Pr
       return verifyInputLength(input, msg.length, 'DOM 填充');
     }
     if (isContentEdit) {
-      input.focus();
-      document.execCommand('selectAll', false, undefined);
+      if (pageFocused) {
+        input.focus();
+        document.execCommand('selectAll', false, undefined);
+      } else {
+        // 无键盘焦点时 selectAll 会选中整页：改为把选区精确落到输入框内容上
+        try {
+          const sel = window.getSelection();
+          if (sel) {
+            const range = document.createRange();
+            range.selectNodeContents(input);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+        } catch (_) { /* ignore */ }
+      }
       document.execCommand('delete', false, undefined);
 
       // 分段 Paste：每段 ≤6000 字符，不会触发 ChatGPT 的附件行为，且每段都很快。
@@ -374,13 +392,19 @@ async function doSendToChat(msg: string, token: PendingSend, fixedDelay?: number
     console.warn('[Cuckoo Code] ' + lastSendError);
     return false;
   }
-  const waitMs = tag === 'harness' ? 4000 : 0;
+  // 输入框等待窗口：只有系统提示词需要（冷页面 SPA 首屏还没挂载输入框，volcengine 实测空转 5.3s）。
+  // 首个系统提示词给 10s 冷启动窗口，失败重试时缩到 1.5s（页面已醒，短窗口足够）；
+  // 其余框架消息自带外层重试，保持 0ms 立即失败，避免真的没输入框时把串行链堵住。
+  const coldInitWait = tag === '系统提示词' && !initialPromptColdWaitUsed;
+  const waitMs = tag === 'harness' ? 4000 : (coldInitWait ? 10000 : (tag === '系统提示词' ? 1500 : 0));
   const input = findInputArea() || (waitMs > 0 ? await waitForInputArea(token, waitMs) : null);
   if (!input) {
     lastSendError = '网页未找到输入框（可能在分享页或页面加载中）';
     console.log('[Cuckoo Code] 找不到输入框，无法发送消息');
     return false;
   }
+  // 冷启动长等待只用一次：输入框已出现，后续重试无需再等 10s
+  if (tag === '系统提示词') initialPromptColdWaitUsed = true;
   token.input = input;
   pendingSend = token;
 
@@ -477,7 +501,12 @@ async function doSendToChat(msg: string, token: PendingSend, fixedDelay?: number
 
   // T：填充内容（原生分块注入，自带自然耗时）
   // fillMsg 默认 = msg；走附件时是短提示词（附件已在输入区）
-  if (!(await setInputContent(input, fillMsg, token))) {
+  // 上一次尝试可能已把内容完整灌进输入框（只是发送未被确认）：直接复用，
+  // 避免重试时重复注入 2 万字级文本（每次 2~5s，用户感知就是"填了不发"）。
+  const alreadyFilled = !!fillMsg && getInputText(input).trim() === fillMsg.trim();
+  if (alreadyFilled) {
+    console.log('[Cuckoo Code] 输入框已是目标内容，跳过重复填充');
+  } else if (!(await setInputContent(input, fillMsg, token))) {
     // 保留 verifyInputLength 写入的详细原因（长度不符/截断），只在没有原因时兜底。
     if (!lastSendError) lastSendError = '填入输入框失败';
     if (pendingSend === token) pendingSend = null;
@@ -775,6 +804,8 @@ let initialPromptEpoch = 0;
 let initialPromptRequestId = '';
 let initialPromptRun: Promise<boolean> | null = null;
 let initialPromptRetryTimer: ReturnType<typeof setTimeout> | null = null;
+/** 首个系统提示词是否已经用过冷启动长等待（新一次初始化在 cancelInitialPrompt 里复位） */
+let initialPromptColdWaitUsed = false;
 
 function finishInitialPrompt(success: boolean, epoch: number): void {
   if (epoch !== initialPromptEpoch) return;
@@ -790,6 +821,8 @@ function cancelInitialPrompt(): void {
   finishInitialPrompt(false, initialPromptEpoch);
   initialPromptEpoch++;
   initialPromptRun = null;
+  // 新一次初始化 = 新的冷页面，重新给一次长等待
+  initialPromptColdWaitUsed = false;
 }
 
 function sendInitialPromptToInput(): Promise<boolean> {
@@ -808,8 +841,8 @@ function sendInitialPromptToInput(): Promise<boolean> {
   initialPromptRun = run;
   return run;
 }
-/** 初始提示发送的最大尝试次数（跨"等输入框"与"等发送成功"共用） */
-const INITIAL_PROMPT_MAX_ATTEMPTS = 30;
+/** 初始提示发送的最大尝试次数（单次已带 10s 等输入框，30 次会让失败兜底拖到几分钟） */
+const INITIAL_PROMPT_MAX_ATTEMPTS = 8;
 
 /**
  * 尝试发送初始提示；失败则重试，直到成功或达上限。

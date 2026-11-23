@@ -137,9 +137,14 @@ async function initProject(skipPrompt: boolean = false, windowContext: any = nul
     });
 
     // 无论用户是否选择目录，对话框关闭后都恢复主窗口焦点（避免输入框失效）
+    // 纯净模式下必须把焦点还给 harness 输入框：把焦点给离屏网页会让用户接着打的字串进原版输入框。
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.focus();
-      if (view && view.webContents && !view.webContents.isDestroyed()) {
+      const hv: any = ctx && (ctx as any).harnessView;
+      const harnessVisible = !!((mainWindow as any).__ckHarnessVisible);
+      if (harnessVisible && hv && hv.webContents && !hv.webContents.isDestroyed()) {
+        hv.webContents.focus();
+      } else if (view && view.webContents && !view.webContents.isDestroyed()) {
         view.webContents.focus();
       }
     }
@@ -243,17 +248,18 @@ async function initProject(skipPrompt: boolean = false, windowContext: any = nul
   }
   if (view && view.webContents && !view.webContents.isDestroyed()) {
     view.webContents.send('initial-prompt', combined, initialPromptRequestId ? { requestId: initialPromptRequestId } : undefined);
-    // 主进程直接告诉纯净模式：框架正在驱动 AI 页面（不依赖 AI 页面 bridge 门控，
+    // 主进程直接告诉纯净模式「提示词正在准备中」（不依赖 AI 页面 bridge 门控，
     // 因为此刻页面可能正处在导航/重载中，bridge 尚未就绪）。
-    // 只反馈运行态，提示词内容不进对话流。
+    // 注意语义：这里只是"已下发到渲染进程"，输入框可能还没挂载 → 必须用 preparing，
+    // 不能报"已发送"。真正的投递成功由 bridge 的 onMessageDelivered 上报 framework-send。
     try {
       const hv = ctx && (ctx as any).harnessView;
       if (hv && !hv.webContents.isDestroyed()) {
-        hv.webContents.send('harness-event', { type: 'framework-send', tag: '系统提示词', system: true });
+        hv.webContents.send('harness-event', { type: 'framework-preparing', tag: '系统提示词', system: true });
       }
     } catch (_) { /* ignore */ }
   }
-  stepLog('initial-prompt 已发送');
+  stepLog('initial-prompt 已下发（等待页面输入框就绪）');
 
   return { success: true, message: '初始化完成，已发送系统提示词、工具规则和工具库' };
 }

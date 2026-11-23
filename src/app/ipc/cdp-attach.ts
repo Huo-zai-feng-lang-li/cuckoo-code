@@ -16,7 +16,18 @@ import { getProvider } from '../../providers/registry.js';
 
 /** 上传请求参数：文件名 / base64 数据 / MIME 类型 */
 export interface AttachPayload { name: string; data: string; mime: string; }
-export interface AttachResult { success: boolean; mode?: string; error?: string; probe?: any; }
+export interface AttachResult {
+  success: boolean;
+  mode?: string;
+  error?: string;
+  probe?: any;
+  /**
+   * 文件是否已经真正写进页面（setFileInputFiles 成功）。
+   * success=false 但 injected=true 表示「已注入、但没在时限内确认就绪」——
+   * 调用方必须据此跳过任何兜底注入，否则同一文件会被上传两次。
+   */
+  injected?: boolean;
+}
 
 /** 该 AI 视图对应窗口上下文的最小接口（避免循环依赖 window.js） */
 export interface AttachCtx { providerId?: string; view: { webContents: any }; }
@@ -136,7 +147,16 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
             var cr = chips[k].getBoundingClientRect();
             if (cr.width > 0 && cr.height > 0 && cr.top > vh * 0.5) chipVis++;
           }
-          return { ready: (preview > 0 || chipVis > 0), via: 'preview=' + preview + ',chip=' + chipVis };
+          // 通用信号：注入的 file input 已被站点清空 = 站点读走了该文件（开始上传/建卡片）。
+          // 这一条覆盖「无预览图、无已知类名」的新站点，避免像 volcengine/DeepSeek 这类
+          // 纯文本文件卡片被误判为未就绪，进而触发兜底二次上传。
+          var consumed = false;
+          try {
+            // 只认本次注入过的 input（带标记），避免页面其它空 file input 造成误判
+            var fi: any = document.querySelector('input[data-cuckoo-attach-input]');
+            if (fi && (!fi.files || fi.files.length === 0)) consumed = true;
+          } catch (_e) { /* ignore */ }
+          return { ready: (preview > 0 || chipVis > 0 || consumed), via: 'preview=' + preview + ',chip=' + chipVis + ',consumed=' + consumed };
         } catch (e: any) { return { ready: false, via: 'error:' + (e && e.message) }; }
       };
       const deadline = Date.now() + timeoutMs;
@@ -208,11 +228,22 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
           await wc.debugger.sendCommand('DOM.setFileInputFiles', { files: [tmpPath], backendNodeId: bnid });
           console.log('[Cuckoo Attach] 文件已注入: ' + tmpPath);
           pageLog('文件已注入 ' + file.name);
+          // 给本次注入的 input 打标记：就绪判定用它判断「站点是否已读走文件」，
+          // 避免页面里其它空 file input 被误判成"已消费"。
+          try {
+            await wc.executeJavaScript(
+              '(function(){try{' +
+              'var ls=document.querySelectorAll("input[type=file]");' +
+              'for(var i=0;i<ls.length;i++){var f=ls[i].files;if(f&&f.length)f.setAttribute("data-cuckoo-attach-input","1");}' +
+              '}catch(e){}})()',
+              true
+            );
+          } catch (_) { /* ignore */ }
           // 诊断与上传共用生命周期，避免结束后遗留页面操作。
           await dumpComposer('注入后立即');
           // 关键：等附件真正就绪再返回成功，否则 harness 立刻发送会被站点拒绝
           const ready = await waitComposerReady(12000);
-          resolveChooser && resolveChooser({ success: ready, mode: 'cdp', error: ready ? undefined : 'attachment-not-ready' });
+          resolveChooser && resolveChooser({ success: ready, mode: 'cdp', injected: true, error: ready ? undefined : 'attachment-not-ready' });
         } catch (err: any) {
           pageLog('注入失败: ' + ((err && err.message) || 'setFileInputFiles-failed'));
           resolveChooser && resolveChooser({ success: false, error: (err && err.message) || 'setFileInputFiles-failed' });
@@ -290,7 +321,7 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
             } catch (_) { /* ignore */ }
             await dumpComposer('直接注入后立即');
             const ready = await waitComposerReady(12000);
-            return { success: ready, mode: 'cdp-direct', error: ready ? undefined : 'attachment-not-ready', probe };
+            return { success: ready, mode: 'cdp-direct', injected: true, error: ready ? undefined : 'attachment-not-ready', probe };
           }
           pageLog('未按标记定位到 file input，回退到点击流程');
         } catch (e: any) {
