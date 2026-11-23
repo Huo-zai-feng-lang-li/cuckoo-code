@@ -3,6 +3,8 @@
  * 原 preload.js 的全部逻辑拆分为本目录下的模块，此处负责组装与初始化，
  * 初始化时序与原文件保持一致。
  */
+import './console-filter-install.js';
+
 console.log('[Cuckoo Code] Preload script 开始执行');
 
 // 暴露 electronAPI 到渲染进程（contextBridge + window 兜底）

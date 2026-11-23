@@ -78,4 +78,5 @@ Sec-CH-UA: "Chromium";v="152", "Not?A_Brand";v="24", "Google Chrome";v="152"
 - 打开 DevTools 本身仍可被页面通过 debugger 计时等方式探测；本需求只保证
   指纹字段不再因 CDP 断开而回退，不承诺「完全不可检测」。
 - 控制台 `[Cuckoo Code]` 日志不是网页可直接读取的 DevTools 历史；页面可以
-  hook `console.log`，但日志本身不是本次品牌缺失的原因，本轮未做生产静音。
+  hook `console.log`，但日志本身不是本次品牌缺失的原因，本轮未做生产静音；
+  已由需求 130 / `v0.10.235` 补齐。
