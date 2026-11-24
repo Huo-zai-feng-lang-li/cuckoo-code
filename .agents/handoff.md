@@ -42,6 +42,15 @@
 - **残余**：打开 DevTools 仍可能被 debugger 计时探测；本需求只降噪。
 - **本机状态**：`D:\cuckoo-code\resources\app.asar` 已升级到 `0.10.237`；已核验安装包内 `bridge-args`、`console-filter`、preload 最先 import 过滤器的链路都在。剩余只差在 AI 页面打开 Console 做最终肉眼验收。
 
+## 0D. 需求 131 API Key / OpenAI 兼容接入（draft）
+
+详见 `docs/requirements/131-api-key-transport.md`。
+
+- **目标**：在平台列表新增独立 `API Key / OpenAI 兼容` transport；只影响 API 平台，网页 Provider、窗口自动化、DeepSeek SSE 解析、129/130 修复全部不动。
+- **实测（2026-11-24）**：手机 Agnes `http://192.168.110.49:8080/v1` + 本机 Quick `http://127.0.0.1:3000/openai/v1`；`/models`、非流式、SSE、4 轮 3 工具链、多轮上下文全部通过；两边都返回标准 OpenAI `tool_calls`。
+- **额外**：Cuckoo `prompt-enhancer.ts` 用 `cfgOverride` 指向手机网关成功返回增强文本，证明现有 API 调用路径可用。
+- **状态**：需求与兼容性取证完成；代码未实现。下一步按文档“实施顺序”做配置/client/SSE，再接 harness；工具循环第二阶段。
+
 ## 0B. 需求 129（v0.10.233 已发布）
 
 详见 `docs/requirements/129-ua-ch-brand-grease.md`。
