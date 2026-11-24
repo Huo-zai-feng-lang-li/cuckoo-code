@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import * as windowState from './window.js';
 import * as profileManager from './profile.js';
 import { createSessionStore } from '../session/store.js';
-import { getProvider, getProviderByUrl } from '../providers/registry.js';
+import { getProvider, getProviderByUrl, isSelectableProvider } from '../providers/registry.js';
 import { isApiTransportProvider, API_TRANSPORT_HOME_URL } from '../api-transport/provider.js';
 import { disposeApiSession } from '../api-transport/runtime.js';
 import { getActiveApiSessionId } from '../api-transport/session-store.js';
@@ -1554,6 +1554,7 @@ ipcMainForProfile.handle('list-providers', async () => {
       name: p.name,
       custom: !!p._customPath,
       path: p._customPath || null,
+      selectable: isSelectableProvider(p),
     })),
   };
 });

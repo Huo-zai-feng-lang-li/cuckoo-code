@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 
-import { getProvider, getAllProviders, getProviderByUrl } from '../../src/providers/registry.js';
+import { getProvider, getAllProviders, getProviderByUrl, isSelectableProvider } from '../../src/providers/registry.js';
 import { deepseek } from '../../src/providers/deepseek.js';
 import { claude } from '../../src/providers/claude.js';
 import { chatgpt } from '../../src/providers/chatgpt.js';
@@ -14,6 +14,14 @@ test('getAllProviders 包含 deepseek 和 claude', () => {
   assert.ok(all.length >= 2);
   assert.ok(all.some(p => p.id === 'deepseek'));
   assert.ok(all.some(p => p.id === 'claude'));
+});
+
+test('新建平台选择只保留 DeepSeek 与 API Key', () => {
+  const selectable = getAllProviders().filter(isSelectableProvider).map((p) => p.id);
+  assert.ok(selectable.includes('deepseek'));
+  assert.ok(selectable.includes('api-key'));
+  assert.ok(!selectable.includes('claude'));
+  assert.ok(!selectable.includes('chatgpt'));
 });
 
 test('getProvider 按 id 查找', () => {

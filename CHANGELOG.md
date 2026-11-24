@@ -8,12 +8,22 @@
 
 | 月份 | 版本区间 | 版本数 | 文件 |
 |---|---|---|---|
-| 2026-11 | 0.10.203 ~ 0.10.238 | 31 | [changelogs/2026-11.md](changelogs/2026-11.md) |
+| 2026-11 | 0.10.203 ~ 0.10.239 | 32 | [changelogs/2026-11.md](changelogs/2026-11.md) |
 | 2026-10 | 0.8.7 ~ 0.10.202 | 293 | [changelogs/2026-10.md](changelogs/2026-10.md) |
 | 2026-09 | 0.2.5-beta.1 ~ 0.8.6 | 24 | [changelogs/2026-09.md](changelogs/2026-09.md) |
 | 2026-08 | 1.0.0 ~ 0.2.0 | 2 | [changelogs/2026-08.md](changelogs/2026-08.md) |
 
 ## 最近 5 个版本
+
+## [0.10.239] - 2026-11-24
+
+### Changed
+
+- **新建窗口平台选择收敛为 DeepSeek 与 API Key**：Claude / ChatGPT 保留在 Provider 注册表中兼容旧窗口，但不再出现在平台选择页。
+
+### Fixed
+
+- **v0.10.238 安装包启动崩溃 `Cannot find module 'sharp'`**：`sharp` 移入 `dependencies`，electron-builder `asarUnpack` 解包 `sharp` 与 `@img/*` 原生模块；附件模块延迟加载 sharp，缺失时只降级图片物化，不再阻断主进程启动。
 
 ## [0.10.238] - 2026-11-24
 
@@ -47,15 +57,6 @@
 - **AI 页面 `navigator.userAgentData.brands` 缺 `Google Chrome`**：品牌名、GREASE 假版本和顺序改为按真实 Chrome 主版本计算（Chrome 152 为 `Not?A_Brand` 24，顺序 `Chromium → Not?A_Brand → Google Chrome`），并让 `Sec-CH-UA`、`Sec-CH-UA-Full-Version-List` 与网页值三处一致。
 - **打开 DevTools 后品牌列表回退原生值**：CDP 已注入 `Google Chrome` 时不再跳过 JS 补丁；DevTools 释放 debugger 后仍由原型补丁兜住。
 - **高熵 `brands` 不一致 / 凭空多字段**：同时修正 `brands` 与 `fullVersionList`，且只改响应里本来存在的字段；未请求时不再额外返回 `fullVersionList`。
-
-## [0.10.232] - 2026-11-23
-
-### Fixed
-
-- **登录/OAuth 页不再被注入 Cuckoo 的 overlay 与平台 hook**：登录页不跑插件、观察器和主世界拦截器；登录成功或 SPA 跳回正常页后自动补注入，整页加载与同文档跳转都覆盖，且不修改 `history` 原生方法。
-- **Windows 的 `userAgentData.platformVersion` 与真 Chrome 对齐**：改读系统 `Windows.Foundation.UniversalApiContract` 注册表值，读不到按系统 build 兜底；Win11 23H2 由 `10.0.0` 修正为 `15.0.0`。
-- **纯净模式长暂停结束后的状态顺序**：先「正在发送…（工具结果）」/「把结果发给 AI…」，再「生成中」，不再倒序。
-- **运行环境特征自洽**：AI 视图开启 `plugins`；`Function.prototype.toString` 统一伪装并去掉 hook 包装函数自有 `prototype`，页面不再暴露 `cuckoo` 注入标记。
 
 ## [0.10.231] - 2026-11-22
 

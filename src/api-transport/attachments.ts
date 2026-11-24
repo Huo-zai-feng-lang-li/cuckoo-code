@@ -13,7 +13,24 @@ import { createRequire } from 'node:module';
 import type { ApiChatMessage, ApiAttachmentRef } from './client.js';
 
 const require = createRequire(import.meta.url);
-const sharp = require('sharp');
+let sharpModule: any = null;
+
+/**
+ * 延迟加载 sharp。
+ *
+ * 历史发布包曾把 sharp 误放 devDependencies，导致主进程在加载本模块时直接
+ * `Cannot find module 'sharp'`，整个应用启动失败。这里不在模块顶层 require，
+ * 缺失时只让图片物化失败，应用和文本/API 会话仍可启动。
+ */
+function getSharp(): any {
+  if (sharpModule) return sharpModule;
+  try {
+    sharpModule = require('sharp');
+  } catch (err: any) {
+    throw new Error('图片处理组件 sharp 缺失：' + ((err && err.message) || String(err)));
+  }
+  return sharpModule;
+}
 
 export interface IncomingAttachment {
   name?: string;
@@ -175,6 +192,7 @@ function normalizePath(p: string): string {
 
 
 async function resizeImage(buf: Buffer): Promise<{ data: Buffer; mime: string }> {
+  const sharp = getSharp();
   const image = sharp(buf, { failOn: 'none' }).rotate();
   const meta = await image.metadata();
   const hasAlpha = !!meta.hasAlpha;
@@ -196,6 +214,7 @@ async function resizeImage(buf: Buffer): Promise<{ data: Buffer; mime: string }>
 
 async function materializeImage(ref: ApiAttachmentRef): Promise<string> {
   const buf = await fs.promises.readFile(ref.path);
+  const sharp = getSharp();
   const meta = await sharp(buf, { failOn: 'none' }).metadata();
   // 以文件真实格式为准，不信任前端/浏览器给的 mime。Windows 文件选择器常给
   // application/octet-stream；若直接拼进 data URL，上游会把图片块当未知类型 400。
