@@ -49,3 +49,14 @@ test('CUCKOO_DEBUG=1 或开发启动时视为调试模式', () => {
   assert.strictEqual(isDebugConsoleEnabled({}, true), true);
   assert.strictEqual(isDebugConsoleEnabled({}, false), false);
 });
+
+test('开发启动参数 --cuckoo-debug 在 preload 中保留日志', () => {
+  assert.strictEqual(isDebugConsoleEnabled({}, undefined, ['--cuckoo-debug']), true);
+  assert.strictEqual(isDebugConsoleEnabled({}, undefined, []), false);
+});
+
+test('CUCKOO_DEBUG 大小写和其他真值也保留日志', () => {
+  assert.strictEqual(isDebugConsoleEnabled({ CUCKOO_DEBUG: 'TRUE' }, false, []), true);
+  assert.strictEqual(isDebugConsoleEnabled({ CUCKOO_DEBUG: 'yes' }, false, []), true);
+});
+

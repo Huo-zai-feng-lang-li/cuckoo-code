@@ -14,6 +14,7 @@
  * 判断是否需要保留完整控制台日志。
  * @param env 环境变量表，默认取 `process.env`
  * @param defaultApp 是否为 `electron .` 开发启动；打包版为 false/undefined
+ * @param argv 渲染进程参数，默认取 `process.argv`；主进程在开发态会附加 `--cuckoo-debug`
  * @returns true 表示保留日志，false 表示生产静默
  */
 export function isDebugConsoleEnabled(
@@ -21,9 +22,12 @@ export function isDebugConsoleEnabled(
   defaultApp: boolean | undefined = typeof process !== 'undefined'
     ? (process as any).defaultApp
     : undefined,
+  argv: string[] = typeof process !== 'undefined' && Array.isArray(process.argv)
+    ? process.argv
+    : [],
 ): boolean {
-  const flag = env.CUCKOO_DEBUG;
-  return defaultApp === true || flag === '1' || flag === 'true';
+  const flag = String(env.CUCKOO_DEBUG || '').trim().toLowerCase();
+  return defaultApp === true || flag === '1' || flag === 'true' || flag === 'yes' || flag === 'on' || argv.includes('--cuckoo-debug');
 }
 
 /**

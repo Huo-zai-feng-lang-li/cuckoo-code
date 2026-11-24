@@ -18,6 +18,7 @@ import { showSwitchAlert } from './alert-window.js';
 import { showSystemNotification } from './notification-window.js';
 import { showPetWindow, hidePetWindow, destroyPetWindow, registerPetWindowIpc } from './pet-window.js';
 import { readPrefs } from './ui-prefs.js';
+import { buildBridgeAdditionalArguments } from './bridge-args.js';
 import { buildChromeUserAgent, ensureClientHints } from '../infra/user-agent.js';
 
 const require = createRequire(import.meta.url);
@@ -193,6 +194,12 @@ function createWindow(profile: any) {
   const subagentArg = profileData.subagentConfig
     ? '--cuckoo-subagent=' + encodeURIComponent(JSON.stringify(profileData.subagentConfig))
     : null;
+  // 开发态显式告诉 preload 保留控制台日志：renderer 里拿不到主进程的 process.defaultApp
+  const baseArgs = buildBridgeAdditionalArguments({
+    isPackaged: app.isPackaged,
+    userDataPath: app.getPath('userData'),
+    subagentArg,
+  });
 
   // AI 页面视图（复用现有 bridge preload；与壳共用 partition）
   const view = new WebContentsView({
@@ -206,9 +213,7 @@ function createWindow(profile: any) {
       // 启用内置 PDF viewer：真 Chrome 的 navigator.plugins / mimeTypes 非空，
       // Electron 默认 false 会留下"空插件列表"这一行可查的硬特征。
       plugins: true,
-      additionalArguments: subagentArg
-        ? ['--cuckoo-user-data=' + app.getPath('userData'), subagentArg]
-        : ['--cuckoo-user-data=' + app.getPath('userData')],
+      additionalArguments: baseArgs,
     },
   });
   mainWindow.contentView.addChildView(view);
