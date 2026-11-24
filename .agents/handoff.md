@@ -8,9 +8,9 @@
 
 ### 发版结果（已核验）
 
-- 需求 130 开发态修复提交 `fee4439`（`fix(bridge): 修复开发态日志误静默（需求 130）`），发版提交：`chore(release): v0.10.237`。
-- 发版推送后核验 `origin/master` 与 tag `v0.10.237`；GitHub Actions / Release 状态见本轮最终回复。
-- Release 资产：`cuckoo-code-win-v0.10.237.exe`、`cuckoo-remote-android-v0.10.237.apk`、`latest.yml`。
+- 需求 130 开发态修复提交 `fee4439`（`fix(bridge): 修复开发态日志误静默（需求 130）`），发版提交 `742c8c4`（`chore(release): v0.10.237`）。
+- 已推送 `origin/master` 与 tag `v0.10.237`；GitHub Actions：Quality ✓、Coverage ✓、Build and Release ✓。
+- Release `v0.10.237` 已发布，资产：`cuckoo-code-win-v0.10.237.exe`(211,416,682 字节，201.6MB)、`cuckoo-remote-android-v0.10.237.apk`(29,860,665 字节)、`latest.yml`。
 - 推送环境注记：git 在 `C:\Git\cmd\git.exe`；github.com:443 可直连，推送时用 `-c http.proxy= -c https.proxy= -c http.https://github.com.proxy= -c https.https://github.com.proxy=` 绕过全局代理配置。
 
 
