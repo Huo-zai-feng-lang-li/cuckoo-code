@@ -1,17 +1,17 @@
-# 最新接续状态 (2026-11-24 需求 130 控制台降噪 v0.10.237)
+# 最新接续状态 (2026-11-24 需求 131 API Key 直连 v0.10.238)
 
 > 本文档为多任务接续文档。新窗口开工前**完整读一遍**。
 > 当前分支：`master`
-> 当前版本：`0.10.237`（版本号任意位置禁含数字 4）
+> 当前版本：`0.10.238`（版本号任意位置禁含数字 4）
 
 ---
 
 ### 发版结果（已核验）
 
-- 需求 130 开发态修复提交 `fee4439`（`fix(bridge): 修复开发态日志误静默（需求 130）`），发版提交 `742c8c4`（`chore(release): v0.10.237`）。
-- 已推送 `origin/master` 与 tag `v0.10.237`；GitHub Actions：Quality ✓、Coverage ✓、Build and Release ✓。
-- Release `v0.10.237` 已发布，资产：`cuckoo-code-win-v0.10.237.exe`(211,416,682 字节，201.6MB)、`cuckoo-remote-android-v0.10.237.apk`(29,860,665 字节)、`latest.yml`。
-- 推送环境注记：git 在 `C:\Git\cmd\git.exe`；github.com:443 可直连，推送时用 `-c http.proxy= -c https.proxy= -c http.https://github.com.proxy= -c https.https://github.com.proxy=` 绕过全局代理配置。
+- 需求 131 实现提交 `f4ab41e`（`feat(api): 新增 API Key 直连与多会话管理 (v0.10.238)`），tag `v0.10.238` 已推送 `origin/master`。
+- GitHub Actions：分支 Quality/Coverage 已 success；tag 触发的 Build and Release 正在构建。
+- 全量门禁：`npm test` 167 文件 / 1670 用例通过；`npm run typecheck`、`npm run lint`（0 error / 75 warnings）、`npm run compile` 通过。
+- 推送环境：本机 VPN `127.0.0.1:51081` 开启时默认代理可用；GitHub 直连此前会被 reset。
 
 
 ## 0. 总览
@@ -42,14 +42,14 @@
 - **残余**：打开 DevTools 仍可能被 debugger 计时探测；本需求只降噪。
 - **本机状态**：`D:\cuckoo-code\resources\app.asar` 已升级到 `0.10.237`；已核验安装包内 `bridge-args`、`console-filter`、preload 最先 import 过滤器的链路都在。剩余只差在 AI 页面打开 Console 做最终肉眼验收。
 
-## 0D. 需求 131 API Key / OpenAI 兼容接入（draft）
+## 0D. 需求 131 API Key / OpenAI 兼容接入（v0.10.238 已发布）
 
 详见 `docs/requirements/131-api-key-transport.md`。
 
 - **目标**：在平台列表新增独立 `API Key / OpenAI 兼容` transport；只影响 API 平台，网页 Provider、窗口自动化、DeepSeek SSE 解析、129/130 修复全部不动。
-- **实测（2026-11-24）**：手机 Agnes `http://192.168.110.49:8080/v1` + 本机 Quick `http://127.0.0.1:3000/openai/v1`；`/models`、非流式、SSE、4 轮 3 工具链、多轮上下文全部通过；两边都返回标准 OpenAI `tool_calls`。
-- **额外**：Cuckoo `prompt-enhancer.ts` 用 `cfgOverride` 指向手机网关成功返回增强文本，证明现有 API 调用路径可用。
-- **状态**：需求与兼容性取证完成；代码未实现。下一步按文档“实施顺序”做配置/client/SSE，再接 harness；工具循环第二阶段。
+- **实现**：内置 `api-key` Provider；按 profile 隔离 Base URL/Key/模型；系统提示词复用现有规则/技能/记忆/MCP；token 预算裁剪；图片/文本附件落盘后物化；原生 `tool_calls` 复用 ToolRegistry 权限闸；API 多会话与 history/plan/goal 按 profile+session 隔离。
+- **实测（2026-11-24）**：Agnes 官方 `/v1/chat/completions` 直连支持图片与工具调用；给 `read` 工具后返回 `finish_reason=tool_calls`、工具名 `read`。API 模式可用 Agent 工具循环；`runAgent/runAgents` 与网页自动化仍按设计排除。
+- **状态**：代码、测试、真机验证完成；已合入 `v0.10.238` 并推送 tag。
 
 ## 0B. 需求 129（v0.10.233 已发布）
 
