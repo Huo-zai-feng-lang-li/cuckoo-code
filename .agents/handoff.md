@@ -18,7 +18,7 @@
 
 | 任务线 | 代码状态 | 备注 |
 |---|---|---|
-| 130 preload 控制台日志降噪 | ✅ 已发布 v0.10.237 | 生产静默 log/info/debug；开发态 `--cuckoo-debug` 保留；8 条单测 + Electron 探针 + dev 实跑；真机待验收 |
+| 130 preload 控制台日志降噪 | ✅ 已发布 v0.10.237 | 生产静默 log/info/debug；开发态 `--cuckoo-debug` 保留；8 条单测 + Electron 探针 + dev 实跑；本机已安装 0.10.237，待 Console 验收 |
 | 129 Chrome UA-CH 品牌 GREASE / 顺序 | ✅ 已发布 v0.10.233 | 单测 14 条 + Electron CDP 探针；真机已验证 brands/headers |
 | 127 登录/运行环境特征修复（阶段 1+2） | ✅ 已发布 v0.10.232 | 四门禁全绿；登录页探针通过，完整 app 待回归 |
 | 128 长暂停结束后的发送状态顺序 | ✅ 已发布 v0.10.232 | 153 文件 1556 用例全绿；真机三帧顺序待复验 |
@@ -40,6 +40,7 @@
 - **改动**：新增 `src/bridge/console-filter.ts`；`console-filter-install.ts` 作为 preload 最早副作用 import；生产静默 `log/info/debug`，保留 `warn/error`；页面主世界日志不受影响。开发态由主进程经 `additionalArguments` 传 `--cuckoo-debug`（`src/app/bridge-args.ts`），preload 读 `process.argv` 保留日志；`CUCKOO_DEBUG` 真值大小写归一化。
 - **验证**：`console-filter` 5 条 + `bridge-args` 3 条单测；全量 155 文件 1569 用例通过；Electron 隔离探针确认 preload 的 log/info 被静默、warn/error 保留、页面 `PAGE_LOG/PAGE_WARN` 正常；`npm run dev` 实跑确认开发态日志恢复。
 - **残余**：打开 DevTools 仍可能被 debugger 计时探测；本需求只降噪。
+- **本机状态**：`D:\cuckoo-code\resources\app.asar` 已升级到 `0.10.237`；已核验安装包内 `bridge-args`、`console-filter`、preload 最先 import 过滤器的链路都在。剩余只差在 AI 页面打开 Console 做最终肉眼验收。
 
 ## 0B. 需求 129（v0.10.233 已发布）
 
