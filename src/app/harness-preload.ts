@@ -9,8 +9,23 @@ const require = createRequire(import.meta.url);
 const { contextBridge, ipcRenderer } = require('electron');
 
 const harnessAPI = {
-  /** 发送用户消息到 AI（转由 bridge 侧 sendToChat 发出；requestId 用于逐请求回执配对） */
-  sendMessage: (text: string, requestId?: string) => ipcRenderer.invoke('harness-send', { text, requestId }),
+  /** 发送用户消息到 AI（API 模式可带附件 { name,mime,data(base64) }[]） */
+  sendMessage: (text: string, requestId?: string, files?: any[], displayText?: string) => ipcRenderer.invoke('harness-send', { text, requestId, files, displayText }),
+  /** API 连接设置（按当前窗口 profile 隔离；Key 不回填） */
+  getApiSettings: () => ipcRenderer.invoke('harness-api-settings-get'),
+  setApiSettings: (data: any) => ipcRenderer.invoke('harness-api-settings-set', { data }),
+  /** 从 Base URL /v1/models 拉取模型列表（Key 优先用表单输入，否则用已保存 Key） */
+  listApiModels: (payload: { baseUrl?: string; apiKey?: string }) => ipcRenderer.invoke('harness-api-models', payload),
+  /** API 模式：把旧版 localStorage 历史同步给主进程（只首次迁移用） */
+  importApiHistory: (items: any[]) => ipcRenderer.invoke('harness-api-history-import', { items }),
+  /** API 模式：从主进程磁盘快照取回正文，恢复重启后的界面历史 */
+  getApiHistory: () => ipcRenderer.invoke('harness-api-history-get'),
+  /** API 模式：会话列表（只含元信息） */
+  listApiSessions: () => ipcRenderer.invoke('harness-api-sessions'),
+  /** API 模式：切换 active 会话 */
+  selectApiSession: (sessionId: string) => ipcRenderer.invoke('harness-api-session-select', { sessionId }),
+  /** API 模式：删除会话 */
+  deleteApiSession: (sessionId: string) => ipcRenderer.invoke('harness-api-session-delete', { sessionId }),
   /** 退出纯净模式，返回网页模式 */
   exitToWeb: () => ipcRenderer.invoke('harness-exit'),
   /** 停止生成 */
@@ -54,6 +69,10 @@ const harnessAPI = {
   onEvent: (cb: (payload: any) => void) => {
     ipcRenderer.on('harness-event', (_e: any, payload: any) => cb(payload));
   },
+  /** API 模式：把当前上下文/累计 token 上报到壳页面状态条 */
+  updateTokenUsage: (data: any) => ipcRenderer.invoke('update-token-usage', data),
+  /** API 模式：把输出速度上报到壳页面状态条 */
+  updateTps: (text: string) => ipcRenderer.invoke('update-tps', { text }),
   /** 订阅宠物偏好变化（设置页改开关/大小时即时生效，无需重载） */
   onPetPrefs: (cb: (prefs: any) => void) => {
     ipcRenderer.on('harness-pet-prefs', (_e: any, prefs: any) => cb(prefs));

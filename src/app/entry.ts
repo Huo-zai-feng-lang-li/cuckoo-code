@@ -9,6 +9,9 @@ import * as windowState from './window.js';
 import * as profileManager from './profile.js';
 import { createSessionStore } from '../session/store.js';
 import { getProvider, getProviderByUrl } from '../providers/registry.js';
+import { isApiTransportProvider, API_TRANSPORT_HOME_URL } from '../api-transport/provider.js';
+import { disposeApiSession } from '../api-transport/runtime.js';
+import { getActiveApiSessionId } from '../api-transport/session-store.js';
 import * as updater from '../updater/index.js';
 import * as mcpConfig from '../mcp/config.js';
 import * as mcpClient from '../mcp/client.js';
@@ -17,7 +20,7 @@ import { applyHarnessZoom } from './harness-zoom.js';
 import { showSwitchAlert } from './alert-window.js';
 import { showSystemNotification } from './notification-window.js';
 import { showPetWindow, hidePetWindow, destroyPetWindow, registerPetWindowIpc } from './pet-window.js';
-import { readPrefs } from './ui-prefs.js';
+import { readPrefs, migrateApiKeyEncryption } from './ui-prefs.js';
 import { buildBridgeAdditionalArguments } from './bridge-args.js';
 import { buildChromeUserAgent, ensureClientHints } from '../infra/user-agent.js';
 
@@ -139,6 +142,8 @@ function createWindow(profile: any) {
   const hasExplicitProfile = !!profile;
   // providerId 已确定 → 直接打开；未确定 → 显示平台选择页
   const providerChosen = !!profileData.providerId;
+  // API transport：不加载网页 bridge、不做网页指纹/代理注入，只借用窗口上下文与 harness UI
+  const apiMode = isApiTransportProvider(profileData.providerId);
 
   // 窗口大小/位置：优先用该 profile 上次记录；无记录则用默认 + 级联偏移（避免多窗口完全重叠）
   // 记录值可能超出"当前屏幕工作区"（换屏幕/分辨率变小时），导致底部（状态栏）被裁切。
@@ -202,9 +207,10 @@ function createWindow(profile: any) {
   });
 
   // AI 页面视图（复用现有 bridge preload；与壳共用 partition）
+  // API 模式不注入 bridge：它没有网页可操作，避免 preload 在 about:blank 上跑空逻辑。
   const view = new WebContentsView({
     webPreferences: {
-      preload: path.join(import.meta.dirname, '..', 'bridge', 'entry.js'),
+      ...(apiMode ? {} : { preload: path.join(import.meta.dirname, '..', 'bridge', 'entry.js') }),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -502,6 +508,8 @@ function createWindow(profile: any) {
     pushUrlState(view);
     // 平台未选择：通知壳页面隐藏侧边栏 + 项目选择器
     try { mainWindow.webContents.send('shell-platform-mode', { selecting: !providerChosen }); } catch (_) {}
+    // API 窗口：壳页面隐藏网页导航 / 地址栏 / 网页模式开关（API 没有真实网页）
+    try { mainWindow.webContents.send('shell-api-mode', { api: !!apiMode }); } catch (_) {}
     // 补推纯净模式状态：默认启动即纯净模式时，壳页面顶栏按钮需同步为"原"（否则显示"净"）
     try { mainWindow.webContents.send('shell-harness-mode', { harness: !!(mainWindow as any).__ckHarnessVisible }); } catch (_) {}
     // 壳就绪后重排（此时尺寸才准，修首次空白）
@@ -527,15 +535,25 @@ function createWindow(profile: any) {
       let provider = c.providerId ? getProvider(c.providerId) : null;
       if (!provider) provider = getProviderByUrl(url);
       if (provider && typeof provider.extractSessionId === 'function') sid = provider.extractSessionId(url) || '';
+      let apiSessionId = '';
+      try {
+        if (c && c.profileId && isApiTransportProvider(c.providerId)) apiSessionId = getActiveApiSessionId(String(c.profileId));
+      } catch (_) { /* ignore */ }
       console.log('[Cuckoo Code] notifyHarnessSession: url=' + url + ' sid=' + (sid || '(空)') + ' provider=' + (provider ? provider.id : '(无)'));
-      hv.webContents.send('harness-event', { type: 'session-changed', sessionId: sid });
+      hv.webContents.send('harness-event', {
+        type: 'session-changed',
+        sessionId: sid,
+        providerId: provider ? provider.id : '',
+        profileId: c && c.profileId ? String(c.profileId) : '',
+        apiSessionId,
+      });
     } catch (_) { /* ignore */ }
   };
 
   // 切换纯净模式（同窗口）：true=显示 harness，false=显示网页
   (mainWindow as any).__ckToggleHarness = (show?: boolean) => {
     if (mainWindow.isDestroyed()) return;
-    const next = typeof show === 'boolean' ? show : !(mainWindow as any).__ckHarnessVisible;
+    const next = apiMode ? true : (typeof show === 'boolean' ? show : !(mainWindow as any).__ckHarnessVisible);
     (mainWindow as any).__ckHarnessVisible = next;
     if (next) {
       // 懒加载：首次进入纯净模式才创建 harness 视图
@@ -641,6 +659,11 @@ function createWindow(profile: any) {
 
   // 加载页面（抽成函数，供网络身份应用完成后调用）
   const loadPage = () => {
+    // API 模式绝不恢复旧的网页 URL：否则切平台后会把 DeepSeek 页面无 preload 地加载出来。
+    if (apiMode) {
+      view.webContents.loadURL(API_TRANSPORT_HOME_URL);
+      return;
+    }
     if (providerChosen && provider && lastUrl && /^https?:\/\//i.test(lastUrl)) {
       view.webContents.loadURL(lastUrl);
     } else if (providerChosen && provider) {
@@ -682,6 +705,10 @@ function createWindow(profile: any) {
       safeLoadPage();
     }
   };
+  // API transport 不访问目标网页，跳过代理/指纹注入，直接加载 about:blank 占位。
+  if (apiMode) {
+    safeLoadPage();
+  } else {
   const netIdentityTimer = setTimeout(() => {
     console.warn('[Cuckoo Code] 网络身份应用超时(20s)');
     if (proxyCfg.enabled && proxyCfg.rules) showNetIdentityError();
@@ -701,6 +728,7 @@ function createWindow(profile: any) {
       safeLoadPage();
     }
   });
+  }
 
   // 项目目录确定后，异步自动连该项目的 MCP（不阻塞导航/窗口）
   const autoConnectMcp = () => {
@@ -718,6 +746,11 @@ function createWindow(profile: any) {
         const cur = view.webContents.getURL();
         if (cur && cur.indexOf('proxy-error.html') >= 0) return;
       } catch (_) { /* ignore */ }
+      // API 模式：about:blank 不是网页，跳过网页会话恢复、指纹重放与 MCP 网页联动。
+      if (apiMode) {
+        try { view.webContents.send('page-loaded'); } catch (_) { /* ignore */ }
+        return;
+      }
       // 统一设置：主进程权威源 → 本窗口 AI 页面 localStorage（运行时缓存）。
       // 文件已存在：直接下发。文件不存在（首次升级）：主动触发迁移（读本页 localStorage
       // → 写全局文件 → 回写本页），确保老用户即使从不打开设置页也能应用防封新默认。
@@ -752,6 +785,7 @@ function createWindow(profile: any) {
   });
 
   view.webContents.on('did-navigate', (_event: any, url: string) => {
+    if (apiMode) return;
     // 主帧整页文档已更换（含同 URL 刷新）：递增盾/指纹的文档代次，
     // 让随后的 did-finish-load 只对本文档补一次 Runtime.evaluate。
     try { resetNetIdentityDoc(view.webContents); } catch (_) { /* ignore */ }
@@ -769,6 +803,7 @@ function createWindow(profile: any) {
   });
 
   view.webContents.on('did-navigate-in-page', (_event: any, url: string) => {
+    if (apiMode) return;
     if (url && url.indexOf('proxy-error.html') >= 0) return;
     sessionStore.handleUrlChange(url, view);
     pushUrlState(view);
@@ -871,6 +906,8 @@ function createWindow(profile: any) {
 
   mainWindow.on('closed', () => {
     sessionsToFlush.delete(winSession);
+    // API 会话：中止在途请求/工具，删除内存历史，避免关窗后请求继续写盘、Map 常驻
+    try { disposeApiSession(profileData.id, mainWindow.id); } catch (_) { /* ignore */ }
     windowState.removeWindow(mainWindow.id);
     // 释放该窗口持有的 MCP 连接引用 + 清理自动连记录
     try { mcpClient.forgetWindow(mainWindow.id); } catch (_) {}
@@ -1949,6 +1986,8 @@ if (!gotSingleInstanceLock) {
     try { seedDefaultRules(); } catch (_) { /* ignore */ }
     // MCP 配置首次迁移（旧 userData/mcp.json → ~/.agents/mcp.json，旧文件保留）
     try { mcpConfig.migrateLegacy(); } catch (_) { /* ignore */ }
+    // API Key 加密迁移：旧明文 → Electron safeStorage 密文（失败不丢配置）
+    try { migrateApiKeyEncryption(); } catch (_) { /* ignore */ }
     // 加载已启用的 Cuckoo 插件（DSH 兼容；注册其工具到全局工具表）
     import('../plugins/cuckoo-plugins/index.js').then((m: any) => {
       import('../tools/index.js').then((t: any) => {

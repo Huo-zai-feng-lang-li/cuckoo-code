@@ -12,9 +12,11 @@ import { setWindowUsage, getTotal, getTodayTotal, getRecentDailyTotal, getWindow
 import { resolveAsset } from '../../infra/paths.js';
 import * as updater from '../../updater/index.js';
 // 新对话要让 harness 视图一起重置 —— 两个入口共用同一段逻辑，避免行为分叉
-import { prepareNewConversation, applyNewSessionPreset } from './harness.js';
+import { prepareNewConversation, applyNewSessionPreset, pushHarnessState } from './harness.js';
 import { initProject } from '../../session/project-context.js';
 import { ensureWorkspaceTrust } from '../workspace-trust-prompt.js';
+import { isApiTransportProvider } from '../../api-transport/provider.js';
+import { startNewApiSession } from '../../api-transport/runtime.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain, app, shell, BrowserWindow } = require('electron');
@@ -22,6 +24,12 @@ const { ipcMain, app, shell, BrowserWindow } = require('electron');
 /** 取事件来源对应的 AI 页面 view */
 function viewOf(event: any): any {
   return windowState.getViewByWebContents(event.sender);
+}
+
+/** API 窗口没有真实网页，任何网页导航都必须拒绝（UI 已隐藏，这里补 IPC 防线） */
+function isApiWindowEvent(event: any): boolean {
+  const ctx = windowState.getContextByWebContents(event.sender);
+  return !!(ctx && isApiTransportProvider(ctx.providerId));
 }
 
 /**
@@ -209,6 +217,9 @@ function registerShellIpc(): void {
     const ctx = windowState.getContextByWebContents(event.sender);
     const view = ctx ? ctx.view : null;
     if (!view || !url) return { success: false };
+    if (ctx && isApiTransportProvider(ctx.providerId)) {
+      return { success: false, error: 'api-mode-no-web-navigation' };
+    }
     try { await view.webContents.loadURL(url); return { success: true }; }
     catch (err: any) { return { success: false, error: err.message }; }
   });
@@ -220,6 +231,17 @@ function registerShellIpc(): void {
     const notifyDone = () => {
       try { if (ctx && ctx.win && !ctx.win.isDestroyed()) ctx.win.webContents.send('shell-newconv-done'); } catch (_) { /* ignore */ }
     };
+    // API 模式没有网页输入框，不能走网页的 loadURL + initProject 注入系统提示词，
+    // 否则 harness 会一直停在“系统提示词准备中”。这里只清 API 历史和 harness 视图。
+    if (ctx && isApiTransportProvider(ctx.providerId)) {
+      const r = await startNewApiSession(ctx);
+      if (!r.success) { notifyDone(); return { success: false, error: r.error }; }
+      prepareNewConversation(ctx, r.sessionId);
+      // reset/prepare 后立即同步 needInit，避免已有项目仍显示“首次选择项目”
+      pushHarnessState(ctx);
+      notifyDone();
+      return { success: true, sessionId: r.sessionId };
+    }
     if (!view) { notifyDone(); return { success: false }; }
     const provider = (ctx && ctx.providerId) ? getProvider(ctx.providerId) : null;
     const url = provider && provider.homeUrl ? provider.homeUrl : '';
@@ -317,6 +339,7 @@ function registerShellIpc(): void {
   ipcMain.handle('shell-navigate', async (event: any, { url }: any) => {
     const view = viewOf(event);
     if (!view || !url) return { success: false };
+    if (isApiWindowEvent(event)) return { success: false, error: 'api-mode-no-web-navigation' };
     try {
       await view.webContents.loadURL(url);
       return { success: true };
@@ -326,6 +349,7 @@ function registerShellIpc(): void {
   });
 
   ipcMain.handle('shell-back', async (event: any) => {
+    if (isApiWindowEvent(event)) return { success: false, error: 'api-mode-no-web-navigation' };
     const view = viewOf(event);
     if (view && view.webContents.navigationHistory.canGoBack()) {
       view.webContents.navigationHistory.goBack();
@@ -334,6 +358,7 @@ function registerShellIpc(): void {
   });
 
   ipcMain.handle('shell-forward', async (event: any) => {
+    if (isApiWindowEvent(event)) return { success: false, error: 'api-mode-no-web-navigation' };
     const view = viewOf(event);
     if (view && view.webContents.navigationHistory.canGoForward()) {
       view.webContents.navigationHistory.goForward();
@@ -342,6 +367,7 @@ function registerShellIpc(): void {
   });
 
   ipcMain.handle('shell-reload', async (event: any) => {
+    if (isApiWindowEvent(event)) return { success: false, error: 'api-mode-no-web-navigation' };
     const view = viewOf(event);
     if (!view || view.webContents.isDestroyed()) return { success: false };
     view.webContents.reload();
@@ -356,6 +382,7 @@ function registerShellIpc(): void {
   });
 
   ipcMain.handle('shell-home', async (event: any) => {
+    if (isApiWindowEvent(event)) return { success: false, error: 'api-mode-no-web-navigation' };
     const view = viewOf(event);
     if (!view) return { success: false };
     const ctx = windowState.getContextByWebContents(view.webContents);
@@ -444,6 +471,12 @@ function registerShellIpc(): void {
       win.__ckShellHeight = h;
       try { if (typeof win.__ckLayout === 'function') win.__ckLayout(); } catch (_) {}
     }
+  });
+
+  // API 窗口没有真实网页：壳页面初始化时主动查询，避免事件竞态导致浏览器栏没隐藏
+  ipcMain.handle('shell-get-api-mode', async (event: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    return { success: true, api: !!(ctx && isApiTransportProvider(ctx.providerId)) };
   });
 
   // 切换纯净对话模式（Harness）：壳页面「纯净模式/原版模式」按钮调用

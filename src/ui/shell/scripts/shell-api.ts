@@ -74,6 +74,9 @@ export interface ShellAPI {
   setWebviewHidden?: (hidden: boolean) => Promise<any>;
   /** 纯净模式状态变化（harness=true 表示已进入纯净模式） */
   onHarnessMode?: (cb: (data: { harness: boolean }) => void) => void;
+  /** API 窗口模式（没有真实网页，壳页面隐藏浏览器导航） */
+  onApiMode?: (cb: (data: { api: boolean }) => void) => void;
+  getApiMode?: () => Promise<{ success?: boolean; api?: boolean }>;
   reportShellSize?: (w: number, h: number) => void;
   initProject?: (dir?: string | null, isCompaction?: boolean, extraPrompt?: string, noDialog?: boolean) => Promise<any>;
   pluginMarketCurated?: (opts?: any) => Promise<any>;

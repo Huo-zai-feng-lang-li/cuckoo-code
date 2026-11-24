@@ -82,6 +82,17 @@ if (api.onHarnessMode) {
   });
 }
 
+// API 窗口没有真实网页：隐藏后退/前进/刷新/地址栏/外部打开/网页模式开关
+function applyShellApiMode(on: boolean): void {
+  document.body.classList.toggle('ck-api-mode', !!on);
+}
+if (api.getApiMode) {
+  api.getApiMode().then((r: any) => applyShellApiMode(!!(r && r.api))).catch(() => { /* ignore */ });
+}
+if (api.onApiMode) {
+  api.onApiMode((d: any) => applyShellApiMode(!!(d && d.api)));
+}
+
 // 一键循环三态主题（跟随系统 → 浅色 → 深色）
 const btnTheme = document.getElementById('btn-theme-toggle');
 const THEME_CYCLE = ['system', 'light', 'dark'];

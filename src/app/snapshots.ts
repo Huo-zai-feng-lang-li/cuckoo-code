@@ -7,6 +7,8 @@
  * 可用环境变量 CUCKOO_HOME 覆盖（测试隔离）。
  *
  * 快照当前项目目录，排除 .git / node_modules / dist / out 等产物目录（避免体积爆炸）。
+ * Rust/CMake 风格的 target/ 单独判断：仅当同级目录存在 Cargo.toml 时才排除，
+ * 避免误伤恰好叫 target 的源码目录。
  * 恢复会覆盖当前项目文件，属破坏性操作，调用方需确认。
  */
 import fs from 'node:fs';
@@ -28,7 +30,27 @@ const EXCLUDE_DIRS = new Set([
   '.git', 'node_modules', 'dist', 'out', 'build',
   '.cuckoo', '.cuckooCode', 'coverage', '.cache', 'wyp',
   '__pycache__', '.venv', 'venv', '.idea', '.vscode',
+  // 编译产物目录（可再生，体积往往远大于源码）
+  'obj', '.next',
 ]);
+
+/** 需要配合 Cargo.toml 判断的目录名（避免误伤同名的源码目录） */
+const CONDITIONAL_EXCLUDE_DIRS = ['target'];
+
+/**
+ * 判断某个目录是否应从快照中排除。
+ * @param parentDir 该目录的父目录绝对路径
+ * @param name 目录名
+ * @returns 需要排除时返回 true
+ */
+function isExcludedDir(parentDir: string, name: string): boolean {
+  if (EXCLUDE_DIRS.has(name)) return true;
+  if (CONDITIONAL_EXCLUDE_DIRS.includes(name)) {
+    // Rust 工程的 target/ 与 Cargo.toml 同级；无 Cargo.toml 时视为普通源码目录
+    return fs.existsSync(path.join(parentDir, 'Cargo.toml'));
+  }
+  return false;
+}
 
 /**
  * 排除的敏感文件名模式（避免把密钥/凭据复制进快照）。
@@ -81,7 +103,7 @@ function collectFiles(root: string): string[] {
     for (const ent of entries) {
       if (ent.isSymbolicLink()) continue;
       if (ent.isDirectory()) {
-        if (EXCLUDE_DIRS.has(ent.name)) continue;
+        if (isExcludedDir(dir, ent.name)) continue;
         walk(path.join(dir, ent.name));
       } else if (ent.isFile()) {
         if (isExcludedFile(ent.name)) continue; // 敏感文件不入快照
@@ -216,5 +238,6 @@ function deleteSnapshot(id: string): boolean {
 
 export {
   createSnapshot, listSnapshots, getSnapshot, restoreSnapshot, deleteSnapshot,
-  getSnapshotsDir, getSnapshotDir, collectFiles, EXCLUDE_DIRS, EXCLUDE_FILE_PATTERNS, isExcludedFile,
+  getSnapshotsDir, getSnapshotDir, collectFiles, isExcludedDir,
+  EXCLUDE_DIRS, EXCLUDE_FILE_PATTERNS, isExcludedFile,
 };

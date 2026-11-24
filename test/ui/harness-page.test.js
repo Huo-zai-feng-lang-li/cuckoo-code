@@ -521,7 +521,7 @@ test('回执草稿：事件通道 send-result 按 requestId 配对 settle', () =
   const idx = script.indexOf("case 'send-result'");
   assert.ok(idx > 0, '事件分发应处理 send-result');
   const body = script.slice(idx, idx + 400);
-  assert.ok(body.includes('settleDraft(payload.requestId, payload.success === true)'), '事件回执应按 requestId 配对');
+  assert.ok(body.includes('settleDraft(payload.requestId, payload.success === true || isSoftSendFailure(payload))'), '事件回执应按 requestId 配对，并识别软失败');
 });
 
 test('回执草稿：TTL 过期清理，避免旧草稿回填到新消息', () => {
@@ -604,4 +604,121 @@ test('代码块增强：样式与明暗主题 token 齐备', () => {
   assert.ok(/--hl-keyword:/.test(html), '应有 hljs token 浅色配色');
   const darkIdx = html.indexOf('body[data-ck-dark]');
   assert.ok(darkIdx > 0 && html.indexOf('--hl-keyword:', darkIdx) > darkIdx, '深色主题应覆盖 hljs 配色');
+});
+
+// ===== 长任务折叠/滚动稳定性（防回退到"折叠时视口跳一下"）=====
+
+test('折叠滚动：使用滚动锚点补偿展开/折叠两个方向', () => {
+  assert.ok(/function captureCollapseAnchor\s*\(/.test(script), '应有折叠锚点捕获');
+  assert.ok(script.includes('anchor.node.getBoundingClientRect().top - anchor.top'), '应按锚点位移补偿 scrollTop');
+  assert.ok(script.includes('startTop + (stream.scrollHeight - startH)'), '无后继元素时按有符号高度差兜底');
+  assert.ok(!script.includes("startTop - Math.max(0, startH - stream.scrollHeight)"), '不能只补偿收缩，展开时会跳');
+});
+
+test('折叠滚动：过渡时长与抑制贴底窗口一致', () => {
+  assert.ok(html.includes('transition: max-height .32s'), '思考/工具块折叠过渡应为 320ms');
+  const calls = script.match(/toggleDetail\([^\n]+320\)/g) || [];
+  assert.ok(calls.length >= 4, '自动折叠与手动折叠都应使用 320ms');
+});
+
+test('工具卡自动折叠：先给用户看结果，再平滑收起', () => {
+  assert.ok(script.includes('}, 500);'), 'tool-end 后应延迟 500ms 再自动折叠');
+  assert.ok(script.includes('target.__ckUserToggled'), '用户手动操作过的卡片不得被自动折叠抢走');
+});
+
+// ===== 思考块内部滚动（API 模式与网页窗口模式共用 harness）=====
+
+test('思考块流式更新：不重建文本节点，避免 textContent 把 scrollTop 重置到 0', () => {
+  // 回归背景：textContent 全量重写会销毁文本节点，浏览器把内部 scrollTop 归零；
+  // 随后的 scroll 事件被误判成"用户上翻"，thinkFollow=false，后续思考永远停在顶部。
+  assert.ok(/function setThinkText\s*\(/.test(script), '应有文本节点增量更新函数');
+  assert.ok(script.includes('setThinkText(cur.thinkBody, think)'), 'onStream 应通过文本节点更新思考内容');
+  assert.ok(!script.includes('cur.thinkBody.textContent = think'), '不得再用 textContent 全量重写思考体');
+  assert.ok(/__ckThinkTextNode/.test(script), '应复用同一个文本节点');
+});
+
+test('思考块展开与流式跟随：始终定位到最新一行', () => {
+  assert.ok(/function scrollThinkToLatest\s*\(/.test(script), '应有思考块贴底函数');
+  assert.ok(script.includes('scrollThinkToLatest(cur'), '流式/自动展开时应贴底');
+  assert.ok(/scrollThinkToLatest\(\{\s*thinkBody:/.test(script), '静态历史展开时应贴底');
+  // 展开有 320ms max-height 过渡，贴底必须跨过渡期复测，而不是只写一次 scrollTop
+  assert.ok(script.includes('requestAnimationFrame(pin)'), '贴底应跨帧复测');
+  assert.ok(script.includes('body.__ckThinkPinTimer'), '贴底定时器应可复用/清理');
+});
+
+test('内嵌滚动容器使用统一细滚动条', () => {
+  for (const sel of ['.think-body', '.tool-body', '.tool-pre', '.plan-body']) {
+    assert.ok(html.includes(sel + '::-webkit-scrollbar'), sel + ' 应有滚动条样式');
+  }
+  assert.ok(html.includes('scrollbar-gutter: stable'), '内嵌滚动容器应预留滚动条槽，避免出现时内容横向抖动');
+  assert.ok(/\n\s*\.stream\s*\{[^}]*overscroll-behavior: contain;/.test(html), '最外层对话区应阻止滚动链传导');
+  // 内层容器（思考/工具/计划）不能 contain：滚到顶/底后需把滚轮链回 .stream，
+  // 否则鼠标停在工具卡上时对话主区域滚不动（用户实测回归）。
+  assert.ok(!/\.(think-body|tool-body|tool-pre|plan-body)[^{]*\{[^}]*overscroll-behavior/.test(html), '内层滚动容器不得阻断滚动链');
+});
+
+test('计划/目标模式骨架未受滚动改动影响', () => {
+  assert.ok(/function renderPlan\s*\(/.test(script), '计划渲染函数应保留');
+  assert.ok(/function renderPlanBar\s*\(/.test(script), '计划状态条应保留');
+  assert.ok(/function renderGoalBar\s*\(/.test(script), '目标条渲染应保留');
+  assert.ok(html.includes('id="plan-panel"') && html.includes('id="goalbar"'), '计划/目标面板 DOM 应保留');
+  assert.ok(html.includes('id="plan-confirm"') && html.includes('id="goal-toggle"'), '计划/目标操作按钮应保留');
+});
+
+test('API 模型设置：自动拉列表、搜索选中、默认第一', () => {
+  assert.ok(html.includes('id="api-model-trigger"') && html.includes('id="api-model-menu"'), '应有可展开的模型选择器');
+  assert.ok(html.includes('id="api-model-search"'), '模型列表应支持搜索');
+  assert.ok(/function refreshApiModels\s*\(/.test(script), '应有模型列表拉取函数');
+  assert.ok(script.includes('api.listApiModels({ baseUrl: baseUrl, apiKey: enteredKey })'), '应把表单 Base URL/Key 传给主进程拉列表');
+  assert.ok(script.includes('setApiModel(apiModelList[0], false)'), '空模型时应默认选中第一项');
+  assert.ok(script.includes('if (!currentModel && apiModelList.length)'), '已有模型不应被 /models 列表覆盖');
+  assert.ok(script.includes('renderApiModelList'), '应渲染可点击的模型项');
+  assert.ok(html.includes('min-height: 30px') && html.includes('line-height: 1.6'), '模型列表行应有足够高度，避免文字被压扁');
+  assert.ok(!script.includes("modelPicker.setAttribute('title'"), '不应给模型触发器设置原生 tooltip，避免盖住搜索框');
+});
+
+test('API 本地历史按 profile + session 双作用域隔离；新对话不误删旧会话', () => {
+  assert.ok(/function apiScopeSuffix\s*\(/.test(script), '应有 profile/session 作用域后缀');
+  assert.ok(script.includes("apiScopeSuffix(sid)"), 'hist/plan/goal key 应带 profile/session 作用域');
+  assert.ok(script.includes("(apiSessionId ? ':' + apiSessionId : '')"), '作用域后缀应包含 apiSessionId');
+  assert.ok(script.includes('nextApiSessionId'), 'API 新对话应接收主进程新建的 sessionId');
+  assert.ok(script.includes('localStorage.removeItem(histKey())'), '新对话只应清掉新 session 的本地历史');
+  assert.ok(script.includes('payload.profileId'), 'session-changed 事件应透传 profileId');
+  assert.ok(script.includes('payload.apiSessionId'), 'session-changed 事件应透传 apiSessionId');
+  assert.ok(script.includes('function scopedSessionKey()'), '内存计划条目也应按 session 隔离');
+});
+
+test('API 多会话左侧栏：常驻列表、切换、新建、删除', () => {
+  assert.ok(html.includes('id="btn-api-sessions"') && html.includes('id="api-session-menu"'), '应有会话侧栏入口');
+  assert.ok(html.includes('id="api-session-list"') && html.includes('id="api-session-new"'), '侧栏内应有列表与新建按钮');
+  assert.ok(!html.includes('body.ck-api-mode #btn-api-sessions { display: none'), 'API 模式必须显示会话入口');
+  assert.ok(html.includes('ck-api-sidebar-open'), '侧栏展开时应右移聊天区');
+  const sessionMenuCss = html.match(/\.api-session-menu \{[\s\S]*?\}/)?.[0] || '';
+  assert.ok(!/border-right/.test(sessionMenuCss), '会话侧栏右侧不应有分隔线');
+  assert.ok(html.includes('body.ck-api-mode .api-usage.has-data { display: none !important; }'), '顶栏 token 不应与右下角重复');
+  assert.ok(script.includes('window.harnessAPI.listApiSessions()'), '应调用主进程会话列表');
+  assert.ok(script.includes('window.harnessAPI.selectApiSession('), '应调用主进程切换会话');
+  assert.ok(script.includes('window.harnessAPI.deleteApiSession('), '应调用主进程删除会话');
+  assert.ok(script.includes("case 'api-session':"), '应处理主进程 active 会话变更事件');
+  assert.ok(script.includes("case 'reset': resetConversation(payload && payload.apiSessionId)"), 'reset 事件应消费新 sessionId');
+  assert.ok(script.includes('function refreshApiSessionList()') && script.includes('function switchApiSession('), '应有列表刷新/切换实现');
+  assert.ok(script.includes('function deleteApiSession(') && script.includes('clearSessionLocalState('), '删除会话后应清本地作用域存档');
+  assert.ok(!script.includes('open.title =') && !script.includes('del.title ='), '会话项不应使用原生 hover tooltip');
+  assert.ok(!html.includes('id="btn-api-sessions" title='), '顶部会话入口不应使用原生 hover tooltip');
+});
+
+test('API 设置两列表单：Label 顶对齐、输入框底对齐', () => {
+  assert.ok(html.includes('.enh-row { display: flex; gap: 10px; align-items: stretch; }'), '两列行应拉伸等高');
+  assert.ok(html.includes('margin-top: auto'), '输入框应贴底对齐，避免 label 换行把输入框推歪');
+});
+
+test('API 关闭图片输入时附件按钮仍可用（文本附件不受影响）', () => {
+  assert.ok(!html.includes('body.ck-api-mode:not(.ck-api-vision) #attach-btn { display: none'), '附件入口不能随图片开关整体隐藏');
+});
+
+test('API 设置：关闭即保存，无底部保存按钮', () => {
+  assert.ok(!html.includes('id="api-save"'), '不应再有底部保存按钮');
+  assert.ok(!script.includes('apiTransportEls.save'), '不应再绑定保存按钮');
+  assert.ok(script.includes('saveApiTransportForm(true)'), '关闭弹窗应自动保存');
+  assert.ok(/function closeApiSettings\s*\(/.test(script), '应统一关闭入口');
 });

@@ -80,6 +80,11 @@ const shellAPI = {
   onHarnessMode: (cb: (data: any) => void) => {
     ipcRenderer.on('shell-harness-mode', (_e: any, data: any) => cb(data));
   },
+  // API 窗口没有网页导航/地址栏/网页模式：壳页面据此隐藏浏览器栏，纯网页窗口不受影响
+  onApiMode: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-api-mode', (_e: any, data: any) => cb(data));
+  },
+  getApiMode: () => ipcRenderer.invoke('shell-get-api-mode'),
   // 插件界面挂载（主进程 → 壳页面）
   onPluginShellMount: (cb: (data: any) => void) => {
     ipcRenderer.on('shell-plugin-mount', (_e: any, data: any) => cb(data));

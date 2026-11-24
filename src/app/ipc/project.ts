@@ -16,6 +16,7 @@ import { buildAgentsSection } from '../../agents/prompt.js';
 import { getPluginScanRoots } from '../../plugins/roots.js';
 import { parseFrontmatter } from '../../skills/frontmatter.js';
 import { isWorkspaceTrusted } from '../../infra/workspace-trust.js';
+import { isApiTransportProvider } from '../../api-transport/provider.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain, shell } = require('electron');
@@ -44,7 +45,9 @@ function registerProjectIpc(): void {
   ipcMain.handle('init-project', async (event: any, { skipPrompt = false, projectDir = null, isCompaction = false, extraPrompt = '', noDialog = false, parentSessionId = null }: any = {}) => {
     const ctx = windowState.getContextByWebContents(event.sender);
     const windowId = ctx && ctx.win ? ctx.win.id : null;
-    const result = await initProject(skipPrompt, ctx, projectDir, isCompaction, extraPrompt || '', !!noDialog, parentSessionId);
+    // API 模式没有网页输入框：允许选项目目录，但永远不向占位页注入 initial-prompt。
+    const apiMode = !!(ctx && isApiTransportProvider(ctx.providerId));
+    const result = await initProject(apiMode ? true : skipPrompt, ctx, projectDir, isCompaction, extraPrompt || '', !!noDialog, parentSessionId);
     // 项目目录可能变化：释放该窗口对"旧项目"的 MCP 连接引用
     if (windowId !== null) {
       try {

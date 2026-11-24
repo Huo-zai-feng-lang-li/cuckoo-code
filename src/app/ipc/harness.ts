@@ -14,6 +14,10 @@ import { scanSkills } from '../../skills/index.js';
 import { getPluginScanRoots } from '../../plugins/roots.js';
 import { registry, jsRunner } from '../../tools/index.js';
 import { abortWindowProcesses } from '../../infra/process-tracker.js';
+import { isApiTransportProvider } from '../../api-transport/provider.js';
+import { resolveModelsEndpoint } from '../../api-transport/config.js';
+import { sendApiMessage, stopApiSession, startNewApiSession, selectApiSession, removeApiSession, importApiHistory, getApiHistory } from '../../api-transport/runtime.js';
+import { listApiSessions, getActiveApiSessionId } from '../../api-transport/session-store.js';
 
 /**
  * 强杀该窗口后台正在跑的工具子进程（bash / grep 等）和 JS 沙箱 worker。
@@ -38,7 +42,7 @@ import { cdpAttach } from './cdp-attach.js';
 import { initProject } from '../../session/project-context.js';
 import { onHarnessReady } from './window-groups.js';
 import { waitForUserMessageReceipt } from './harness-send-receipt.js';
-import { readPrefs, writePrefs, type PromptEnhancerConfig } from '../ui-prefs.js';
+import { readPrefs, writePrefs, getApiConnection, setApiConnection, type PromptEnhancerConfig } from '../ui-prefs.js';
 import { enhancePrompt } from '../prompt-enhancer.js';
 import { cancelSubagentsByParent } from '../subagent.js';
 import { setPetState } from '../pet-window.js';
@@ -445,18 +449,18 @@ async function stopGeneration(ctx: any): Promise<any> {
  *  - harness 页面自己的清空按钮（harness-new-conversation）
  *  - 壳页面侧栏的「新对话」按钮（web-new-conversation）
  */
-function notifyHarnessReset(ctx: any): void {
+function notifyHarnessReset(ctx: any, apiSessionId?: string): void {
   try {
     const hv = ctx && ctx.harnessView;
     if (!hv || !hv.webContents || hv.webContents.isDestroyed()) return;
-    hv.webContents.send('harness-event', { type: 'reset' });
+    hv.webContents.send('harness-event', { type: 'reset', apiSessionId: apiSessionId || '' });
   } catch (_) { /* ignore */ }
 }
 
 /** 新对话的公共前置：清主进程侧 todo 缓存 + 让 harness 视图完整重置 */
-function prepareNewConversation(ctx: any): void {
+function prepareNewConversation(ctx: any, apiSessionId?: string): void {
   try { resetTodosCache(); } catch (_) { /* ignore */ }
-  notifyHarnessReset(ctx);
+  notifyHarnessReset(ctx, apiSessionId);
 }
 
 /**
@@ -510,7 +514,35 @@ function registerHarnessIpc(): void {
     const text = (payload && payload.text) || '';
     const requestId = payload && payload.requestId;
     const ctx = findContext(event.sender);
-    if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) {
+    if (!ctx) return { success: false, error: 'no-window-context' };
+
+    // API transport：不经过 AI 网页 bridge，由主进程直接请求 OpenAI 兼容端点。
+    // 保留同样的「新消息 = 清旧计划 + 逐请求回执」语义，网页路径完全不动。
+    if (isApiTransportProvider(ctx.providerId)) {
+      try {
+        resetTodosCache();
+        const hv = (ctx as any).harnessView;
+        if (hv && !hv.webContents.isDestroyed()) {
+          hv.webContents.send('harness-event', { type: 'plan', todos: [] });
+        }
+      } catch (_) { /* ignore */ }
+      const files = payload && payload.files;
+      const displayText = payload && payload.displayText;
+      const result = await sendApiMessage(ctx, text, Array.isArray(files) ? files : [], typeof displayText === 'string' ? displayText : undefined);
+      if (requestId) {
+        try {
+          const hv = (ctx as any).harnessView;
+          if (hv && !hv.webContents.isDestroyed()) {
+            hv.webContents.send('harness-event', {
+              type: 'send-result', requestId, success: result.success, error: result.error, code: result.code,
+            });
+          }
+        } catch (_) { /* ignore */ }
+      }
+      return { success: result.success, error: result.error, code: result.code };
+    }
+
+    if (!ctx.view || ctx.view.webContents.isDestroyed()) {
       return { success: false, error: 'no-ai-view' };
     }
     // 发送新消息前，先强杀上一轮可能仍在后台跑的旧任务（防并行冲突）
@@ -585,11 +617,139 @@ function registerHarnessIpc(): void {
   ipcMain.handle('harness-stop', async (event: any) => {
     const ctx = findContext(event.sender);
     if (!ctx) return { success: false };
+    if (isApiTransportProvider(ctx.providerId)) {
+      stopApiSession(ctx);
+      return { success: true };
+    }
     return stopGeneration(ctx);
   });
 
-  ipcMain.handle('harness-list-tools', async (event: any) => {
+  // API 连接设置：按当前窗口 profile 读写，绝不把明文 Key 回传页面。
+  ipcMain.handle('harness-api-settings-get', async (event: any) => {
+    const ctx = findContext(event.sender);
+    if (!ctx) return { success: false, error: 'no-window-context' };
+    const conn = getApiConnection(readPrefs(), String(ctx.profileId || ''));
+    if (!isApiTransportProvider(ctx.providerId)) {
+      return { success: false, error: '当前窗口不是 API 模式' };
+    }
+    return { success: true, data: { ...conn, apiKey: '', hasApiKey: !!conn.apiKey } };
+  });
+
+  ipcMain.handle('harness-api-settings-set', async (event: any, payload: any) => {
+    const ctx = findContext(event.sender);
+    if (!ctx) return { success: false, error: 'no-window-context' };
+    if (!isApiTransportProvider(ctx.providerId)) {
+      return { success: false, error: '当前窗口不是 API 模式' };
+    }
     try {
+      const raw = (payload && payload.data) || {};
+      const patch: any = { ...raw };
+      delete patch.byProfile;
+      if (patch.clearKey === true) patch.apiKey = '';
+      else if (patch.apiKey === undefined) delete patch.apiKey;
+      const next = setApiConnection(String(ctx.profileId || ''), patch);
+      return { success: true, data: { ...next, apiKey: '', hasApiKey: !!next.apiKey } };
+    } catch (err: any) {
+      return { success: false, error: (err && err.message) || String(err) };
+    }
+  });
+
+  // 自动获取模型列表：Base URL 来自表单（可未保存）；Key 优先用表单新输入的，
+  // 留空时用当前 profile 已加密保存的 Key，避免用户只改 Base URL 就拿不到列表。
+  ipcMain.handle('harness-api-models', async (event: any, payload: any) => {
+    const ctx = findContext(event.sender);
+    if (!ctx) return { success: false, models: [], error: 'no-window-context' };
+    const conn = getApiConnection(readPrefs(), String(ctx.profileId || ''));
+    const baseUrl = String((payload && payload.baseUrl) || conn.baseUrl || '').trim();
+    if (!baseUrl) return { success: false, models: [], error: '请先填写 Base URL' };
+    const modelsUrl = resolveModelsEndpoint(baseUrl);
+    const key = String((payload && payload.apiKey) || conn.apiKey || '').trim();
+    let timer: any = null;
+    try {
+      const ac = new AbortController();
+      timer = setTimeout(() => ac.abort(), 15000);
+      const res = await fetch(modelsUrl, {
+        method: 'GET',
+        headers: key ? { Authorization: 'Bearer ' + key } : {},
+        signal: ac.signal,
+      });
+      if (!res.ok) {
+        return { success: false, models: [], error: '获取模型列表失败（HTTP ' + res.status + '）' };
+      }
+      const json: any = await res.json();
+      const raw = Array.isArray(json && json.data) ? json.data
+        : Array.isArray(json && json.models) ? json.models
+          : Array.isArray(json) ? json : [];
+      const models: string[] = [];
+      for (const item of raw) {
+        const id = typeof item === 'string' ? item : (item && (item.id || item.model || item.name));
+        const s = String(id || '').trim();
+        if (s && !models.includes(s)) models.push(s);
+      }
+      return { success: true, models, defaultModel: models[0] || '' };
+    } catch (err: any) {
+      const msg = err && err.name === 'AbortError' ? '获取模型列表超时' : ((err && err.message) || String(err));
+      return { success: false, models: [], error: msg };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  });
+
+  // API 模式重启后，主进程已从磁盘恢复模型上下文；把正文回传给 harness 恢复界面。
+  ipcMain.handle('harness-api-history-get', async (event: any) => {
+    const ctx = findContext(event.sender);
+    if (!ctx) return { success: false, items: [], error: 'no-window-context' };
+    if (!isApiTransportProvider(ctx.providerId)) return { success: false, items: [], error: 'not-api-mode' };
+    try {
+      return { ...getApiHistory(ctx) };
+    } catch (err: any) {
+      return { success: false, items: [], error: (err && err.message) || String(err) };
+    }
+  });
+
+  // 旧版 API 历史只存在 harness localStorage；首次升级时同步给主进程，
+  // 否则重启后界面有历史、模型上下文却是空的。
+  ipcMain.handle('harness-api-history-import', async (event: any, payload: any) => {
+    const ctx = findContext(event.sender);
+    if (!ctx) return { success: false, imported: false, error: 'no-window-context' };
+    if (!isApiTransportProvider(ctx.providerId)) return { success: false, imported: false, error: 'not-api-mode' };
+    try {
+      const result = importApiHistory(ctx, (payload && payload.items) || []);
+      return { ...result };
+    } catch (err: any) {
+      return { success: false, imported: false, error: (err && err.message) || String(err) };
+    }
+  });
+
+  // API 多会话：列表只返回元信息，不把正文塞进列表响应。
+  ipcMain.handle('harness-api-sessions', async (event: any) => {
+    const ctx = findContext(event.sender);
+    if (!ctx) return { success: false, sessions: [], error: 'no-window-context' };
+    if (!isApiTransportProvider(ctx.providerId)) return { success: false, sessions: [], error: 'not-api-mode' };
+    try {
+      return { success: true, ...listApiSessions(String(ctx.profileId || '')) };
+    } catch (err: any) {
+      return { success: false, sessions: [], error: (err && err.message) || String(err) };
+    }
+  });
+
+  // 切换会话：主进程切换 active，harness 自己按 session 作用域重新读历史/计划/目标。
+  ipcMain.handle('harness-api-session-select', async (event: any, payload: any) => {
+    const ctx = findContext(event.sender);
+    if (!ctx) return { success: false, error: 'no-window-context' };
+    if (!isApiTransportProvider(ctx.providerId)) return { success: false, error: 'not-api-mode' };
+    return selectApiSession(ctx, String((payload && payload.sessionId) || ''));
+  });
+
+  // 删除会话；删 active 时主进程自动切到最近一份。
+  ipcMain.handle('harness-api-session-delete', async (event: any, payload: any) => {
+    const ctx = findContext(event.sender);
+    if (!ctx) return { success: false, error: 'no-window-context' };
+    if (!isApiTransportProvider(ctx.providerId)) return { success: false, error: 'not-api-mode' };
+    return removeApiSession(ctx, String((payload && payload.sessionId) || ''));
+  });
+
+  ipcMain.handle('harness-list-tools', async (event: any) => {    try {
       const ctx = findContext(event.sender);
       const projectDir = ctx && ctx.sessionStore ? ctx.sessionStore.state.selectedProjectDir : null;
       const skills = scanSkills(projectDir || null, getPluginScanRoots().skillDirs)
@@ -607,7 +767,11 @@ function registerHarnessIpc(): void {
     console.log('[Cuckoo Harness] harness-attach 调用, files=' + (Array.isArray(files) ? files.length : 'non-array'));
     if (!Array.isArray(files) || files.length === 0) return { success: false, error: 'empty' };
     const ctx = findContext(event.sender);
-    if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) {
+    if (!ctx) return { success: false, error: 'no-window-context' };
+    if (isApiTransportProvider(ctx.providerId)) {
+      return { success: false, error: 'API 模式附件随消息发送，不经过网页上传通道' };
+    }
+    if (!ctx.view || ctx.view.webContents.isDestroyed()) {
       return { success: false, error: 'no-ai-view' };
     }
     const pageWc = ctx.view.webContents;
@@ -670,7 +834,15 @@ function registerHarnessIpc(): void {
   // 新对话：在 AI 网页中真正开一个新会话（导航到平台首页）
   ipcMain.handle('harness-new-conversation', async (event: any) => {
     const ctx = findContext(event.sender);
-    if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) return { success: false };
+    if (!ctx) return { success: false };
+    if (isApiTransportProvider(ctx.providerId)) {
+      // API 模式没有网页会话可导航：新建一份会话，旧会话保留；再重置 harness 本地视图。
+      const r = await startNewApiSession(ctx);
+      if (!r.success) return { success: false, error: r.error };
+      prepareNewConversation(ctx, r.sessionId);
+      return { success: true, sessionId: r.sessionId };
+    }
+    if (!ctx.view || ctx.view.webContents.isDestroyed()) return { success: false };
     try {
       const provider = ctx.providerId ? getProvider(ctx.providerId) : null;
       const url = provider && provider.homeUrl ? provider.homeUrl : null;
@@ -707,7 +879,11 @@ function registerHarnessIpc(): void {
   //      → 本进程导航到分享页 → 在其中发新消息把静态快照激活成活会话。
   ipcMain.handle('harness-truncate', async (event: any, payload: any) => {
     const ctx = findContext(event.sender);
-    if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) {
+    if (!ctx) return { success: false, error: 'no-window-context' };
+    if (isApiTransportProvider(ctx.providerId)) {
+      return { success: false, error: 'API 模式没有网页消息 ID，暂不支持网页截断' };
+    }
+    if (!ctx.view || ctx.view.webContents.isDestroyed()) {
       return { success: false, error: 'no-ai-view' };
     }
     const webMsgId = payload && payload.webMsgId;
@@ -868,7 +1044,8 @@ function registerHarnessIpc(): void {
     const ctx = findContext(event.sender);
     if (!ctx) return { success: false, error: 'no-context' };
     try {
-      const result = await initProject(false, ctx, null, false, '', false);
+      // API 模式只允许选项目目录，不向无输入框的占位页注入 initial-prompt。
+      const result = await initProject(isApiTransportProvider(ctx.providerId) ? true : false, ctx, null, false, '', false);
       // 初始化后推最新状态（按钮消失 / 输入框恢复）
       pushHarnessState(ctx);
       return result;
@@ -897,7 +1074,17 @@ function registerHarnessIpc(): void {
           if (!provider) provider = getProviderByUrl(url);
           if (provider && typeof provider.extractSessionId === 'function') sid = provider.extractSessionId(url) || '';
           console.log('[Cuckoo Harness] ready 补发 session-changed: url=' + url + ' sid=' + (sid || '(空)') + ' provider=' + (provider ? provider.id : '(无)'));
-          event.sender.send('harness-event', { type: 'session-changed', sessionId: sid });
+          let apiSessionId = '';
+          try {
+            if (ctx.profileId && isApiTransportProvider(ctx.providerId)) apiSessionId = getActiveApiSessionId(String(ctx.profileId));
+          } catch (_) { /* ignore */ }
+          event.sender.send('harness-event', {
+            type: 'session-changed',
+            sessionId: sid,
+            providerId: provider ? provider.id : '',
+            profileId: ctx.profileId ? String(ctx.profileId) : '',
+            apiSessionId,
+          });
         }
       } catch (_) { /* ignore */ }
       // 页面就绪 → 若有暂存状态则推送
@@ -985,6 +1172,12 @@ function registerHarnessIpc(): void {
  */
 function computeHarnessState(ctx: any): any {
   if (!ctx) return { success: false, needInit: false, isHome: false, hasProjectDir: false };
+  const dir = (ctx.sessionStore && ctx.sessionStore.state && ctx.sessionStore.state.selectedProjectDir) || null;
+  if (isApiTransportProvider(ctx.providerId)) {
+    // API 模式没有网页首页，但首次使用仍需选项目目录；needInit 必须反映真实目录，
+    // 否则初始化按钮永远隐藏，projectDir=null 会让工具权限闸全部落到"不可信"。
+    return { success: true, isHome: false, hasProjectDir: !!dir, needInit: !dir };
+  }
   let isHome = false;
   try {
     const url = ctx.view && ctx.view.webContents && !ctx.view.webContents.isDestroyed()
@@ -992,7 +1185,6 @@ function computeHarnessState(ctx: any): any {
     const provider = ctx.providerId ? getProvider(ctx.providerId) : null;
     isHome = !!(provider && provider.homeUrlPattern && url && provider.homeUrlPattern.test(url));
   } catch (_) { /* ignore */ }
-  const dir = (ctx.sessionStore && ctx.sessionStore.state && ctx.sessionStore.state.selectedProjectDir) || null;
   return { success: true, isHome, hasProjectDir: !!dir, needInit: isHome && !dir };
 }
 

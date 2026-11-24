@@ -20,6 +20,31 @@ function resetTodosCache(): void {
 
 export { resetTodosCache };
 
+/**
+ * todoWrite 执行后：读官方真相源 globalThis.__cuckooTodos，把待办列表推给 harness 顶栏计划条。
+ * 网页模式（execute-js 沙箱）与 API 模式（executeApiToolCall）共用——否则 API 模式调 todoWrite
+ * 后计划条永不显示（API 路径没有 JS 沙箱，收不到这段收尾）。按 json 内容去重，避免无变化时反复刷事件。
+ */
+export function pushPlanEvent(ctx: any, projectDir: string | null): void {
+  try {
+    const allTodos = (globalThis as any).__cuckooTodos;
+    let todos: any[] = [];
+    if (allTodos && typeof allTodos === 'object' && !Array.isArray(allTodos)) {
+      todos = allTodos[projectDir || '__default__'] || [];
+    } else if (Array.isArray(allTodos)) {
+      todos = allTodos;
+    }
+    if (!todos.length) return;
+    const json = JSON.stringify(todos);
+    if (json === lastTodosJson) return;
+    lastTodosJson = json;
+    const hv = ctx && (ctx as any).harnessView;
+    if (hv && !hv.webContents.isDestroyed()) {
+      hv.webContents.send('harness-event', { type: 'plan', todos });
+    }
+  } catch (_) { /* ignore */ }
+}
+
 /** 从 ctx 解析项目目录 / windowId（ctx 为 null 时调用方应已拒绝） */
 function resolveCtx(ctx: any): { selectedDir: string | null; windowId: number | null } {
   const store = ctx ? ctx.sessionStore : null;
@@ -63,28 +88,8 @@ function registerToolIpc(): void {
     const windowId = win && !win.isDestroyed() ? win.id : null;
     try {
       const result = await jsRunner.run(code, selectedDir, windowId, { sessionId, ssrfGuard });
-      // 复用官方 todoWrite 结果：执行后读取 globalThis.__cuckooTodos（官方规范化的列表），推给 harness
-      try {
-        const allTodos = (globalThis as any).__cuckooTodos;
-        let todos = [];
-        if (allTodos && typeof allTodos === 'object' && !Array.isArray(allTodos)) {
-          // 真相源结构：按 projectDir 分桶的对象
-          todos = allTodos[selectedDir || '__default__'] || [];
-        } else if (Array.isArray(allTodos)) {
-          // 兜底：兼容旧的全局单数组结构
-          todos = allTodos;
-        }
-        if (Array.isArray(todos) && todos.length) {
-          const json = JSON.stringify(todos);
-          if (json !== lastTodosJson) {
-            lastTodosJson = json;
-            const hv = ctx && (ctx as any).harnessView;
-            if (hv && !hv.webContents.isDestroyed()) {
-              hv.webContents.send('harness-event', { type: 'plan', todos: todos });
-            }
-          }
-        }
-      } catch (_) { /* ignore */ }
+      // 复用官方 todoWrite 结果：执行后读 globalThis.__cuckooTodos 推给 harness 顶栏计划条
+      pushPlanEvent(ctx, selectedDir);
       return { callId, ...result };
     } catch (err: any) {
       return { callId, success: false, error: err.message };

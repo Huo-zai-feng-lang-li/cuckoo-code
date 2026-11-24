@@ -29,6 +29,29 @@ test('collectFiles 排除 node_modules/.git', () => {
   assert.deepStrictEqual(files, ['a.txt', 'sub/b.txt']);
 });
 
+test('collectFiles 排除 Rust target（仅当同级有 Cargo.toml）', () => {
+  const dir = makeProject();
+  // Rust 工程：根目录有 Cargo.toml → target/ 属编译产物，排除
+  fs.writeFileSync(path.join(dir, 'Cargo.toml'), '[package]\nname = "demo"');
+  fs.mkdirSync(path.join(dir, 'target', 'debug'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'target', 'debug', 'libdemo.rlib'), 'BIN');
+  // 同名但不是 Rust 产物：所在目录无 Cargo.toml → 属于源码，必须保留
+  fs.mkdirSync(path.join(dir, 'sub', 'target'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'sub', 'target', 'keep.txt'), 'K');
+  const files = collectFiles(dir).map((f) => path.relative(dir, f).replace(/\\/g, '/')).sort();
+  assert.deepStrictEqual(files, ['Cargo.toml', 'a.txt', 'sub/b.txt', 'sub/target/keep.txt']);
+});
+
+test('collectFiles 排除 obj/.next 编译产物', () => {
+  const dir = makeProject();
+  fs.mkdirSync(path.join(dir, 'obj'));
+  fs.writeFileSync(path.join(dir, 'obj', 'x.dll'), 'BIN');
+  fs.mkdirSync(path.join(dir, '.next'));
+  fs.writeFileSync(path.join(dir, '.next', 'build-manifest.json'), '{}');
+  const files = collectFiles(dir).map((f) => path.relative(dir, f).replace(/\\/g, '/')).sort();
+  assert.deepStrictEqual(files, ['a.txt', 'sub/b.txt']);
+});
+
 test('collectFiles 排除敏感文件（.env/私钥/凭据）', () => {
   const dir = makeProject();
   fs.writeFileSync(path.join(dir, '.env'), 'SECRET=1');

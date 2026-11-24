@@ -228,3 +228,13 @@ test('ui-prefs：写配置后可读回，mode 非法回退 gentle', async () => 
   assert.strictEqual(p.promptEnhancer.apiKey, 'k');
   assert.strictEqual(p.promptEnhancer.mode, 'gentle');
 });
+
+test('ui-prefs：回传渲染进程的副本不含明文 Key，只带 hasApiKey', async () => {
+  const ui = await import('../../src/app/ui-prefs.ts');
+  const p = ui.readPrefs();
+  p.apiTransport.apiKey = 'sk-local';
+  const safe = ui.redactPrefsForRenderer(p);
+  assert.equal(safe.apiTransport.apiKey, '');
+  assert.equal(safe.apiTransport.hasApiKey, true);
+  assert.notEqual(safe.promptEnhancer.apiKey, 'sk-local');
+});

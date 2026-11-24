@@ -10,7 +10,7 @@
  */
 import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
-import { readPrefs, writePrefs } from '../ui-prefs.js';
+import { readPrefs, writePrefs, redactPrefsForRenderer } from '../ui-prefs.js';
 import { applyHarnessZoom } from '../harness-zoom.js';
 import { setPetWindowSize, isPetWindowVisible, destroyPetWindow } from '../pet-window.js';
 import * as globalSettings from '../global-settings.js';
@@ -212,7 +212,7 @@ function registerSettingsIpc(): void {
 
   // ===== UI 偏好（主进程直存，全窗口共享）=====
   ipcMain.handle('get-ui-prefs', async () => {
-    return { success: true, data: readPrefs() };
+    return { success: true, data: redactPrefsForRenderer(readPrefs()) };
   });
 
   /**
@@ -270,7 +270,7 @@ function registerSettingsIpc(): void {
     if (data && data.shellLayout !== undefined) {
       broadcastShellLayout(next.shellLayout);
     }
-    return { success: true, data: next };
+    return { success: true, data: redactPrefsForRenderer(next) };
   });
 }
 

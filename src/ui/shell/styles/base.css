@@ -72,6 +72,21 @@
   }
   .shell { display: flex; flex-direction: column; height: 100vh; }
 
+  /* API transport 窗口没有真实网页：隐藏网页导航/地址栏/网页模式开关 */
+  body.ck-api-mode #btn-back,
+  body.ck-api-mode #btn-forward,
+  body.ck-api-mode #btn-reload,
+  body.ck-api-mode #btn-address,
+  body.ck-api-mode #btn-open-external,
+  body.ck-api-mode #btn-harness,
+  body.ck-api-mode .url-wrap { display: none !important; }
+
+  /* API 模式暂不支持的功能入口隐藏，避免点了没反应 */
+  body.ck-api-mode .ck-ab-item[data-tab="workspaces"],
+  body.ck-api-mode .ck-ab-item[data-tab="agents"],
+  body.ck-api-mode .ck-ab-item[data-tab="remote"],
+  body.ck-api-mode .ck-ab-item[data-tab="token"] { display: none !important; }
+
   /* ===== 顶部工具栏 ===== */
   .toolbar {
     display: flex; align-items: center; gap: 2px;

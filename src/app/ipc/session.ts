@@ -8,9 +8,11 @@ import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { getProviderByUrl, getProvider } from '../../providers/registry.js';
 import { initProject } from '../../session/project-context.js';
-import { applyNewSessionPreset } from './harness.js';
+import { applyNewSessionPreset, prepareNewConversation, pushHarnessState } from './harness.js';
 import { ensureWorkspaceTrust } from '../workspace-trust-prompt.js';
 import { assertSenderOk } from '../ipc-guard.js';
+import { isApiTransportProvider } from '../../api-transport/provider.js';
+import { startNewApiSession } from '../../api-transport/runtime.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain, shell, dialog } = require('electron');
@@ -491,6 +493,30 @@ function registerSessionIpc(): void {
     const notifyDone = () => {
       try { if (ctx && ctx.win && !ctx.win.isDestroyed()) ctx.win.webContents.send('shell-newconv-done'); } catch (_) { /* ignore */ }
     };
+    // API 模式没有网页输入框：清 API 历史与 harness 视图即可，绝不能
+    // 走 loadURL + initProject（否则会向占位页下发 initial-prompt 并永久等待回执）。
+    if (isApiTransportProvider(ctx.providerId)) {
+      const created = await startNewApiSession(ctx);
+      if (!created.success) { notifyDone(); return { success: false, error: created.error }; }
+      prepareNewConversation(ctx, created.sessionId);
+      // API 模式也要把项目目录写进 sessionStore：工具权限闸、规则/技能扫描都读它。
+      // skipPrompt=true 只更新目录，不向无输入框的占位页发 initial-prompt。
+      if (projectDir) {
+        try { await ensureWorkspaceTrust(ctx.win, projectDir); } catch (err: any) {
+          console.warn('[Cuckoo Code] API 项目信任门异常，按不信任处理:', err && err.message);
+        }
+        try {
+          await initProject(true, ctx, projectDir, false, '', false);
+        } catch (err: any) {
+          console.warn('[Cuckoo Code] API 项目目录写入失败:', err && err.message);
+        }
+      }
+      // 关键：initProject 写目录后必须推最新 harness 状态，否则页面还停在
+      // “首次对话需选择项目目录”，输入框保持隐藏（项目已选中但用户无法发消息）。
+      pushHarnessState(ctx);
+      notifyDone();
+      return { success: true, sessionId: created.sessionId };
+    }
     // 防重入：同 URL 短路（setTimeout）与 did-finish-load 可能都触发 onLoad，
     // 不加守卫会导致 initProject 与 notifyDone 各跑两次。
     let onLoadFired = false;

@@ -189,8 +189,8 @@ function filterProjectScoped<T extends { source?: string }>(items: T[], projectD
  * @param opts { providerId, selectedDir, isCompaction }
  * @returns { prompt, error? }，error 存在时 prompt 为空
  */
-function buildPrompt(opts: { providerId: string; selectedDir: string; isCompaction?: boolean }): { prompt: string; error?: string } {
-  const { providerId, selectedDir, isCompaction } = opts;
+function buildPrompt(opts: { providerId: string; selectedDir: string; isCompaction?: boolean; customSystemPrompt?: string }): { prompt: string; error?: string } {
+  const { providerId, selectedDir, isCompaction, customSystemPrompt } = opts;
 
   const tpl = loadTemplate(providerId);
   if (tpl.error) return { prompt: '', error: tpl.error };
@@ -325,6 +325,7 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
       '{{AGENTS_SECTION}}': agentsSection,
       '{{PROJECT_RULES_SECTION}}': rulesSection,
       '{{MEMORY_SECTION}}': memoryOut,
+      '{{CUSTOM_SYSTEM_PROMPT}}': customSystemPrompt ? customSystemPrompt.slice(0, 8000) : '（无）',
     };
   };
 
