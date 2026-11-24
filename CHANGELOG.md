@@ -8,12 +8,19 @@
 
 | 月份 | 版本区间 | 版本数 | 文件 |
 |---|---|---|---|
-| 2026-11 | 0.10.203 ~ 0.10.235 | 29 | [changelogs/2026-11.md](changelogs/2026-11.md) |
+| 2026-11 | 0.10.203 ~ 0.10.237 | 30 | [changelogs/2026-11.md](changelogs/2026-11.md) |
 | 2026-10 | 0.8.7 ~ 0.10.202 | 293 | [changelogs/2026-10.md](changelogs/2026-10.md) |
 | 2026-09 | 0.2.5-beta.1 ~ 0.8.6 | 24 | [changelogs/2026-09.md](changelogs/2026-09.md) |
 | 2026-08 | 1.0.0 ~ 0.2.0 | 2 | [changelogs/2026-08.md](changelogs/2026-08.md) |
 
 ## 最近 5 个版本
+
+## [0.10.237] - 2026-11-24
+
+### Fixed
+
+- **开发态 `npm run dev` 下 preload 日志被误静默**：`process.defaultApp` 只在主进程有效，preload 渲染进程里拿不到；改为主进程在非打包态通过 `additionalArguments` 传 `--cuckoo-debug`，preload 读 `process.argv` 保留日志。打包版仍按生产静默。
+- **`CUCKOO_DEBUG` 真值判定过窄**：改为大小写归一化，支持 `1` / `true` / `yes` / `on`，避免开发者设置了却仍被静默。
 
 ## [0.10.235] - 2026-11-23
 
