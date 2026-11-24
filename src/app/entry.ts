@@ -1502,8 +1502,8 @@ ipcMainForProfile.handle('delete-profile', async (_event: any, { profileId }: an
     }
   }
   const ok = profileManager.deleteProfile(profileId);
-  // 清理限流缓存记录（窗口已删，缓存无意义）
-  try { windowGroups.clearRateLimit(profileId); } catch (_) { /* ignore */ }
+  // 清理窗口组里的孤儿引用 + 限流缓存（否则组管理页会显示已删除的窗口）
+  try { windowGroups.pruneWindow(profileId); } catch (_) { /* ignore */ }
   return { success: ok, error: ok ? null : '窗口不存在' };
 });
 
@@ -1964,6 +1964,12 @@ if (!gotSingleInstanceLock) {
     }).catch(() => {});
     // 清理子代理窗口遗留的 session 存储文件（历史 bug：子代理不需要持久化）
     try { profileManager.cleanupSubagentStores(); } catch (_) { /* ignore */ }
+    // 启动对账：window-groups.json 可能残留已删除 profile 的 ID（历史数据），
+    // 先按当前 profile-list 清掉，避免窗口组管理页显示不存在的窗口。
+    try {
+      const validIds = profileManager.readProfiles().map((p: any) => String(p.id));
+      windowGroups.pruneMissingProfiles(validIds);
+    } catch (_) { /* ignore */ }
     // 启动时打开所有"默认打开"的窗口；若一个都没勾，回退默认（上次活跃的或第一个）
     const autoOpen = profileManager.getAutoOpenProfiles();
     if (autoOpen.length > 0) {

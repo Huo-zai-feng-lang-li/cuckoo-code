@@ -16,6 +16,7 @@
 import path from "node:path";
 import { createRequire } from "node:module";
 import { writeJsonAtomicSync, readJsonRobustSync } from "../infra/atomic-json.js";
+import { reconcileWindowGroups } from "./window-groups-reconcile.js";
 
 const require = createRequire(import.meta.url);
 const { app } = require("electron");
@@ -203,6 +204,15 @@ function setLastContinue(groupId: string, windowId: string, sessionId: string | 
   writeGroups(groups);
 }
 
+/** 启动时对账：把已不存在的 profile 从组里清掉（含 lastWindowId/限流记录） */
+function pruneMissingProfiles(validIds: string[]): boolean {
+  if (!Array.isArray(validIds)) return false;
+  const data = readData();
+  const result = reconcileWindowGroups(data, validIds);
+  if (result.changed) writeData(result.data);
+  return result.changed;
+}
+
 /** 清理已不存在的窗口（删除窗口后调用；组空则删组） */
 function pruneWindow(windowId: string): void {
   if (!windowId) return;
@@ -231,6 +241,7 @@ export {
   deleteGroup,
   setLastContinue,
   pruneWindow,
+  pruneMissingProfiles,
   getNextWindow,
   markRateLimit,
   getRateLimitAt,
