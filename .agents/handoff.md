@@ -1,17 +1,21 @@
-# 最新接续状态 (2026-11-24 需求 131 API Key 直连 v0.10.238)
+# 最新接续状态 (2026-11-24 需求 131 API Key 直连 v0.10.239)
 
 > 本文档为多任务接续文档。新窗口开工前**完整读一遍**。
 > 当前分支：`master`
-> 当前版本：`0.10.238`（版本号任意位置禁含数字 4）
+> 当前版本：`0.10.239`（版本号任意位置禁含数字 4）
 
 ---
 
 ### 发版结果（已核验）
 
-- 需求 131 实现提交 `f4ab41e`（`feat(api): 新增 API Key 直连与多会话管理 (v0.10.238)`），tag `v0.10.238` 已推送 `origin/master`。
-- GitHub Actions：分支 Quality/Coverage 已 success；tag 触发的 Build and Release 正在构建。
-- 全量门禁：`npm test` 167 文件 / 1670 用例通过；`npm run typecheck`、`npm run lint`（0 error / 75 warnings）、`npm run compile` 通过。
+- 需求 131 实现提交 `f4ab41e`（`feat(api): 新增 API Key 直连与多会话管理 (v0.10.238)`），tag `v0.10.238` 已发布。
+- **v0.10.238 安装包启动崩溃 `Cannot find module 'sharp'`**：`sharp` 误放 `devDependencies`，打包时未进入安装包；已由 `a46db85` 修复并发布 `v0.10.239`。
+- 修复提交 `a46db85`（`fix(release): 修复 sharp 打包缺失并收敛平台选择 (v0.10.239)`），tag `v0.10.239` 已推送；Build and Release 全部 success。
+- Release `v0.10.239` 资产：`cuckoo-code-win-v0.10.239.exe`(217,887,700 字节)、`cuckoo-remote-android-v0.10.239.apk`(29,860,665 字节)、`latest.yml`。
+- 全量门禁：`npm test` 168 文件 / 1672 用例通过；`npm run typecheck`、`npm run lint`（0 error / 75 warnings）、`npm run compile` 通过。
+- 本地打包验证：`dist/win-unpacked` 内 `app.asar.unpacked/node_modules/sharp`、`@img/sharp-win32-x64` 均在；用打包后的 `attachments.js` 实际物化测试图片成功（`data:image/png;base64,...`）。
 - 推送环境：本机 VPN `127.0.0.1:51081` 开启时默认代理可用；GitHub 直连此前会被 reset。
+
 
 
 ## 0. 总览
@@ -50,6 +54,16 @@
 - **实现**：内置 `api-key` Provider；按 profile 隔离 Base URL/Key/模型；系统提示词复用现有规则/技能/记忆/MCP；token 预算裁剪；图片/文本附件落盘后物化；原生 `tool_calls` 复用 ToolRegistry 权限闸；API 多会话与 history/plan/goal 按 profile+session 隔离。
 - **实测（2026-11-24）**：Agnes 官方 `/v1/chat/completions` 直连支持图片与工具调用；给 `read` 工具后返回 `finish_reason=tool_calls`、工具名 `read`。API 模式可用 Agent 工具循环；`runAgent/runAgents` 与网页自动化仍按设计排除。
 - **状态**：代码、测试、真机验证完成；已合入 `v0.10.238` 并推送 tag。
+
+## 0E. v0.10.239 发布修复（已发布）
+
+- **现象**：v0.10.238 自动安装后主进程启动即弹 `Cannot find module 'sharp'`，整个应用无法进入。
+- **根因**：`sharp` 在 `devDependencies`，electron-builder 打包生产依赖时把它排除；`attachments.ts` 又在模块顶层 `require('sharp')`，主进程加载即崩。
+- **修复**：`sharp` 移入 `dependencies`；`asarUnpack` 增加 `**/node_modules/sharp/**` 与 `**/node_modules/@img/**`；`attachments.ts` 改为延迟加载，缺失时只降级图片物化，不阻断启动。
+- **平台选择**：新建窗口只展示 DeepSeek 与 API Key；Claude / ChatGPT 保留在 registry 供旧窗口兼容，不再出现在选择页。
+- **验证**：168 文件 / 1672 用例；typecheck、lint、compile 全绿；本地 `win-unpacked` 已确认 sharp 原生模块解包，打包后的 `attachments.js` 实际生成图片 data URL 成功。
+- **发布**：`a46db85` + tag `v0.10.239`，GitHub Actions 全部 success；资产 `cuckoo-code-win-v0.10.239.exe`、`cuckoo-remote-android-v0.10.239.apk`、`latest.yml`。
+- **注意**：v0.10.238 启动即崩，内置 updater 无法运行；需手动下载安装 v0.10.239 一次，之后自动更新恢复。
 
 ## 0B. 需求 129（v0.10.233 已发布）
 
