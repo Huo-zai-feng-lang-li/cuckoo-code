@@ -24,12 +24,11 @@
 导出：`providers`（数组）、`getProvider(id)`、`getAllProviders()`、`getProviderByUrl(url)`
 
 要覆盖：
-- `getAllProviders()` 返回非空数组，含内置平台（deepseek/claude/chatgpt）
+- `getAllProviders()` 返回非空数组，含内置平台（deepseek / api-key）
 - `getProvider('deepseek')` 返回对应 provider；未知 id 返回 falsy（失败路径）
 - `getProviderByUrl` 按 URL 匹配：
   - `https://chat.deepseek.com/...` → deepseek
-  - `https://claude.ai/...` → claude
-  - `https://chatgpt.com/...` → chatgpt
+  - 已移除的 `https://claude.ai/...` / `https://chatgpt.com/...` → null
   - 未知 URL → falsy / null（失败路径）
   - 空字符串 / null（失败路径）
 

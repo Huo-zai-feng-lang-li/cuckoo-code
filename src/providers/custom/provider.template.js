@@ -5,7 +5,7 @@
  *   2. 修改 id、name、homeUrl 等字段
  *   3. 根据目标平台 DOM 结构，填写 inputSelectors、sendButtonSelectors 等选择器
  *   4. 实现 extractSessionId、matchesUrl 等方法
- *   5. （可选）需要网络拦截时，设置 useIntercept 并实现 getHookSource
+ *   5. 若要自动采集 AI 回复，设置 useIntercept 并实现 getHookSource
  *
  * 类型提示：见下方 @type 注释
  */
@@ -80,9 +80,10 @@ module.exports = {
     return el ? el.textContent.trim() : '';
   },
 
-  // ========== 网络拦截模式（可选）==========
-  // 默认走 DOM 抓取；若目标平台需要拦截网络请求获取回复，
-  // 设置 useIntercept: true 并实现 getHookSource()。
+  // ========== 网络拦截模式（自动采集回复）==========
+  // 当前自动回复采集依赖 hook：只填选择器只能完成开窗、输入和发送，
+  // 收不到 AI 回复。目标平台若要进入 Agent 循环，必须设置 useIntercept: true
+  // 并实现 getHookSource()。
   //
   // ⚠️ 必须自包含：provider 是单文件上传，hook 源码要内联在此方法中，
   // 不能 require 外部文件。hook 函数体在主世界独立执行，
@@ -98,7 +99,7 @@ module.exports = {
   //     }
   //   }));
   //
-  // 参考内置 provider 的 getHookSource()（deepseek.js / claude.js / chatgpt.js）。
+  // 参考内置 DeepSeek Provider 的 getHookSource()（deepseek.js）。
   //
   // useIntercept: true,
   // getHookSource() {

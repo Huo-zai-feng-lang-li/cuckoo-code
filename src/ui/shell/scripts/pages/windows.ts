@@ -5,8 +5,7 @@ import { api, ckConfirm, ckPrompt, ckAlert, escapeHtml, escapeAttr } from '../sh
 
 const PROVIDER_COLORS: Record<string, string> = {
   deepseek: 'linear-gradient(135deg, #4d6bfe, #3b5bdb)',
-  claude: 'linear-gradient(135deg, #d97757, #c05a3a)',
-  chatgpt: 'linear-gradient(135deg, #10a37f, #0d8a6b)',
+  'api-key': 'linear-gradient(135deg, #6d76ff, #4f5bd5)',
 };
 
 function providerAvatarStyle(providerId: string): string {

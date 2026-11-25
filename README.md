@@ -16,24 +16,24 @@
 
 [下载最新版本](https://github.com/Huo-zai-feng-lang-li/cuckoo-code/releases/latest)
 
-**Cuckoo Code** 是一个零 Token 成本的 AI Agent 桌面端。
+**Cuckoo Code** 是网页模式零 Token 成本的 AI Agent 桌面端。
 
 > 📐 **要改代码 / 做新需求？先读 [架构与开发指南](docs/architecture.md)**（目录结构、依赖规则、构建流程、任务手册）。
 
-它通过 Electron 将 AI 网页版（DeepSeek、Claude 等）嵌入本地窗口，并注入侧边覆盖层。AI 被系统提示词引导生成工具调用（JavaScript 代码块），经用户确认后在本地沙箱中执行，再把结果回传给 AI。整个过程不需要 API Key，不产生 API 调用费用——你用的是网页版账号，而不是按 Token 计费的接口。
+它通过 Electron 将 **DeepSeek 网页版**嵌入本地窗口，并注入侧边覆盖层；同时支持 **OpenAI 兼容 API Key 直连**。网页模式下 AI 被系统提示词引导生成工具调用（JavaScript 代码块），经用户确认后在本地沙箱中执行，再把结果回传给 AI，不需要 API Key、不产生 API 调用费用；API 模式则按上游接口计费。
 
 ---
 
 ## 核心特性
 
-### 零 Token 成本
+### 网页模式零 Token 成本
 
-不调用任何 AI 平台 API，不使用 API Token。直接复用网页版聊天能力，把网页版 AI 变成可执行本地操作的 Agent。
+网页模式不调用任何 AI 平台 API，不使用 API Token，直接复用网页版聊天能力；API 模式按上游接口计费。
 
 ### 多平台 Provider 框架
 
-- 内置 **DeepSeek**、**Claude**、**ChatGPT** 三个平台
-- 每个平台独立封装输入框定位、发送按钮检测、回复完成判断、消息解析等差异
+- 内置 **DeepSeek 网页版** 与 **API Key / OpenAI 兼容** 两个平台
+- 网页平台独立封装输入框定位、发送按钮检测、回复完成判断、消息解析等差异；API 平台由主进程 `api-transport` 直接请求上游，复用同一套工具循环
 - 新建窗口时可选择平台，也可**导入自定义 Provider**（提供类型声明和模板，降低扩展门槛）
 
 ### 真正的 AI Agent
@@ -107,8 +107,8 @@ npm start
 
 ## 使用指南
 
-1. 启动应用，选择平台（DeepSeek / Claude / 自定义 Provider）
-2. 正常登录对应平台的网页版账号
+1. 启动应用，选择平台（DeepSeek / API Key / 自定义 Provider）
+2. DeepSeek 网页模式需登录对应平台账号；API Key 模式填写 Base URL 与 Key
 3. 点击「初始化项目」选择项目目录，AI 会获得目录树和系统提示词
 4. 与 AI 对话，让它帮你修改文件、运行命令、查询代码等
 5. AI 回复中的工具调用会被自动检测并执行
@@ -271,9 +271,9 @@ AI 读 `src/api/user.ts` 时，会**自动看到这条规则**（首次注入全
 - `id` / `name` / `homeUrl` 等基本信息
 - 输入框、发送按钮的选择器
 - `matchesUrl()`、`extractSessionId()` 等方法
-- 自动解析相关方法（完成检测、消息定位等）
+- `useIntercept` / `getHookSource()` 等回复采集能力（复杂网页平台必须提供 hook；只填选择器只能打开、输入和发送，收不到 AI 回复）
 
-类型声明见 `src/providers/types.ts`。在应用内通过平台选择页导入 JS 文件即可使用。
+类型声明见 `src/providers/types.ts`。在应用内通过平台选择页导入 JS 文件即可使用；复杂平台建议走内置 Provider + 独立 hook。
 
 ---
 
@@ -315,7 +315,7 @@ cuckoo-code/
 │   │   └── impl/            # 各工具实现
 │   ├── providers/           # 平台 Provider
 │   │   ├── types.ts         # Provider 接口
-│   │   ├── deepseek.ts / claude.ts / chatgpt.ts
+│   │   ├── deepseek.ts
 │   │   ├── hooks/           # 网络拦截器源码（构建期打包为字符串）
 │   │   └── custom/          # 自定义 Provider 加载器与模板
 │   ├── skills/              # Skill 机制（扫描 / frontmatter / 提示词）
@@ -377,7 +377,7 @@ cuckoo-code/
 
 ## 致谢
 
-- DeepSeek、Claude 提供强大的 AI 能力
+- DeepSeek 提供网页版 AI 能力
 - Electron 提供跨平台桌面框架
 - [@27584](https://github.com/27584)：
   - Provider 发送扩展接口、流式稳定性双通道、自定义 Provider 渲染进程加载、MCP 工具识别等框架级改进（PR #9）
@@ -391,10 +391,10 @@ cuckoo-code/
   - **危险命令检测加固**：修复复合命令（`&&` `||` `;` `|` `&`）绕过检测；统一为单一真相源并补充危险变体（PR #30）
   - **glob 排除产物目录**：未指定 path 时默认排除 `node_modules` 等依赖/产物目录，避免淹没项目自身文件（PR #31）
   - **webFetch SSRF 防护**：拒绝访问内网/回环/保留地址（可在设置页开启，默认关闭）（PR #32）
-  - **状态栏输出速度（TPS）**：显示模型输出速度，DeepSeek 用服务端精确 token，ChatGPT/Claude 估算（PR #33）
+  - **状态栏输出速度（TPS）**：显示模型输出速度，DeepSeek 用服务端精确 token，其余平台估算（PR #33）
   - **provider 自定义工具结果格式**：新增 `transformToolResult` 可选钩子，插件可在工具结果回传前自定义文本格式（PR #34）
 - [@ZiJiangel](https://github.com/ZiJiangel)：
   - **飞书 Markdown 卡片**：飞书推送 AI 回复改用交互卡片渲染 Markdown（含表格）（PR #35）
 - [@yangjh888](https://github.com/yangjh888)：
-  - **ChatGPT 登录态完整适配**：回复拦截重写为三态（finished/stopped/error）、SSE 裸 `{v:[...]}` 增量帧解析修复、`fillInput`（execCommand）+ `triggerSend`（真实 Enter）解决 ProseMirror 输入/发送、Google OAuth 指纹修正（Sec-CH-UA* / userAgentData / webdriver）（PR #47）
+  - **ChatGPT 登录态完整适配**：回复拦截重写为三态（finished/stopped/error）、SSE 裸 `{v:[...]}` 增量帧解析修复、`fillInput`（execCommand）+ `triggerSend`（真实 Enter）解决 ProseMirror 输入/发送、Google OAuth 指纹修正（Sec-CH-UA* / userAgentData / webdriver）（PR #47；该平台已于 0.10.250 移除，保留历史记录）
 - 所有贡献者和用户

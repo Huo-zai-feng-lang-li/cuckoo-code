@@ -16,8 +16,8 @@ import { registry, jsRunner } from '../../tools/index.js';
 import { abortWindowProcesses } from '../../infra/process-tracker.js';
 import { isApiTransportProvider } from '../../api-transport/provider.js';
 import { resolveModelsEndpoint } from '../../api-transport/config.js';
-import { sendApiMessage, stopApiSession, startNewApiSession, selectApiSession, removeApiSession, importApiHistory, getApiHistory } from '../../api-transport/runtime.js';
-import { listApiSessions, getActiveApiSessionId } from '../../api-transport/session-store.js';
+import { sendApiMessage, stopApiSession, startNewApiSession, selectApiSession, removeApiSession, importApiHistory, getApiHistory, truncateApiHistory } from '../../api-transport/runtime.js';
+import { listApiSessions, getActiveApiSessionId, setApiSessionProjectDir } from '../../api-transport/session-store.js';
 
 /**
  * 强杀该窗口后台正在跑的工具子进程（bash / grep 等）和 JS 沙箱 worker。
@@ -721,6 +721,19 @@ function registerHarnessIpc(): void {
     }
   });
 
+  // API 模式：编辑旧消息后从目标 user 处物理截断模型上下文，避免“改完又追加”旧历史。
+  ipcMain.handle('harness-api-history-truncate', async (event: any, payload: any) => {
+    const ctx = findContext(event.sender);
+    if (!ctx) return { success: false, error: 'no-window-context' };
+    if (!isApiTransportProvider(ctx.providerId)) return { success: false, error: 'not-api-mode' };
+    try {
+      const result = truncateApiHistory(ctx, Number(payload && payload.userIndexFromEnd));
+      return { ...result };
+    } catch (err: any) {
+      return { success: false, error: (err && err.message) || String(err) };
+    }
+  });
+
   // API 多会话：列表只返回元信息，不把正文塞进列表响应。
   ipcMain.handle('harness-api-sessions', async (event: any) => {
     const ctx = findContext(event.sender);
@@ -1046,6 +1059,10 @@ function registerHarnessIpc(): void {
     try {
       // API 模式只允许选项目目录，不向无输入框的占位页注入 initial-prompt。
       const result = await initProject(isApiTransportProvider(ctx.providerId) ? true : false, ctx, null, false, '', false);
+      if (result && result.success && isApiTransportProvider(ctx.providerId)) {
+        const dir = ctx.sessionStore && ctx.sessionStore.state ? ctx.sessionStore.state.selectedProjectDir : null;
+        if (dir) setApiSessionProjectDir(ctx.profileId, getActiveApiSessionId(ctx.profileId), dir);
+      }
       // 初始化后推最新状态（按钮消失 / 输入框恢复）
       pushHarnessState(ctx);
       return result;

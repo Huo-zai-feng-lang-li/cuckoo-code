@@ -707,6 +707,31 @@ test('API 多会话左侧栏：常驻列表、切换、新建、删除', () => {
   assert.ok(!html.includes('id="btn-api-sessions" title='), '顶部会话入口不应使用原生 hover tooltip');
 });
 
+test('API 会话入口在顶栏左侧，菜单默认收起', () => {
+  const topbarStart = html.indexOf('<div class="topbar">');
+  const brandIndex = html.indexOf('<div class="brand">', topbarStart);
+  const triggerIndex = html.indexOf('id="btn-api-sessions"', topbarStart);
+  assert.ok(triggerIndex > topbarStart, '顶栏应含会话入口');
+  assert.ok(triggerIndex < brandIndex, '会话入口应在品牌左侧，而不是顶栏右侧');
+  assert.ok(html.includes('data-tooltip="打开会话 (Ctrl+B)"'), '左侧会话入口应提示 Ctrl+B');
+  assert.ok(html.includes('aria-expanded="false"'), '会话入口初始应为收起状态');
+  assert.ok(script.includes('setApiSessionMenuOpen(false)'), '进入 API 模式时应默认收起会话菜单');
+});
+
+test('历史会话项不再显示蓝色左边框', () => {
+  const activeRule = html.match(/\.api-session-row\.active \{[\s\S]*?\}/)?.[0] || '';
+  assert.ok(activeRule, '应有会话项 active 样式');
+  assert.ok(!activeRule.includes('box-shadow'), 'active 会话项不应再画左侧蓝色边框线');
+});
+
+test('控制台快捷键：Ctrl+B 切换会话菜单，Ctrl+N 提示新对话', () => {
+  assert.ok(html.includes('data-tooltip="新对话 (Ctrl+N)"'), '新对话按钮应提示 Ctrl+N');
+  assert.ok(html.includes('aria-keyshortcuts="Control+N Meta+N"'), '新对话按钮应声明 Ctrl+N 快捷键');
+  assert.ok(script.includes("key === 'b'") || script.includes("key === 'B'"), '应监听 Ctrl+B');
+  assert.ok(script.includes('setApiSessionMenuOpen(!apiSessionMenuOpen)'), 'Ctrl+B 应切换会话菜单');
+  assert.ok(script.includes('ev.preventDefault()'), 'Ctrl+B 应 preventDefault，避免浏览器默认行为');
+});
+
 test('API 设置两列表单：Label 顶对齐、输入框底对齐', () => {
   assert.ok(html.includes('.enh-row { display: flex; gap: 10px; align-items: stretch; }'), '两列行应拉伸等高');
   assert.ok(html.includes('margin-top: auto'), '输入框应贴底对齐，避免 label 换行把输入框推歪');
@@ -714,6 +739,27 @@ test('API 设置两列表单：Label 顶对齐、输入框底对齐', () => {
 
 test('API 关闭图片输入时附件按钮仍可用（文本附件不受影响）', () => {
   assert.ok(!html.includes('body.ck-api-mode:not(.ck-api-vision) #attach-btn { display: none'), '附件入口不能随图片开关整体隐藏');
+});
+
+test('API 编辑旧消息：先截断主进程上下文，再截断本地历史并发送', () => {
+  // 回归背景：API 模式只截断 DOM/localStorage，st.messages 没动，
+  // 下一条消息会把旧 user 继续发给模型，表现为“编辑变追加”。
+  const submitIdx = script.indexOf('function doSubmitLatest');
+  assert.ok(submitIdx > 0, '应有 doSubmitLatest');
+  const submitBody = script.slice(submitIdx, submitIdx + 900);
+  assert.ok(submitBody.includes('truncateApiContextFromHistItem'), '重新发送必须先截断 API 上下文');
+  assert.ok(submitBody.includes('truncateApiContextFromHistItem(histItem, commit'), '截断成功后才执行本地删除+发送');
+  assert.ok(submitBody.includes('deleteUserMessage(msgEl, histItem)'), '本地删除仍保留在 commit 回调中');
+
+  const truncIdx = script.indexOf('function doTruncate');
+  assert.ok(truncIdx > 0, '应有 doTruncate');
+  const truncBody = script.slice(truncIdx, truncIdx + 1600);
+  assert.ok(truncBody.includes('truncateApiContextFromHistItem'), '截断重发必须先截断 API 上下文');
+  assert.ok(truncBody.includes('truncateUserMessage'), '截断成功后再截断本地历史');
+  assert.ok(
+    truncBody.indexOf('truncateApiContextFromHistItem') < truncBody.indexOf('truncateUserMessage'),
+    'API 上下文截断必须早于本地截断',
+  );
 });
 
 test('API 设置：关闭即保存，无底部保存按钮', () => {

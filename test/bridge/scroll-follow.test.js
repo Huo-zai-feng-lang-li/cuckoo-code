@@ -338,18 +338,22 @@ test('isAiSessionPage: 普通外部网页与空 URL 一律返回 false', () => {
   assert.strictEqual(isAiSessionPage('https://www.google.com/'), false);
 });
 
-test('isAiSessionPage: AI 平台首页/新建对话一律返回 false（防止刚进入首页就滚底）', () => {
+test('isAiSessionPage: DeepSeek 首页/新建对话一律返回 false（防止刚进入首页就滚底）', () => {
   assert.strictEqual(isAiSessionPage('https://chat.deepseek.com'), false);
   assert.strictEqual(isAiSessionPage('https://chat.deepseek.com/'), false);
+});
+
+test('isAiSessionPage: 已移除的 Claude / ChatGPT URL 一律返回 false', () => {
   assert.strictEqual(isAiSessionPage('https://chatgpt.com'), false);
   assert.strictEqual(isAiSessionPage('https://chatgpt.com/'), false);
   assert.strictEqual(isAiSessionPage('https://claude.ai/new'), false);
+  assert.strictEqual(isAiSessionPage('https://chatgpt.com/c/12345678-1234-1234-1234-123456789abc'), false);
+  assert.strictEqual(isAiSessionPage('https://claude.ai/chat/conv_123456'), false);
 });
 
-test('isAiSessionPage: 具备合法 session id 的历史会话详情页返回 true', () => {
+test('isAiSessionPage: 具备合法 session id 的 DeepSeek 历史会话详情页返回 true', () => {
   assert.strictEqual(isAiSessionPage('https://chat.deepseek.com/a/chat/s/01234567-89ab-cdef-0123-456789abcdef'), true);
-  assert.strictEqual(isAiSessionPage('https://chatgpt.com/c/12345678-1234-1234-1234-123456789abc'), true);
-  assert.strictEqual(isAiSessionPage('https://claude.ai/chat/conv_123456'), true);
+  assert.strictEqual(isAiSessionPage('https://chat.deepseek.com/s/abc123'), true);
 });
 
 // ===== scheduleInitialScrollToBottom 守卫与交互中断 =====

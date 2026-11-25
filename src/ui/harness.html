@@ -809,9 +809,15 @@
   .enh-switch input { width: 16px; height: 16px; accent-color: var(--accent); }
   .enh-foot { padding: 10px 18px; border-top: 1px solid var(--border-soft); font-size: 11px; color: var(--text-dim); }
   /* API 模型下拉：按钮 + 可搜索列表；关弹窗自动保存，无底部保存按钮 */
-  /* API 会话侧栏：像原版左侧菜单，默认展开；收起后聊天区回到全宽 */
+  /* API 会话侧栏：左侧菜单入口，点击或 Ctrl+B 展开；默认收起 */
   body:not(.ck-api-mode) #btn-api-sessions { display: none !important; }
-  #btn-api-sessions { -webkit-app-region: no-drag; min-width: 62px; }
+  #btn-api-sessions {
+    -webkit-app-region: no-drag; min-width: 0; gap: 6px; padding: 0 9px;
+    border-color: transparent; background: transparent;
+  }
+  #btn-api-sessions svg { width: 14px; height: 14px; flex-shrink: 0; opacity: .82; }
+  #btn-api-sessions[aria-expanded="true"] { color: var(--accent); background: var(--accent-soft); }
+  #btn-api-sessions[aria-expanded="true"] svg { opacity: 1; }
   .api-session-menu {
     position: fixed; left: 0; top: 40px; bottom: 0; z-index: 30;
     width: 236px; display: flex; flex-direction: column;
@@ -834,10 +840,10 @@
   .api-session-list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 3px; scrollbar-width: thin; }
   .api-session-row {
     position: relative; display: flex; align-items: stretch; gap: 2px; border-radius: 8px;
-    transition: background .14s, box-shadow .14s;
+    transition: background .14s;
   }
   .api-session-row:hover { background: var(--surface-hover); }
-  .api-session-row.active { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+  .api-session-row.active { background: var(--accent-soft); }
   .api-session-open {
     flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
     border: 0; background: transparent; color: var(--text-2); text-align: left;
@@ -1266,13 +1272,16 @@
 <body data-ck-dark>
 <div class="app">
   <div class="topbar">
+    <button type="button" class="tb-btn api-session-toggle" id="btn-api-sessions" data-tooltip="打开会话 (Ctrl+B)" aria-expanded="false" aria-controls="api-session-menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M13 9h4M13 13h4"/></svg>
+      <span id="api-session-label">会话</span>
+    </button>
     <div class="brand">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M4 5v13a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V5M9 9l3 3M15 9l-3 3"/></svg>
       Cuckoo Harness
       <span class="brand-hint" id="brand-hint">网页模式自动注入系统提示词</span>
     </div>
     <div class="spacer"></div>
-    <button class="tb-btn" id="btn-api-sessions"><span id="api-session-label">会话</span></button>
     <div class="api-usage" id="api-usage"></div>
     <div class="status ready sr-only" id="status"><span class="dot"></span><span id="status-text">就绪</span></div>
     <button class="tb-btn" id="btn-enh-settings">增强设置</button>
@@ -1281,7 +1290,7 @@
   </div>
   <div class="api-session-menu" id="api-session-menu" hidden>
     <div class="api-session-head">
-      <span>会话</span><span class="spacer"></span><button class="api-session-new" id="api-session-new">＋ 新对话</button>
+      <span>会话</span><span class="spacer"></span><button type="button" class="api-session-new" id="api-session-new" data-tooltip="新对话 (Ctrl+N)" aria-keyshortcuts="Control+N Meta+N">＋ 新对话</button>
     </div>
     <div class="api-session-list" id="api-session-list"></div>
     <div class="api-session-empty" id="api-session-empty" hidden>暂无会话</div>
@@ -1559,7 +1568,7 @@
     document.body.classList.toggle('ck-api-mode', apiTransportMode);
     var hintEl = document.getElementById('brand-hint');
     if (hintEl) hintEl.textContent = apiTransportMode ? 'API 模式按窗口隔离，会话可切换' : '网页模式自动注入系统提示词';
-    if (apiTransportMode && !wasApi) setApiSessionMenuOpen(true);
+    if (apiTransportMode && !wasApi) setApiSessionMenuOpen(false);
     if (!apiTransportMode && wasApi) setApiSessionMenuOpen(false);
     if (apiTransportMode && typeof loadApiTransportForm === 'function') loadApiTransportForm();
   }
@@ -1578,8 +1587,11 @@
     return sameDay ? (p(d.getHours()) + ':' + p(d.getMinutes())) : ((d.getMonth() + 1) + '-' + d.getDate());
   }
   function updateApiSessionLabel() {
-    if (!apiSessionEls.label) return;
-    apiSessionEls.label.textContent = '会话';
+    if (!apiSessionEls || !apiSessionEls.trigger) return;
+    var open = !!(apiSessionMenuOpen && apiTransportMode);
+    apiSessionEls.trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    apiSessionEls.trigger.setAttribute('data-tooltip', (open ? '收起会话' : '打开会话') + ' (Ctrl+B)');
+    if (apiSessionEls.label) apiSessionEls.label.textContent = '会话';
   }
   function renderApiSessionList() {
     if (!apiSessionEls.list) return;
@@ -1623,9 +1635,11 @@
   function setApiSessionMenuOpen(open) {
     apiSessionMenuOpen = !!open;
     document.body.classList.toggle('ck-api-sidebar-open', apiSessionMenuOpen && apiTransportMode);
-    if (!apiSessionEls.menu) return;
-    apiSessionEls.menu.hidden = !apiSessionMenuOpen;
-    if (apiSessionMenuOpen) refreshApiSessionList();
+    if (apiSessionEls && apiSessionEls.menu) {
+      apiSessionEls.menu.hidden = !apiSessionMenuOpen;
+      if (apiSessionMenuOpen) refreshApiSessionList();
+    }
+    updateApiSessionLabel();
   }
   function refreshApiSessionList() {
     if (!apiTransportMode || !window.harnessAPI || typeof window.harnessAPI.listApiSessions !== 'function') return;
@@ -1971,6 +1985,37 @@
     return null;
   }
 
+  /** 目标 user 之后还有几条 user；供 API 主进程从末尾反查，避免 UI 缺前缀时错位。 */
+  function countUsersAfterHistItem(histItem) {
+    var at = histItem ? history.indexOf(histItem) : -1;
+    if (at < 0) return -1;
+    var n = 0;
+    for (var i = at + 1; i < history.length; i++) {
+      if (history[i] && history[i].t === 'user') n++;
+    }
+    return n;
+  }
+
+  /**
+   * API 模式编辑旧消息：先让主进程物理截断 st.messages，再允许本地截断并发送。
+   * 主进程不截断就发送，会把旧提问继续塞给模型（表现为“编辑变追加”）。
+   */
+  function truncateApiContextFromHistItem(histItem, onOk, onErr) {
+    if (!apiTransportMode) { onOk(); return; }
+    if (!window.harnessAPI || typeof window.harnessAPI.truncateApiHistory !== 'function') {
+      onErr('API 历史截断接口未加载');
+      return;
+    }
+    var usersAfter = countUsersAfterHistItem(histItem);
+    if (usersAfter < 0) { onErr('目标消息不在本地历史中'); return; }
+    window.harnessAPI.truncateApiHistory(usersAfter).then(function (res) {
+      if (res && res.success) onOk();
+      else onErr((res && res.error) || '未知错误');
+    }).catch(function (err) {
+      onErr((err && err.message) || String(err));
+    });
+  }
+
   function editUserMessage(msgEl, bubbleEl, origText, histItem) {
     if (bubbleEl.querySelector('.ck-mledit')) return;
     var isLatest = isLatestUserMessage(msgEl);
@@ -2032,9 +2077,17 @@
     function doSubmitLatest() {
       var newText = ta.value.trim();
       if (!newText || newText === origText) { cancel(); return; }
-      deleteUserMessage(msgEl, histItem);
-      input.value = newText;
-      send();
+      if (isBusy()) { appendSystem('正在生成，先停止再编辑重发，避免旧回答写进新上下文。'); return; }
+      var commit = function () {
+        if (!msgEl.isConnected) return;
+        deleteUserMessage(msgEl, histItem);
+        input.value = newText;
+        send();
+      };
+      // API 模式不能让旧 user 留在主进程上下文里，否则“重新发送”会变成追加。
+      truncateApiContextFromHistItem(histItem, commit, function (err) {
+        appendSystem('上下文截断失败：' + err);
+      });
     }
     function doQuote() {
       var newText = ta.value.trim();
@@ -2045,8 +2098,23 @@
     function doTruncate() {
       var newText = ta.value.trim();
       if (!newText) { cancel(); return; }
+      if (isBusy()) { appendSystem('正在生成，先停止再截断重发，避免旧回答写进新上下文。'); return; }
       var targetIdx = histItem ? history.indexOf(histItem) : -1;
       var webMsgId = resolveTruncateWebMsgId(targetIdx);
+
+      // API 模式没有网页分支：先让主进程物理截断上下文，再截断本地历史并发送。
+      // 顺序不能反——旧 user 还在 st.messages 里时发送，就是“追加”而不是“编辑”。
+      if (apiTransportMode) {
+        truncateApiContextFromHistItem(histItem, function () {
+          if (!msgEl.isConnected) return;
+          truncateUserMessage(msgEl, histItem);
+          input.value = newText;
+          send();
+        }, function (err) {
+          appendSystem('上下文截断失败：' + err);
+        });
+        return;
+      }
 
       // 1. 若网页端具备精准截断条件，走底层跨会话分支
       if (targetIdx >= 0 && webMsgId != null && api.truncate) {
@@ -5306,7 +5374,7 @@
           var adThink = (cur && cur.thinkBody) ? cur.thinkBody.textContent : '';
           // 服务端权威消息 id（供「真截断」定位；平台未提供时为 null）
           // 注：仅 DeepSeek 产出 number 型 responseMessageId（截断功能本身也仅 DeepSeek 支持）；
-          // 其他平台（如 ChatGPT 产出 string）此处置 null，截断按钮会温柔拒绝。
+          // 其他平台产出的非 number 型 ID 此处置 null，截断按钮会温柔拒绝。
           var adWebMsgId = (payload.msgIds && typeof payload.msgIds.responseMessageId === 'number') ? payload.msgIds.responseMessageId : null;
           onAssistantDone(adRaw, payload.hasTool);
           if (adText && adText !== lastPushedAssistant) { lastPushedAssistant = adText; pushHist({ t: 'assistant', text: adRaw, think: adThink, webMsgId: adWebMsgId }); }
@@ -5439,6 +5507,10 @@
         // 正文切换由显式 onSessionChanged/reset 完成，避免把旧界面历史写到新 session 的 key。
         case 'api-session':
           if (apiTransportMode) refreshApiSessionList();
+          break;
+        // 主进程恢复了/切换了项目目录：重新拉一次状态，决定首屏是否还要“选择项目目录”
+        case 'project-dir':
+          if (apiTransportMode) refreshHarnessState();
           break;
         // 新对话：**完整丢弃**当前视图。
         // 不能靠 session-changed 代劳 —— 首页 URL 无会话 id，sid 是空串，
@@ -6862,7 +6934,15 @@
   });
   if (apiSessionEls.menu) apiSessionEls.menu.addEventListener('click', function (ev) { if (ev && ev.stopPropagation) ev.stopPropagation(); });
   document.addEventListener('keydown', function (ev) {
-    if (apiSessionMenuOpen && ev && ev.key === 'Escape') setApiSessionMenuOpen(false);
+    if (!apiTransportMode || !ev) return;
+    var key = String(ev.key || '');
+    if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && !ev.shiftKey && (key === 'b' || key === 'B')) {
+      if (typeof ev.preventDefault === 'function') ev.preventDefault();
+      if (typeof ev.stopPropagation === 'function') ev.stopPropagation();
+      setApiSessionMenuOpen(!apiSessionMenuOpen);
+      return;
+    }
+    if (apiSessionMenuOpen && ev.key === 'Escape') setApiSessionMenuOpen(false);
   });
   function applyApiVision(on) {
     document.body.classList.toggle('ck-api-vision', !!on);

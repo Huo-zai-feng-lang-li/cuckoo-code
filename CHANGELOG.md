@@ -8,12 +8,25 @@
 
 | 月份 | 版本区间 | 版本数 | 文件 |
 |---|---|---|---|
-| 2026-11 | 0.10.203 ~ 0.10.239 | 32 | [changelogs/2026-11.md](changelogs/2026-11.md) |
+| 2026-11 | 0.10.203 ~ 0.10.250 | 33 | [changelogs/2026-11.md](changelogs/2026-11.md) |
 | 2026-10 | 0.8.7 ~ 0.10.202 | 293 | [changelogs/2026-10.md](changelogs/2026-10.md) |
 | 2026-09 | 0.2.5-beta.1 ~ 0.8.6 | 24 | [changelogs/2026-09.md](changelogs/2026-09.md) |
 | 2026-08 | 1.0.0 ~ 0.2.0 | 2 | [changelogs/2026-08.md](changelogs/2026-08.md) |
 
 ## 最近 5 个版本
+
+## [0.10.250] - 2026-11-24
+
+### Changed
+
+- **移除 Claude / ChatGPT 网页平台**：删除 Provider、网络 hook、提示词、图标与专属测试。平台列表只保留 DeepSeek、API Key 和用户自定义 Provider；旧 Claude / ChatGPT 窗口无法再打开。
+- **API 会话菜单**：入口移到顶栏左侧、默认收起；`Ctrl+B` 展开/收起，`Ctrl+N` 新建对话，去掉会话项蓝色左边框。
+
+### Fixed
+
+- **API 窗口每次进入都显示“未选择项目目录”**：API 会话快照持久化 `projectDir`，启动优先恢复 active 会话目录，老会话回退全局 `last-project-dir.json`。
+- **API 编辑旧消息变成追加**：编辑/重新发送前先截断主进程上下文，删除目标及其后的 assistant/tool，再发送新内容。
+- **API 窗口顶栏双竖线**：隐藏网页导航后两个分隔线并排；API 模式只保留靠右那一个。
 
 ## [0.10.239] - 2026-11-24
 
@@ -49,14 +62,6 @@
 ### Fixed
 
 - **打开 DevTools 后仍持续出现 `[Cuckoo Code]` 普通日志**：生产版 preload 静默 `log / info / debug`，保留 `warn / error`；页面主世界自己的日志不受影响。开发启动或设置 `CUCKOO_DEBUG=1` 时保留全部日志。
-
-## [0.10.233] - 2026-11-23
-
-### Fixed
-
-- **AI 页面 `navigator.userAgentData.brands` 缺 `Google Chrome`**：品牌名、GREASE 假版本和顺序改为按真实 Chrome 主版本计算（Chrome 152 为 `Not?A_Brand` 24，顺序 `Chromium → Not?A_Brand → Google Chrome`），并让 `Sec-CH-UA`、`Sec-CH-UA-Full-Version-List` 与网页值三处一致。
-- **打开 DevTools 后品牌列表回退原生值**：CDP 已注入 `Google Chrome` 时不再跳过 JS 补丁；DevTools 释放 debugger 后仍由原型补丁兜住。
-- **高熵 `brands` 不一致 / 凭空多字段**：同时修正 `brands` 与 `fullVersionList`，且只改响应里本来存在的字段；未请求时不再额外返回 `fullVersionList`。
 
 ## [0.10.231] - 2026-11-22
 

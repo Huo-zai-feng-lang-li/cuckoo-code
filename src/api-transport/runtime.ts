@@ -18,7 +18,7 @@ import { buildOpenAiTools, executeApiToolCall, formatToolCall } from './tool-loo
 import { buildApiSystemPrompt } from './system-prompt.js';
 import { estimateJsonTokens, resolveContextBudget, trimMessagesToBudget, estimateMessageTokens, estimateTokens } from './context.js';
 import type { ContextBudget } from './context.js';
-import { loadApiSessionSnapshot, saveApiSession, clearApiSession, createApiSession, setActiveApiSession, deleteApiSession, listApiSessions, getActiveApiSessionId, deriveSessionTitle, pruneProfileAttachments } from './session-store.js';
+import { loadApiSessionSnapshot, saveApiSession, clearApiSession, createApiSession, setActiveApiSession, deleteApiSession, listApiSessions, getActiveApiSessionId, deriveSessionTitle, pruneProfileAttachments, setApiSessionProjectDir } from './session-store.js';
 import { saveIncomingAttachments, materializeMessages } from './attachments.js';
 import type { IncomingAttachment, StoredAttachment } from './attachments.js';
 
@@ -28,6 +28,8 @@ interface SessionState {
   createdAt: number;
   messages: ApiChatMessage[];
   controller: AbortController | null;
+  /** 当前会话绑定的项目目录（持久化在会话快照里） */
+  projectDir: string | null;
   /** 当前在途 turn；新消息必须等旧 turn 收尾，避免旧 finally 污染新历史 */
   turn: Promise<void> | null;
   /** 新对话请求：等旧 turn 收尾后再清空历史，避免清空数组被旧 turn 继续 push */
@@ -72,12 +74,27 @@ function persist(ctx: any, state: SessionState): void {
   const profileId = profileOf(ctx);
   if (!profileId) return;
   if (!state.title || state.title === '新对话') state.title = deriveSessionTitle(state.messages);
+  const currentDir = ctx && ctx.sessionStore && ctx.sessionStore.state
+    ? ctx.sessionStore.state.selectedProjectDir
+    : state.projectDir;
+  state.projectDir = currentDir || null;
   saveApiSession(profileId, state.messages, {
     sessionId: state.sessionId,
     title: state.title,
     createdAt: state.createdAt,
     usageTotal: state.usageTotal,
+    projectDir: state.projectDir,
   });
+}
+
+/** 把项目目录同步到窗口 sessionStore，并通知壳页面顶栏与 harness 首屏。 */
+function applyProjectDir(ctx: any, projectDir: string | null): void {
+  const dir = projectDir || null;
+  try {
+    if (ctx && ctx.sessionStore && ctx.sessionStore.state) ctx.sessionStore.state.selectedProjectDir = dir;
+  } catch (_) { /* ignore */ }
+  try { if (ctx && ctx.harnessView && ctx.harnessView.webContents) ctx.harnessView.webContents.send('harness-event', { type: 'project-dir', dir }); } catch (_) { /* ignore */ }
+  try { if (ctx && ctx.win && ctx.win.webContents) ctx.win.webContents.send('shell-project-dir', dir); } catch (_) { /* ignore */ }
 }
 
 function getState(ctx: any, sessionId?: string): SessionState {
@@ -93,6 +110,7 @@ function getState(ctx: any, sessionId?: string): SessionState {
       createdAt: snap ? snap.createdAt : Date.now(),
       messages: snap ? snap.messages : [],
       controller: null,
+      projectDir: snap ? (snap.projectDir || null) : null,
       turn: null,
       pendingReset: false,
       systemKey: '',
@@ -268,6 +286,38 @@ export function getApiHistory(ctx: any): {
 }
 
 /**
+ * 从指定 user 消息处物理截断模型上下文；用于 API 模式编辑旧消息后“从此处重发”。
+ * 传的是“从后往前第 N 条 user”（0 = 最后一条），这样即使 UI 历史缺少更早的前缀，
+ * 也不会把目标消息错位；system 始终保留，target 及其后的 assistant/tool 全部删除。
+ * @param userIndexFromEnd 目标 user 从末尾算起的序号，0 开始
+ */
+export function truncateApiHistory(ctx: any, userIndexFromEnd: number): {
+  success: boolean;
+  removed?: number;
+  remaining?: number;
+  error?: string;
+} {
+  const st = getState(ctx);
+  const fromEnd = Number.isInteger(userIndexFromEnd) && userIndexFromEnd >= 0 ? userIndexFromEnd : -1;
+  if (fromEnd < 0) return { success: false, error: 'bad-index' };
+  const system = st.messages.filter((m) => m.role === 'system');
+  const nonSystem = st.messages.filter((m) => m.role !== 'system');
+  let seen = 0;
+  let cut = -1;
+  for (let i = nonSystem.length - 1; i >= 0; i--) {
+    if (nonSystem[i].role !== 'user') continue;
+    if (seen === fromEnd) { cut = i; break; }
+    seen++;
+  }
+  if (cut < 0) return { success: false, error: 'user-not-found' };
+  const removed = nonSystem.length - cut;
+  const kept = nonSystem.slice(0, cut);
+  st.messages = [...system, ...kept];
+  persist(ctx, st);
+  return { success: true, removed, remaining: kept.length };
+}
+
+/**
  * 从 harness localStorage 历史导入一次旧对话。
  * 只导入用户/助手正文，工具卡与思考内容不进入模型上下文；
  * 若磁盘会话已有两条以上用户消息，说明快照更新，放弃导入避免覆盖。
@@ -318,8 +368,10 @@ export async function startNewApiSession(ctx: any): Promise<{ success: boolean; 
   try {
     const current = getState(ctx);
     await settleTurn(ctx, current);
-    const sessionId = createApiSession(profileId);
+    const currentDir = ctx && ctx.sessionStore && ctx.sessionStore.state ? ctx.sessionStore.state.selectedProjectDir : current.projectDir;
+    const sessionId = createApiSession(profileId, { projectDir: currentDir || null });
     const st = getState(ctx, sessionId);
+    applyProjectDir(ctx, st.projectDir || currentDir || null);
     emit(ctx, { type: 'usage', total: {} });
     emit(ctx, { type: 'api-session', sessionId, title: st.title });
     return { success: true, sessionId, title: st.title };
@@ -340,6 +392,13 @@ export async function selectApiSession(ctx: any, sessionId: string): Promise<{ s
     await settleTurn(ctx, current);
     if (!setActiveApiSession(profileId, sessionId)) return { success: false, error: '会话不存在' };
     const st = getState(ctx, sessionId);
+    const currentDir = ctx && ctx.sessionStore && ctx.sessionStore.state ? ctx.sessionStore.state.selectedProjectDir : current.projectDir;
+    const dir = st.projectDir || currentDir || null;
+    if (!st.projectDir && dir) {
+      st.projectDir = dir;
+      setApiSessionProjectDir(profileId, sessionId, dir);
+    }
+    applyProjectDir(ctx, dir);
     sessionStateCleanup(ctx, current.sessionId, false);
     emit(ctx, { type: 'usage', total: { ...st.usageTotal } });
     emit(ctx, { type: 'api-session', sessionId, title: st.title });
@@ -364,6 +423,15 @@ export async function removeApiSession(ctx: any, sessionId: string): Promise<{ s
     const active = deleteApiSession(profileId, sessionId);
     sessionStateCleanup(ctx, sessionId, false);
     const st = getState(ctx, active);
+    if (current.sessionId === sessionId) {
+      const currentDir = current.projectDir || (ctx && ctx.sessionStore && ctx.sessionStore.state ? ctx.sessionStore.state.selectedProjectDir : null);
+      const dir = st.projectDir || currentDir || null;
+      if (!st.projectDir && dir) {
+        st.projectDir = dir;
+        setApiSessionProjectDir(profileId, active, dir);
+      }
+      applyProjectDir(ctx, dir);
+    }
     emit(ctx, { type: 'usage', total: { ...st.usageTotal } });
     emit(ctx, { type: 'api-session', sessionId: active, title: st.title });
     return { success: true, activeSessionId: active };

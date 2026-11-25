@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   loadApiSession,
+  loadApiSessionSnapshot,
   saveApiSession,
   clearApiSession,
   createApiSession,
@@ -13,6 +14,8 @@ import {
   deleteApiSession,
   listApiSessions,
   getActiveApiSessionId,
+  getApiSessionProjectDir,
+  setApiSessionProjectDir,
   deriveSessionTitle,
 } from '../../src/api-transport/session-store.js';
 
@@ -209,4 +212,44 @@ test('createApiSession 在索引丢失时也不会丢掉目录里的旧快照', 
   assert.equal(list.sessions.length, 2);
   assert.ok(list.sessions.some((s) => s.id === 'old'));
   assert.equal(list.activeSessionId, id);
+});
+
+test('API 会话记住项目目录：新建、读取、列表、更新都保留', () => {
+  const profile = 'project-dir-profile';
+  const sid = createApiSession(profile, { projectDir: 'D:\\work-a' });
+  assert.equal(getApiSessionProjectDir(profile, sid), 'D:\\work-a');
+  assert.equal(loadApiSessionSnapshot(profile, sid).projectDir, 'D:\\work-a');
+  assert.equal(
+    listApiSessions(profile).sessions.find((s) => s.id === sid).projectDir,
+    'D:\\work-a',
+  );
+
+  assert.equal(setApiSessionProjectDir(profile, sid, 'D:\\work-b'), true);
+  assert.equal(getApiSessionProjectDir(profile, sid), 'D:\\work-b');
+  assert.equal(loadApiSessionSnapshot(profile, sid).projectDir, 'D:\\work-b');
+});
+
+test('保存消息未显式传 projectDir 时保留已有项目目录', () => {
+  const profile = 'project-dir-preserve';
+  const sid = createApiSession(profile, { projectDir: '/work/a' });
+  saveApiSession(profile, [{ role: 'user', content: 'hello' }], { sessionId: sid });
+  assert.equal(getApiSessionProjectDir(profile, sid), '/work/a');
+  assert.deepEqual(loadApiSession(profile, sid), [{ role: 'user', content: 'hello' }]);
+});
+
+test('旧索引没有 projectDir 时按 null 处理，不抛错', () => {
+  const profile = 'project-dir-legacy';
+  const dir = profileDir(profile);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify({
+    version: 2,
+    activeSessionId: 'old',
+    sessions: [{ id: 'old', title: '旧', createdAt: 1, updatedAt: 1, messageCount: 0 }],
+  }));
+  fs.writeFileSync(path.join(dir, 'old.json'), JSON.stringify({
+    version: 2, id: 'old', title: '旧', createdAt: 1, updatedAt: 1,
+    messages: [], usageTotal: {},
+  }));
+  assert.equal(getApiSessionProjectDir(profile), null);
+  assert.equal(listApiSessions(profile).sessions[0].projectDir, null);
 });

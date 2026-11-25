@@ -95,9 +95,9 @@
 | `types.ts` | Provider 接口定义 |
 | `validate.ts` | 运行时字段校验（D14） |
 | `registry.ts` | 内置 provider + 自定义加载 + `getProvider` / `getProviderByUrl` |
-| `deepseek.ts` / `claude.ts` / `chatgpt.ts` | 各平台：元数据 + 选择器 + `getHookSource()` |
+| `deepseek.ts` | DeepSeek 网页平台：元数据 + 选择器 + `getHookSource()` |
 | `hooks/shared/sse.ts` | hook 共享：SSE 帧解码 |
-| `hooks/{deepseek,claude,chatgpt}.ts` | 各平台网络拦截器（**真源**，构建期打包） |
+| `hooks/deepseek.ts` | DeepSeek 网络拦截器（**真源**，构建期打包） |
 | `generated/hook-sources.ts` | **生成**：打包后的 hook 字符串 |
 | `custom/loader.ts` | 自定义 provider 的导入/替换/删除 |
 | `custom/provider.template.js` | 自定义 provider 模板 |
@@ -200,6 +200,23 @@
 | `types.ts` | `RuleMeta` / `RuleSource` 类型 |
 | `index.ts` | 模块入口 |
 
+## src/api-transport/ —— OpenAI 兼容 API 直连
+
+API 模式不加载 AI 网页，也不注入网页 hook；由主进程直接请求上游，复用同一套工具注册表与权限闸。
+
+| 文件 | 职责 |
+|---|---|
+| `provider.ts` | `api-key` 占位 Provider（`about:blank#cuckoo-api`）+ `isApiTransportProvider` 判定 |
+| `config.ts` | 按 profile 解析 Base URL / Key / 模型；规整为 `/chat/completions` 与 `/models` |
+| `client.ts` | OpenAI 兼容请求：`Authorization: Bearer`、SSE 流、`tool_calls`、超时与重试 |
+| `runtime.ts` | API 会话生命周期：发送、停止、新建/切换/删除会话、历史导入导出 |
+| `tool-loop.ts` | 把 ToolRegistry 转成 OpenAI tools；执行工具调用并回填结果 |
+| `session-store.ts` | 按 profile + session 隔离历史/计划/目标/项目目录；会话迁移与附件清理 |
+| `context.ts` | token 估算与上下文预算裁剪 |
+| `attachments.ts` | 图片/文本附件落盘与 data URL 物化 |
+| `system-prompt.ts` | API 模式系统提示词组装 |
+| `sse.ts` | OpenAI SSE delta / tool call 增量解析 |
+
 ## src/updater/ 、src/types/ 、src/prompt/ 、src/ui/
 
 | 路径 | 职责 |
@@ -208,6 +225,8 @@
 | `types/third-party.d.ts` | 无 @types 的第三方模块声明（turndown 等） |
 | `prompt/*.md` | 各平台系统提示词模板（含占位符） |
 | `ui/shell.html` | 地址栏壳页面 |
+| `ui/harness.html` | 纯净模式 / API 模式对话界面 |
+| `ui/logos/<id>.svg` | 平台选择页图标 |
 | `ui/platform-select.html` | 首次选择平台页面 |
 
 ## scripts/

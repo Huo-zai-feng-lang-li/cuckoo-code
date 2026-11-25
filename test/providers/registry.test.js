@@ -5,21 +5,23 @@ import { providers, getProvider, getAllProviders, getProviderByUrl } from '../..
 
 test('providers 是非空数组', () => {
   assert.ok(Array.isArray(providers));
-  assert.ok(providers.length >= 3);
+  assert.ok(providers.length >= 2);
 });
 
-test('getAllProviders 含三个内置平台', () => {
+test('getAllProviders 只含 DeepSeek 与 API Key', () => {
   const all = getAllProviders();
   const ids = all.map((p) => p.id);
   assert.ok(ids.includes('deepseek'));
-  assert.ok(ids.includes('claude'));
-  assert.ok(ids.includes('chatgpt'));
+  assert.ok(ids.includes('api-key'));
+  assert.ok(!ids.includes('claude'));
+  assert.ok(!ids.includes('chatgpt'));
 });
 
 test('getProvider 返回对应 provider', () => {
   assert.strictEqual(getProvider('deepseek').id, 'deepseek');
-  assert.strictEqual(getProvider('claude').id, 'claude');
-  assert.strictEqual(getProvider('chatgpt').id, 'chatgpt');
+  assert.strictEqual(getProvider('api-key').id, 'api-key');
+  assert.strictEqual(getProvider('claude'), null);
+  assert.strictEqual(getProvider('chatgpt'), null);
 });
 
 test('getProvider 未知 id 返回 null（失败路径）', () => {
@@ -32,14 +34,11 @@ test('getProviderByUrl 识别 DeepSeek', () => {
   assert.strictEqual(getProviderByUrl('https://chat.deepseek.com/a/chat/s/abc123').id, 'deepseek');
 });
 
-test('getProviderByUrl 识别 Claude', () => {
-  assert.strictEqual(getProviderByUrl('https://claude.ai/new').id, 'claude');
-  assert.strictEqual(getProviderByUrl('https://claude.ai/chat/abc123').id, 'claude');
-});
-
-test('getProviderByUrl 识别 ChatGPT', () => {
-  assert.strictEqual(getProviderByUrl('https://chatgpt.com/').id, 'chatgpt');
-  assert.strictEqual(getProviderByUrl('https://chat.openai.com/c/abc').id, 'chatgpt');
+test('getProviderByUrl 不再识别 Claude / ChatGPT', () => {
+  assert.strictEqual(getProviderByUrl('https://claude.ai/new'), null);
+  assert.strictEqual(getProviderByUrl('https://claude.ai/chat/abc123'), null);
+  assert.strictEqual(getProviderByUrl('https://chatgpt.com/'), null);
+  assert.strictEqual(getProviderByUrl('https://chat.openai.com/c/abc'), null);
 });
 
 test('getProviderByUrl 未知 URL 返回 null（失败路径）', () => {

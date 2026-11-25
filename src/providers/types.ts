@@ -118,7 +118,7 @@ export interface Provider {
   findSendButton?(): InputElement | null;
   /**
    * 可选的「填入输入框」实现（覆盖通用逻辑）。
-   * 通用逻辑用 ClipboardEvent('paste')，但部分站点（如 ChatGPT）会把它
+   * 通用逻辑用 ClipboardEvent('paste')，但部分站点会把它
    * 识别为"粘贴的文件"附件而非文本 → 输入框文本区为空 → 发送空内容。
    * 返回 true=已填入，false/空=回退通用逻辑。
    */
@@ -126,7 +126,7 @@ export interface Provider {
   /**
    * 可选的「原生发送触发」实现（免疫合成事件的平台用）。
    * 在渲染层调用，返回 boolean 或 Promise<boolean>：true=已触发发送，false/空=回退通用逻辑。
-   * ChatGPT 的 ProseMirror 只认真实键盘事件（合成 KeyboardEvent 无效），
+   * 部分站点（ProseMirror 编辑器）只认真实键盘事件（合成 KeyboardEvent 无效），
    * 故经主进程 sendInputEvent 派发真实 Enter（isTrusted=true）。
    */
   triggerSend?(input: any): boolean | Promise<boolean>;

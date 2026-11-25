@@ -8,10 +8,10 @@ import { createRequire } from 'node:module';
 import * as windowState from './window.js';
 import * as profileManager from './profile.js';
 import { createSessionStore } from '../session/store.js';
-import { getProvider, getProviderByUrl, isSelectableProvider } from '../providers/registry.js';
+import { getProvider, getProviderByUrl } from '../providers/registry.js';
 import { isApiTransportProvider, API_TRANSPORT_HOME_URL } from '../api-transport/provider.js';
 import { disposeApiSession } from '../api-transport/runtime.js';
-import { getActiveApiSessionId } from '../api-transport/session-store.js';
+import { getActiveApiSessionId, getApiSessionProjectDir, setApiSessionProjectDir } from '../api-transport/session-store.js';
 import * as updater from '../updater/index.js';
 import * as mcpConfig from '../mcp/config.js';
 import * as mcpClient from '../mcp/client.js';
@@ -92,7 +92,7 @@ import { pushHarnessState, stopGeneration } from './ipc/harness.js';
 import { migrateIfNeeded } from './ipc/settings.js';
 import { injectWindowGroupDeps, requestShareFromWindow, requestHarnessExport, stageHarnessImport } from './ipc/window-groups.js';
 import { seedDefaultRules } from '../rules/index.js';
-import { initProject } from '../session/project-context.js';
+import { initProject, readLastProjectDir } from '../session/project-context.js';
 import * as windowGroups from './window-groups.js';
 import { normalizeProxyConfig, toChromiumProxyRules, applyNetIdentity, resetNetIdentityDoc, releaseDebugger, detectExitGeo, checkProxyReachable } from './net-identity.js';
 
@@ -130,6 +130,26 @@ function clampBounds(b: any) {
   }
 }
 
+/** 目录仍存在才恢复，避免自动选中已被删除/移动的路径。 */
+function isUsableProjectDir(dir: string | null | undefined): dir is string {
+  if (!dir) return false;
+  try { return fs.statSync(dir).isDirectory(); } catch (_) { return false; }
+}
+
+/**
+ * API 模式启动时恢复项目目录：优先取 active API 会话自己的目录，
+ * 老会话没有目录时回退到全局 last-project-dir.json，并写回当前会话。
+ */
+function restoreApiProjectDir(profileId: string, sessionStore: any): void {
+  const sid = getActiveApiSessionId(profileId);
+  const saved = getApiSessionProjectDir(profileId, sid);
+  const globalLast = readLastProjectDir();
+  const dir = isUsableProjectDir(saved) ? saved : (isUsableProjectDir(globalLast) ? globalLast : null);
+  if (!dir) return;
+  sessionStore.state.selectedProjectDir = dir;
+  if (dir !== saved) setApiSessionProjectDir(profileId, sid, dir);
+}
+
 /**
  * 创建窗口（绑定指定 profile）
  * @param {object|null} profile profile 对象，null 则使用默认 profile
@@ -144,6 +164,7 @@ function createWindow(profile: any) {
   const providerChosen = !!profileData.providerId;
   // API transport：不加载网页 bridge、不做网页指纹/代理注入，只借用窗口上下文与 harness UI
   const apiMode = isApiTransportProvider(profileData.providerId);
+  if (apiMode) restoreApiProjectDir(String(profileData.id), sessionStore);
 
   // 窗口大小/位置：优先用该 profile 上次记录；无记录则用默认 + 级联偏移（避免多窗口完全重叠）
   // 记录值可能超出"当前屏幕工作区"（换屏幕/分辨率变小时），导致底部（状态栏）被裁切。
@@ -1554,7 +1575,6 @@ ipcMainForProfile.handle('list-providers', async () => {
       name: p.name,
       custom: !!p._customPath,
       path: p._customPath || null,
-      selectable: isSelectableProvider(p),
     })),
   };
 });

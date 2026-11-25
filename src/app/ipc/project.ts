@@ -17,6 +17,7 @@ import { getPluginScanRoots } from '../../plugins/roots.js';
 import { parseFrontmatter } from '../../skills/frontmatter.js';
 import { isWorkspaceTrusted } from '../../infra/workspace-trust.js';
 import { isApiTransportProvider } from '../../api-transport/provider.js';
+import { getActiveApiSessionId, setApiSessionProjectDir } from '../../api-transport/session-store.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain, shell } = require('electron');
@@ -48,6 +49,11 @@ function registerProjectIpc(): void {
     // API 模式没有网页输入框：允许选项目目录，但永远不向占位页注入 initial-prompt。
     const apiMode = !!(ctx && isApiTransportProvider(ctx.providerId));
     const result = await initProject(apiMode ? true : skipPrompt, ctx, projectDir, isCompaction, extraPrompt || '', !!noDialog, parentSessionId);
+    // API 会话要记住这次选择的目录，下次进入窗口/切换会话时恢复
+    if (apiMode && result && result.success && ctx && ctx.profileId) {
+      const dir = ctx.sessionStore && ctx.sessionStore.state ? ctx.sessionStore.state.selectedProjectDir : null;
+      if (dir) setApiSessionProjectDir(ctx.profileId, getActiveApiSessionId(ctx.profileId), dir);
+    }
     // 项目目录可能变化：释放该窗口对"旧项目"的 MCP 连接引用
     if (windowId !== null) {
       try {
