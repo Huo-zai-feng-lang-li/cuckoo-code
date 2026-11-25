@@ -70,15 +70,20 @@ export { MyTool };
 
 ---
 
-## 任务 2：加一个新平台（Provider）
+## 任务 2：加一个新平台
 
-### 步骤
+先判断走哪条接入层：
+
+- **官方 API 可用**：不改 Provider。OpenAI 兼容 → 在应用里新增 API profile（Base URL / Key / 模型）；非 OpenAI 协议（Anthropic 原生、Gemini 原生等）→ 在 `src/api-transport/client.ts` / `config.ts` 增加协议适配，不能只填配置。
+- **只有网页端**：做 Web Provider + hook。Provider 负责窗口/选择器/URL/会话识别，hook 负责捕获 AI 回复。
+
+### 网页 Provider 步骤
 
 1. **新建** `src/providers/<id>.ts`，照 `deepseek.ts`：元数据（id/name/homeUrl/sessionUrlBase/useIntercept）+ 选择器方法（findInput/findSendButton/extractUserInfo/homeUrlPattern/extractSessionId/matchesUrl/isElementVisible）+ `getHookSource()`。
 
    - **可选** `getSessionListFn()`：侧栏「对话」分页的抓取实现。默认实现扫 `a[href]` 并按 `sessionUrlBase` 的 pathname 前缀过滤；若平台侧栏不是 `<a href>` 结构（SPA 用 div + 点击切换会话），在此返回自定义函数。该函数会被 `toString` 序列化后注入页面主世界，**必须自包含**（只用 `doc`/`win`/`base` 入参与浏览器全局），返回 `[{ title, href, active }]`。
 
-2. **写 hook**（若 `useIntercept: true`）：新建 `src/providers/hooks/<id>.ts`，照 `hooks/deepseek.ts`。核心：
+2. **写 hook**：新建 `src/providers/hooks/<id>.ts`，照 `hooks/deepseek.ts`。核心：
    - `install()` 猴补丁 `fetch`/`XHR`，判断 completion 请求
    - 解析 SSE 流 → 提取正文 → `dispatch(text, status, ...)`
    - 可 import `./shared/sse.js`
@@ -87,12 +92,17 @@ export { MyTool };
 3. **注册 hook 到构建**：`scripts/build-hooks.mjs` 的 `HOOKS` 数组加一行。
 4. **注册 provider**：`src/providers/registry.ts` 加 import + 入内置列表。
 5. **写提示词**（可选）：`src/prompt/<id>.md`。
-6. **编译**：`npm run compile`。
+6. **补平台视觉**：`src/ui/logos/<id>.svg` + `src/ui/shell/scripts/pages/windows.ts` 的 `PROVIDER_COLORS`。
+7. **补测试**：Provider URL/会话识别、registry、页面静态守卫；hook 逻辑如需可测试，优先下沉为纯函数。
+8. **编译并真机验证**：`npm run compile` 后实际打开平台，确认拦截成功、回复完整、停止/断流/附件路径可用。
 
 ### 注意事项
+- **自动回复入口是 hook**：`cuckoo-ai-response` / `cuckoo-ai-stream`；只写 Provider 不写 hook，窗口能开、消息能发，但 Cuckoo 收不到 AI 回复，Agent 循环起不来。
+- `useIntercept: false` 不是完整生产路径；复杂平台不要只靠 DOM 选择器。
+- 自定义 Provider 单文件适合能内联完整 hook 的简单平台；复杂平台走内置 Provider + 独立 hook。导入/替换/删除见 `src/providers/custom/loader.ts`，模板见 `custom/provider.template.js`。
 - hook **必须自包含**（打包成字符串注入主世界）；用正常 import，esbuild 会内联。
 - hook 里**不要用复杂 TS 类型**（动态脚本，非 strict）。
-- 自定义 provider 见 `custom/provider.template.js` 与 `custom/loader.ts`。
+- 全量测试当前基线：168 文件 / 1672 用例。
 
 ---
 
@@ -163,7 +173,7 @@ export { MyTool };
 
 ```bash
 npm run typecheck   # 两套 tsconfig
-npm test            # 976 测试
+npm test            # 168 文件 / 1672 用例
 npm run lint        # 0 errors（既有 warnings 忽略）
 npm run compile     # 构建 + 生成物
 ```

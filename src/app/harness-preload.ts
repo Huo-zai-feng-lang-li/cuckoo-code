@@ -20,6 +20,8 @@ const harnessAPI = {
   importApiHistory: (items: any[]) => ipcRenderer.invoke('harness-api-history-import', { items }),
   /** API 模式：从主进程磁盘快照取回正文，恢复重启后的界面历史 */
   getApiHistory: () => ipcRenderer.invoke('harness-api-history-get'),
+  /** API 模式：从指定 user 消息处物理截断模型上下文（userIndexFromEnd=0 为最后一条） */
+  truncateApiHistory: (userIndexFromEnd: number) => ipcRenderer.invoke('harness-api-history-truncate', { userIndexFromEnd }),
   /** API 模式：会话列表（只含元信息） */
   listApiSessions: () => ipcRenderer.invoke('harness-api-sessions'),
   /** API 模式：切换 active 会话 */

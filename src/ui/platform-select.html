@@ -215,10 +215,7 @@
     async function loadPlatforms() {
       try {
         const res = await window.electronAPI.listProviders();
-        const allProviders = (res && res.success && res.providers) || [];
-        // 新建窗口只展示 DeepSeek 与 API Key；Claude / ChatGPT 保留给旧窗口兼容，
-        // 不再出现在平台选择页。
-        const providers = allProviders.filter(function (p) { return p.selectable !== false; });
+        const providers = (res && res.success && res.providers) || [];
         const listEl = document.getElementById('platform-list');
         if (!providers.length) {
           listEl.innerHTML = '<div style="color:#8a90b8;font-size:14px;">暂无可用平台</div>';

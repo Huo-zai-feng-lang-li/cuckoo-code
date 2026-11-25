@@ -81,6 +81,9 @@
   body.ck-api-mode #btn-harness,
   body.ck-api-mode .url-wrap { display: none !important; }
 
+  /* 网页导航整组隐藏后，前后两个 divider 会并排成“双竖线”；只保留靠右那一个 */
+  body.ck-api-mode #btn-theme-toggle + .divider { display: none !important; }
+
   /* API 模式暂不支持的功能入口隐藏，避免点了没反应 */
   body.ck-api-mode .ck-ab-item[data-tab="workspaces"],
   body.ck-api-mode .ck-ab-item[data-tab="agents"],

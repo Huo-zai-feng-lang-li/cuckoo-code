@@ -599,7 +599,7 @@ function registerSessionIpc(): void {
     if (!view || !view.webContents || view.webContents.isDestroyed()) {
       return { success: false, error: '窗口已关闭' };
     }
-    // 按当前 provider 拼会话 URL（智谱 cid=、DeepSeek /chat/s/、Claude /chat/）
+    // 按当前 provider 拼会话 URL（智谱 cid=、DeepSeek /chat/s/ 等）
     let url = null;
     try {
       const provider = getProviderByUrl(view.webContents.getURL());

@@ -55,7 +55,7 @@ export function isAiSessionPage(url?: string): boolean {
   try {
     const provider = getProviderByUrl(url);
     if (!provider) return false;
-    // 排除首页（如 https://chat.deepseek.com/ 或 https://chatgpt.com/）
+    // 排除首页（如 https://chat.deepseek.com/）
     if (provider.homeUrlPattern && provider.homeUrlPattern.test(url)) {
       return false;
     }
@@ -128,7 +128,7 @@ function scrollToBottom(el: HTMLElement): void {
 
 /**
  * 页面初次载入或会话切换后，多次尝试寻找主滚动容器并平滑滚到底部。
- * 针对打开窗口时 AI 官方网页（如 ChatGPT, Claude, DeepSeek）停留在顶部的问题进行平滑矫正。
+ * 针对打开窗口时 AI 官方网页（如 DeepSeek）停留在顶部的问题进行平滑矫正。
  *
  * 关键防线：
  * 1. 严格限定仅在受支持 AI 平台的具体历史会话页执行；普通外部网页、AI 平台首页/新建会话一律跳过。

@@ -35,7 +35,7 @@ test('getContextByWebContents 查找对应上下文', () => {
   const winA = { id: 'a', on: () => {}, webContents: wcA, isDestroyed: () => false };
   const winB = { id: 'b', on: () => {}, webContents: wcB, isDestroyed: () => false };
   windowState.addWindow(winA, 'p1', 'deepseek', { a: 1 });
-  windowState.addWindow(winB, 'p2', 'claude', { b: 2 });
+  windowState.addWindow(winB, 'p2', 'api-key', { b: 2 });
   assert.strictEqual(windowState.getContextByWebContents(wcA).profileId, 'p1');
   assert.strictEqual(windowState.getContextByWebContents(wcB).profileId, 'p2');
   assert.strictEqual(windowState.getContextByWebContents({ id: 'nope' }), null);
@@ -84,7 +84,7 @@ test('多主窗口移除当前活跃者后回退到另一个主窗口', () => {
   const winA = { id: 50, on: () => {}, isDestroyed: () => false };
   const winB = { id: 51, on: () => {}, isDestroyed: () => false };
   windowState.addWindow(winA, 'pA', 'deepseek', {});
-  windowState.addWindow(winB, 'pB', 'claude', {});
+  windowState.addWindow(winB, 'pB', 'api-key', {});
   assert.strictEqual(windowState.getMainContext().win, winB, '最近创建的是活跃主窗口');
   windowState.removeWindow(51);
   assert.strictEqual(windowState.getMainContext().win, winA, '应回退到剩下的主窗口');
@@ -103,7 +103,7 @@ test('getAllWindows 返回窗口数组', () => {
   const winA = { id: 'a', on: () => {}, isDestroyed: () => false };
   const winB = { id: 'b', on: () => {}, isDestroyed: () => false };
   windowState.addWindow(winA, 'p1', 'deepseek', {});
-  windowState.addWindow(winB, 'p2', 'claude', {});
+  windowState.addWindow(winB, 'p2', 'api-key', {});
   const all = windowState.getAllWindows();
   assert.strictEqual(all.length, 2);
   assert.ok(all.includes(winA));

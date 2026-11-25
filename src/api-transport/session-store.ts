@@ -24,6 +24,8 @@ export interface ApiSessionMeta {
   createdAt: number;
   updatedAt: number;
   messageCount: number;
+  /** 该会话最近一次选择的项目目录；旧版索引没有此字段时为 null */
+  projectDir?: string | null;
 }
 
 export interface ApiSessionList {
@@ -38,6 +40,8 @@ export interface ApiSessionSnapshot {
   updatedAt: number;
   messages: ApiChatMessage[];
   usageTotal?: Record<string, any>;
+  /** 该会话最近一次选择的项目目录 */
+  projectDir?: string | null;
 }
 
 export interface SaveApiSessionOptions {
@@ -46,6 +50,8 @@ export interface SaveApiSessionOptions {
   createdAt?: number;
   updatedAt?: number;
   usageTotal?: Record<string, any>;
+  /** 不传则沿用会话已有目录；传 null 可显式清空 */
+  projectDir?: string | null;
 }
 
 interface ApiSessionIndex {
@@ -102,6 +108,11 @@ function normalizeMessages(messages: any): ApiChatMessage[] {
   if (!Array.isArray(messages)) return [];
   return messages.filter((m) => m && typeof m === 'object'
     && (m.role === 'system' || m.role === 'user' || m.role === 'assistant' || m.role === 'tool'));
+}
+
+/** 项目目录为空/非字符串统一归一为 null，避免索引里出现空串。 */
+function normalizeProjectDir(value: any): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 function toolCallIds(message: ApiChatMessage): string[] {
@@ -207,6 +218,7 @@ function normalizeMeta(raw: any): ApiSessionMeta | null {
     createdAt: Number.isFinite(raw.createdAt) ? Number(raw.createdAt) : Date.now(),
     updatedAt: Number.isFinite(raw.updatedAt) ? Number(raw.updatedAt) : Date.now(),
     messageCount: Number.isFinite(raw.messageCount) ? Math.max(0, Number(raw.messageCount)) : 0,
+    projectDir: normalizeProjectDir(raw.projectDir),
   };
 }
 
@@ -244,14 +256,16 @@ function recoverSessionsFromFiles(profileId: string): ApiSessionMeta[] {
       createdAt: Number.isFinite(raw.createdAt) ? Number(raw.createdAt) : (stat ? stat.birthtimeMs : Date.now()),
       updatedAt: Number.isFinite(raw.updatedAt) ? Number(raw.updatedAt) : (stat ? stat.mtimeMs : Date.now()),
       messageCount: messages.filter((m) => m.role === 'user' || m.role === 'assistant').length,
+      projectDir: normalizeProjectDir(raw.projectDir),
     });
   }
   return out;
 }
 
-function createEmptySession(profileId: string, id: string, title: string): ApiSessionMeta {
+function createEmptySession(profileId: string, id: string, title: string, projectDir: string | null = null): ApiSessionMeta {
   const now = Date.now();
-  const meta: ApiSessionMeta = { id, title: title || DEFAULT_TITLE, createdAt: now, updatedAt: now, messageCount: 0 };
+  const dir = normalizeProjectDir(projectDir);
+  const meta: ApiSessionMeta = { id, title: title || DEFAULT_TITLE, createdAt: now, updatedAt: now, messageCount: 0, projectDir: dir };
   writeJsonAtomic(sessionFile(profileId, id), {
     version: INDEX_VERSION,
     id,
@@ -260,6 +274,7 @@ function createEmptySession(profileId: string, id: string, title: string): ApiSe
     updatedAt: now,
     messages: [],
     usageTotal: {},
+    projectDir: dir,
   });
   return meta;
 }
@@ -298,6 +313,7 @@ function ensureIndex(profileId: string, createIfMissing = true): ApiSessionIndex
       : deriveSessionTitle(messages);
     const now = Date.now();
     const created = Number.isFinite(legacy.createdAt) ? Number(legacy.createdAt) : now;
+    const legacyProjectDir = normalizeProjectDir(legacy.projectDir);
     writeJsonAtomic(sessionFile(profileId, id), {
       version: INDEX_VERSION,
       id,
@@ -306,11 +322,12 @@ function ensureIndex(profileId: string, createIfMissing = true): ApiSessionIndex
       updatedAt: now,
       messages,
       usageTotal: legacy.usageTotal && typeof legacy.usageTotal === 'object' ? legacy.usageTotal : {},
+      projectDir: legacyProjectDir,
     });
     const index: ApiSessionIndex = {
       version: INDEX_VERSION,
       activeSessionId: id,
-      sessions: [{ id, title, createdAt: created, updatedAt: now, messageCount: messages.filter((m) => m.role === 'user' || m.role === 'assistant').length }],
+      sessions: [{ id, title, createdAt: created, updatedAt: now, messageCount: messages.filter((m) => m.role === 'user' || m.role === 'assistant').length, projectDir: legacyProjectDir }],
     };
     writeIndex(profileId, index);
     return index;
@@ -349,10 +366,10 @@ export function setActiveApiSession(profileId: string, sessionId: string): boole
 }
 
 /** 新建一个空会话并设为 active。 */
-export function createApiSession(profileId: string, opts: { id?: string; title?: string } = {}): string {
+export function createApiSession(profileId: string, opts: { id?: string; title?: string; projectDir?: string | null } = {}): string {
   const index = ensureIndex(profileId, false);
   const id = opts.id && !index.sessions.some((s) => s.id === opts.id) ? opts.id : newSessionId();
-  const meta = createEmptySession(profileId, id, opts.title || DEFAULT_TITLE);
+  const meta = createEmptySession(profileId, id, opts.title || DEFAULT_TITLE, opts.projectDir || null);
   index.sessions.push(meta);
   index.activeSessionId = id;
   writeIndex(profileId, index);
@@ -376,7 +393,40 @@ export function loadApiSessionSnapshot(profileId: string, sessionId?: string): A
     updatedAt: Number.isFinite(raw.updatedAt) ? Number(raw.updatedAt) : meta.updatedAt,
     messages: snapshotToMessages(raw),
     usageTotal: raw.usageTotal && typeof raw.usageTotal === 'object' ? raw.usageTotal : {},
+    projectDir: normalizeProjectDir(raw.projectDir) || meta.projectDir || null,
   };
+}
+
+/** 读取会话的项目目录；默认读 active，没有则返回 null。 */
+export function getApiSessionProjectDir(profileId: string, sessionId?: string): string | null {
+  const snap = loadApiSessionSnapshot(profileId, sessionId);
+  return snap ? (snap.projectDir || null) : null;
+}
+
+/**
+ * 只更新会话的项目目录，不动消息与 active；默认作用于 active 会话。
+ * 快照缺失时补一个最小快照，保证下次读取不会丢目录。
+ */
+export function setApiSessionProjectDir(profileId: string, sessionId: string | null | undefined, projectDir: string | null): boolean {
+  const index = ensureIndex(profileId);
+  const sid = sessionId && index.sessions.some((s) => s.id === sessionId) ? sessionId : index.activeSessionId;
+  const meta = index.sessions.find((s) => s.id === sid);
+  if (!meta) return false;
+  const dir = normalizeProjectDir(projectDir);
+  meta.projectDir = dir;
+  const raw = readSnapshotFile(profileId, sid) || {
+    version: INDEX_VERSION,
+    id: sid,
+    title: meta.title,
+    createdAt: meta.createdAt,
+    updatedAt: meta.updatedAt,
+    messages: [],
+    usageTotal: {},
+  };
+  raw.projectDir = dir;
+  writeJsonAtomic(sessionFile(profileId, sid), raw);
+  writeIndex(profileId, index);
+  return true;
 }
 
 /** 兼容旧调用：只返回消息，默认 active 会话。 */
@@ -404,12 +454,17 @@ function saveApiSessionInner(
   const createdAt = Number.isFinite(opts.createdAt) ? Number(opts.createdAt) : (existing ? existing.createdAt : now);
   const title = (opts.title && opts.title.trim()) ? opts.title.trim().slice(0, 80)
     : (existing && existing.title && existing.title !== DEFAULT_TITLE ? existing.title : deriveSessionTitle(out));
+  const existingProjectDir = existing ? (existing.projectDir || null) : null;
+  const projectDir = opts.projectDir !== undefined
+    ? normalizeProjectDir(opts.projectDir)
+    : existingProjectDir;
   const meta: ApiSessionMeta = {
     id: sid,
     title,
     createdAt,
     updatedAt: now,
     messageCount: out.filter((m) => m.role === 'user' || m.role === 'assistant').length,
+    projectDir,
   };
   writeJsonAtomic(sessionFile(profileId, sid), {
     version: INDEX_VERSION,
@@ -419,6 +474,7 @@ function saveApiSessionInner(
     updatedAt: now,
     messages: out,
     usageTotal: opts.usageTotal && typeof opts.usageTotal === 'object' ? opts.usageTotal : {},
+    projectDir,
   });
   if (existing) Object.assign(existing, meta);
   else index.sessions.push(meta);

@@ -264,4 +264,4 @@ async function initProject(skipPrompt: boolean = false, windowContext: any = nul
   return { success: true, message: '初始化完成，已发送系统提示词、工具规则和工具库' };
 }
 
-export { PROMPT_DIR, initProject };
+export { PROMPT_DIR, initProject, readLastProjectDir };

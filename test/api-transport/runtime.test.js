@@ -8,6 +8,9 @@ const h = vi.hoisted(() => ({
   materializeImpl: null,
   sent: [],
   loadMessages: [],
+  createdOpts: null,
+  savedMessages: null,
+  savedOpts: null,
 }));
 
 vi.mock('../../src/api-transport/client.js', async (importOriginal) => {
@@ -70,12 +73,14 @@ vi.mock('../../src/api-transport/session-store.js', () => ({
     : null),
   getActiveApiSessionId: () => 's',
   deriveSessionTitle: () => 't',
-  saveApiSession: () => {},
+  saveApiSession: (_profile, messages, opts) => { h.savedMessages = messages; h.savedOpts = opts || null; },
   clearApiSession: () => {},
-  createApiSession: () => 's-new',
+  createApiSession: (_profile, opts) => { h.createdOpts = opts || null; return 's-new'; },
   setActiveApiSession: () => true,
   deleteApiSession: () => 's',
   listApiSessions: () => ({ activeSessionId: 's', sessions: [] }),
+  getApiSessionProjectDir: () => null,
+  setApiSessionProjectDir: () => true,
   pruneProfileAttachments: () => ({ removed: 0, bytes: 0 }),
 }));
 
@@ -298,4 +303,52 @@ test('隐藏技能/计划指令不进历史气泡：displayText 优先，content
   const bubble = hist.items.find((it) => it.t === 'user');
   assert.equal(bubble.text, '真正问题', '界面历史只能看到展示文本');
   assert.ok(!bubble.text.includes('hidden'), '不能回显隐藏技能指令');
+});
+
+test('API 新对话继承当前项目目录并落盘到新会话', async () => {
+  h.loadMessages = [];
+  h.createdOpts = null;
+  const ctx = { ...makeCtx(), profileId: 'new-session-project' };
+  ctx.sessionStore.state.selectedProjectDir = 'D:\\work-a';
+  const runtime = await import('../../src/api-transport/runtime.js');
+  const r = await runtime.startNewApiSession(ctx);
+  assert.equal(r.success, true);
+  assert.equal(h.createdOpts.projectDir, 'D:\\work-a');
+  assert.equal(ctx.sessionStore.state.selectedProjectDir, 'D:\\work-a');
+  assert.ok(h.sent.some((e) => e.type === 'project-dir' && e.dir === 'D:\\work-a'));
+});
+
+test('API 编辑旧消息按“从后往前第 N 条 user”物理截断上下文，不是追加', async () => {
+  h.loadMessages = [
+    { role: 'system', content: 'sys' },
+    { role: 'user', content: 'q1' },
+    { role: 'assistant', content: 'a1' },
+    { role: 'user', content: 'q2' },
+    { role: 'assistant', content: 'a2' },
+    { role: 'user', content: 'q3' },
+    { role: 'assistant', content: 'a3' },
+  ];
+  h.savedMessages = null;
+  const ctx = { ...makeCtx(), profileId: 'truncate-api-context' };
+  const runtime = await import('../../src/api-transport/runtime.js');
+  const r = runtime.truncateApiHistory(ctx, 1);
+  assert.equal(r.success, true);
+  assert.equal(r.removed, 4);
+  assert.deepEqual(h.savedMessages.map((m) => m.role + ':' + m.content), [
+    'system:sys',
+    'user:q1',
+    'assistant:a1',
+  ]);
+  const hist = runtime.getApiHistory(ctx);
+  assert.deepEqual(hist.items.map((m) => m.t + ':' + m.text), ['user:q1', 'assistant:a1']);
+});
+
+test('API 截断到不存在的消息返回失败，不写盘', async () => {
+  h.loadMessages = [{ role: 'system', content: 'sys' }, { role: 'user', content: 'q1' }];
+  h.savedMessages = null;
+  const ctx = { ...makeCtx(), profileId: 'truncate-api-missing' };
+  const runtime = await import('../../src/api-transport/runtime.js');
+  const r = runtime.truncateApiHistory(ctx, 9);
+  assert.equal(r.success, false);
+  assert.equal(h.savedMessages, null);
 });

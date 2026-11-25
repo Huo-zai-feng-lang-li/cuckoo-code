@@ -8,13 +8,13 @@
 
 ## 一、这是什么
 
-Cuckoo Code 是一个**零 Token 成本**的 AI Agent 桌面应用：
+Cuckoo Code 是一个 AI Agent 桌面应用：
 
-- 用 Electron 把 AI 网页版（DeepSeek / Claude / ChatGPT）嵌入本地窗口
+- 用 Electron 把 **DeepSeek 网页版**嵌入本地窗口；另提供 **OpenAI 兼容 API Key 直连**
 - 注入覆盖层 UI 与"网络拦截 hook"，捕获 AI 的完整回复
 - 引导 AI 输出 `cuckoo` 代码块（JavaScript 工具调用）
 - 在受限 vm 沙箱执行，结果回传 AI，形成 Agent 循环
-- **不需要 API Key**，复用网页版账号
+- 网页模式不需要 API Key；API 模式按上游接口计费
 
 ---
 
@@ -76,6 +76,8 @@ Cuckoo Code 是一个**零 Token 成本**的 AI Agent 桌面应用：
 ```
 
 **关键点**：AI 网页在一个 **WebContentsView** 里，窗口自身的 `webContents` 是地址栏壳页面。因此**任何"对当前 AI 页面操作"的代码，都要通过 `windowState.getContextByWebContents(...)` 拿到 `ctx.view`，而不是 `ctx.win.webContents`**。
+
+**API 模式**不创建网页 hook：AI 视图只加载 `about:blank#cuckoo-api` 占位，实际请求由主进程 `src/api-transport/` 发往 OpenAI 兼容接口，工具循环由 `tool-loop.ts` 驱动。网页模式与 API 模式共用 harness UI、工具注册表和权限闸，但回复采集与上游请求是两条独立链路。
 
 ---
 

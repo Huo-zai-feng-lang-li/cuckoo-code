@@ -71,6 +71,37 @@ src/app/entry.ts
 
 **hook 与 preload 的关系**：hook 在**主世界**（能改 window.fetch），preload 在**隔离世界**（能用 electronAPI）。两者靠 `window.dispatchEvent / addEventListener` 通信。
 
+## 3A. API 模式（`api-key`）
+
+API 模式不加载 AI 网页，也不注入 AI 页面的 bridge/preload hook；harness 页面仍由 `harness-preload.ts` 驱动。
+
+```
+profile.providerId === 'api-key'
+  ↓
+entry.ts 跳过代理/指纹注入
+  ↓
+AI 视图加载 about:blank#cuckoo-api 占位，harness 视图强制可见
+  ↓
+用户发送 → app/ipc/harness.ts
+  ↓
+api-transport/runtime.ts → sendApiMessage(ctx, text, files)
+  ↓
+api-transport/client.ts → POST {baseUrl}/chat/completions
+  Authorization: Bearer <key>
+  SSE choices[].delta；支持原生 tool_calls
+  ↓
+有工具调用 → api-transport/tool-loop.ts → ToolRegistry 权限闸
+  ↓
+工具结果写回 messages → 继续下一轮请求
+```
+
+- **会话隔离**：`session-store.ts` 按 profile + session 保存历史、计划、目标；旧版单快照会自动迁移。
+- **编辑旧消息必须截断主进程上下文**：API 没有网页消息 id，harness 不能只改 DOM/localStorage；`doTruncate()` / `doSubmitLatest()` 调 `harness-api-history-truncate`，`runtime.truncateApiHistory()` 按“从末尾第 N 条 user”删除目标及其后的 assistant/tool，再发送新内容，避免编辑变追加。
+- **项目目录持久化**：API 会话快照与索引都保存 `projectDir`。窗口启动优先恢复 active 会话目录，老会话没有目录时回退全局 `last-project-dir.json`（目录必须仍存在）；新建会话继承当前目录，切换/删除会话同步恢复，避免每次进入 API 窗口都回到“首次对话需选择项目目录”。
+- **左侧会话菜单**：只在 API 模式显示（`body:not(.ck-api-mode)` 时隐藏）；网页模式使用壳层「对话」页面，两套入口不共用。
+- **协议边界**：当前只兼容 OpenAI 风格 `/chat/completions` + Bearer + SSE + `tool_calls`；Anthropic 原生、Gemini 原生等协议需要新增 adapter，不能只填 Base URL。
+- **工具范围**：复用 `tool-loop.ts`，但排除 `attachFile`、`runAgent`、`runAgents` 等网页自动化专用工具。
+
 ## 4. 工具调用循环（核心）
 
 ```
