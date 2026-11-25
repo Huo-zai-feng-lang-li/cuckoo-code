@@ -815,7 +815,11 @@
     -webkit-app-region: no-drag; min-width: 0; gap: 6px; padding: 0 9px;
     border-color: transparent; background: transparent;
   }
-  #btn-api-sessions svg { width: 14px; height: 14px; flex-shrink: 0; opacity: .82; }
+  /* 顶栏整体是窗口拖拽区；只给按钮本身声明 no-drag 时，内部 SVG 仍可能被当成拖拽区，
+     导致鼠标落在图标上既不触发 hover，也点不开菜单。把整棵子树都划回 no-drag。 */
+  #btn-api-sessions,
+  #btn-api-sessions * { -webkit-app-region: no-drag; }
+  #btn-api-sessions svg { width: 14px; height: 14px; flex-shrink: 0; opacity: .82; pointer-events: none; }
   #btn-api-sessions[aria-expanded="true"] { color: var(--accent); background: var(--accent-soft); }
   #btn-api-sessions[aria-expanded="true"] svg { opacity: 1; }
   .api-session-menu {

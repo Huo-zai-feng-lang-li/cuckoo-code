@@ -718,6 +718,15 @@ test('API 会话入口在顶栏左侧，菜单默认收起', () => {
   assert.ok(script.includes('setApiSessionMenuOpen(false)'), '进入 API 模式时应默认收起会话菜单');
 });
 
+test('API 会话入口整块可点击：图标不拦截、图标区不触发窗口拖拽', () => {
+  assert.ok(
+    /#btn-api-sessions\s*,\s*#btn-api-sessions\s*\*\s*\{[\s\S]*?-webkit-app-region:\s*no-drag/.test(html),
+    '会话入口本身与内部图标/文字都必须声明 no-drag，否则图标落在拖拽区会吃掉点击和 hover'
+  );
+  const iconRule = html.match(/#btn-api-sessions svg \{[\s\S]*?\}/)?.[0] || '';
+  assert.ok(iconRule.includes('pointer-events: none'), '图标应把指针事件交给按钮，避免 SVG 单独拦截点击');
+});
+
 test('历史会话项不再显示蓝色左边框', () => {
   const activeRule = html.match(/\.api-session-row\.active \{[\s\S]*?\}/)?.[0] || '';
   assert.ok(activeRule, '应有会话项 active 样式');
