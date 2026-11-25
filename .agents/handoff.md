@@ -1,6 +1,6 @@
-# 最新接续状态 (2026-11-24 11:50)
+# 最新接续状态 (2026-11-24 12:00)
 
-> 当前分支 `master`，版本 `0.10.250`。本轮提交后合并到 `master` 并打 tag `v0.10.250` 推送；版本号任意位置禁含数字 4。
+> 当前分支 `master`，版本 `0.10.250`，已合并并发布 Release `v0.10.250`（CI 成功）。版本号任意位置禁含数字 4。
 
 ## 核心进展
 
@@ -78,9 +78,9 @@
 
 ## 待办事项 (Next Steps)
 
-- [ ] 本次提交后合并到 `master`，打并推送 tag `v0.10.250`；GitHub Actions `release.yml` 负责 NSIS 安装包与 Android 构建。
-- [ ] `dist/win-unpacked` 已用最新源码重新打包（含 API 项目目录、编辑上下文截断、顶栏双竖线修复），并已启动验证；`electron-builder --win --dir --config.win.icon=build/icon.ico` 成功，但尚未生成 NSIS 安装包。正式安装包由 tag 触发 CI。
-- [ ] 发布前确认 `package.json` / `package-lock.json` / `android/app/build.gradle` 三处版本一致（均为 0.10.250）。
+- [x] `v0.10.250` 已合并到 `master`、推送 tag；GitHub Actions release run `45543279070` 成功，Windows 安装包与 Android APK 已上传。
+- [x] `dist/win-unpacked` 已用最新源码重新打包（含 API 项目目录、编辑上下文截断、顶栏双竖线修复），并已启动验证；正式 NSIS 安装包由 tag CI 生成。
+- [x] 发布前三处版本一致：`package.json` / `package-lock.json` / `android/app/build.gradle` 均为 0.10.250。
 - [ ] 若要接新网页平台，按 `docs/arch/05-tasks.md` 任务 2 执行；先判断能否走官方 API，避免直接写 Provider。
 
 ## 关键上下文
@@ -90,5 +90,6 @@
 - 当前版本：`0.10.250`；`android/app/build.gradle` versionCode `10250` / versionName `0.10.250`
 - 验证：全量 `168 文件 / 1672 用例` 通过；`test/ui/harness-page.test.js` 68 条通过；typecheck、lint（0 error / 75 warnings）、compile 通过；Dev 实例 CDP 探针确认启动与重启后 `needInit: false`、壳顶栏显示 `cuckoo-code`，切换老会话也回填目录并落盘；API 模式 toolbar 仅保留单个普通 divider。
 - `dist/win-unpacked`：最新 0.10.250 本地打包，`app.asar` 含 API 项目目录、编辑上下文截断、顶栏单分隔线修复与最新 harness UI；`sharp` 与 `@img/sharp-win32-x64` 在 `app.asar.unpacked`；无 Claude / ChatGPT provider；已启动验证 `needInit: false`、toolbar 仅一个普通 divider。只有目录包，无 NSIS 安装包。
-- 上一版 Release：`v0.10.239`，`cuckoo-code-win-v0.10.239.exe`；0.10.238 启动即崩，内置 updater 无法运行，需手动安装 0.10.239 一次
+- 当前 Release：`v0.10.250`，Windows `cuckoo-code-win-v0.10.250.exe`、Android `cuckoo-remote-android-v0.10.250.apk`、`latest.yml` 已上传；Release run `45543279070` 成功。
+- 上一版 Release：`v0.10.239`；0.10.238 启动即崩，内置 updater 无法运行，需手动安装 0.10.239 一次
 - 环境：外网代理 `http://127.0.0.1:51081`；探针脚本 `temp_probe_*.mjs` 已被 gitignore
