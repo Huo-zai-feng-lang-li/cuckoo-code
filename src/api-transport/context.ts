@@ -109,7 +109,7 @@ function splitTurns(messages: ApiChatMessage[]): ApiChatMessage[][] {
   const turns: ApiChatMessage[][] = [];
   let current: ApiChatMessage[] | null = null;
   for (const m of messages) {
-    if (m && m.role === 'user') {
+    if (m && m.role === 'user' && !(m as any).internal) {
       current = [m];
       turns.push(current);
     } else if (current) {

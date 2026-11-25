@@ -33,7 +33,7 @@
 ### 多平台 Provider 框架
 
 - 内置 **DeepSeek 网页版** 与 **API Key / OpenAI 兼容** 两个平台
-- 网页平台独立封装输入框定位、发送按钮检测、回复完成判断、消息解析等差异；API 平台由主进程 `api-transport` 直接请求上游，复用同一套工具循环
+- 网页平台独立封装输入框定位、发送按钮检测、回复完成判断、消息解析等差异；API 平台由主进程 `api-transport` 直接请求上游，支持 native function calling，也支持可选的 `cuckoo-js` 代码块工具模式（适合拒绝原生 tools 的网页模型）
 - 新建窗口时可选择平台，也可**导入自定义 Provider**（提供类型声明和模板，降低扩展门槛）
 
 ### 真正的 AI Agent

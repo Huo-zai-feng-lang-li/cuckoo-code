@@ -8,6 +8,8 @@ paths:
 
 providers 适配各 AI 平台（DeepSeek / Claude / ChatGPT / 自定义）。可依赖 `infra`，被 `tools` / `bridge` / `session` 依赖。
 
+> 加新平台前先分清是“网页 Provider”还是“API 网关”：官方 API 优先走 API 窗口；只有网页 UI 才考虑 Provider 或独立网关。完整决策树与验收清单见 `web-ai-integration.md`。
+
 ## 加新平台的标准流程
 
 1. 新建 `src/providers/<id>.ts`，实现 `Provider` 接口（见 `types.ts`）

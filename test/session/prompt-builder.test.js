@@ -125,6 +125,50 @@ test('buildPrompt PLATFORM_INFO 含当前平台信息', () => {
   }
 });
 
+test('buildPrompt quick 模板可直接加载且包含 cuckoo-js 契约', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cuckoo-pb-'));
+  try {
+    const tpl = pb.loadTemplate('quick');
+    assert.ok(tpl.path.endsWith(path.join('src', 'prompt', 'quick.md')), tpl.path);
+    const r = pb.buildPrompt({ providerId: 'quick', selectedDir: tmp });
+    assert.ok(!r.error, r.error);
+    assert.ok(r.prompt.includes('```cuckoo'), '必须告诉模型输出 cuckoo 代码块');
+    assert.ok(r.prompt.includes('declare function bash'), '必须给出 bash 签名');
+    assert.ok(r.prompt.includes('mcpCall'), '必须给出 MCP 工具声明');
+    assert.ok(r.prompt.length <= 16000, 'Quick 首条消息预算 16000，实际 ' + r.prompt.length);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('buildPrompt quick 注入全局规则、技能索引和 MCP 章节，且不挤爆预算', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cuckoo-pb-quick-'));
+  const home = path.join(tmp, 'home');
+  const rulesDir = path.join(home, '.agents', 'rules');
+  fs.mkdirSync(rulesDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(rulesDir, 'quick-inject.md'),
+    '# 测试规则\n\n这条规则必须进入 cuckoo-js 的首条消息：禁止在最终回答里泄漏内部工具协议。\n',
+    'utf8'
+  );
+  const oldHome = process.env.CUCKOO_HOME;
+  process.env.CUCKOO_HOME = home;
+  try {
+    const r = pb.buildPrompt({ providerId: 'quick', selectedDir: tmp });
+    assert.ok(!r.error, r.error);
+    assert.ok(r.prompt.includes('## 项目规则'), '缺少项目规则章节');
+    assert.ok(r.prompt.includes('这条规则必须进入 cuckoo-js'), '规则正文没有注入');
+    assert.ok(r.prompt.includes('## 可用技能（Skills）'), '缺少技能章节');
+    assert.ok(r.prompt.includes('## MCP 能力'), '缺少 MCP 章节');
+    assert.ok(r.prompt.includes('mcpListServers'), '缺少 MCP 工具调用说明');
+    assert.ok(r.prompt.length <= 16000, 'Quick 首条消息预算 16000，实际 ' + r.prompt.length);
+  } finally {
+    if (oldHome === undefined) delete process.env.CUCKOO_HOME;
+    else process.env.CUCKOO_HOME = oldHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('buildPrompt isCompaction 末尾追加"请继续你之前的工作"', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cuckoo-pb-'));
   try {

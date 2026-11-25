@@ -69,6 +69,21 @@ test('文本附件大小计入 token 估算，避免 materialize 后超预算', 
   assert.ok(withAttachment > base, '文本附件必须被计入预算');
 });
 
+test('internal user 是同一轮的续传，不新开上下文轮次', () => {
+  const messages = [
+    { role: 'system', content: 'S' },
+    { role: 'user', content: 'old ' + 'x'.repeat(2000) },
+    { role: 'assistant', content: 'old answer' },
+    { role: 'user', content: 'new question' },
+    { role: 'assistant', content: '```cuckoo\nawait bash("dir")\n```', internal: true },
+    { role: 'user', content: 'tool result ' + 'r'.repeat(80), internal: true },
+    { role: 'assistant', content: 'done' },
+  ];
+  const out = trimMessagesToBudget(messages, 300);
+  assert.ok(out.some((m) => m.content === 'new question'), '不能把 internal 工具结果当成新轮次而裁掉真实问题');
+  assert.ok(out.some((m) => m.content === 'done'));
+});
+
 test('上下文预算扣除输出、工具定义和安全余量', () => {
   const b = resolveContextBudget({ contextWindow: 131072, maxOutputTokens: 8192, toolsTokens: 2000 });
   assert.ok(b.inputBudget < 131072 - 8192);

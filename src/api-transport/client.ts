@@ -43,6 +43,11 @@ export interface ApiChatMessage {
    * 用户 content 里可能拼了技能/计划隐藏指令，展示时必须用这份干净文本。
    */
   displayText?: string;
+  /**
+   * 内部续传消息：cuckoo-js 的工具结果以 user role 回传，但不是新的用户轮次。
+   * UI 历史、上下文轮次和持久化裁剪都必须跳过它。
+   */
+  internal?: boolean;
 }
 
 export interface ApiUsage {
@@ -77,6 +82,11 @@ export interface StreamChatOptions {
   maxOutputTokens?: number;
   /** usage 统计：on=请求 include_usage；auto/off 不主动请求，但网关返回也解析 */
   usageReporting?: 'auto' | 'on' | 'off';
+  /**
+   * 网关会话 ID（cuckoo-js 用）。走 body conversation_id，让 3000 复用
+   * 同一个网页会话，而不是每轮把完整上下文重新灌给 Quick。
+   */
+  conversationId?: string;
 }
 
 export interface StreamChatResult {
@@ -255,6 +265,56 @@ export async function streamChat(opts: StreamChatOptions): Promise<StreamChatRes
   }
 }
 
+/**
+ * 显式通知本地网关停止某个会话的网页回合。
+ *
+ * 为什么不能只 abort fetch：实测某些 Electron fetch 中断后，网关侧的 HTTP
+ * close 不会及时到达，网页端仍在生成。这个独立短请求给网关一个明确的
+ * conversation_id，网关可以立刻点掉网页停止按钮；失败也不影响本地 abort。
+ *
+ * @param config API 连接配置
+ * @param conversationId 与正常 chat 请求相同的 conversation_id
+ * @param opts 测试注入与超时
+ * @returns 网关是否确认收到停止请求
+ */
+export async function cancelChatTurn(
+  config: ApiTransportConfig,
+  conversationId: string,
+  opts: { fetchImpl?: typeof fetch; timeoutMs?: number } = {},
+): Promise<{ ok: boolean; status?: number; reason?: string }> {
+  const fetchImpl = opts.fetchImpl || globalThis.fetch;
+  if (typeof fetchImpl !== 'function') throw new Error('当前运行环境没有 fetch');
+  if (!conversationId) return { ok: false, reason: 'missing_conversation_id' };
+  const url = new URL(config.endpoint);
+  if (!/\/chat\/completions\/?$/.test(url.pathname)) {
+    return { ok: false, reason: 'unsupported_endpoint' };
+  }
+  url.pathname = url.pathname.replace(/\/chat\/completions\/?$/, '/chat/completions/stop');
+  const timeoutMs = Number.isFinite(opts.timeoutMs as number) ? Math.max(500, opts.timeoutMs as number) : 3000;
+  const ac = new AbortController();
+  const timer = setTimeout(() => { try { ac.abort(); } catch (_) { /* ignore */ } }, timeoutMs);
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (config.apiKey) headers.Authorization = 'Bearer ' + config.apiKey;
+    const res = await fetchImpl(url.toString(), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ model: config.model, conversation_id: conversationId }),
+      signal: ac.signal,
+    });
+    const raw = await res.text();
+    let parsed: any = null;
+    try { parsed = raw ? JSON.parse(raw) : null; } catch (_) { /* ignore */ }
+    return {
+      ok: res.ok && (!parsed || parsed.ok !== false),
+      status: res.status,
+      reason: parsed && parsed.reason ? String(parsed.reason) : '',
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** 只把模型需要的字段发出去；displayText 是本地 UI 数据，不能被上游看到。 */
 function toWireMessages(messages: ApiChatMessage[]): any[] {
   return messages.map((m) => {
@@ -292,6 +352,9 @@ async function once(opts: StreamChatOptions, fetchImpl: typeof fetch): Promise<S
   if (Array.isArray(opts.tools) && opts.tools.length > 0) {
     body.tools = opts.tools;
     body.tool_choice = 'auto';
+  }
+  if (opts.conversationId) {
+    body.conversation_id = String(opts.conversationId);
   }
 
   const res = await fetchImpl(config.endpoint, {

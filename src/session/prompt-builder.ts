@@ -42,6 +42,11 @@ const MAX_AGENTS_SECTION_CHARS = 1200;
 const MAX_MEMORY_SECTION_CHARS = 2500;
 /** DSH 插件提示段上限 */
 const MAX_DSH_SECTION_CHARS = 3000;
+/** cuckoo-js 的紧凑预算：规则/技能索引/记忆/MCP 进网页首条消息时必须收窄 */
+const QUICK_RULES_CHARS = 3800;
+const QUICK_SKILLS_CHARS = 2200;
+const QUICK_MEMORY_CHARS = 800;
+const QUICK_MCP_CHARS = 1600;
 
 /**
  * 读取平台提示词模板。
@@ -186,11 +191,14 @@ function filterProjectScoped<T extends { source?: string }>(items: T[], projectD
  * 组装完整的系统提示词（带总预算降级阶梯）。
  * 固定段（模板 + 工具契约 + 平台/MCP）永不裁剪；可裁剪段按 mode 逐级收紧，
  * 保证注入网页输入框的首条消息不触发站点静默截断。
- * @param opts { providerId, selectedDir, isCompaction }
+ * @param opts { providerId, selectedDir, isCompaction, compact }
  * @returns { prompt, error? }，error 存在时 prompt 为空
  */
-function buildPrompt(opts: { providerId: string; selectedDir: string; isCompaction?: boolean; customSystemPrompt?: string }): { prompt: string; error?: string } {
+function buildPrompt(opts: { providerId: string; selectedDir: string; isCompaction?: boolean; customSystemPrompt?: string; compact?: boolean }): { prompt: string; error?: string } {
   const { providerId, selectedDir, isCompaction, customSystemPrompt } = opts;
+  // quick（cuckoo-js）默认紧凑：它要把规则/技能/记忆/MCP 塞进网页首条消息，
+  // 又必须保证 bash/MCP 签名留在网关 12000 字符头段内。
+  const compact = opts.compact === true || (opts.compact !== false && providerId === 'quick');
 
   const tpl = loadTemplate(providerId);
   if (tpl.error) return { prompt: '', error: tpl.error };
@@ -258,9 +266,29 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
 
     let rulesSection = '';
     if (rules.length > 0) {
+      const rulesBudget = compact ? QUICK_RULES_CHARS : MAX_RULES_SECTION_CHARS;
       const full = buildUnscopedRulesSection(rules);
-      if (mode === 0 && full.length <= MAX_RULES_SECTION_CHARS) {
+      if (mode === 0 && full.length <= rulesBudget) {
         rulesSection = full;
+      } else if (compact) {
+        // 全局规则优先保正文，项目规则只给索引；不能因为项目规则多就把全局规则也降级成路径。
+        const globalRules = rules.filter((r) => r.source === 'user');
+        const projectRules = rules.filter((r) => r.source !== 'user');
+        const globalSection = globalRules.length
+          ? clipSection(
+            buildUnscopedRulesSection(globalRules, { heading: '## 项目规则（全局）' }),
+            QUICK_RULES_CHARS,
+            '全局规则已截断，请直接 read 对应文件'
+          )
+          : '';
+        const projectIndex = projectRules.length
+          ? clipSection(
+            buildUnscopedRulesSection(projectRules, { indexOnly: true, heading: '## 项目规则索引' }),
+            1600,
+            '项目规则索引已截断，请直接 read 规则目录'
+          )
+          : '';
+        rulesSection = [globalSection, projectIndex].filter(Boolean).join('\n\n');
       } else if (mode <= 2) {
         rulesSection = clipSection(
           buildUnscopedRulesSection(rules, { indexOnly: true }),
@@ -275,14 +303,21 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
     let skillsSection = '';
     if (skills.length === 0) {
       skillsSection = buildSkillsSection(skills);
+    } else if (compact) {
+      // cuckoo-js：只给名字 + SKILL.md 路径，正文由模型按需 read。
+      skillsSection = clipSection(
+        buildSkillsSection(skills, { namesOnly: true }),
+        QUICK_SKILLS_CHARS,
+        '技能清单已截断，请直接 read 技能目录'
+      );
     } else {
       const full = buildSkillsSection(skills);
       if (mode === 0 && full.length <= MAX_SKILLS_SECTION_CHARS) {
         skillsSection = full;
       } else if (mode === 1) {
-        const compact = buildSkillsSection(skills, { maxDesc: 120 });
-        skillsSection = compact.length <= MAX_SKILLS_SECTION_CHARS
-          ? compact
+        const compactSkills = buildSkillsSection(skills, { maxDesc: 120 });
+        skillsSection = compactSkills.length <= MAX_SKILLS_SECTION_CHARS
+          ? compactSkills
           : clipSection(buildSkillsSection(skills, { namesOnly: true }), MAX_SKILLS_SECTION_CHARS, '技能清单已截断，请直接 read 技能目录');
       } else if (mode <= 2) {
         skillsSection = clipSection(buildSkillsSection(skills, { namesOnly: true }), MAX_SKILLS_SECTION_CHARS, '技能清单已截断，请直接 read 技能目录');
@@ -303,7 +338,9 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
       }
     }
 
-    const memoryLimit = mode === 0 ? MAX_MEMORY_SECTION_CHARS : mode === 1 ? 1500 : mode === 2 ? 800 : 0;
+    const memoryLimit = compact
+      ? (mode === 0 ? QUICK_MEMORY_CHARS : mode === 1 ? 600 : mode === 2 ? 300 : 0)
+      : (mode === 0 ? MAX_MEMORY_SECTION_CHARS : mode === 1 ? 1500 : mode === 2 ? 800 : 0);
     const memoryOut = memorySection && memoryLimit > 0
       ? clipSection(memorySection, memoryLimit, '记忆已截断')
       : '';
@@ -313,6 +350,9 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
       ? clipSection(dshSections, dshLimit, '插件提示段已截断，需要细节请查看插件文档')
       : '';
     const promptSections = dshOut ? (toolSections + '\n\n' + dshOut) : toolSections;
+    const mcpOut = compact
+      ? clipSection(mcpSection, QUICK_MCP_CHARS, 'MCP 章节已截断，请用 mcpListServers 查询实时状态')
+      : mcpSection;
 
     return {
       '{{TOOL_API_TYPES}}': toolApiTypes,
@@ -320,7 +360,7 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
       '{{PLATFORM_INFO}}': platformInfo,
       '{{PROJECT_DIR}}': selectedDir,
       '{{PROJECT_INTRO_SECTION}}': introSection,
-      '{{MCP_SECTION}}': mcpSection,
+      '{{MCP_SECTION}}': mcpOut,
       '{{SKILLS_SECTION}}': skillsSection,
       '{{AGENTS_SECTION}}': agentsSection,
       '{{PROJECT_RULES_SECTION}}': rulesSection,

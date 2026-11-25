@@ -128,6 +128,9 @@ export const PET_SIZE_MAX = 256;
 /** 旧三档 → px 的映射（兼容老配置） */
 const LEGACY_PET_SIZE: Record<string, number> = { small: 64, medium: 96, large: 128 };
 
+/** API 工具调用模式：native=原生 function calling；cuckoo-js=网页模型代码块协议 */
+export type ApiToolMode = 'native' | 'cuckoo-js';
+
 export interface ApiTransportPrefs {
   /** 旧版全局默认 Base URL（新窗口未单独配置时继承） */
   baseUrl: string;
@@ -137,6 +140,8 @@ export interface ApiTransportPrefs {
   model: string;
   /** 是否把 Cuckoo 工具以 OpenAI tools 暴露给模型（默认开） */
   toolsEnabled: boolean;
+  /** 工具调用模式；native 兼容 OpenAI tools，cuckoo-js 给网页模型写代码块 */
+  toolMode: ApiToolMode;
   /** 单轮用户消息最多工具往返次数（1~500，默认 64） */
   maxToolRounds: number;
   /** 模型上下文窗口（tokens；不同厂商/Key 可不同，默认 131072） */
@@ -203,6 +208,7 @@ const DEFAULTS: UiPrefs = {
     apiKey: '',
     model: '',
     toolsEnabled: true,
+    toolMode: 'native',
     maxToolRounds: 64,
     contextWindow: 131072,
     maxOutputTokens: 8192,
@@ -297,6 +303,7 @@ function normApiConnection(raw: any, fallback?: ApiConnectionPrefs): ApiConnecti
     apiKey: typeof r.apiKey === 'string' ? r.apiKey.trim() : d.apiKey,
     model: typeof r.model === 'string' ? r.model.trim() : d.model,
     toolsEnabled: r.toolsEnabled !== false,
+    toolMode: r.toolMode === 'cuckoo-js' ? 'cuckoo-js' : 'native',
     maxToolRounds: Number.isFinite(rounds)
       ? Math.max(1, Math.min(500, Math.round(rounds)))
       : d.maxToolRounds,

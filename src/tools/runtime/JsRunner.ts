@@ -223,6 +223,13 @@ class JsRunner {
       resolveOuter(result);
     }
 
+    const toolSettings: any = settings && typeof settings === 'object' ? Object.assign({}, settings) : {};
+    // cuckoo-js 的 opt-in 白名单：只用于限制可调用的工具，不传给工具实现。
+    const allowedTools = Array.isArray(toolSettings.allowedTools)
+      ? toolSettings.allowedTools.filter((x: any) => typeof x === 'string')
+      : null;
+    delete toolSettings.allowedTools;
+
     child.on('message', async (msg: any) => {
       if (!msg || typeof msg !== 'object') return;
       try {
@@ -238,9 +245,12 @@ class JsRunner {
           if (!tool) {
             result = { success: false, error: '未知工具: ' + msg.op };
             toolFailures.push({ tool: msg.op || 'unknown', args: args, error: result.error });
+          } else if (allowedTools && !allowedTools.includes(msg.op)) {
+            result = { success: false, error: '工具未在 cuckoo-js 模式允许列表: ' + msg.op };
+            toolFailures.push({ tool: msg.op, args: args, error: result.error });
           } else {
             try {
-              result = await tool.execute(Object.assign({}, settings || {}, args, { projectDir, currentWindowId: windowId }));
+              result = await tool.execute(Object.assign({}, toolSettings, args, { projectDir, currentWindowId: windowId }));
               if (result && result.success === false) {
                 toolFailures.push({ tool: msg.op, args: args, error: result.error || '未知错误' });
               } else if (msg.op === 'read' && result && result.success !== false) {

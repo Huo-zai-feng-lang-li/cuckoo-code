@@ -92,4 +92,48 @@
 - `dist/win-unpacked`：最新 0.10.250 本地打包，`app.asar` 含 API 项目目录、编辑上下文截断、顶栏单分隔线修复与最新 harness UI；`sharp` 与 `@img/sharp-win32-x64` 在 `app.asar.unpacked`；无 Claude / ChatGPT provider；已启动验证 `needInit: false`、toolbar 仅一个普通 divider。只有目录包，无 NSIS 安装包。
 - 当前 Release：`v0.10.250`，Windows `cuckoo-code-win-v0.10.250.exe`、Android `cuckoo-remote-android-v0.10.250.apk`、`latest.yml` 已上传；Release run `45543279070` 成功。
 - 上一版 Release：`v0.10.239`；0.10.238 启动即崩，内置 updater 无法运行，需手动安装 0.10.239 一次
+
+## cuckoo-js 工具模式（2026-11-24 12:50）
+
+- 目标：AWS Quick 这类拒绝 native tools、只输出代码块的网页模型，通过 `3000` 网关完成多轮本地工具调用。
+- 新增 `src/api-transport/cuckoo-js.ts`（提取/隐藏/格式化）、`cuckoo-js-exec.ts`（guard + JsRunner + allowedTools）、`cuckoo-js-loop.ts`（Chat 循环，不发送 tools，不产生 tool role）、`src/prompt/quick.md`（约 3KB，工具签名在前部）。
+- `runtime.ts` 增加 `toolMode`、`mode_mismatch`、`prepareApiTurn`、`internal` 过滤；`session-store.ts` 持久化 `toolMode` 并按 internal 边界裁剪；`context.ts` 跳过 internal user；`client.ts` 支持 `conversationId` → body `conversation_id`；`JsRunner.ts` 支持 `allowedTools` 白名单；UI 增加“工具调用方式”下拉，切换后自动新对话。
+- 关键细节：同一轮多个 cuckoo 块合并为一条 internal user 结果，避免 3000 `formatContinuation` 只发最后一条 user；单条结果上限 12000，避免 3000 头 12000 + 尾 16000 裁掉结果开头；空会话可跟随当前模式，避免首次打开 API 窗口即 `mode_mismatch`。
+- 验证：全量 `171 文件 / 1703 用例` 通过；`npm run typecheck`、`npm run compile` 通过；`npm run lint` 0 error / 75 既有 warning。
+- 未完成：`3000` 当前未启动，未做真实 Quick 端到端；Electron 开发环境未实际点选 UI 下拉；用户自行测试。
+
+## cuckoo-js 两个严重问题修复（2026-11-25）
+
+- 图片上传后模型看不到：网关 OpenAI 层原来只把 `image_url` 变文本占位，没走附件通道。现 `protocol.extractImageAttachments` 提取最后一条 user 的 data URL，`handler` 落盘写 `_attachFiles`，提示词替换成图片附件说明。
+- Quick `attachFiles` 上传成功却 60s 超时：原判定拿 requestId 匹配 `/upload/` 永远失败，图片卡片也没有文件名。现按 `files/upload` 完成事件 + “删除附件”按钮数量判断；注入前清残留附件，避免旧图+新图串图。请求体上限 20MB → 32MB。
+- 停止后 Quick 网页仍生成：Cuckoo Code 只 abort 本地 fetch，Electron 这条链路不能保证网关收到 HTTP close。网关新增 `POST /openai/v1/chat/completions/stop`，按 `conversation_id` 找到活动回合，直接点页面“停止生成”；Cuckoo `cancelChatTurn` 在 `stopApiSession` 先发短请求再 abort。两条路径任一命中都能停。
+- 验证：网关 `182/182` 通过；Cuckoo `171 文件 / 1705 用例` 通过；typecheck、compile 通过；lint 0 error / 75 既有 warning。真实 Quick 图片端到端模型能描述画面；显式 stop 后页面 `generating=false`。已随本轮统一提交。
+
 - 环境：外网代理 `http://127.0.0.1:51081`；探针脚本 `temp_probe_*.mjs` 已被 gitignore
+
+## 新网页 AI 接入规则（2026-11-25）
+
+- 新增 `.agents/rules/web-ai-integration.md`：官方 API native / 官方 API cuckoo-js / 网页网关三档决策、网关最小契约、SSE/WebSocket/CDP 选型、上下文规则、验收清单。
+- `.agents/rules/README.md` 专项索引已登记；`providers.md` 开头已加“先分清 Provider vs API 网关”的指针。
+- 目的：以后接新 AI 时，先读规则再动代码，避免为每个网页站点改 `runtime.ts` 或重复造网关。
+
+## 网关会话持久化 + cuckoo-js 上下文/MCP（2026-11-25）
+
+### 网关 `cuko-api-quick`
+
+- `bridge/openai/session-store.js`：默认 TTL 30 分钟 → 24 小时滑动过期；新增 `filePath` 持久化（temp + rename，Windows 占用时降级直写）；加载时剔除过期项；无 `filePath` 保持纯内存。
+- `bridge/openai/handler.js`：默认落盘 `data/openai-sessions.json`；`CUKO_OPENAI_SESSION_TTL_MS` 可调 TTL；`CUKO_OPENAI_SESSION_FILE` 可改路径，设为空串关闭持久化。
+- `test/run.mjs` 在导入 handler 前设 `CUKO_OPENAI_SESSION_FILE=''`，防止测试污染真实 data 文件。新增文件恢复/滑动 TTL/过期/坏文件测试。
+- 真实验证：同一 `conversation_id` 首轮得到 `PONG`，重启网关后 `PONG2` 成功；`data/openai-sessions.json` 中 `providerSessionId` 未变；日志“已经在目标会话里，无需导航”。网关测试 `184/184`。
+- 测试映射已清空，网关已用新代码重启（当前 PID 16356，端口 3000）。
+
+### Cuckoo `cuckoo-code`
+
+- `src/prompt/quick.md`：新增 MCP 三工具声明与 `{{PROJECT_RULES_SECTION}}` / `{{SKILLS_SECTION}}` / `{{MEMORY_SECTION}}` / `{{MCP_SECTION}}`；环境段改成“已尽量注入，截断时 read”。
+- `src/session/prompt-builder.ts`：新增 `compact`（quick 默认）；规则 3800、技能索引 2200、记忆 800、MCP 1600；规则超限降级索引；总预算仍 36000。
+- `src/api-transport/system-prompt.ts`：quick 预算 12000 → 16000；`buildPrompt` 显式 `compact:true`；兜底补 MCP 三工具。
+- `src/api-transport/cuckoo-js-exec.ts`：`ALLOWED_TOOLS` 增加 `mcpListServers` / `mcpGetTools` / `mcpCall`；仍走 JsRunner 白名单闸门。
+- 验证：Cuckoo `171 文件 / 1708 用例` 通过；typecheck、compile 通过；lint 0 error / 75 既有 warning。
+- 额外真实验证：编译后 `JsRunner` + 白名单 `['mcpListServers']` 返回 `context7/cloudflare/cdp-bridge`；`['mcpGetTools']` 成功连接 `context7` 并返回 2 个工具。沙箱注入、白名单、MCP 客户端链路已跑通。
+- 实际 quick 提示词长度 7248 字符，含完整全局规则正文、项目规则索引、技能/记忆/MCP 章节；未超 16000。
+- 未完成：Cuckoo 应用未启动，未在 UI 里点选 API 窗口复测。

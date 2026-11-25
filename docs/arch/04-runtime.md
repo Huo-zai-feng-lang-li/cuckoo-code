@@ -88,11 +88,12 @@ api-transport/runtime.ts → sendApiMessage(ctx, text, files)
   ↓
 api-transport/client.ts → POST {baseUrl}/chat/completions
   Authorization: Bearer <key>
-  SSE choices[].delta；支持原生 tool_calls
+  SSE choices[].delta；native 模式支持原生 tool_calls；cuckoo-js 模式只收普通正文
   ↓
-有工具调用 → api-transport/tool-loop.ts → ToolRegistry 权限闸
+native：有工具调用 → api-transport/tool-loop.ts → ToolRegistry 权限闸
+cuckoo-js：正文含 ```cuckoo 块 → api-transport/cuckoo-js-loop.ts → guard + JsRunner
   ↓
-工具结果写回 messages → 继续下一轮请求
+native：tool 结果写回 messages；cuckoo-js：结果作为 internal user 消息写回 → 继续下一轮请求
 ```
 
 - **会话隔离**：`session-store.ts` 按 profile + session 保存历史、计划、目标；旧版单快照会自动迁移。
@@ -101,6 +102,10 @@ api-transport/client.ts → POST {baseUrl}/chat/completions
 - **左侧会话菜单**：只在 API 模式显示（`body:not(.ck-api-mode)` 时隐藏）；网页模式使用壳层「对话」页面，两套入口不共用。
 - **协议边界**：当前只兼容 OpenAI 风格 `/chat/completions` + Bearer + SSE + `tool_calls`；Anthropic 原生、Gemini 原生等协议需要新增 adapter，不能只填 Base URL。
 - **工具范围**：复用 `tool-loop.ts`，但排除 `attachFile`、`runAgent`、`runAgents` 等网页自动化专用工具。
+- **可选 cuckoo-js 模式**：API 设置里 `toolMode=cuckoo-js` 时，请求不发送 `tools`、不产生 `tool` role；`buildCuckooApiSystemPrompt` 注入 `quick.md`（`bash/pwsh/read/readLines/write/edit/glob/grep/todoWrite` + `mcpListServers/mcpGetTools/mcpCall` 的 TS 声明，并注入全局规则、技能索引、记忆摘要、MCP 章节），模型写以三个反引号开头的 `cuckoo` 代码块，由 `cuckoo-js-exec.ts` 走 `guardExecutionCall` + `JsRunner` 本地执行，结果作为 `internal:true` 的 user 消息回传，循环到模型不再写代码块。`conversationId='cuckoo-js:'+sessionId` 走网关 body `conversation_id`，让 3000 复用网页会话；网关侧映射默认 24h 持久化，重启后可继续同一条 Quick 线程。
+- **模式隔离**：`toolMode` 存会话快照；发送前当前设置与会话模式不一致且会话有可见历史时返回 `mode_mismatch`，空会话直接跟随当前设置；切换模式 UI 自动新建对话，避免旧历史混用两种协议。
+- **图片附件**：API 模式仍由 `saveIncomingAttachments` 落盘、`materializeMessages` 转 OpenAI `image_url`；cuckoo-js 走网关时，网关从最后一条 user 的 `image_url` data URL 提取文件并调用 Quick 附件通道，不再只发“图片暂不支持”的文本占位。
+- **停止 cuckoo-js 回合**：`stopApiSession` 在 abort 本地 fetch 前先调用 `cancelChatTurn`，向网关 `POST /openai/v1/chat/completions/stop` 发送 `conversation_id`；网关据此直接点网页“停止生成”。不能只依赖 HTTP 断连，Electron 主进程的中断不保证及时传到网关。
 
 ## 4. 工具调用循环（核心）
 

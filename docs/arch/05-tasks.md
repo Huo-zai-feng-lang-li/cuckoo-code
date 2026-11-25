@@ -154,8 +154,9 @@ export { MyTool };
 - `{{TOOL_SECTIONS}}`：工具使用指导（registry 生成）
 - `{{PLATFORM_INFO}}`：OS/命令差异（自动）
 - `{{PROJECT_DIR}}` / `{{PROJECT_INTRO_SECTION}}` / `{{MCP_SECTION}}`（自动）
+- `{{PROJECT_RULES_SECTION}}` / `{{SKILLS_SECTION}}` / `{{MEMORY_SECTION}}`（自动；quick 走紧凑预算）
 
-组装逻辑在 `src/session/prompt-builder.ts`。
+组装逻辑在 `src/session/prompt-builder.ts`。`providerId==='quick'` 默认 `compact`：规则 3800、技能索引 2200、记忆 800、MCP 1600 字符，超限降级为索引/截断，避免把工具签名挤出网关 12000 字符头段。
 
 ---
 

@@ -707,6 +707,22 @@ test('API 多会话左侧栏：常驻列表、切换、新建、删除', () => {
   assert.ok(!html.includes('id="btn-api-sessions" title='), '顶部会话入口不应使用原生 hover tooltip');
 });
 
+test('API 会话删除：不二次确认，支持批量删除', () => {
+  const delIdx = script.indexOf('function deleteApiSession(');
+  assert.ok(delIdx > 0, '应有单个删除入口');
+  const delBody = script.slice(delIdx, script.indexOf('function apiSessionSelectedIds('));
+  assert.ok(!/confirm\(/.test(delBody), '删除会话不应再弹 confirm 二次确认');
+  assert.ok(delBody.includes('function deleteApiSessions('), '应有批量删除实现');
+  assert.ok(delBody.includes('apiSessionBusy()'), '批量删除也必须在任务运行中拦截');
+  assert.ok(delBody.includes('apiSessionDeleting'), '删除进行中应防重复触发');
+  assert.ok(delBody.includes('.then(next)'), '批量删除应串行调用主进程，避免并发改写会话索引');
+  assert.ok(html.includes('id="api-session-manage"'), '侧栏头部应有批量管理入口');
+  assert.ok(html.includes('id="api-session-batch"') && html.includes('id="api-session-batch-del"'), '多选模式应有批量操作栏');
+  assert.ok(html.includes('id="api-session-all"'), '批量操作栏应支持全选');
+  assert.ok(script.includes("deleteApiSessions(apiSessionSelectedIds(), true)"), '批量删除按钮应删除所选会话并退出多选');
+  assert.ok(script.includes('if (apiSessionSelecting) setApiSessionSelecting(false); else setApiSessionMenuOpen(false);'), 'Esc 应先退出多选再收起侧栏');
+});
+
 test('API 会话入口在顶栏左侧，菜单默认收起', () => {
   const topbarStart = html.indexOf('<div class="topbar">');
   const brandIndex = html.indexOf('<div class="brand">', topbarStart);
@@ -725,6 +741,14 @@ test('API 会话入口整块可点击：图标不拦截、图标区不触发窗�
   );
   const iconRule = html.match(/#btn-api-sessions svg \{[\s\S]*?\}/)?.[0] || '';
   assert.ok(iconRule.includes('pointer-events: none'), '图标应把指针事件交给按钮，避免 SVG 单独拦截点击');
+});
+
+test('顶栏拖拽区只覆盖中间空白，不在按钮下方挖 no-drag 洞', () => {
+  const topbarRule = html.match(/\.topbar \{[\s\S]*?\}/)?.[0] || '';
+  assert.ok(topbarRule, '应有顶栏样式');
+  assert.ok(!/-webkit-app-region:\s*drag/.test(topbarRule), '顶栏整体不能是拖拽区，否则 Windows 上按钮左侧会被吞掉点击/hover');
+  const spacerRule = html.match(/\.topbar \.spacer \{[\s\S]*?\}/)?.[0] || '';
+  assert.ok(/-webkit-app-region:\s*drag/.test(spacerRule), '顶栏中间空白处仍应可拖动窗口');
 });
 
 test('历史会话项不再显示蓝色左边框', () => {

@@ -12,15 +12,16 @@ import { abortWindowProcesses } from '../infra/process-tracker.js';
 import { jsRunner } from '../tools/index.js';
 import { resolveApiConfig } from './config.js';
 import type { ApiConnectionPrefs } from '../app/ui-prefs.js';
-import { streamChat, ApiRequestError, ApiTimeoutError } from './client.js';
+import { streamChat, ApiRequestError, ApiTimeoutError, cancelChatTurn } from './client.js';
 import type { ApiChatMessage, ApiToolCall, ApiUsage } from './client.js';
 import { buildOpenAiTools, executeApiToolCall, formatToolCall } from './tool-loop.js';
-import { buildApiSystemPrompt } from './system-prompt.js';
+import { buildApiSystemPrompt, buildCuckooApiSystemPrompt } from './system-prompt.js';
 import { estimateJsonTokens, resolveContextBudget, trimMessagesToBudget, estimateMessageTokens, estimateTokens } from './context.js';
 import type { ContextBudget } from './context.js';
 import { loadApiSessionSnapshot, saveApiSession, clearApiSession, createApiSession, setActiveApiSession, deleteApiSession, listApiSessions, getActiveApiSessionId, deriveSessionTitle, pruneProfileAttachments, setApiSessionProjectDir } from './session-store.js';
 import { saveIncomingAttachments, materializeMessages } from './attachments.js';
 import type { IncomingAttachment, StoredAttachment } from './attachments.js';
+import type { ApiToolMode } from '../app/ui-prefs.js';
 
 interface SessionState {
   sessionId: string;
@@ -30,6 +31,8 @@ interface SessionState {
   controller: AbortController | null;
   /** 当前会话绑定的项目目录（持久化在会话快照里） */
   projectDir: string | null;
+  /** native=OpenAI function calling；cuckoo-js=网页模型代码块协议 */
+  toolMode: ApiToolMode;
   /** 当前在途 turn；新消息必须等旧 turn 收尾，避免旧 finally 污染新历史 */
   turn: Promise<void> | null;
   /** 新对话请求：等旧 turn 收尾后再清空历史，避免清空数组被旧 turn 继续 push */
@@ -46,7 +49,7 @@ interface SessionState {
   usageTotal: ApiUsage;
 }
 
-export type ApiSendCode = 'empty' | 'not_configured' | 'request_failed' | 'stopped' | 'tools_disabled' | 'rounds_limit' | 'attachments_disabled';
+export type ApiSendCode = 'empty' | 'not_configured' | 'request_failed' | 'stopped' | 'tools_disabled' | 'rounds_limit' | 'attachments_disabled' | 'mode_mismatch';
 
 export interface ApiSendResult {
   success: boolean;
@@ -69,6 +72,24 @@ function profileOf(ctx: any): string {
   return ctx && ctx.profileId ? String(ctx.profileId) : '';
 }
 
+/** 当前窗口连接配置的工具模式；坏配置/缺失默认 native，绝不误开实验分支。 */
+function currentToolMode(ctx: any): ApiToolMode {
+  try {
+    const conn = getApiConnection(readPrefs(), profileOf(ctx));
+    return conn && conn.toolMode === 'cuckoo-js' ? 'cuckoo-js' : 'native';
+  } catch (_) {
+    return 'native';
+  }
+}
+
+/** 快照里是否有用户可见的历史；空会话可以在两种模式间安全转换。 */
+function snapshotHasVisibleHistory(snap: any): boolean {
+  if (!snap || !Array.isArray(snap.messages)) return false;
+  return snap.messages.some((m: any) => m
+    && !m.internal
+    && (m.role === 'user' || m.role === 'assistant'));
+}
+
 function persist(ctx: any, state: SessionState): void {
   if (state.disposed) return; // 窗口已关闭：旧 turn 的收尾不得把快照重新写回磁盘
   const profileId = profileOf(ctx);
@@ -84,6 +105,7 @@ function persist(ctx: any, state: SessionState): void {
     createdAt: state.createdAt,
     usageTotal: state.usageTotal,
     projectDir: state.projectDir,
+    toolMode: state.toolMode,
   });
 }
 
@@ -111,6 +133,10 @@ function getState(ctx: any, sessionId?: string): SessionState {
       messages: snap ? snap.messages : [],
       controller: null,
       projectDir: snap ? (snap.projectDir || null) : null,
+      // 空会话没有协议历史，可以安全跟随当前设置；有历史则必须沿用快照模式。
+      toolMode: snapshotHasVisibleHistory(snap)
+        ? ((snap && snap.toolMode) || 'native')
+        : currentToolMode(ctx),
       turn: null,
       pendingReset: false,
       systemKey: '',
@@ -183,6 +209,7 @@ interface ApiRuntimeOptions {
   systemPrompt: string;
   systemKey: string;
   toolsTokens: number;
+  toolMode: ApiToolMode;
 }
 
 function readOptions(ctx: any): ApiRuntimeOptions | { success: false; error: string } {
@@ -191,8 +218,9 @@ function readOptions(ctx: any): ApiRuntimeOptions | { success: false; error: str
   const cfg = resolveApiConfig(conn);
   if (!cfg.success) return cfg;
 
-  const toolsEnabled = conn.toolsEnabled !== false;
-  const tools = toolsEnabled ? buildOpenAiTools() : [];
+  const toolMode: ApiToolMode = conn.toolMode === 'cuckoo-js' ? 'cuckoo-js' : 'native';
+  // cuckoo-js 绝不能把 native tools 发给网页模型：Quick 会直接拒绝。
+  const tools = toolMode === 'native' && conn.toolsEnabled !== false ? buildOpenAiTools() : [];
   const toolsTokens = estimateJsonTokens(tools);
   const budget = resolveContextBudget({
     contextWindow: conn.contextWindow,
@@ -203,19 +231,22 @@ function readOptions(ctx: any): ApiRuntimeOptions | { success: false; error: str
     || process.cwd();
   // 规则/技能/记忆/MCP 变化后不能继续复用旧 system message。把构建结果指纹
   // 放进 key，内容变了就替换 system，确保每次请求都吃到最新注入。
-  const systemPrompt = buildApiSystemPrompt({ selectedDir: String(selectedDir), customSystemPrompt: conn.systemPrompt });
-  const systemKey = String(selectedDir) + '\n' + String(conn.systemPrompt || '') + '\n' + systemPrompt.length + ':' + promptHash(systemPrompt);
+  const systemPrompt = toolMode === 'cuckoo-js'
+    ? buildCuckooApiSystemPrompt({ selectedDir: String(selectedDir), customSystemPrompt: conn.systemPrompt })
+    : buildApiSystemPrompt({ selectedDir: String(selectedDir), customSystemPrompt: conn.systemPrompt });
+  const systemKey = toolMode + '\n' + String(selectedDir) + '\n' + String(conn.systemPrompt || '') + '\n' + systemPrompt.length + ':' + promptHash(systemPrompt);
   return {
     success: true,
     config: cfg.config,
     connection: conn,
-    toolsEnabled,
+    toolsEnabled: conn.toolsEnabled !== false,
     maxToolRounds: conn.maxToolRounds,
     tools,
     budget,
     systemPrompt,
     systemKey,
     toolsTokens,
+    toolMode,
   };
 }
 
@@ -265,10 +296,11 @@ export function getApiHistory(ctx: any): {
   const items: Array<{ t: 'user' | 'assistant'; text: string }> = [];
   for (const m of st.messages) {
     if (m.role !== 'user' && m.role !== 'assistant') continue;
+    // cuckoo-js 的工具轮 assistant/工具结果属于内部上下文，不能显示成用户气泡。
+    if ((m as any).internal) continue;
     // 用户消息的 content 可能包含隐藏的技能/计划指令；displayText 是气泡里真正展示的文本。
-    let text = m.role === 'user' && typeof (m as any).displayText === 'string'
-      ? String((m as any).displayText)
-      : '';
+    // cuckoo-js 的 assistant 消息也可能带代码块，displayText 只给他可见的正文。
+    let text = typeof (m as any).displayText === 'string' ? String((m as any).displayText) : '';
     if (!text) {
       if (typeof m.content === 'string') {
         text = m.content;
@@ -305,7 +337,7 @@ export function truncateApiHistory(ctx: any, userIndexFromEnd: number): {
   let seen = 0;
   let cut = -1;
   for (let i = nonSystem.length - 1; i >= 0; i--) {
-    if (nonSystem[i].role !== 'user') continue;
+    if (nonSystem[i].role !== 'user' || (nonSystem[i] as any).internal) continue;
     if (seen === fromEnd) { cut = i; break; }
     seen++;
   }
@@ -325,7 +357,7 @@ export function truncateApiHistory(ctx: any, userIndexFromEnd: number): {
 export function importApiHistory(ctx: any, items: any[]): { success: boolean; imported: boolean; count?: number } {
   const st = getState(ctx);
   const existing = st.messages;
-  const existingUsers = existing.filter((m) => m.role === 'user').length;
+  const existingUsers = existing.filter((m) => m.role === 'user' && !(m as any).internal).length;
   // 后端已有用户消息就说明这份快照已在正常使用；再导入本地旧历史会把同一句
   // 用户话重复插到上下文前面（实测出现两遍“你好”），只允许纯空快照迁移。
   if (existingUsers > 0) return { success: true, imported: false };
@@ -369,7 +401,7 @@ export async function startNewApiSession(ctx: any): Promise<{ success: boolean; 
     const current = getState(ctx);
     await settleTurn(ctx, current);
     const currentDir = ctx && ctx.sessionStore && ctx.sessionStore.state ? ctx.sessionStore.state.selectedProjectDir : current.projectDir;
-    const sessionId = createApiSession(profileId, { projectDir: currentDir || null });
+    const sessionId = createApiSession(profileId, { projectDir: currentDir || null, toolMode: currentToolMode(ctx) });
     const st = getState(ctx, sessionId);
     applyProjectDir(ctx, st.projectDir || currentDir || null);
     emit(ctx, { type: 'usage', total: {} });
@@ -385,7 +417,18 @@ export async function selectApiSession(ctx: any, sessionId: string): Promise<{ s
   const profileId = profileOf(ctx);
   if (!profileId || !sessionId) return { success: false, error: 'no-session' };
   const list = listApiSessions(profileId);
-  if (!list.sessions.some((s) => s.id === sessionId)) return { success: false, error: '会话不存在' };
+  const targetMeta = list.sessions.find((s) => s.id === sessionId);
+  if (!targetMeta) return { success: false, error: '会话不存在' };
+  const targetSnap = loadApiSessionSnapshot(profileId, sessionId);
+  // 快照比索引更权威：极少数“快照已写、索引还没更新”的崩溃窗口里，
+  // 索引会把新模式误判成 native，导致刚创建好的 cuckoo 会话选不回去。
+  const targetMode: ApiToolMode = (targetSnap && targetSnap.toolMode)
+    || targetMeta.toolMode
+    || 'native';
+  // 空会话没有历史可污染，允许直接切过去并跟随当前模式；有历史才必须协议一致。
+  if (snapshotHasVisibleHistory(targetSnap) && targetMode !== currentToolMode(ctx)) {
+    return { success: false, error: '该会话使用另一种工具模式，请新建对话或先切回对应模式' };
+  }
   const current = getState(ctx);
   if (current.sessionId === sessionId) return { success: true, sessionId, title: current.title };
   try {
@@ -420,7 +463,7 @@ export async function removeApiSession(ctx: any, sessionId: string): Promise<{ s
   const current = getState(ctx);
   try {
     if (current.sessionId === sessionId) await settleTurn(ctx, current);
-    const active = deleteApiSession(profileId, sessionId);
+    const active = deleteApiSession(profileId, sessionId, currentToolMode(ctx));
     sessionStateCleanup(ctx, sessionId, false);
     const st = getState(ctx, active);
     if (current.sessionId === sessionId) {
@@ -494,6 +537,18 @@ export function disposeApiSession(profileId: string, windowId: number | null): v
 /** 停止某个窗口正在进行的 API 请求/工具 */
 export function stopApiSession(ctx: any): void {
   const st = getState(ctx);
+  // cuckoo-js 的网页回合不在本机：先显式通知网关点网页停止按钮。
+  // 只依赖 fetch abort 时，部分 Electron 运行时不会及时关闭网关侧连接，
+  // 用户会看到 Cuckoo Code 已停、但 Quick 网页还在生成。
+  if (st.toolMode === 'cuckoo-js') {
+    try {
+      const conn = getApiConnection(readPrefs(), profileOf(ctx));
+      const cfg = resolveApiConfig(conn);
+      if (cfg.success) {
+        cancelChatTurn(cfg.config, 'cuckoo-js:' + st.sessionId).catch(() => { /* 停止信号尽力而为 */ });
+      }
+    } catch (_) { /* ignore */ }
+  }
   if (st.controller) {
     try { st.controller.abort(); } catch (_) { /* ignore */ }
   }
@@ -502,6 +557,30 @@ export function stopApiSession(ctx: any): void {
   emit(ctx, { type: 'retry-state', state: 'cancelled' });
   emit(ctx, { type: 'ai-state', generating: false });
   emit(ctx, { type: 'task-idle' });
+}
+
+/** 把一条用户消息落进当前会话并广播生成中状态；native 与 cuckoo-js 共用。 */
+function prepareApiTurn(
+  ctx: any,
+  state: SessionState,
+  opts: ApiRuntimeOptions,
+  content: string,
+  displayText: string | undefined,
+  stored: StoredAttachment[],
+): void {
+  ensureSystemMessage(state, opts.systemPrompt, opts.systemKey);
+  const shown = typeof displayText === 'string' && displayText.trim() ? displayText.trim() : content;
+  state.messages.push({
+    role: 'user',
+    content: content || '（附件）',
+    displayText: shown || undefined,
+    attachments: stored.length ? stored : undefined,
+  });
+  trimHistory(state, opts.budget.inputBudget);
+  persist(ctx, state);
+  emit(ctx, { type: 'ai-state', generating: true });
+  // 模型响应阶段统一三态：还没出字 = 思考中；onText 起由 harness 的 onStream 切到输出中。
+  emit(ctx, { type: 'status', text: '模型思考中…', busy: true });
 }
 
 /**
@@ -559,27 +638,59 @@ export async function sendApiMessage(ctx: any, text: string, files?: IncomingAtt
     }
   }
 
-  const { config, toolsEnabled, maxToolRounds, budget, tools } = opts;
+  // 会话创建时的模式必须和当前连接一致；否则说明用户改了设置但没新建对话。
+  // 直接在旧会话上跑另一种协议会污染历史，返回明确错误让 UI 新建对话。
+  if (st.toolMode !== opts.toolMode) {
+    // 空会话没有历史可污染：允许跟随当前设置，避免首次打开 API 窗口就卡在
+    // “旧默认会话是 native / 当前设置是 cuckoo”的假冲突里。
+    if (!snapshotHasVisibleHistory(st)) {
+      st.toolMode = opts.toolMode;
+    } else {
+      st.controller = null;
+      const error = '工具模式已变化：当前会话是 ' + st.toolMode + '，设置为 ' + opts.toolMode + '。请新建对话后再发送。';
+      emit(ctx, { type: 'notice', text: error });
+      emit(ctx, { type: 'status', text: '就绪', busy: false });
+      emit(ctx, { type: 'task-idle' });
+      return { success: false, error, code: 'mode_mismatch' };
+    }
+  }
+
   // 切换模型后重新允许图片：旧模型被 400 拒绝不代表新模型不支持视觉
-  const visionModel = String(config.model || '');
+  const visionModel = String(opts.config.model || '');
   if (st.visionUnsupported && st.visionUnsupportedModel && st.visionUnsupportedModel !== visionModel) {
     st.visionUnsupported = false;
     st.visionUnsupportedModel = '';
   }
-  ensureSystemMessage(st, opts.systemPrompt, opts.systemKey);
-  const shown = typeof displayText === 'string' && displayText.trim() ? displayText.trim() : content;
-  st.messages.push({
-    role: 'user',
-    content: content || '（附件）',
-    displayText: shown || undefined,
-    attachments: stored.length ? stored : undefined,
-  });
-  trimHistory(st, budget.inputBudget);
-  persist(ctx, st);
-  emit(ctx, { type: 'ai-state', generating: true });
-  // 模型响应阶段统一三态：还没出字 = 思考中；onText 起由 harness 的 onStream 切到输出中。
-  emit(ctx, { type: 'status', text: '模型思考中…', busy: true });
 
+  // 动态加载：native 模式不把 cuckoo-js/ipc-guard/JS runner 拉进运行时。
+  // 先加载再落用户消息，加载失败时不会留下一条没有 assistant 的孤儿用户消息。
+  let cuckooModule: typeof import('./cuckoo-js-loop.js') | null = null;
+  if (opts.toolMode === 'cuckoo-js') {
+    try {
+      cuckooModule = await import('./cuckoo-js-loop.js');
+    } catch (err: any) {
+      st.controller = null;
+      const msg = 'cuckoo-js 模块加载失败：' + ((err && err.message) || String(err));
+      emit(ctx, { type: 'notice', text: msg });
+      emit(ctx, { type: 'status', text: '就绪', busy: false });
+      emit(ctx, { type: 'task-idle' });
+      return { success: false, error: msg, code: 'request_failed' };
+    }
+  }
+
+  prepareApiTurn(ctx, st, opts, content, displayText, stored);
+
+  if (cuckooModule) {
+    return cuckooModule.runCuckooJsTurn({
+      ctx,
+      state: st,
+      controller,
+      runtime: opts,
+      hooks: { emit, persist, trimHistory, uiDropped },
+    });
+  }
+
+  const { config, toolsEnabled, maxToolRounds, budget, tools } = opts;
   let finishTurn: () => void = () => { /* set below */ };
   const turn = new Promise<void>((resolve) => { finishTurn = resolve; });
   st.turn = turn;

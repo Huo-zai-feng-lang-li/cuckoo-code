@@ -32,6 +32,7 @@ globs: '*'
 | `overlay.md` | `src/overlay/**` | 覆盖层纯 UI，回调注入 |
 | `infra.md` | `src/infra/**` | 最底层，只依赖 node 内置 |
 | `providers.md` | `src/providers/**` | 加平台流程 + D14 运行时校验 |
+| `web-ai-integration.md` | `src/api-transport/**`、`src/providers/**`、`docs/**` | 接新 AI / 网页模型 / 自建网关前必读（三档决策 + 验收清单） |
 | `hooks.md` | `src/providers/hooks/**` | hook 自包含 IIFE + 打包约定 |
 | `shell-ui.md` | `src/ui/shell/**` | 壳页面生成物禁改 + 样式规范 |
 | `test.md` | `test/**` | 测试哲学：只写真实集成测试，优先失败路径 |

@@ -69,6 +69,17 @@ test('未显式关闭时默认启用图片输入', () => {
   assert.equal(ui.getApiConnection(ui.readPrefs(), 'win-new').vision, false);
 });
 
+test('工具模式默认 native，cuckoo-js 按窗口独立保存', () => {
+  assert.equal(ui.getApiConnection(ui.readPrefs(), 'win-new').toolMode, 'native');
+  ui.setApiConnection('win-a', { toolMode: 'cuckoo-js' });
+  ui.setApiConnection('win-b', { toolMode: 'native' });
+  assert.equal(ui.getApiConnection(ui.readPrefs(), 'win-a').toolMode, 'cuckoo-js');
+  assert.equal(ui.getApiConnection(ui.readPrefs(), 'win-b').toolMode, 'native');
+  // 非法值必须回落 native，不能误开实验分支
+  ui.setApiConnection('win-a', { toolMode: 'garbage' });
+  assert.equal(ui.getApiConnection(ui.readPrefs(), 'win-a').toolMode, 'native');
+});
+
 test('渲染进程只能看到 Key 已配置标记，拿不到明文', () => {
   ui.setApiConnection('win-a', { apiKey: 'secret-a' });
   const safe = ui.redactPrefsForRenderer(ui.readPrefs());

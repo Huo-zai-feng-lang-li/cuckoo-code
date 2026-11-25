@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import type { ApiChatMessage } from './client.js';
+import type { ApiToolMode } from '../app/ui-prefs.js';
 import { pruneOrphanAttachments } from './attachments.js';
 
 const MAX_PERSISTED_MESSAGES = 300;
@@ -26,6 +27,8 @@ export interface ApiSessionMeta {
   messageCount: number;
   /** 该会话最近一次选择的项目目录；旧版索引没有此字段时为 null */
   projectDir?: string | null;
+  /** 该会话的工具调用模式；旧版索引没有此字段时按 native 处理 */
+  toolMode?: ApiToolMode;
 }
 
 export interface ApiSessionList {
@@ -42,6 +45,8 @@ export interface ApiSessionSnapshot {
   usageTotal?: Record<string, any>;
   /** 该会话最近一次选择的项目目录 */
   projectDir?: string | null;
+  /** 该会话的工具调用模式 */
+  toolMode?: ApiToolMode;
 }
 
 export interface SaveApiSessionOptions {
@@ -52,6 +57,8 @@ export interface SaveApiSessionOptions {
   usageTotal?: Record<string, any>;
   /** 不传则沿用会话已有目录；传 null 可显式清空 */
   projectDir?: string | null;
+  /** 不传则沿用会话已有模式；新会话默认 native */
+  toolMode?: ApiToolMode;
 }
 
 interface ApiSessionIndex {
@@ -115,6 +122,20 @@ function normalizeProjectDir(value: any): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+/** 工具模式只接受两个值；旧会话/坏数据一律回退 native，避免误开实验分支。 */
+function normalizeToolMode(value: any): ApiToolMode {
+  return value === 'cuckoo-js' ? 'cuckoo-js' : 'native';
+}
+
+function isInternalMessage(message: ApiChatMessage): boolean {
+  return !!(message && (message as any).internal);
+}
+
+/** 只统计用户可见的轮次，工具续传消息不算。 */
+function visibleMessageCount(messages: ApiChatMessage[]): number {
+  return messages.filter((m) => !isInternalMessage(m) && (m.role === 'user' || m.role === 'assistant')).length;
+}
+
 function toolCallIds(message: ApiChatMessage): string[] {
   if (!Array.isArray(message.tool_calls)) return [];
   return message.tool_calls.map((c) => c && c.id).filter((id): id is string => typeof id === 'string' && !!id);
@@ -167,11 +188,11 @@ function trimForPersistence(messages: ApiChatMessage[]): ApiChatMessage[] {
   const capacity = system ? MAX_PERSISTED_MESSAGES - 1 : MAX_PERSISTED_MESSAGES;
   if (body.length <= capacity) return messages;
   let start = body.length - capacity;
-  while (start < body.length && body[start].role !== 'user') start++;
+  while (start < body.length && (body[start].role !== 'user' || isInternalMessage(body[start]))) start++;
   if (start >= body.length) {
     let lastUser = -1;
     for (let i = body.length - 1; i >= 0; i--) {
-      if (body[i].role === 'user') { lastUser = i; break; }
+      if (body[i].role === 'user' && !isInternalMessage(body[i])) { lastUser = i; break; }
     }
     if (lastUser < 0) return system ? [system] : [];
     start = lastUser;
@@ -196,7 +217,7 @@ function textFromContent(content: any): string {
  */
 export function deriveSessionTitle(messages: ApiChatMessage[]): string {
   for (const m of messages) {
-    if (!m || m.role !== 'user') continue;
+    if (!m || m.role !== 'user' || isInternalMessage(m)) continue;
     const text = String((m as any).displayText || textFromContent(m.content) || '')
       .replace(/^\[附件\s*\d+\s*个\]\s*/, '')
       .replace(/\s+/g, ' ')
@@ -219,6 +240,7 @@ function normalizeMeta(raw: any): ApiSessionMeta | null {
     updatedAt: Number.isFinite(raw.updatedAt) ? Number(raw.updatedAt) : Date.now(),
     messageCount: Number.isFinite(raw.messageCount) ? Math.max(0, Number(raw.messageCount)) : 0,
     projectDir: normalizeProjectDir(raw.projectDir),
+    toolMode: normalizeToolMode(raw.toolMode),
   };
 }
 
@@ -255,17 +277,27 @@ function recoverSessionsFromFiles(profileId: string): ApiSessionMeta[] {
       title: (typeof raw.title === 'string' && raw.title.trim()) ? raw.title.trim().slice(0, 80) : deriveSessionTitle(messages),
       createdAt: Number.isFinite(raw.createdAt) ? Number(raw.createdAt) : (stat ? stat.birthtimeMs : Date.now()),
       updatedAt: Number.isFinite(raw.updatedAt) ? Number(raw.updatedAt) : (stat ? stat.mtimeMs : Date.now()),
-      messageCount: messages.filter((m) => m.role === 'user' || m.role === 'assistant').length,
+      messageCount: visibleMessageCount(messages),
       projectDir: normalizeProjectDir(raw.projectDir),
+      toolMode: normalizeToolMode(raw.toolMode),
     });
   }
   return out;
 }
 
-function createEmptySession(profileId: string, id: string, title: string, projectDir: string | null = null): ApiSessionMeta {
+function createEmptySession(
+  profileId: string,
+  id: string,
+  title: string,
+  projectDir: string | null = null,
+  toolMode: ApiToolMode = 'native',
+): ApiSessionMeta {
   const now = Date.now();
   const dir = normalizeProjectDir(projectDir);
-  const meta: ApiSessionMeta = { id, title: title || DEFAULT_TITLE, createdAt: now, updatedAt: now, messageCount: 0, projectDir: dir };
+  const mode = normalizeToolMode(toolMode);
+  const meta: ApiSessionMeta = {
+    id, title: title || DEFAULT_TITLE, createdAt: now, updatedAt: now, messageCount: 0, projectDir: dir, toolMode: mode,
+  };
   writeJsonAtomic(sessionFile(profileId, id), {
     version: INDEX_VERSION,
     id,
@@ -275,6 +307,7 @@ function createEmptySession(profileId: string, id: string, title: string, projec
     messages: [],
     usageTotal: {},
     projectDir: dir,
+    toolMode: mode,
   });
   return meta;
 }
@@ -323,11 +356,12 @@ function ensureIndex(profileId: string, createIfMissing = true): ApiSessionIndex
       messages,
       usageTotal: legacy.usageTotal && typeof legacy.usageTotal === 'object' ? legacy.usageTotal : {},
       projectDir: legacyProjectDir,
+      toolMode: 'native',
     });
     const index: ApiSessionIndex = {
       version: INDEX_VERSION,
       activeSessionId: id,
-      sessions: [{ id, title, createdAt: created, updatedAt: now, messageCount: messages.filter((m) => m.role === 'user' || m.role === 'assistant').length, projectDir: legacyProjectDir }],
+      sessions: [{ id, title, createdAt: created, updatedAt: now, messageCount: visibleMessageCount(messages), projectDir: legacyProjectDir, toolMode: 'native' }],
     };
     writeIndex(profileId, index);
     return index;
@@ -366,10 +400,10 @@ export function setActiveApiSession(profileId: string, sessionId: string): boole
 }
 
 /** 新建一个空会话并设为 active。 */
-export function createApiSession(profileId: string, opts: { id?: string; title?: string; projectDir?: string | null } = {}): string {
+export function createApiSession(profileId: string, opts: { id?: string; title?: string; projectDir?: string | null; toolMode?: ApiToolMode } = {}): string {
   const index = ensureIndex(profileId, false);
   const id = opts.id && !index.sessions.some((s) => s.id === opts.id) ? opts.id : newSessionId();
-  const meta = createEmptySession(profileId, id, opts.title || DEFAULT_TITLE, opts.projectDir || null);
+  const meta = createEmptySession(profileId, id, opts.title || DEFAULT_TITLE, opts.projectDir || null, opts.toolMode || 'native');
   index.sessions.push(meta);
   index.activeSessionId = id;
   writeIndex(profileId, index);
@@ -394,6 +428,7 @@ export function loadApiSessionSnapshot(profileId: string, sessionId?: string): A
     messages: snapshotToMessages(raw),
     usageTotal: raw.usageTotal && typeof raw.usageTotal === 'object' ? raw.usageTotal : {},
     projectDir: normalizeProjectDir(raw.projectDir) || meta.projectDir || null,
+    toolMode: normalizeToolMode(raw.toolMode || meta.toolMode),
   };
 }
 
@@ -422,6 +457,7 @@ export function setApiSessionProjectDir(profileId: string, sessionId: string | n
     updatedAt: meta.updatedAt,
     messages: [],
     usageTotal: {},
+    toolMode: meta.toolMode || 'native',
   };
   raw.projectDir = dir;
   writeJsonAtomic(sessionFile(profileId, sid), raw);
@@ -458,13 +494,15 @@ function saveApiSessionInner(
   const projectDir = opts.projectDir !== undefined
     ? normalizeProjectDir(opts.projectDir)
     : existingProjectDir;
+  const toolMode = normalizeToolMode(opts.toolMode !== undefined ? opts.toolMode : (existing && existing.toolMode));
   const meta: ApiSessionMeta = {
     id: sid,
     title,
     createdAt,
     updatedAt: now,
-    messageCount: out.filter((m) => m.role === 'user' || m.role === 'assistant').length,
+    messageCount: visibleMessageCount(out),
     projectDir,
+    toolMode,
   };
   writeJsonAtomic(sessionFile(profileId, sid), {
     version: INDEX_VERSION,
@@ -475,6 +513,7 @@ function saveApiSessionInner(
     messages: out,
     usageTotal: opts.usageTotal && typeof opts.usageTotal === 'object' ? opts.usageTotal : {},
     projectDir,
+    toolMode,
   });
   if (existing) Object.assign(existing, meta);
   else index.sessions.push(meta);
@@ -498,9 +537,10 @@ export function saveApiSession(
 
 /**
  * 删除一个会话；删除 active 时自动切到最近更新的一份，全部删空则新建空会话。
+ * @param toolMode 全部删空时新建会话使用；不传默认 native，避免旧调用改变行为
  * @returns 删除后的 activeSessionId
  */
-export function deleteApiSession(profileId: string, sessionId: string): string {
+export function deleteApiSession(profileId: string, sessionId: string, toolMode: ApiToolMode = 'native'): string {
   const index = ensureIndex(profileId);
   const idx = index.sessions.findIndex((s) => s.id === sessionId);
   if (idx < 0) return index.activeSessionId;
@@ -508,11 +548,15 @@ export function deleteApiSession(profileId: string, sessionId: string): string {
   try { fs.unlinkSync(sessionFile(profileId, sessionId)); } catch (_) { /* ignore */ }
   if (index.sessions.length === 0) {
     const id = newSessionId();
-    const meta = createEmptySession(profileId, id, DEFAULT_TITLE);
+    const meta = createEmptySession(profileId, id, DEFAULT_TITLE, null, toolMode);
     index.sessions.push(meta);
     index.activeSessionId = id;
   } else if (index.activeSessionId === sessionId || !index.sessions.some((s) => s.id === index.activeSessionId)) {
-    index.activeSessionId = index.sessions.slice().sort((a, b) => b.updatedAt - a.updatedAt)[0].id;
+    const sorted = index.sessions.slice().sort((a, b) => b.updatedAt - a.updatedAt);
+    // 切到同一工具模式的会话，避免删掉 cuckoo-js 会话后落到 native 旧会话，
+    // 下次发送直接 mode_mismatch。
+    const sameMode = sorted.find((s) => normalizeToolMode(s.toolMode) === normalizeToolMode(toolMode));
+    index.activeSessionId = (sameMode || sorted[0]).id;
   }
   writeIndex(profileId, index);
   pruneProfileAttachments(profileId, { minAgeMs: 0, force: true });

@@ -81,6 +81,13 @@ test('JsRunner 未知工具报错', async () => {
   assert.ok(r.error);
 });
 
+test('JsRunner allowedTools 只允许白名单工具，且不把白名单透传给工具', async () => {
+  const runner = new JsRunner(registry);
+  const r = await runner.run('await read("package.json")', process.cwd(), undefined, { allowedTools: ['bash'] });
+  assert.strictEqual(r.success, false);
+  assert.match(r.error, /允许/i);
+});
+
 test('JsRunner 沙箱支持 sleep', async () => {
   const runner = new JsRunner(registry);
   const t0 = Date.now();

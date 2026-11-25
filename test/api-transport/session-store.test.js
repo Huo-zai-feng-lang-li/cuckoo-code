@@ -127,6 +127,49 @@ test('多会话：新建/切换/删除，各自快照互不覆盖', () => {
   assert.equal(listApiSessions('multi').sessions.length, 1);
 });
 
+test('工具模式随会话快照保存，新建时可指定 cuckoo-js', () => {
+  const sid = createApiSession('mode', { toolMode: 'cuckoo-js' });
+  saveApiSession('mode', [
+    { role: 'system', content: 'sys' },
+    { role: 'user', content: 'hi' },
+  ], { sessionId: sid, toolMode: 'cuckoo-js' });
+  const snap = loadApiSessionSnapshot('mode', sid);
+  assert.equal(snap.toolMode, 'cuckoo-js');
+  assert.equal(listApiSessions('mode').sessions.find((s) => s.id === sid).toolMode, 'cuckoo-js');
+});
+
+test('持久化裁剪不把 internal user 当成可见轮次边界', () => {
+  const messages = [{ role: 'system', content: 'sys' }];
+  for (let i = 0; i < 300; i++) {
+    if (i === 0) messages.push({ role: 'assistant', content: 'a0' });
+    else if (i === 1) messages.push({ role: 'user', content: 'tool-result', internal: true });
+    else if (i === 2) messages.push({ role: 'user', content: 'visible-2' });
+    else messages.push(i % 2 ? { role: 'assistant', content: 'a' + i } : { role: 'user', content: 'u' + i });
+  }
+  const sid = saveApiSession('trim-internal', messages, { toolMode: 'cuckoo-js' });
+  const loaded = loadApiSession('trim-internal', sid);
+  assert.equal(loaded[0].role, 'system');
+  assert.equal(loaded[1].role, 'user');
+  assert.equal(loaded[1].internal, undefined);
+  assert.equal(loaded[1].content, 'visible-2');
+});
+
+test('旧快照没有 toolMode 时按 native 处理，不能把旧历史误当 cuckoo-js', () => {
+  const dir = path.join(home, 'api-sessions', 'legacy-mode');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify({
+    version: 2,
+    activeSessionId: 'old',
+    sessions: [{ id: 'old', title: '旧会话', createdAt: 1, updatedAt: 1, messageCount: 2 }],
+  }));
+  fs.writeFileSync(path.join(dir, 'old.json'), JSON.stringify({
+    id: 'old', title: '旧会话', createdAt: 1, updatedAt: 1,
+    messages: [{ role: 'system', content: 's' }, { role: 'user', content: 'q' }],
+  }));
+  const snap = loadApiSessionSnapshot('legacy-mode', 'old');
+  assert.equal(snap.toolMode, 'native');
+});
+
 test('旧版单文件自动迁移为 legacy 会话，旧文件保留不丢历史', () => {
   const dir = path.join(home, 'api-sessions');
   fs.mkdirSync(dir, { recursive: true });

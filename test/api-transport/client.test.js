@@ -1,7 +1,7 @@
 'use strict';
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { streamChat, mergeToolCallDelta, retryDelayMs } from '../../src/api-transport/client.js';
+import { streamChat, mergeToolCallDelta, retryDelayMs, cancelChatTurn } from '../../src/api-transport/client.js';
 
 function sseResponse(chunks, init) {
   const body = new ReadableStream({
@@ -50,6 +50,21 @@ test('流式读取：拼接 delta 正文并回调累计文本，最终 [DONE] �
   const body = JSON.parse(calls[0].init.body);
   assert.equal(body.stream, true);
   assert.equal(body.model, 'aws');
+});
+
+test('conversationId 走 body，让网关复用同一个网页会话', async () => {
+  let captured;
+  const fetchImpl = async (_url, init) => {
+    captured = JSON.parse(init.body);
+    return sseResponse(['data: {"choices":[{"delta":{"content":"ok"}}]}\n\n', 'data: [DONE]\n\n']);
+  };
+  await streamChat({
+    config: CONFIG,
+    messages: [{ role: 'user', content: 'hi' }],
+    conversationId: 'cuckoo-js:s1',
+    fetchImpl,
+  });
+  assert.equal(captured.conversation_id, 'cuckoo-js:s1');
 });
 
 test('displayText 只用于界面，不发给上游', async () => {
@@ -259,6 +274,36 @@ test('总超时会抛 ApiTimeoutError，不会伪装成用户取消', async () =
       return true;
     },
   );
+});
+
+test('停止入口：把 conversation_id 发到 /chat/completions/stop', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    return new Response(JSON.stringify({ ok: true, reason: 'stopping' }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  const r = await cancelChatTurn(
+    { ...CONFIG, endpoint: 'http://127.0.0.1:3000/openai/v1/chat/completions?x=1', apiKey: 'k' },
+    'cuckoo-js:s1',
+    { fetchImpl },
+  );
+  assert.equal(r.ok, true);
+  assert.equal(calls[0].url, 'http://127.0.0.1:3000/openai/v1/chat/completions/stop?x=1');
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer k');
+  const body = JSON.parse(calls[0].init.body);
+  assert.equal(body.model, 'aws');
+  assert.equal(body.conversation_id, 'cuckoo-js:s1');
+});
+
+test('停止入口：网关说找不到回合时 ok=false 但不抛错', async () => {
+  const fetchImpl = async () => new Response(JSON.stringify({ ok: false, reason: 'no-active-turn' }), {
+    status: 200, headers: { 'content-type': 'application/json' },
+  });
+  const r = await cancelChatTurn(CONFIG, 'cuckoo-js:s1', { fetchImpl });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-active-turn');
 });
 
 test('Retry-After 优先于默认退避，且退避有 2s/5s 基础节奏', () => {

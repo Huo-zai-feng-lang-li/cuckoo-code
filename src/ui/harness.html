@@ -105,12 +105,14 @@
     display: flex; align-items: center; gap: 10px;
     height: 40px; padding: 0 16px;
     background: var(--bg); border-bottom: 1px solid var(--border-soft);
-    flex-shrink: 0; user-select: none; -webkit-app-region: drag;
+    flex-shrink: 0; user-select: none; -webkit-app-region: no-drag;
   }
   .brand { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--text-2); letter-spacing: .2px; }
   .brand svg { width: 15px; height: 15px; color: var(--accent); }
   .brand-hint { font-size: 10.5px; font-weight: 400; color: var(--amber, #d9a05b); opacity: .85; letter-spacing: 0; }
-  .topbar .spacer { flex: 1; }
+  /* 只让顶栏中间空白处拖窗口：Windows 上 WebContentsView 内 no-drag 挖洞会因视图偏移/缩放错位，
+     按钮左侧（图标与间隔）仍被系统当成拖拽区，吞掉点击与 hover。拖拽区不再覆盖任何按钮。 */
+  .topbar .spacer { flex: 1; align-self: stretch; -webkit-app-region: drag; }
   .api-usage {
     display: none;
     margin-right: 10px;
@@ -822,6 +824,11 @@
   #btn-api-sessions svg { width: 14px; height: 14px; flex-shrink: 0; opacity: .82; pointer-events: none; }
   #btn-api-sessions[aria-expanded="true"] { color: var(--accent); background: var(--accent-soft); }
   #btn-api-sessions[aria-expanded="true"] svg { opacity: 1; }
+  /* ID 选择器会盖掉 .tb-btn:hover，这里单独补悬停/按下激活色 */
+  #btn-api-sessions:hover { background: var(--surface-hover); color: var(--text); }
+  #btn-api-sessions:hover svg { opacity: 1; }
+  #btn-api-sessions:active { background: var(--surface-hover); transform: translateY(1px); }
+  #btn-api-sessions[aria-expanded="true"]:hover { color: var(--accent); background: var(--accent-soft); filter: brightness(1.15); }
   .api-session-menu {
     position: fixed; left: 0; top: 40px; bottom: 0; z-index: 30;
     width: 236px; display: flex; flex-direction: column;
@@ -834,6 +841,15 @@
     font-size: 12px; color: var(--text-2); font-weight: 600;
   }
   .api-session-head .spacer { flex: 1; }
+  .api-session-manage {
+    height: 28px; padding: 0 9px; border-radius: 7px; border: 1px solid transparent;
+    background: transparent; color: var(--text-dim); font-family: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer;
+    transition: color .14s, background .14s;
+  }
+  .api-session-manage:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
+  .api-session-manage[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
+  .api-session-manage:disabled { opacity: .4; cursor: default; }
+  .api-session-manage:focus-visible, .api-session-new:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .api-session-new {
     height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid transparent;
     background: var(--accent-soft); color: var(--accent); font-family: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer;
@@ -841,37 +857,65 @@
   }
   .api-session-new:hover { border-color: var(--accent); background: var(--accent-soft); }
   .api-session-new:active { transform: translateY(1px); }
-  .api-session-list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 3px; scrollbar-width: thin; }
+  .api-session-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 6px; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; }
   .api-session-row {
-    position: relative; display: flex; align-items: stretch; gap: 2px; border-radius: 8px;
+    position: relative; display: flex; align-items: center; gap: 2px; border-radius: 8px;
     transition: background .14s;
   }
   .api-session-row:hover { background: var(--surface-hover); }
   .api-session-row.active { background: var(--accent-soft); }
+  .api-session-row.selected { background: var(--surface-hover); }
   .api-session-open {
-    flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px;
     border: 0; background: transparent; color: var(--text-2); text-align: left;
-    padding: 7px 6px 7px 10px; border-radius: 8px; cursor: pointer; font-family: inherit;
+    padding: 8px 4px 8px 10px; border-radius: 8px; cursor: pointer; font-family: inherit;
     transition: color .14s;
   }
   .api-session-open:hover { color: var(--text); }
   .api-session-row.active .api-session-open,
   .api-session-row.active .api-session-open:hover { color: var(--accent); }
   .api-session-open:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .api-session-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
-  .api-session-meta { font-size: 10.5px; color: var(--text-dim); }
+  .api-session-text { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+  .api-session-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; line-height: 1.35; font-weight: 600; }
+  .api-session-check {
+    width: 14px; height: 14px; flex-shrink: 0; border-radius: 4px; border: 1.5px solid var(--text-dim);
+    display: flex; align-items: center; justify-content: center; transition: background .12s, border-color .12s;
+  }
+  .api-session-row.selected .api-session-check { background: var(--accent); border-color: var(--accent); }
+  .api-session-row.selected .api-session-check::after {
+    content: ''; width: 7px; height: 4px; border-left: 1.5px solid var(--bg); border-bottom: 1.5px solid var(--bg);
+    transform: translateY(-1px) rotate(-45deg);
+  }
+  .api-session-meta { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; line-height: 1.3; font-weight: 400; color: var(--text-dim); }
   .api-session-del {
-    width: 26px; height: 26px; margin: auto 5px auto 0; flex-shrink: 0;
+    width: 26px; height: 26px; margin: 0 6px 0 0; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
     border: 0; background: transparent; color: var(--text-dim); cursor: pointer; border-radius: 6px;
-    opacity: .42; transition: opacity .14s, color .14s, background .14s;
+    opacity: 0; transition: opacity .14s, color .14s, background .14s;
   }
   .api-session-row:hover .api-session-del,
-  .api-session-row.active .api-session-del,
+  .api-session-open:focus-visible + .api-session-del,
   .api-session-del:focus-visible { opacity: 1; }
   .api-session-del:hover { color: var(--red); background: rgba(255, 99, 105, .10); }
   .api-session-del svg { width: 13px; height: 13px; }
   .api-session-empty { padding: 18px 10px 22px; text-align: center; color: var(--text-dim); font-size: 12px; }
+  .api-session-batch {
+    display: flex; align-items: center; gap: 6px; padding: 8px 10px 10px 14px;
+    border-top: 1px solid var(--border-soft); font-size: 11.5px; color: var(--text-2);
+  }
+  .api-session-batch[hidden] { display: none; }
+  .api-session-batch .spacer { flex: 1; }
+  .api-session-all { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+  .api-session-all input { margin: 0; accent-color: var(--accent); cursor: pointer; }
+  .api-session-batch button {
+    height: 26px; padding: 0 10px; border-radius: 6px; border: 1px solid transparent;
+    font-family: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; transition: background .14s, color .14s, opacity .14s;
+  }
+  .api-session-batch-cancel { background: transparent; color: var(--text-2); }
+  .api-session-batch-cancel:hover { background: var(--surface-hover); color: var(--text); }
+  .api-session-batch-del { background: rgba(255, 99, 105, .12); color: var(--red); }
+  .api-session-batch-del:hover:not(:disabled) { background: rgba(255, 99, 105, .22); }
+  .api-session-batch-del:disabled { opacity: .45; cursor: default; }
   /* 侧栏展开时，聊天区整体右移；收起后自动回全宽 */
   body.ck-api-mode.ck-api-sidebar-open .goalbar,
   body.ck-api-mode.ck-api-sidebar-open .plan-panel,
@@ -1294,10 +1338,16 @@
   </div>
   <div class="api-session-menu" id="api-session-menu" hidden>
     <div class="api-session-head">
-      <span>会话</span><span class="spacer"></span><button type="button" class="api-session-new" id="api-session-new" data-tooltip="新对话 (Ctrl+N)" aria-keyshortcuts="Control+N Meta+N">＋ 新对话</button>
+      <span>会话</span><span class="spacer"></span><button type="button" class="api-session-manage" id="api-session-manage" aria-pressed="false" aria-label="批量管理会话">管理</button><button type="button" class="api-session-new" id="api-session-new" data-tooltip="新对话 (Ctrl+N)" aria-keyshortcuts="Control+N Meta+N">＋ 新对话</button>
     </div>
     <div class="api-session-list" id="api-session-list"></div>
     <div class="api-session-empty" id="api-session-empty" hidden>暂无会话</div>
+    <div class="api-session-batch" id="api-session-batch" hidden>
+      <label class="api-session-all"><input type="checkbox" id="api-session-all">全选</label>
+      <span class="spacer"></span>
+      <button type="button" class="api-session-batch-cancel" id="api-session-batch-cancel">取消</button>
+      <button type="button" class="api-session-batch-del" id="api-session-batch-del" disabled>删除</button>
+    </div>
   </div>
   <div class="goalbar" id="goalbar">
     <span class="g-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg></span>
@@ -1495,6 +1545,13 @@
         </div>
       </div>
       <div class="enh-field">
+        <label>工具调用方式 <span class="enh-hint" id="api-tool-mode-hint">（native 适合标准 API；cuckoo-js 适合只认代码块的网页模型）</span></label>
+        <select class="enh-input" id="api-tool-mode">
+          <option value="native">原生 function calling（默认）</option>
+          <option value="cuckoo-js">Cuckoo 代码块（AWS Quick 等网页模型）</option>
+        </select>
+      </div>
+      <div class="enh-field">
         <label>窗口补充指令（可选） <span class="enh-hint">（只影响当前 API 窗口；全局规则/项目规则/技能/记忆已自动注入，无需重复）</span></label>
         <textarea class="enh-input" id="api-system-prompt" placeholder="例如：这个窗口只回答中文；不要执行 git push" spellcheck="false"></textarea>
       </div>
@@ -1578,6 +1635,9 @@
   }
 
   // ===== API 多会话列表（仅 API 模式；网页模式完全不出现）=====
+  var apiSessionSelecting = false; // 批量管理（多选）模式
+  var apiSessionSelected = {};     // id -> true
+  var apiSessionDeleting = false;  // 删除进行中，防止重复触发
   function apiSessionBusy() {
     return !!(generating || (typeof toolRunningCount === 'number' && toolRunningCount > 0));
   }
@@ -1600,25 +1660,45 @@
   function renderApiSessionList() {
     if (!apiSessionEls.list) return;
     apiSessionEls.list.innerHTML = '';
+    // 列表刷新后丢掉已不存在会话的勾选，避免"删除 N 个"计数虚高
+    var alive = {};
+    for (var a = 0; a < apiSessionList.length; a++) alive[apiSessionList[a].id] = true;
+    for (var sel in apiSessionSelected) {
+      if (Object.prototype.hasOwnProperty.call(apiSessionSelected, sel) && !alive[sel]) delete apiSessionSelected[sel];
+    }
     var rows = 0;
     for (var i = 0; i < apiSessionList.length; i++) {
       (function (meta) {
         rows++;
         var row = document.createElement('div');
-        row.className = 'api-session-row' + (meta.id === apiSessionId ? ' active' : '');
+        var selected = !!(apiSessionSelecting && apiSessionSelected[meta.id]);
+        row.className = 'api-session-row' + (meta.id === apiSessionId ? ' active' : '') + (selected ? ' selected' : '');
         var open = document.createElement('button');
         open.type = 'button';
         open.className = 'api-session-open';
-        open.setAttribute('aria-label', '切换到该会话');
+        open.setAttribute('aria-label', apiSessionSelecting ? '选择该会话' : '切换到该会话');
+        if (apiSessionSelecting) {
+          open.setAttribute('aria-pressed', selected ? 'true' : 'false');
+          var check = document.createElement('span');
+          check.className = 'api-session-check';
+          check.setAttribute('aria-hidden', 'true');
+          open.appendChild(check);
+        }
+        var textWrap = document.createElement('span');
+        textWrap.className = 'api-session-text';
         var title = document.createElement('span');
         title.className = 'api-session-title';
         title.textContent = String(meta.title || '新对话');
         var sub = document.createElement('span');
         sub.className = 'api-session-meta';
         sub.textContent = '更新 ' + fmtSessionTime(meta.updatedAt) + (meta.messageCount ? (' · ' + meta.messageCount + ' 条') : '');
-        open.appendChild(title);
-        open.appendChild(sub);
-        open.addEventListener('click', function () { switchApiSession(meta.id); });
+        textWrap.appendChild(title);
+        textWrap.appendChild(sub);
+        open.appendChild(textWrap);
+        open.addEventListener('click', function () {
+          if (apiSessionSelecting) { toggleApiSessionSelected(meta.id); return; }
+          switchApiSession(meta.id);
+        });
         var del = document.createElement('button');
         del.type = 'button';
         del.className = 'api-session-del';
@@ -1626,18 +1706,20 @@
         del.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h10M6.5 4.5V3.2h3v1.3M5.2 4.5l.6 8.3h4.4l.6-8.3"/></svg>';
         del.addEventListener('click', function (ev) {
           if (ev && ev.stopPropagation) ev.stopPropagation();
-          deleteApiSession(meta.id, meta.title);
+          deleteApiSession(meta.id);
         });
         row.appendChild(open);
-        row.appendChild(del);
+        if (!apiSessionSelecting) row.appendChild(del);
         apiSessionEls.list.appendChild(row);
       })(apiSessionList[i]);
     }
     if (apiSessionEls.empty) apiSessionEls.empty.hidden = rows > 0;
+    renderApiSessionBatchBar();
     updateApiSessionLabel();
   }
   function setApiSessionMenuOpen(open) {
     apiSessionMenuOpen = !!open;
+    if (!apiSessionMenuOpen && apiSessionSelecting) { apiSessionSelecting = false; apiSessionSelected = {}; }
     document.body.classList.toggle('ck-api-sidebar-open', apiSessionMenuOpen && apiTransportMode);
     if (apiSessionEls && apiSessionEls.menu) {
       apiSessionEls.menu.hidden = !apiSessionMenuOpen;
@@ -1695,27 +1777,95 @@
       if (apiSessionEls.label) { apiSessionEls.label.textContent = '任务运行中'; setTimeout(updateApiSessionLabel, 1600); }
       return;
     }
-    var label = '删除会话「' + String(title || '新对话') + '」？';
-    var confirmed = true;
-    try { confirmed = window.confirm(label); } catch (e) { confirmed = true; }
-    if (!confirmed) return;
-    try {
-      window.harnessAPI.deleteApiSession(sessionId).then(function (r) {
-        if (!r || !r.success) {
-          appendToast('删除会话失败');
-          return;
-        }
-        var active = String(r.activeSessionId || '');
-        if (active && active !== apiSessionId) {
-          // 先切正文（onSessionChanged 会按旧作用域落盘），再清掉被删会话的本地存档
-          onSessionChanged('api', 'api-key', apiProfileId, active, true);
-          clearSessionLocalState(sessionId);
+    deleteApiSessions([sessionId], false);
+  }
+  /**
+   * 删除一个或多个会话（不再二次确认）。
+   * 先从列表移除给即时反馈，再按顺序逐个调主进程删除（避免并发改写会话索引）；
+   * 全部完成后只切一次正文、统一清本地存档、刷新列表。
+   */
+  function deleteApiSessions(ids, exitSelecting) {
+    if (!apiTransportMode || !ids || !ids.length || apiSessionDeleting) return;
+    if (apiSessionBusy()) {
+      if (apiSessionEls.label) { apiSessionEls.label.textContent = '任务运行中'; setTimeout(updateApiSessionLabel, 1600); }
+      return;
+    }
+    if (!window.harnessAPI || typeof window.harnessAPI.deleteApiSession !== 'function') return;
+    apiSessionDeleting = true;
+    var pending = {};
+    for (var p = 0; p < ids.length; p++) { pending[ids[p]] = true; delete apiSessionSelected[ids[p]]; }
+    apiSessionList = apiSessionList.filter(function (m) { return !pending[m.id]; });
+    if (exitSelecting) { apiSessionSelecting = false; apiSessionSelected = {}; }
+    renderApiSessionList();
+    var deleted = [];
+    var failed = 0;
+    var active = '';
+    var cursor = 0;
+    function finish() {
+      apiSessionDeleting = false;
+      if (active && active !== apiSessionId) {
+        // 先切正文（onSessionChanged 会按旧作用域落盘），再清掉被删会话的本地存档
+        onSessionChanged('api', 'api-key', apiProfileId, active, true);
+      }
+      for (var d = 0; d < deleted.length; d++) clearSessionLocalState(deleted[d]);
+      if (failed) appendToast(ids.length > 1 ? (failed + ' 个会话删除失败') : '删除会话失败');
+      refreshApiSessionList();
+    }
+    function next() {
+      if (cursor >= ids.length) { finish(); return; }
+      var sid = ids[cursor++];
+      var req;
+      try { req = window.harnessAPI.deleteApiSession(sid); } catch (e) { failed++; next(); return; }
+      Promise.resolve(req).then(function (r) {
+        if (r && r.success) {
+          deleted.push(sid);
+          if (r.activeSessionId) active = String(r.activeSessionId);
         } else {
-          clearSessionLocalState(sessionId);
+          failed++;
         }
-        refreshApiSessionList();
-      }).catch(function () { appendToast('删除会话失败'); });
-    } catch (e) { /* ignore */ }
+      }, function () { failed++; }).then(next);
+    }
+    next();
+  }
+  function apiSessionSelectedIds() {
+    var ids = [];
+    for (var i = 0; i < apiSessionList.length; i++) if (apiSessionSelected[apiSessionList[i].id]) ids.push(apiSessionList[i].id);
+    return ids;
+  }
+  function toggleApiSessionSelected(id) {
+    if (!id) return;
+    if (apiSessionSelected[id]) delete apiSessionSelected[id]; else apiSessionSelected[id] = true;
+    renderApiSessionList();
+  }
+  function setApiSessionSelecting(on) {
+    apiSessionSelecting = !!on;
+    apiSessionSelected = {};
+    renderApiSessionList();
+  }
+  function setAllApiSessionsSelected(on) {
+    apiSessionSelected = {};
+    if (on) for (var i = 0; i < apiSessionList.length; i++) apiSessionSelected[apiSessionList[i].id] = true;
+    renderApiSessionList();
+  }
+  function renderApiSessionBatchBar() {
+    var n = apiSessionSelecting ? apiSessionSelectedIds().length : 0;
+    var total = apiSessionList.length;
+    if (apiSessionEls.menu) apiSessionEls.menu.classList.toggle('selecting', apiSessionSelecting);
+    if (apiSessionEls.manage) {
+      apiSessionEls.manage.textContent = apiSessionSelecting ? '完成' : '管理';
+      apiSessionEls.manage.setAttribute('aria-pressed', apiSessionSelecting ? 'true' : 'false');
+      apiSessionEls.manage.disabled = !apiSessionSelecting && total === 0;
+    }
+    if (apiSessionEls.batch) apiSessionEls.batch.hidden = !apiSessionSelecting;
+    if (apiSessionEls.batchDel) {
+      apiSessionEls.batchDel.disabled = n === 0 || apiSessionDeleting;
+      apiSessionEls.batchDel.textContent = n ? ('删除 ' + n + ' 个') : '删除';
+    }
+    if (apiSessionEls.selectAll) {
+      apiSessionEls.selectAll.checked = total > 0 && n === total;
+      apiSessionEls.selectAll.indeterminate = n > 0 && n < total;
+      apiSessionEls.selectAll.disabled = total === 0;
+    }
   }
   // 注意：apiSessionEls 的赋值在本脚本后半段，事件绑定必须等它初始化后再做。
   // API 升级迁移：旧版历史只在 harness localStorage，主进程会话快照是空的。
@@ -6901,6 +7051,8 @@
     modelList: document.getElementById('api-model-list'),
     modelStatus: document.getElementById('api-model-status'),
     toolsEnabled: document.getElementById('api-tools-enabled'),
+    toolMode: document.getElementById('api-tool-mode'),
+    toolModeHint: document.getElementById('api-tool-mode-hint'),
     vision: document.getElementById('api-vision'),
     maxToolRounds: document.getElementById('api-max-tool-rounds'),
     contextWindow: document.getElementById('api-context-window'),
@@ -6911,6 +7063,7 @@
     hint: document.getElementById('api-settings-hint')
   };
   var apiHasKey = false;
+  var apiToolModePrev = 'native';
   var apiModelList = [];
   var apiModelFetchSeq = 0;
   var apiModelOpen = false;
@@ -6922,7 +7075,12 @@
     menu: document.getElementById('api-session-menu'),
     list: document.getElementById('api-session-list'),
     empty: document.getElementById('api-session-empty'),
-    create: document.getElementById('api-session-new')
+    create: document.getElementById('api-session-new'),
+    manage: document.getElementById('api-session-manage'),
+    batch: document.getElementById('api-session-batch'),
+    batchDel: document.getElementById('api-session-batch-del'),
+    batchCancel: document.getElementById('api-session-batch-cancel'),
+    selectAll: document.getElementById('api-session-all')
   };
   var apiSessionMenuOpen = false;
   var apiSessionList = [];
@@ -6937,6 +7095,10 @@
     if (api.newConversation) api.newConversation().catch(function () { /* ignore */ });
   });
   if (apiSessionEls.menu) apiSessionEls.menu.addEventListener('click', function (ev) { if (ev && ev.stopPropagation) ev.stopPropagation(); });
+  if (apiSessionEls.manage) apiSessionEls.manage.addEventListener('click', function () { setApiSessionSelecting(!apiSessionSelecting); });
+  if (apiSessionEls.batchCancel) apiSessionEls.batchCancel.addEventListener('click', function () { setApiSessionSelecting(false); });
+  if (apiSessionEls.selectAll) apiSessionEls.selectAll.addEventListener('change', function () { setAllApiSessionsSelected(!!apiSessionEls.selectAll.checked); });
+  if (apiSessionEls.batchDel) apiSessionEls.batchDel.addEventListener('click', function () { deleteApiSessions(apiSessionSelectedIds(), true); });
   document.addEventListener('keydown', function (ev) {
     if (!apiTransportMode || !ev) return;
     var key = String(ev.key || '');
@@ -6946,7 +7108,9 @@
       setApiSessionMenuOpen(!apiSessionMenuOpen);
       return;
     }
-    if (apiSessionMenuOpen && ev.key === 'Escape') setApiSessionMenuOpen(false);
+    if (apiSessionMenuOpen && ev.key === 'Escape') {
+      if (apiSessionSelecting) setApiSessionSelecting(false); else setApiSessionMenuOpen(false);
+    }
   });
   function applyApiVision(on) {
     document.body.classList.toggle('ck-api-vision', !!on);
@@ -7066,6 +7230,14 @@
     if (apiTransportEls.model) apiTransportEls.model.value = t.model || '';
     renderApiModelValue();
     if (apiTransportEls.toolsEnabled) apiTransportEls.toolsEnabled.checked = t.toolsEnabled !== false;
+    var toolMode = t.toolMode === 'cuckoo-js' ? 'cuckoo-js' : 'native';
+    apiToolModePrev = toolMode;
+    if (apiTransportEls.toolMode) apiTransportEls.toolMode.value = toolMode;
+    if (apiTransportEls.toolModeHint) {
+      apiTransportEls.toolModeHint.textContent = toolMode === 'cuckoo-js'
+        ? '（模型写 ```cuckoo 代码块，工具在本机执行；适合拒绝原生 tools 的网页模型）'
+        : '（标准 OpenAI tools / tool_calls；大多数 API 与 DeepSeek 用这个）';
+    }
     if (apiTransportEls.vision) apiTransportEls.vision.checked = t.vision !== false;
     if (apiTransportEls.maxToolRounds) apiTransportEls.maxToolRounds.value = t.maxToolRounds || 64;
     if (apiTransportEls.contextWindow) apiTransportEls.contextWindow.value = t.contextWindow || 131072;
@@ -7122,6 +7294,7 @@
       baseUrl: (apiTransportEls.baseUrl && apiTransportEls.baseUrl.value.trim()) || '',
       model: (apiTransportEls.model && apiTransportEls.model.value.trim()) || '',
       toolsEnabled: !!(apiTransportEls.toolsEnabled && apiTransportEls.toolsEnabled.checked),
+      toolMode: (apiTransportEls.toolMode && apiTransportEls.toolMode.value === 'cuckoo-js') ? 'cuckoo-js' : 'native',
       vision: !!(apiTransportEls.vision && apiTransportEls.vision.checked),
       maxToolRounds: Math.max(1, Math.min(500, rounds)),
       contextWindow: Math.max(8192, Math.min(2097152, contextWindow)),
@@ -7136,13 +7309,35 @@
         fillApiTransportForm(r.data);
         if (apiTransportEls.hint) apiTransportEls.hint.textContent = silent ? '已自动保存 · 只影响当前窗口' : '已保存（只影响当前窗口）';
         if (!silent) appendToast('API 连接设置已保存');
+        return true;
       } else {
         appendToast('API 设置保存失败：' + ((r && r.error) || '未知错误'));
+        return false;
       }
     }).catch(function () {
       appendToast('API 设置保存失败，请检查磁盘权限');
+      return false;
     });
   }
+  if (apiTransportEls.toolMode) apiTransportEls.toolMode.addEventListener('change', function () {
+    var next = apiTransportEls.toolMode.value === 'cuckoo-js' ? 'cuckoo-js' : 'native';
+    if (next === apiToolModePrev) return;
+    if (apiSessionBusy()) {
+      apiTransportEls.toolMode.value = apiToolModePrev;
+      appendToast('请先停止当前任务，再切换工具模式');
+      return;
+    }
+    Promise.resolve(saveApiTransportForm(true)).then(function (ok) {
+      if (!ok) {
+        apiTransportEls.toolMode.value = apiToolModePrev;
+        return;
+      }
+      apiToolModePrev = next;
+      // 模式是会话级协议，旧会话历史不能混用；切换后立即开新会话。
+      if (api.newConversation) api.newConversation().catch(function () { /* ignore */ });
+      appendToast(next === 'cuckoo-js' ? '已切到 Cuckoo 代码块模式，并新建对话' : '已切到原生工具模式，并新建对话');
+    });
+  });
   function clearApiTransportKey() {
     if (!api.setApiSettings) return;
     Promise.resolve(api.setApiSettings({ clearKey: true })).then(function (r) {

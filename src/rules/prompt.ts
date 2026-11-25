@@ -9,12 +9,14 @@ import type { RuleMeta } from './types.js';
  * 生成「## 项目规则」章节（无 paths 的规则）。无规则返回空串
  * @param rules 无 paths 的规则列表
  * @param opts.indexOnly 为 true 时只输出「名字 + 路径」，正文由模型按需 read（用于超预算降级）
+ * @param opts.heading 章节标题；默认「## 项目规则」
  */
-export function buildUnscopedRulesSection(rules: RuleMeta[], opts?: { indexOnly?: boolean }): string {
+export function buildUnscopedRulesSection(rules: RuleMeta[], opts?: { indexOnly?: boolean; heading?: string }): string {
   const list = rules || [];
   if (list.length === 0) return '';
+  const heading = (opts && opts.heading) || '## 项目规则';
   const lines: string[] = [];
-  lines.push('## 项目规则');
+  lines.push(heading);
   lines.push('');
   if (opts && opts.indexOnly) {
     lines.push('以下规则始终适用。正文较长，已省略为索引；执行相关操作前必须先 read 对应文件。');

@@ -6,6 +6,9 @@ const h = vi.hoisted(() => ({
   streamImpl: null,
   executeImpl: null,
   materializeImpl: null,
+  cuckooImpl: null,
+  toolMode: 'native',
+  snapToolMode: null,
   sent: [],
   loadMessages: [],
   createdOpts: null,
@@ -31,6 +34,10 @@ vi.mock('../../src/api-transport/tool-loop.js', async (importOriginal) => {
   };
 });
 
+vi.mock('../../src/api-transport/cuckoo-js-loop.js', () => ({
+  runCuckooJsTurn: (...args) => h.cuckooImpl(...args),
+}));
+
 vi.mock('../../src/app/ui-prefs.js', () => ({
   readPrefs: () => ({
     apiTransport: {
@@ -54,11 +61,13 @@ vi.mock('../../src/app/ui-prefs.js', () => ({
     vision: true,
     systemPrompt: '',
     usageReporting: 'off',
+    toolMode: h.toolMode,
   }),
 }));
 
 vi.mock('../../src/api-transport/system-prompt.js', () => ({
   buildApiSystemPrompt: () => 'system prompt',
+  buildCuckooApiSystemPrompt: () => 'cuckoo system prompt',
 }));
 
 vi.mock('../../src/api-transport/attachments.js', () => ({
@@ -69,7 +78,7 @@ vi.mock('../../src/api-transport/attachments.js', () => ({
 vi.mock('../../src/api-transport/session-store.js', () => ({
   loadApiSession: () => h.loadMessages,
   loadApiSessionSnapshot: () => (h.loadMessages.length
-    ? { id: 's', title: 't', createdAt: 1, updatedAt: 1, messages: h.loadMessages }
+    ? { id: 's', title: 't', createdAt: 1, updatedAt: 1, messages: h.loadMessages, toolMode: h.snapToolMode || h.toolMode }
     : null),
   getActiveApiSessionId: () => 's',
   deriveSessionTitle: () => 't',
@@ -341,6 +350,83 @@ test('API 编辑旧消息按“从后往前第 N 条 user”物理截断上下�
   ]);
   const hist = runtime.getApiHistory(ctx);
   assert.deepEqual(hist.items.map((m) => m.t + ':' + m.text), ['user:q1', 'assistant:a1']);
+});
+
+test('cuckoo-js 模式走独立循环，不调用 native streamChat', async () => {
+  h.toolMode = 'cuckoo-js';
+  h.snapToolMode = 'cuckoo-js';
+  h.loadMessages = [];
+  h.streamImpl = async () => { throw new Error('native streamChat 不应被调用'); };
+  let called = null;
+  h.cuckooImpl = async (input) => {
+    called = input;
+    input.state.turn = null;
+    input.state.controller = null;
+    return { success: true, text: 'cuckoo ok' };
+  };
+  const ctx = { ...makeCtx(), profileId: 'cuckoo-mode' };
+  const runtime = await import('../../src/api-transport/runtime.js');
+  const r = await runtime.sendApiMessage(ctx, 'hi');
+  assert.equal(r.success, true);
+  assert.equal(r.text, 'cuckoo ok');
+  assert.ok(called, '必须进入 cuckoo-js 循环');
+  assert.equal(called.runtime.toolMode, 'cuckoo-js');
+  assert.equal(called.runtime.tools.length, 0, 'cuckoo-js 不能构建 native tools');
+  assert.equal(called.state.projectDir, 'D:\\work');
+  h.toolMode = 'native';
+  h.snapToolMode = null;
+});
+
+test('cuckoo-js 的 internal 工具消息不出现在恢复后的 UI 历史', async () => {
+  h.toolMode = 'cuckoo-js';
+  h.snapToolMode = 'cuckoo-js';
+  h.loadMessages = [
+    { role: 'system', content: 'sys' },
+    { role: 'user', content: '真实问题' },
+    { role: 'assistant', content: '```cuckoo\nawait bash("dir")\n```', internal: true, displayText: '' },
+    { role: 'user', content: '工具结果', internal: true },
+    { role: 'assistant', content: '最终回答', displayText: '最终回答' },
+  ];
+  const ctx = { ...makeCtx(), profileId: 'cuckoo-history' };
+  const runtime = await import('../../src/api-transport/runtime.js');
+  const hist = runtime.getApiHistory(ctx);
+  assert.deepEqual(hist.items, [
+    { t: 'user', text: '真实问题' },
+    { t: 'assistant', text: '最终回答' },
+  ]);
+  h.toolMode = 'native';
+  h.snapToolMode = null;
+});
+
+test('空会话跟随当前模式，不误报 mode_mismatch', async () => {
+  h.toolMode = 'cuckoo-js';
+  h.snapToolMode = 'native';
+  h.loadMessages = [{ role: 'system', content: 'sys' }];
+  h.streamImpl = async () => { throw new Error('应走 cuckoo 分支'); };
+  h.cuckooImpl = async (input) => {
+    input.state.turn = null;
+    input.state.controller = null;
+    return { success: true, text: 'ok' };
+  };
+  const ctx = { ...makeCtx(), profileId: 'empty-mode-adopt' };
+  const runtime = await import('../../src/api-transport/runtime.js');
+  const r = await runtime.sendApiMessage(ctx, 'hi');
+  assert.equal(r.success, true);
+  h.toolMode = 'native';
+  h.snapToolMode = null;
+});
+
+test('旧会话工具模式与当前设置不一致时拒绝发送，避免污染历史', async () => {
+  h.toolMode = 'native';
+  h.snapToolMode = 'cuckoo-js';
+  h.loadMessages = [{ role: 'system', content: 'sys' }, { role: 'user', content: 'q' }];
+  h.streamImpl = async () => { throw new Error('模式不一致时不应请求上游'); };
+  const ctx = { ...makeCtx(), profileId: 'mode-mismatch' };
+  const runtime = await import('../../src/api-transport/runtime.js');
+  const r = await runtime.sendApiMessage(ctx, 'hi');
+  assert.equal(r.success, false);
+  assert.equal(r.code, 'mode_mismatch');
+  h.snapToolMode = null;
 });
 
 test('API 截断到不存在的消息返回失败，不写盘', async () => {
