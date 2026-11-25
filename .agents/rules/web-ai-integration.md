@@ -12,17 +12,35 @@ paths:
 
 本规则解决一个反复出现的问题：**来一个新模型，到底该加 Provider、加 API 窗口，还是单独立一个网关？**
 
-## 一、先判三档，不要直接写代码
+## 一、先判入口，不要直接写代码
 
 | 上游能力 | 接入方式 | 要不要网关 | 工具协议 |
 |---|---|---|---|
 | 官方 API，支持 OpenAI `tools/tool_calls` | Cuckoo API 窗口 | 不要 | `native` |
 | 官方 API，只收文本、不支持 tools | Cuckoo API 窗口 | 不要 | `cuckoo-js` |
-| 只有网页 UI，没有稳定 API | 独立网页网关 + Cuckoo API 窗口 | 要 | `cuckoo-js` |
-| 网页 UI，但希望直接在 Cuckoo 网页窗口聊天 | Cuckoo 网页 Provider + hook | 不要 | 网页原生 / hook |
+| 只有网页 UI，且要给 API 窗口 / 外部客户端复用 | 独立网页网关 + Cuckoo API 窗口 | 要 | `cuckoo-js` |
+| 只有网页 UI，且只在 Cuckoo 网页窗口用 | Cuckoo 网页 Provider + hook | 不要 | 网页原生 / hook |
 
 判断顺序固定：**先找官方 API → 再看是否支持原生 tools → 最后才写网页网关/Provider。**
 能走 API 就不要写网页自动化；能复用现有 OpenAI 网关就不要为每个站点写 Provider。
+
+网页 UI 还要再按“谁调用”分一次：
+
+- **只在 Cuckoo 网页窗口用**：写网页 Provider + hook，吃网页登录额度，不暴露 API。
+- **还要 API 窗口或外部 OpenAI 客户端用**：写独立网页网关，再让 API 窗口走 `cuckoo-js`。
+
+### 1.1 网页额度不是 API 额度
+
+网页会员、网页积分、网页额度都不是 API Key。API 窗口只发 HTTP `/chat/completions`，不会读取网页 Cookie，也不能把网页会员直接填进 API 设置。
+
+网页额度要进 Cuckoo，只有两条路：
+
+| 调用方 | 接入形态 | 现有参照 |
+|---|---|---|
+| 只在 Cuckoo 网页窗口用 | 网页 Provider + hook | DeepSeek 网页窗口 |
+| 还要 API 窗口 / Codex / dsh / 其他 OpenAI 客户端 | 站点专用网页网关 + `cuckoo-js` | AWS Quick + `cuko-api-quick` |
+
+同一个站点只保留一条主链路：只给 Cuckoo 用就做 Provider；要对外复用才做网关。不要为了“统一”同时维护两套。
 
 ## 二、三种接入方式的边界
 
@@ -45,9 +63,14 @@ paths:
 - 工具结果作为 `internal:true` user 消息回传
 - 这一档**不需要网关**，只要上游兼容 Chat Completions
 
-### 3. 只有网页 UI
+### 3. 只有网页 UI：先选 Provider 还是网关
 
-必须有一个“网页网关”把页面变成 OpenAI 兼容 HTTP 服务，再由 Cuckoo API 窗口接：
+网页 UI 不等于必须写网关。先问“谁调用”：
+
+- **只给 Cuckoo 网页窗口用**：Provider + hook，推荐；登录态、网页额度、输入/停止都在窗口内完成。
+- **要给 API 窗口或外部 OpenAI 客户端用**：独立网页网关，把页面变成 OpenAI 兼容 HTTP 服务，再由 Cuckoo API 窗口接。
+
+需要 API 复用时才走下面这条：
 
 ```text
 Cuckoo API 窗口（toolMode=cuckoo-js）
@@ -56,7 +79,9 @@ Cuckoo API 窗口（toolMode=cuckoo-js）
   → 目标网页模型
 ```
 
-不要让 Cuckoo Code 直接为每个网页站点写 Provider；Provider 是“网页窗口体验”，网关是“API 复用”，两者不要混。
+Provider 是“网页窗口体验”，网关是“API 复用”，按调用方二选一，不要同一站点同时维护两条主链路。
+
+网关的额外层换的是三件事：**API 复用、站点协议隔离、账号/会话运维集中**。只在 Cuckoo 网页窗口用，Provider 更直接；要 API 窗口/Codex/dsh 共用，网关才成立。
 
 ## 三、网页网关最小契约
 

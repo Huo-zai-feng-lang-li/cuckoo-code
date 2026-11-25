@@ -34,6 +34,7 @@
 
 - 内置 **DeepSeek 网页版** 与 **API Key / OpenAI 兼容** 两个平台
 - 网页平台独立封装输入框定位、发送按钮检测、回复完成判断、消息解析等差异；API 平台由主进程 `api-transport` 直接请求上游，支持 native function calling，也支持可选的 `cuckoo-js` 代码块工具模式（适合拒绝原生 tools 的网页模型）
+- **网页额度入口**：只给 Cuckoo 网页窗口用，走网页 Provider + hook；要给 API 窗口、Codex、dsh 等外部客户端复用，才为该站点单独做网关。API 窗口不能直接把网页会员/网页额度当 API Key。
 - 新建窗口时可选择平台，也可**导入自定义 Provider**（提供类型声明和模板，降低扩展门槛）
 
 ### 真正的 AI Agent

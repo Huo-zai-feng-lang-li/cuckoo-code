@@ -101,6 +101,7 @@ native：tool 结果写回 messages；cuckoo-js：结果作为 internal user 消
 - **项目目录持久化**：API 会话快照与索引都保存 `projectDir`。窗口启动优先恢复 active 会话目录，老会话没有目录时回退全局 `last-project-dir.json`（目录必须仍存在）；新建会话继承当前目录，切换/删除会话同步恢复，避免每次进入 API 窗口都回到“首次对话需选择项目目录”。
 - **左侧会话菜单**：只在 API 模式显示（`body:not(.ck-api-mode)` 时隐藏）；网页模式使用壳层「对话」页面，两套入口不共用。
 - **协议边界**：当前只兼容 OpenAI 风格 `/chat/completions` + Bearer + SSE + `tool_calls`；Anthropic 原生、Gemini 原生等协议需要新增 adapter，不能只填 Base URL。
+- **API 窗口不能直接吃网页额度**：API 窗口只发 HTTP `/chat/completions`，不会读取网页登录 Cookie，也不能把网页会员/积分当 API Key。网页额度只有两条入口：Cuckoo 网页 Provider（如 DeepSeek）或站点专用网关（如 AWS Quick + `cuko-api-quick`）。只给 Cuckoo 网页窗口用优先 Provider；要复用到 API 窗口/Codex/dsh 才做网关。
 - **工具范围**：复用 `tool-loop.ts`，但排除 `attachFile`、`runAgent`、`runAgents` 等网页自动化专用工具。
 - **可选 cuckoo-js 模式**：API 设置里 `toolMode=cuckoo-js` 时，请求不发送 `tools`、不产生 `tool` role；`buildCuckooApiSystemPrompt` 注入 `quick.md`（`bash/pwsh/read/readLines/write/edit/glob/grep/todoWrite` + `mcpListServers/mcpGetTools/mcpCall` 的 TS 声明，并注入全局规则、技能索引、记忆摘要、MCP 章节），模型写以三个反引号开头的 `cuckoo` 代码块，由 `cuckoo-js-exec.ts` 走 `guardExecutionCall` + `JsRunner` 本地执行，结果作为 `internal:true` 的 user 消息回传，循环到模型不再写代码块。`conversationId='cuckoo-js:'+sessionId` 走网关 body `conversation_id`，让 3000 复用网页会话；网关侧映射默认 24h 持久化，重启后可继续同一条 Quick 线程。
 - **模式隔离**：`toolMode` 存会话快照；发送前当前设置与会话模式不一致且会话有可见历史时返回 `mode_mismatch`，空会话直接跟随当前设置；切换模式 UI 自动新建对话，避免旧历史混用两种协议。
